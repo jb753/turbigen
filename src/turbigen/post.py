@@ -775,6 +775,75 @@ def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
     )
 
 
+def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
+    """Overlay what a `clark_profile` iterator is aiming this section at.
+
+    Two curves rather than one, and no straight lines: a
+    :class:`~turbigen.iterate.ClarkProfile` shapes both surfaces against
+    :mod:`turbigen.clark`, so what it aims at is drawn by asking the iterator
+    for its own target rather than by rebuilding one here. A plot that drew a
+    curve of its own would be free to contradict the design it describes.
+
+    The samples are marked as :func:`_draw_loading_profile` marks its own, at
+    one point per shape-space coefficient and per surface --- which is where
+    that coefficient does the most to the blade, and so the part of the gap
+    between the two curves it answers for.
+
+    **The circles sit on a slightly different abscissa from the line.** These
+    axes are `normalise_surface_distance`, measured from the flow's stagnation
+    point; a `ClarkProfile` measures from the geometric leading edge, which is
+    what Clark's `z` means and what keeps a target still while the thickness
+    under it moves. The two differ by where the flow attached --- about a per
+    cent of surface on the case this was checked against, and visible only
+    near the nose. Drawn at the measured `z` regardless, because these are
+    meant to be the numbers the errors were formed from rather than points
+    that merely sit on the drawn line.
+    """
+    from turbigen.iterate import ClarkProfile
+    from turbigen.loading import measure_clark_profile
+
+    profile = _matching(config, ClarkProfile, i_row, spf)
+    if profile is None:
+        return
+
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
+
+    thickness = config.blades[i_row].sections[0].thickness
+
+    # The target on its own abscissa, which is the surface fraction of each
+    # side separately -- the two surfaces are not the same length, so one grid
+    # of `z` does not serve both.
+    drawn = np.linspace(0.0, 1.0, 201)
+    for target in profile.target(np.stack((drawn, drawn)), result.machine):
+        ax.plot(
+            drawn,
+            target * ma_TE,
+            linestyle="--",
+            color=color,
+            linewidth=1.0,
+        )
+    ax.plot([], [], linestyle="--", color=color, label=f"target, spf={spf:.2f}")
+
+    # Measured the same way the iterator measures, rather than read off the
+    # curves above.
+    measured = measure_clark_profile(result, i_row, spf, thickness.m_ctl)
+    if measured is None:
+        return
+    z_knob, fac_knob = measured
+
+    ax.plot(
+        z_knob.ravel(),
+        fac_knob.ravel() * ma_TE,
+        linestyle="none",
+        marker="o",
+        markerfacecolor="none",
+        color=color,
+        label=f"samples, spf={spf:.2f}",
+    )
+
+
 class SurfacePlot(Post):
     """Isentropic Mach number around the blade surfaces."""
 
@@ -863,6 +932,9 @@ class SurfacePlot(Post):
                     ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
                 )
                 _draw_loading_profile(
+                    ax, config, result, i_row, spf, mas, line.get_color()
+                )
+                _draw_clark_profile(
                     ax, config, result, i_row, spf, mas, line.get_color()
                 )
 

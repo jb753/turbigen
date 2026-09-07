@@ -48,7 +48,7 @@ import pytest
 from test_blade import FLUID, MEAN_LINE, blade, build
 
 import turbigen.loading
-from turbigen import Config, Result, iterate, node
+from turbigen import Config, Result, iterate, node, shapespace
 
 
 @pytest.fixture
@@ -1950,3 +1950,275 @@ def test_a_pass_runs_on_the_gains_the_last_one_measured():
     assert seen[0] == 0.5
     assert seen[-1] == pytest.approx(1.0, rel=1e-6)
     assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
+
+
+#
+# THE CLARK PROFILE
+#
+# Both surfaces at once, driven by thickness rather than camber, against the
+# distribution `turbigen.clark` draws. `measure_clark_profile` stands in for
+# the CFD, as `measure_profile` does above.
+#
+
+CLARK_THICKNESS = {
+    "type": "clark",
+    "R_LE": 0.05,
+    "tanwedge": 0.18,
+    "t_TE": 0.03,
+    "coeff": [[0.0, 0.0], [0.0, 0.0]],
+}
+"""A symmetric two-sided section of order 3, so a `ClarkProfile` has two
+interior coefficients per surface to move."""
+
+
+def thickened(thickness=None, **kwargs):
+    """Return a blade whose sections carry a two-sided thickness."""
+    built = blade(**kwargs)
+    built["sections"] = [
+        {**section, "thickness": dict(thickness or CLARK_THICKNESS)}
+        for section in built["sections"]
+    ]
+    return built
+
+
+@pytest.fixture
+def clark():
+    """A two-row config whose first row has its thickness shaped."""
+    return dataclasses.replace(
+        build(blades=[thickened(), thickened()]),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+
+def test_clark_owns_both_ends_both_surfaces_and_the_level(clark):
+    """Order 3 gives four control points, of which the two ends are shared."""
+    assert set(clark.iterate.correct[0].unknowns(clark)) == {
+        "Co[0]",
+        "tau_LE[0]",
+        "tau_TE[0]",
+        "tau[0][0][1]",
+        "tau[0][0][2]",
+        "tau[0][1][1]",
+        "tau[0][1][2]",
+    }
+
+
+def test_clark_puts_the_level_first_and_the_ends_before_the_interior(clark):
+    """The order a sequence `gain` is matched to, so it is load-bearing.
+
+    `Co` at index zero and the two shared ends next means neither moves when a
+    design changes order --- only the interior grows, at the tail. Written the
+    other way round, a calibration measured on one design would be read back
+    against different knobs on the next.
+    """
+    assert list(clark.iterate.correct[0].unknowns(clark))[:3] == [
+        "Co[0]",
+        "tau_LE[0]",
+        "tau_TE[0]",
+    ]
+
+
+def test_clark_reads_the_ends_off_the_shape_space_curve(clark):
+    """The knobs are coefficients, and the ends of that curve are the physics.
+
+    Which is what buys one gain sign for every knob: a nose radius written as
+    `sqrt(2 R_LE)` thickens its surface the same way an interior coefficient
+    does, where the radius itself would have needed a prior of its own.
+    """
+    unknowns = clark.iterate.correct[0].unknowns(clark)
+
+    assert unknowns["tau_LE[0]"] == pytest.approx(
+        shapespace.tau_LE(CLARK_THICKNESS["R_LE"])
+    )
+    assert unknowns["tau_TE[0]"] == pytest.approx(
+        shapespace.tau_TE(CLARK_THICKNESS["t_TE"], CLARK_THICKNESS["tanwedge"])
+    )
+
+
+def test_clark_writes_what_it_says_it_writes(clark):
+    """`paths` is declared rather than inferred, so it has to be checked.
+
+    A leaf this moves without naming would be read as a design variable by
+    anything mining an archive of runs, and a predictor would then take the
+    thickness it is trying to predict as an input.
+    """
+    iterator = clark.iterate.correct[0]
+    before = node.flatten(clark)
+
+    moved = set()
+    for name, value in iterator.unknowns(clark).items():
+        after = node.flatten(iterator.with_unknowns(clark, {name: value + 0.02}))
+        moved |= {path for path in before if before[path] != after.get(path)}
+
+    assert moved == iterator.paths(clark)
+
+
+def test_clark_shifts_every_section_together(clark):
+    """One span fraction is measured, so one shift is all it can justify.
+
+    Whatever spanwise variation of the thickness a design asked for therefore
+    survives being iterated, exactly as it does for a camber line.
+    """
+    iterator = clark.iterate.correct[0]
+    unknowns = iterator.unknowns(clark)
+
+    moved = iterator.with_unknowns(clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] + 0.1})
+
+    shifts = [
+        section.thickness.tau_coeff[0][1]
+        - original.thickness.tau_coeff[0][1]
+        for section, original in zip(
+            moved.blades[0].sections, clark.blades[0].sections
+        )
+    ]
+    assert shifts == pytest.approx([0.1] * len(shifts))
+
+
+def test_clark_keeps_one_nose_and_one_wedge(clark):
+    """Moving an end knob moves it on both surfaces, that being what it is.
+
+    A `ClarkThickness` has one leading edge radius serving two surfaces, so a
+    knob on it cannot mean one thing to one side and another to the other.
+    """
+    iterator = clark.iterate.correct[0]
+    unknowns = iterator.unknowns(clark)
+
+    moved = iterator.with_unknowns(clark, {"tau_LE[0]": unknowns["tau_LE[0]"] + 0.05})
+
+    for section in moved.blades[0].sections:
+        c = section.thickness.tau_coeff
+        assert c[0][0] == pytest.approx(c[1][0])
+        assert c[0][0] == pytest.approx(unknowns["tau_LE[0]"] + 0.05)
+
+
+def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
+    """`error` builds the target and divides it; the rest is the measurement.
+
+    Two samples per surface here rather than four, so the arithmetic can be
+    written out: the level is the mean suction residual less the mean pressure
+    one, and each surface then gives up half of it.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_clark_profile",
+        lambda *a: (
+            np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]]),
+            np.zeros((2, 4)),
+        ),
+    )
+
+    iterator = clark.iterate.correct[0]
+    error = iterator.error(clark, Result(machine=clark.design(), grid=object()))
+
+    # Everything measured zero, so each residual is minus its own target.
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    residual = -iterator.target(z, clark.design())
+    level = np.mean(residual[0]) - np.mean(residual[1])
+    shape = residual - np.array([[level / 2.0], [-level / 2.0]])
+
+    assert error["Co[0]"] == pytest.approx(level)
+    assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
+    assert error["tau_TE[0]"] == pytest.approx(0.5 * (shape[0][-1] + shape[1][-1]))
+    assert error["tau[0][0][1]"] == pytest.approx(shape[0][1])
+    assert error["tau[0][1][2]"] == pytest.approx(shape[1][2])
+
+
+def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
+    """The property that leaves the loop determined.
+
+    A shared end reports the *mean* of the two surfaces' residuals there, and
+    the level is taken off one surface and added to the other --- so it cancels
+    exactly. The nose and the wedge answer only for the common mode at their
+    end, and can neither be moved by the blade count nor fight it.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+    target = iterator.target(z, machine)
+
+    # Two measurements differing by a pure level: one surface lifted and the
+    # other dropped, which is what opening the loop does and nothing else.
+    errors = []
+    for offset in (0.0, 0.3):
+        fac = target + np.array([[offset], [-offset]])
+        monkeypatch.setattr(
+            turbigen.loading, "measure_clark_profile", lambda *a, f=fac: (z, f)
+        )
+        errors.append(iterator.error(clark, Result(machine=machine, grid=object())))
+
+    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.6)
+    for name in ("tau_LE[0]", "tau_TE[0]"):
+        assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
+
+
+def test_clark_refuses_a_step_that_closes_the_section(clark):
+    """A knob has no bound of its own that keeps an aerofoil open.
+
+    `clip` limits one step, not where a run of them arrives, and a thickness
+    driven through the camber line fails in the mesher rather than here --- a
+    long way from the step that caused it.
+    """
+    iterator = clark.iterate.correct[0]
+    unknowns = iterator.unknowns(clark)
+
+    held = iterator.with_unknowns(clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] - 5.0})
+
+    assert held.blades[0].sections == clark.blades[0].sections
+
+
+def test_clark_is_unmeasured_without_a_grid(clark):
+    iterator = clark.iterate.correct[0]
+    assert iterator.error(clark, Result(machine=clark.design())) == {}
+
+
+def test_clark_needs_a_two_sided_thickness():
+    """A Taylor section is the same both sides, so it has no rows to move."""
+    config = dataclasses.replace(
+        build(blades=[blade()]),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+    with pytest.raises(ValueError, match="differ side to side"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_needs_coefficients_written_out():
+    """An empty row is a symmetric section, with nothing between its ends."""
+    config = dataclasses.replace(
+        build(blades=[thickened({**CLARK_THICKNESS, "coeff": [[], []]})]),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+    with pytest.raises(ValueError, match="no interior thickness coefficients"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_needs_every_section_to_agree_on_order():
+    """Sections are interpolated field by field, which ragged rows cannot be."""
+    row = thickened()
+    row["sections"][0]["thickness"] = {**CLARK_THICKNESS, "coeff": [[0.0], [0.0]]}
+    config = dataclasses.replace(
+        build(blades=[row]),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+    with pytest.raises(ValueError, match="same number of thickness coefficients"):
+        config.iterate.correct[0].unknowns(config)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"z_peak": 0.0}, "0 < z_peak < 1"),
+        ({"z_peak": 1.0}, "0 < z_peak < 1"),
+        ({"Ma_peak": 0.0}, "Ma_peak must be positive"),
+        ({"Ma_LE": -1.0}, "Ma_LE must be positive"),
+        ({"Ma_PS": 0.0}, "Ma_PS must be positive"),
+    ],
+)
+def test_clark_rejects_a_target_off_the_surface(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        iterate.ClarkProfile(**kwargs)

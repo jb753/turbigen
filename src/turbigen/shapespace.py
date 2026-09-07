@@ -142,6 +142,53 @@ def elevate_bernstein(coeff, order):
     return b
 
 
+def control_m(order):
+    """Return where each control point of a shape-space curve moves thickness most.
+
+    A Bernstein basis function peaks at ``k / order``, but a coefficient in
+    shape space is not what a blade is made of: the thickness it produces is
+    the curve times the class function ``sqrt(m) * (1 - m)``, which vanishes at
+    both ends and peaks at a third of chord. Multiplying by it kills the
+    boundary peaks that ``B_0`` and ``B_order`` have and drags every interior
+    one toward a third. Maximising
+
+    .. math::
+        \\sqrt{m}(1 - m) \\, B_{k,n}(m)
+        \\;\\propto\\; m^{k + 1/2} (1 - m)^{n - k + 1}
+
+    gives ``(k + 1/2) / (order + 3/2)``, strictly inside `(0, 1)` for every `k`
+    including the ends --- so the first and last control points act just inside
+    the nose and just ahead of the trailing edge rather than on them. That they
+    do nothing *at* the ends is correct: half-thickness is zero at `m = 0` for
+    any nose radius, since the radius lives in the curvature of the square-root
+    nose rather than in a thickness value, and is `t_TE / 2` at `m = 1`
+    whatever the wedge angle does.
+
+    **Where a coefficient moves the thickness, which is a proxy for where it
+    moves the loading.** A thickness bump accelerates the flow over it, but a
+    pressure field is not local, so the two peaks need not coincide exactly.
+    Checked against a finished section rather than against the formula alone:
+    perturbing one coefficient displaces the surface most at this `m` to four
+    decimal places, so the annulus lift, the leading-to-trailing edge rescaling
+    and the perpendicular thickness offset do not move it.
+
+    Parameters
+    ----------
+    order : int
+        Degree of the curve, which has `order + 1` control points.
+
+    Returns
+    -------
+    ndarray, shape (order + 1,)
+        Normalised meridional position of each control point's peak influence.
+
+    """
+    if order < 1:
+        raise ValueError(f"A curve needs a degree of at least one, got {order}.")
+
+    return (np.arange(order + 1) + 0.5) / (order + 1.5)
+
+
 def thickness_from_tau(m, tau, t_TE):
     """Return half-thickness from a curve `tau` in shape space.
 

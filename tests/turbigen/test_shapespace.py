@@ -260,3 +260,65 @@ def test_trailing_edge_wedge_is_the_slope_of_the_thickness():
     t = shapespace.thickness_from_tau(m, tau, t_TE=0.0)
     slope = np.diff(t) / np.diff(m)
     np.testing.assert_allclose(slope, -tanwedge, rtol=1e-5)
+
+
+#
+# WHERE A CONTROL POINT ACTS
+#
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5, 6])
+def test_control_points_act_where_the_thickness_says(order):
+    """Against a numeric argmax of what a coefficient does to the thickness.
+
+    `control_m` is a closed form, so this is the check that the closed form is
+    of the right thing: the basis function times the class function, which is
+    the shape a coefficient actually adds to a half-thickness, rather than the
+    basis function alone.
+    """
+    m = np.linspace(0.0, 1.0, 200001)
+    expected = []
+    for k in range(order + 1):
+        basis = shapespace.evaluate_bernstein(np.eye(order + 1)[k], m)
+        expected.append(m[int(np.argmax(np.sqrt(m) * (1.0 - m) * basis))])
+
+    np.testing.assert_allclose(shapespace.control_m(order), expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5, 6])
+def test_every_control_point_acts_inside_the_ends(order):
+    """Including the first and last, which is the whole point of the class function.
+
+    A bare Bernstein basis peaks at `k / order`, so its end functions peak *on*
+    the ends --- where no coefficient can move a thickness, the nose being
+    closed and the trailing edge being `t_TE / 2` whatever anything else says.
+    Multiplying by the class function moves those peaks inside, which is what
+    lets a leading edge radius and a wedge angle be driven by a measurement
+    taken somewhere the blade has thickness to move.
+    """
+    m_ctl = shapespace.control_m(order)
+
+    assert np.all(m_ctl > 0.0) and np.all(m_ctl < 1.0)
+    assert np.all(np.diff(m_ctl) > 0.0)
+
+
+def test_the_class_function_pulls_each_peak_toward_a_third():
+    """Which is where the class function itself peaks.
+
+    So a control point ahead of a third of chord is nudged back and one behind
+    it is drawn forward, by more the nearer the end it started from. Sampling
+    the achieved curve at `k / order` instead would read each knob a little
+    downstream of where it does its work, and the last one a long way.
+    """
+    order = 4
+    basis_peak = np.arange(order + 1) / order
+    m_ctl = shapespace.control_m(order)
+
+    ahead = basis_peak < 1.0 / 3.0
+    assert np.all(m_ctl[ahead] > basis_peak[ahead])
+    assert np.all(m_ctl[~ahead] < basis_peak[~ahead])
+
+
+def test_a_curve_needs_a_degree_to_have_control_points():
+    with pytest.raises(ValueError, match="degree of at least one"):
+        shapespace.control_m(0)

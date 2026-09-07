@@ -20,6 +20,7 @@ for each surface, suction first, and one that says nothing about sides gives
 the same number twice.
 """
 
+import dataclasses
 import logging
 from typing import ClassVar
 
@@ -228,7 +229,7 @@ class Taylor(ThicknessDesign):
         return float(t.item()) if np.isscalar(m) else t
 
 
-class Clark(ThicknessDesign):
+class ClarkThickness(ThicknessDesign):
     """A Bernstein polynomial in shape space per surface, after Clark (2019).
 
     Where :class:`Taylor` describes one thickness reflected in the camber
@@ -304,6 +305,124 @@ class Clark(ThicknessDesign):
             raise ValueError(
                 f"A leading edge radius must be positive, got R_LE={self.R_LE}."
             )
+
+    @property
+    def order(self):
+        """Degree of the shape-space curve on each surface [--].
+
+        One more than the number of interior coefficients, the two endpoint
+        ones being the leading edge radius and the wedge angle. Read off
+        :attr:`coeff` rather than declared, so there is no second place for it
+        to be written down and disagree.
+        """
+        return len(self.coeff[0]) + 1
+
+    @property
+    def m_ctl(self):
+        """Return where each control point moves this section most, shape (order+1,).
+
+        One array, not one per surface: it is a property of the basis, and both
+        rows carry the same number of coefficients by construction. See
+        :func:`turbigen.shapespace.control_m` for why these sit strictly inside
+        the ends.
+
+        Public because an iterator shaping this distribution against a loading
+        distribution has to sample the achieved curve at the points its knobs
+        actually act on, and a sampler guessing at its own positions would be
+        reading somewhere no coefficient answers for.
+        """
+        return shapespace.control_m(self.order)
+
+    @property
+    def tau_coeff(self):
+        """Return the full shape-space coefficients of each surface, shape (2, order+1).
+
+        :attr:`coeff` holds only the interior *perturbation*, on a straight line
+        between two endpoints the physics fixes. A straight line is exactly
+        representable in the Bernstein basis, though, so the whole curve is one
+        Bernstein polynomial whose coefficients are
+
+        .. math::
+            c_k = \\tau_{LE} + (\\tau_{TE} - \\tau_{LE}) k / n + p_k
+
+        with `p_0` and `p_n` zero. That makes ``c[0]`` exactly
+        :func:`~turbigen.shapespace.tau_LE` of the leading edge radius and
+        ``c[-1]`` exactly :func:`~turbigen.shapespace.tau_TE` of the trailing
+        edge --- the two ends are not special cases of the curve, they *are* its
+        first and last coefficients.
+
+        Why anything wants this: in these coordinates every coefficient does the
+        same kind of thing, which is to raise `tau` and thicken the surface
+        locally. A knob per coefficient therefore has one sensitivity sign
+        rather than one for the interior and something else for the ends, and a
+        positive `R_LE` comes for free since it is `c[0]**2 / 2`.
+
+        **The two rows share their first and last entries**, both being the one
+        leading edge radius and the one wedge angle this distribution has. They
+        are returned duplicated rather than split out, so that a row lines up
+        index for index with :attr:`m_ctl`; :meth:`with_tau_coeff` checks that a
+        caller writing them back has kept them equal.
+        """
+        n = self.order
+        tau_LE = shapespace.tau_LE(self.R_LE)
+        tau_TE = shapespace.tau_TE(self.t_TE, self.tanwedge)
+        line = tau_LE + (tau_TE - tau_LE) * np.arange(n + 1) / n
+
+        return np.array([[0.0, *row, 0.0] for row in self.coeff]) + line
+
+    def with_tau_coeff(self, c):
+        """Return this thickness rebuilt from full shape-space coefficients.
+
+        The inverse of :attr:`tau_coeff`, and the only supported way to write
+        through it. **Not because the arithmetic is hard, but because it does
+        not decompose**: moving `c[0]` moves the straight line under the whole
+        curve, so every interior perturbation has to be recomputed to leave its
+        own coefficient where the caller put it. Setting `R_LE` and then the
+        interior coefficients one at a time --- the obvious thing for a caller
+        holding the fields --- silently drags the interior along behind the
+        nose.
+
+        Parameters
+        ----------
+        c : array_like, shape (2, order + 1)
+            Full shape-space coefficients of each surface, suction first. The
+            two rows must agree at both ends, those being the shared leading
+            edge radius and wedge angle.
+
+        """
+        c = np.asarray(c, dtype=float)
+        if c.shape != (2, self.order + 1):
+            raise ValueError(
+                f"An order {self.order} two-sided thickness takes coefficients "
+                f"of shape {(2, self.order + 1)}, got {c.shape}."
+            )
+
+        # Not defaulted to row zero: the surfaces sharing their ends is the
+        # whole of what "one nose radius, one wedge angle" means here, and a
+        # caller who has broken it is asking for a section this class cannot
+        # represent rather than one it should quietly round off.
+        for i, end in enumerate((0, -1)):
+            if c[0][end] != c[1][end]:
+                where = ("leading", "trailing")[i]
+                raise ValueError(
+                    f"Both surfaces share one {where} edge, so their "
+                    f"coefficients there must be equal, got "
+                    f"{c[0][end]} and {c[1][end]}."
+                )
+
+        tau_LE, tau_TE = c[0][0], c[0][-1]
+        line = tau_LE + (tau_TE - tau_LE) * np.arange(self.order + 1) / self.order
+
+        # Back to plain floats in plain tuples, which is what a Node holds and
+        # what a config file has to be able to carry: `dataclasses.replace`
+        # writes whatever it is handed, and numpy scalars survive as far as
+        # `to_dict` and the YAML it is written to.
+        return dataclasses.replace(
+            self,
+            R_LE=float(shapespace.R_LE_from_tau(tau_LE)),
+            tanwedge=float(shapespace.tanwedge_from_tau(tau_TE, self.t_TE)),
+            coeff=tuple(tuple(float(v) for v in row[1:-1]) for row in (c - line)),
+        )
 
     def tau(self, m):
         """Return shape space of each surface at meridional distance `m`.

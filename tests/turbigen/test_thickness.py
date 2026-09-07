@@ -1,9 +1,9 @@
 """Tests for the two-sided thickness distribution.
 
-`Clark` is the first distribution that is not symmetric about the camber
-line, so besides its own shape these check what that costs the rest of the
-package: a section of two rows has to interpolate over the span, and a blade
-built from one has to count, shape and mesh like any other.
+`ClarkThickness` is the first distribution that is not symmetric about the
+camber line, so besides its own shape these check what that costs the rest of
+the package: a section of two rows has to interpolate over the span, and a
+blade built from one has to count, shape and mesh like any other.
 
 `Taylor` is tested through `test_blade.py`, where it was written.
 """
@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from test_blade import SPF, blade, build
 
-from turbigen import Clark, ThicknessDesign, shapespace
+from turbigen import ClarkThickness, ThicknessDesign, shapespace
 
 CLARK = {
     "type": "clark",
@@ -30,12 +30,12 @@ M = np.linspace(0.0, 1.0, 201)
 
 
 def design(**kwargs):
-    """A Clark thickness, with the parameters overridden as asked.
+    """A ClarkThickness, with the parameters overridden as asked.
 
     Built the way a config file builds one, so that the coefficients arrive
     as the nested tuples a Node holds rather than as whatever was typed here.
     """
-    return Clark.from_dict({**CLARK, **kwargs})
+    return ClarkThickness.from_dict({**CLARK, **kwargs})
 
 
 def blades(thicknesses=None):
@@ -187,7 +187,7 @@ def test_the_nose_needs_a_positive_radius(R_LE):
 
 def test_selected_from_a_config_dict():
     thickness = ThicknessDesign.from_dict(dict(CLARK))
-    assert isinstance(thickness, Clark)
+    assert isinstance(thickness, ClarkThickness)
     assert thickness.coeff == ((0.3, 0.1), (-0.1, 0.05))
 
 
@@ -246,3 +246,140 @@ def test_a_clark_blade_meshes():
 
     assert len(grid) > 0
     assert all(np.all(np.isfinite(block.xrt)) for block in grid)
+
+
+#
+# SHAPE SPACE COEFFICIENTS
+#
+# The interior perturbation and the two endpoint values are one Bernstein
+# curve written three ways round, which is the form an iterator drives: in it
+# every coefficient does the same kind of thing, so one sensitivity sign
+# covers all of them.
+#
+
+
+def test_the_order_is_the_length_of_a_coefficient_row():
+    """Not declared, so there is no second place for it to disagree."""
+    assert design(coeff=((0.1, 0.2), (0.3, 0.4))).order == 3
+    assert design(coeff=((0.1, 0.2, 0.3), (0.4, 0.5, 0.6))).order == 4
+
+
+def test_control_points_come_from_the_shared_basis():
+    """One array for both surfaces, which carry the same number of coefficients."""
+    thickness = design()
+    np.testing.assert_allclose(
+        thickness.m_ctl, shapespace.control_m(thickness.order)
+    )
+    assert thickness.m_ctl.shape == (thickness.order + 1,)
+
+
+def test_the_end_coefficients_are_the_nose_and_the_wedge():
+    """The two ends are not special cases of the curve; they *are* its ends."""
+    c = design().tau_coeff
+
+    assert c.shape == (2, design().order + 1)
+    for row in c:
+        assert row[0] == pytest.approx(shapespace.tau_LE(CLARK["R_LE"]))
+        assert row[-1] == pytest.approx(
+            shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"])
+        )
+
+
+def test_zero_perturbation_is_the_straight_line():
+    """What `coeff` is a perturbation *of*, made explicit."""
+    thickness = design(coeff=((0.0, 0.0), (0.0, 0.0)))
+    line = np.linspace(
+        shapespace.tau_LE(CLARK["R_LE"]),
+        shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"]),
+        thickness.order + 1,
+    )
+
+    for row in thickness.tau_coeff:
+        np.testing.assert_allclose(row, line, atol=1e-15)
+
+
+def test_coefficients_evaluate_the_same_curve():
+    """The two forms are one polynomial, so they had better agree everywhere.
+
+    `tau` builds it as a line plus a pinned perturbation; this reads it as a
+    single Bernstein curve. If those disagreed, an iterator moving coefficients
+    would be shaping a different aerofoil from the one that gets meshed.
+    """
+    thickness = design()
+    for row, side in zip(thickness.tau_coeff, thickness.tau(M)):
+        np.testing.assert_allclose(
+            shapespace.evaluate_bernstein(row, M), side, atol=1e-14
+        )
+
+
+def test_coefficients_round_trip_through_the_fields():
+    thickness = design()
+    back = thickness.with_tau_coeff(thickness.tau_coeff)
+
+    assert back.R_LE == pytest.approx(thickness.R_LE)
+    assert back.tanwedge == pytest.approx(thickness.tanwedge)
+    np.testing.assert_allclose(back.coeff, thickness.coeff, atol=1e-15)
+
+
+def test_the_fields_round_trip_through_the_coefficients():
+    """The other way round, which is the direction an iterator writes in."""
+    thickness = design()
+    c = thickness.tau_coeff.copy()
+    c[:, 0] += 0.03
+    c[0, 1] -= 0.10
+    c[:, -1] += 0.05
+
+    np.testing.assert_allclose(thickness.with_tau_coeff(c).tau_coeff, c, atol=1e-14)
+
+
+def test_writing_coefficients_gives_back_plain_numbers():
+    """A Node is written to a config file, and numpy scalars do not survive that."""
+    back = design().with_tau_coeff(design().tau_coeff)
+
+    assert isinstance(back.R_LE, float)
+    assert isinstance(back.tanwedge, float)
+    assert all(isinstance(value, float) for row in back.coeff for value in row)
+
+
+def test_moving_the_nose_leaves_the_interior_where_it_was():
+    """The trap this method exists to absorb.
+
+    `R_LE` sets one end of the straight line the perturbation is measured
+    from, so moving it moves the line under the whole curve. A caller holding
+    the fields and setting `R_LE` alone would drag every interior coefficient
+    along behind the nose without meaning to; moving `c[0]` here changes the
+    nose and nothing else.
+    """
+    thickness = design()
+    c = thickness.tau_coeff.copy()
+    c[:, 0] += 0.07
+
+    moved = thickness.with_tau_coeff(c).tau_coeff
+
+    assert moved[0][0] == pytest.approx(thickness.tau_coeff[0][0] + 0.07)
+    np.testing.assert_allclose(
+        moved[:, 1:], thickness.tau_coeff[:, 1:], atol=1e-14
+    )
+
+
+@pytest.mark.parametrize(
+    "end, where", [(0, "leading"), (-1, "trailing")], ids=["LE", "TE"]
+)
+def test_the_two_surfaces_have_to_agree_at_the_ends(end, where):
+    """One nose radius and one wedge angle is the whole of what this class is.
+
+    A caller who has broken that is asking for a section this cannot represent,
+    so it says so rather than quietly taking the first row and discarding the
+    other.
+    """
+    thickness = design()
+    c = thickness.tau_coeff.copy()
+    c[1, end] += 0.1
+
+    with pytest.raises(ValueError, match=f"share one {where} edge"):
+        thickness.with_tau_coeff(c)
+
+
+def test_coefficients_have_to_be_shaped_like_the_curve():
+    with pytest.raises(ValueError, match="takes coefficients of shape"):
+        design().with_tau_coeff(np.zeros((2, 7)))

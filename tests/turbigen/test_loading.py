@@ -7,13 +7,18 @@ what it promises can be checked against a point whose arc length is known by
 construction, with no flow anywhere.
 """
 
+import dataclasses
+
 import numpy as np
 import pytest
+import yaml
 from test_blade import SPF, build
+from test_cli import RUN_CASE
 
 import turbigen.util
+from turbigen import Config, Result, cli
 from turbigen.blade import to_xrrt
-from turbigen.loading import locate_arc_length
+from turbigen.loading import locate_arc_length, measure_clark_profile
 
 NCHORD = 2001
 """Coarse enough to be quick, fine enough for a nearest node to land close."""
@@ -105,3 +110,109 @@ def test_a_point_off_the_surface_lands_on_the_nearest_part_of_it(machine, spf):
     assert locate_arc_length(blade, spf, nudged, nchord=NCHORD) == pytest.approx(
         s_true, rel=0.05
     )
+
+
+#
+# BOTH SURFACES, AGAINST A SOLUTION
+#
+# `measure_clark_profile` needs a flow field, so unlike the placement above it
+# cannot be checked against geometry alone. The fixture is the fast cascade,
+# marched briefly -- enough for a real distribution, and nowhere near enough
+# for the *shape* of one, which is why what follows checks the contract rather
+# than the aerodynamics.
+#
+
+CLARK = {
+    "type": "clark",
+    "R_LE": 0.05,
+    "tanwedge": 0.18,
+    "t_TE": 0.03,
+    "coeff": [[0.1, 0.05, 0.02], [0.03, -0.05, 0.01]],
+}
+
+
+@pytest.fixture(scope="module")
+def solved():
+    """The fast cascade, given a two-sided thickness and marched briefly."""
+    case = yaml.safe_load(RUN_CASE)
+    for section in case["blades"][0]["sections"]:
+        section["thickness"] = dict(CLARK)
+
+    config = Config.from_dict(case)
+    _, machine, grid = cli.prepare(config)
+    config.solver.solve(grid)
+    return config, Result(machine=machine, grid=grid, converged=True)
+
+
+def _thickness(config):
+    return config.blades[0].sections[0].thickness
+
+
+def test_both_surfaces_are_measured(solved):
+    """One row of samples per surface, suction first."""
+    config, result = solved
+    m_ctl = _thickness(config).m_ctl
+
+    z, fac = measure_clark_profile(result, 0, 0.5, m_ctl)
+
+    assert z.shape == (2, len(m_ctl))
+    assert fac.shape == (2, len(m_ctl))
+    assert np.all(np.isfinite(z)) and np.all(np.isfinite(fac))
+
+
+def test_each_surface_is_its_own_fraction(solved):
+    """`z` runs from nose to trailing edge along each side separately.
+
+    Clark's independent variable is `l / L_surf`, so a surface fraction on the
+    suction side and one on the pressure side are fractions of *different*
+    lengths --- which is why one `m` does not give one `z`, and why these are
+    measured rather than shared.
+    """
+    config, result = solved
+    z, _ = measure_clark_profile(result, 0, 0.5, _thickness(config).m_ctl)
+
+    assert np.all(z > 0.0) and np.all(z < 1.0)
+    assert np.all(np.diff(z, axis=1) > 0.0)
+
+    # The two surfaces have different lengths, so the same `m` lands at
+    # different fractions along each.
+    assert not np.allclose(z[0], z[1])
+
+
+def test_the_trailing_edge_is_the_reference(solved):
+    """`fac` is `Ma / Ma_TE`, so both surfaces arrive at one there.
+
+    Not exactly one on either side: `ma_TE` is the mean of the cut's two ends,
+    which is the one value the two surfaces share, so they straddle it.
+    """
+    config, result = solved
+    _, fac = measure_clark_profile(result, 0, 0.5, np.array([1.0]))
+
+    assert np.mean(fac) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_the_leading_edge_is_the_origin(solved):
+    """Measured from the geometric nose, where the two surfaces meet.
+
+    Not from the stagnation point, which is where the flow attached rather
+    than where the surface starts -- and which, with no incidence iterator
+    holding it, moves as the very thickness being driven changes.
+    """
+    config, result = solved
+    z, _ = measure_clark_profile(result, 0, 0.5, np.array([0.0]))
+
+    np.testing.assert_allclose(z.ravel(), 0.0, atol=1e-12)
+
+
+def test_a_section_above_a_gap_is_unmeasured(solved):
+    """No surface to cut is not an error, only nothing to say."""
+    config, result = solved
+    assert measure_clark_profile(result, 5, 0.5, np.array([0.5])) is None
+
+
+@pytest.mark.parametrize("missing", ["grid", "machine"])
+def test_an_unsolved_run_is_unmeasured(solved, missing):
+    config, result = solved
+    stripped = dataclasses.replace(result, **{missing: None})
+
+    assert measure_clark_profile(stripped, 0, 0.5, np.array([0.5])) is None

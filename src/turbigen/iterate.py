@@ -38,6 +38,7 @@ import ember.cut
 import numpy as np
 from numpy.polynomial import legendre
 
+import turbigen.clark
 import turbigen.loading
 import turbigen.util
 from turbigen.node import Node
@@ -2068,6 +2069,465 @@ class LoadingProfile(Iterator):
                     f"written out in full; {where} has order={camber.order} "
                     f"with {len(camber.coeff)} coefficient(s)."
                 )
+
+
+class ClarkProfile(Iterator):
+    """Shape a two-sided thickness to a Clark loading distribution.
+
+    :class:`LoadingProfile` drives a *camber* line against a two-line target
+    read off the suction surface. This drives a
+    :class:`~turbigen.thickness.ClarkThickness` against
+    :mod:`turbigen.clark`, on both surfaces at once, with the camber line held
+    where the design put it. Where that one asks what turning gives a loading,
+    this asks what thickness does, on the turning already chosen.
+
+    **The knobs are shape-space coefficients, not the perturbations a config
+    holds.** A `ClarkThickness` stores a leading edge radius, a wedge angle and
+    an interior perturbation on the straight line between them; written as one
+    Bernstein curve, those are its first coefficient, its last, and the ones
+    between --- see
+    :attr:`~turbigen.thickness.ClarkThickness.tau_coeff`. Working in that space
+    is what makes this tractable: every knob does the same kind of thing, which
+    is to thicken its own surface locally and accelerate the flow over it, so
+    **one declared gain covers all of them, sign included**, where a radius and
+    a perturbation would each have needed a prior of their own. A positive
+    leading edge radius comes free with it, being a square.
+
+    **Each knob is read where it acts**, at
+    :attr:`~turbigen.thickness.ClarkThickness.m_ctl`, mapped through each
+    surface's own arc length to a surface fraction --- the two surfaces are not
+    the same length, so one `m` is not one `z`.
+
+    **The two ends are one knob each, and that is what leaves the loop
+    determined.** One nose radius and one wedge angle serve both surfaces, so
+    their errors are the *mean* of the two surfaces' residuals there, and in
+    that mean the level cancels exactly: the nose and the wedge answer only for
+    the common mode at their end, and can neither be driven by the blade count
+    nor fight it. Each nulls where the two surfaces are equally wrong in
+    opposite directions, which is the closest one radius comes to satisfying
+    two surfaces.
+
+    **The level belongs to the blade count**, as it does for every loading
+    iterator: a thickness redistributes circulation and cannot create it, so
+    the mean suction residual less the mean pressure one --- the loop the
+    target asks for against the loop the blade drew --- drives `Co`, and what
+    is left after taking half of it from each surface is the shape's to answer
+    for. See :class:`PeakMach` for why the level cannot simply be ignored.
+
+    **Assumes no incidence iterator.** The abscissa here is measured from the
+    geometric leading edge rather than from the flow's stagnation point, so
+    that a target stays still while the thickness under it moves. With an
+    `incidence` member also running, the two would be shaping the same nose
+    from different directions.
+    """
+
+    type: ClassVar[str] = "clark_profile"
+
+    i_row: int = 0
+    """Index of the blade row to shape."""
+
+    spf: float = 0.5
+    """Span fraction to measure the distribution at [--]."""
+
+    Ma_peak: float = 1.2
+    """Target peak Mach number over the trailing edge value [--].
+
+    What :attr:`PeakMach.fac_peak` states, under the name :mod:`turbigen.clark`
+    gives it, and one more than the diffusion factor
+    :class:`turbigen.metric.DiffusionFactor` records.
+    """
+
+    z_peak: float = 0.55
+    """Target surface fraction of the suction peak [--]."""
+
+    Ma_LE: float = 1.8
+    """Target suction-surface Mach number at Clark's leading edge station [--].
+
+    **The one parameter carrying the `Ma_2 / Ma_1` factor**, written the way
+    :attr:`turbigen.loading.Loading.fac_front` and
+    :attr:`LoadingProfile.fac_front` are, so the same number means the same
+    style of leading edge across rows of differing duty. Divided back out once,
+    on the way into :mod:`turbigen.clark`, which works in plain `Ma / Ma_TE`
+    throughout --- a curve whose pieces are built from differences between its
+    own parameters cannot carry two normalisations at once.
+    """
+
+    Ma_PS: float = 0.2
+    """Target pressure-surface Mach number on the pre-acceleration plateau [--].
+
+    Plain `Ma / Ma_TE`, as :attr:`Ma_peak` is.
+    """
+
+    gain: float | tuple[float, ...] = 0.5
+    """How much of the error to subtract from each shape knob.
+
+    **One number covers every shape knob**, which is the whole reason the knobs
+    are shape-space coefficients: a thicker surface is a faster one wherever
+    the thickening happens, so nose, interior and wedge all share a sign.
+
+    **Positive**, unlike :attr:`LoadingProfile.gain`, and the sign is a
+    statement about what a coefficient *is* rather than a guess. A gain is the
+    reciprocal of an assumed slope, the step being `u -= gain * e`; here the
+    slope is positive, since raising a coefficient thickens the surface,
+    accelerates the flow over it and lifts the `fac` the error is measured in.
+    A surface running faster than its target is therefore one to thin. The
+    *size* is still a guess, and :func:`calibrate` writes back the sequence a
+    run measures.
+
+    :attr:`gain_Co` carries the level beside it, as
+    :attr:`LoadingProfile.gain_Co` does --- though here the two agree on sign,
+    so what that separation buys is a level whose size can be calibrated apart
+    from the shape's rather than a sign the shape's cannot carry.
+    """
+
+    clip: float = 0.05
+    """Largest change in one shape-space coefficient per iteration [--]."""
+
+    tolerance: float = 0.05
+    """Converged when every shape residual is within this [--]."""
+
+    gain_Co: float = 1.5
+    """How much of the level error to subtract from `Co`, as a prior [--].
+
+    Positive, for the reason :attr:`PeakMach.gain` is. **Read only while
+    :attr:`gain` is a scalar**, exactly as :attr:`LoadingProfile.gain_Co` is.
+    """
+
+    clip_Co: float = 0.05
+    """Largest change in the circulation coefficient per iteration [--]."""
+
+    tolerance_Co: float = 0.02
+    """Converged when the level error is within this [--]."""
+
+    def __post_init__(self):
+        if not 0.0 < self.z_peak < 1.0:
+            raise ValueError(
+                f"A loading peak sits on the surface, so z_peak must satisfy "
+                f"0 < z_peak < 1, got {self.z_peak}."
+            )
+        for name in ("Ma_peak", "Ma_LE", "Ma_PS"):
+            if not getattr(self, name) > 0.0:
+                raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
+
+    #
+    # THE PROTOCOL
+    #
+
+    def unknowns(self, config):
+        """Return the level first, then every shape-space coefficient.
+
+        **`Co` leads**, for the reason :meth:`LoadingProfile.unknowns` puts it
+        first: a sequence :attr:`gain` is matched to this order, and index zero
+        is the one position that cannot move when a blade changes order.
+
+        Each coefficient is the mean over the row's sections, as
+        :meth:`with_unknowns` shifts them all together.
+        """
+        level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
+        coefficients = self._flat_coeff(self._coefficients(config))
+        return level | {
+            name: float(value)
+            for name, value in zip(self._names(self._order(config)), coefficients)
+        }
+
+    def with_unknowns(self, config, values):
+        current = self.unknowns(config)
+        moved = {**current, **{k: v for k, v in values.items() if k in current}}
+
+        co_name = f"Co[{self.i_row}]"
+        if moved[co_name] != current[co_name]:
+            config = _with_circulation(config, self.i_row, moved[co_name])
+
+        order = self._order(config)
+        names = self._names(order)
+        shift = self._unflat(
+            np.array([moved[name] - current[name] for name in names]), order
+        )
+        if not np.any(shift):
+            return config
+
+        blades = list(config.blades)
+        blade = blades[self.i_row]
+
+        # A uniform shift, as `LoadingProfile.with_unknowns` applies one: only
+        # one span fraction was ever measured, so whatever spanwise variation
+        # of the thickness the design asked for survives being iterated.
+        #
+        # Through `with_tau_coeff` rather than onto the config leaves, because
+        # moving an end coefficient moves the straight line beneath the whole
+        # curve and every interior perturbation has to be recomputed against
+        # it --- see there.
+        sections = tuple(
+            dataclasses.replace(
+                section,
+                thickness=section.thickness.with_tau_coeff(
+                    section.thickness.tau_coeff + shift
+                ),
+            )
+            for section in blade.sections
+        )
+
+        closed = self._too_thin(sections)
+        if closed is not None:
+            logger.info(
+                f"Moving row {self.i_row}'s thickness this far would leave "
+                f"{closed}, which is not a section that can be meshed; "
+                f"holding the shape where it is."
+            )
+            return config
+
+        blades[self.i_row] = dataclasses.replace(blade, sections=sections)
+        return dataclasses.replace(config, blades=tuple(blades))
+
+    def paths(self, config):
+        order = self._order(config)
+        paths = {f"blades[{self.i_row}].count.Co"}
+        for i_section in range(len(config.blades[self.i_row].sections)):
+            stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
+            paths |= {f"{stem}.R_LE", f"{stem}.tanwedge"}
+            paths |= {
+                f"{stem}.coeff[{i_surf}][{j}]"
+                for i_surf in (0, 1)
+                for j in range(order - 1)
+            }
+        return paths
+
+    def error(self, config, result):
+        if result.grid is None or result.machine is None:
+            logger.debug("No solved grid, so no loading profile to measure.")
+            return {}
+
+        self._check(config)
+        _circulation_count(config, self.i_row)
+
+        measured = turbigen.loading.measure_clark_profile(
+            result, self.i_row, self.spf, self._thickness(config).m_ctl
+        )
+        if measured is None:
+            logger.info(
+                f"Could not measure both surfaces of row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its loading profile is unmeasured."
+            )
+            return {}
+        z, fac = measured
+
+        residual = fac - self.target(z, result.machine)
+
+        # The level is what the blade count got wrong: opening the loop lifts
+        # one surface while dropping the other, so the difference of the two
+        # means is the part of the error the count answers for, where an
+        # average over both surfaces together would partly cancel it. What is
+        # left, half taken from each surface so the two are treated alike, is
+        # the shape's.
+        level = float(np.mean(residual[0]) - np.mean(residual[1]))
+        shape = residual - np.array([[level / 2.0], [-level / 2.0]])
+
+        errors = {f"Co[{self.i_row}]": level}
+        return errors | dict(
+            zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
+        )
+
+    def target(self, z, machine):
+        """Return the Clark distribution on each surface at `z`, shape (2, n).
+
+        Public because the surface-distribution plot draws the same curve this
+        iterates against --- a report drawing a target of its own would be free
+        to contradict the design it describes.
+        """
+        # The one place `Ma_LE`'s `Ma_2 / Ma_1` factor is taken back out; see
+        # the attribute. Everything past this line is plain `Ma / Ma_TE`.
+        Ma_LE = self.Ma_LE / turbigen.loading.mach_ratio(machine, self.i_row)
+
+        z = np.asarray(z, dtype=float)
+        return np.stack(
+            (
+                turbigen.clark.suction(
+                    z[0], self.Ma_peak, self.z_peak, Ma_LE, self.Ma_PS
+                ),
+                turbigen.clark.pressure(
+                    z[1], self.Ma_peak, self.z_peak, Ma_LE, self.Ma_PS
+                ),
+            )
+        )
+
+    #
+    # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
+    #
+
+    def _by_knob(self, config, shape_value, level_value):
+        """Return `level_value` for `Co` and `shape_value` for every shape knob."""
+        values = {f"Co[{self.i_row}]": level_value}
+        return values | {name: shape_value for name in self._names(self._order(config))}
+
+    def gains(self, config):
+        """Return the gain of each knob, with the level's declared separately.
+
+        A scalar :attr:`gain` describes the *shape* knobs only, and
+        :attr:`gain_Co` supplies the level: the two disagree on sign and no
+        single number covers both. A sequence carries every knob already ---
+        `Co` at index zero, as :meth:`unknowns` orders them --- and is what a
+        run writes back.
+        """
+        names = list(self.unknowns(config))
+        if isinstance(self.gain, (int, float)):
+            return self._by_knob(config, float(self.gain), float(self.gain_Co))
+        return dict(zip(names, self._gain_each(names)))
+
+    def clips(self, config):
+        return self._by_knob(config, self.clip, self.clip_Co)
+
+    def tolerances(self, config):
+        return self._by_knob(config, self.tolerance, self.tolerance_Co)
+
+    #
+    # KNOBS, AS A FLAT TABLE AND AS A PAIR OF CURVES
+    #
+
+    def _names(self, order):
+        """Return the table key of each shape knob, in a fixed order.
+
+        `Co` is not among them: it is not a leaf of a thickness distribution,
+        and every method walking this to touch a coefficient would otherwise
+        have to skip it by hand. :meth:`unknowns` puts it in front.
+
+        The order is load-bearing, because a sequence :attr:`gain` is matched
+        to it. The two shared ends come before the interior so that their index
+        does not move when a design changes order, which would otherwise read a
+        nose sensitivity back as a mid-chord one.
+        """
+        return (
+            [f"tau_LE[{self.i_row}]", f"tau_TE[{self.i_row}]"]
+            + [f"tau[{self.i_row}][0][{k}]" for k in range(1, order)]
+            + [f"tau[{self.i_row}][1][{k}]" for k in range(1, order)]
+        )
+
+    def _flat_coeff(self, c):
+        """Return coefficients `(2, order+1)` in :meth:`_names` order.
+
+        The ends are read off the suction row alone, the two rows being equal
+        there by construction --- `with_tau_coeff` refuses a pair that is not.
+        """
+        return [c[0][0], c[0][-1], *c[0][1:-1], *c[1][1:-1]]
+
+    def _flat_error(self, e):
+        """Return residuals `(2, order+1)` in :meth:`_names` order.
+
+        Where :meth:`_flat_coeff` reads one shared value, this takes the *mean*
+        of the two surfaces: one nose radius serves both, so what it can answer
+        for is how wrong they are together. It nulls where they are equally
+        wrong in opposite directions, which is as close as one radius comes to
+        satisfying two surfaces.
+        """
+        return [
+            0.5 * (e[0][0] + e[1][0]),
+            0.5 * (e[0][-1] + e[1][-1]),
+            *e[0][1:-1],
+            *e[1][1:-1],
+        ]
+
+    def _unflat(self, values, order):
+        """Return a `(2, order+1)` coefficient shift from :meth:`_names` order.
+
+        The inverse of :meth:`_flat_coeff`: the two end knobs are written back
+        to *both* rows, which is what keeps the surfaces sharing one nose
+        radius and one wedge angle however far the loop moves them.
+        """
+        shift = np.zeros((2, order + 1))
+        shift[:, 0] = values[0]
+        shift[:, -1] = values[1]
+        shift[0, 1:-1] = values[2 : order + 1]
+        shift[1, 1:-1] = values[order + 1 :]
+        return shift
+
+    #
+    # WHAT THE CONFIG HAS TO PROVIDE
+    #
+
+    def _order(self, config):
+        """Return the Bernstein degree of this row's thickness curves."""
+        return self._thickness(config).order
+
+    def _thickness(self, config):
+        """Return the first section's thickness, which sets the order for all."""
+        self._check(config)
+        return config.blades[self.i_row].sections[0].thickness
+
+    def _coefficients(self, config):
+        """Return the row's mean shape-space coefficients, `(2, order+1)`.
+
+        Averaged over the sections because only one span fraction is measured
+        and :meth:`with_unknowns` moves them all together.
+        """
+        self._check(config)
+        return np.mean(
+            [
+                section.thickness.tau_coeff
+                for section in config.blades[self.i_row].sections
+            ],
+            axis=0,
+        )
+
+    def _too_thin(self, sections):
+        """Return what is wrong with `sections`, or None if nothing is.
+
+        A shape knob has no bound of its own that keeps an aerofoil closed:
+        `clip` limits one step, not where a run of them arrives, and a
+        thickness driven negative is a section whose surfaces have crossed. It
+        fails in the mesher rather than here, a long way from the step that
+        caused it, so it is caught while the step that caused it is still in
+        hand.
+        """
+        m = np.linspace(0.0, 1.0, 201)[1:-1]
+        for i_section, section in enumerate(sections):
+            for i_surf, t in enumerate(section.thickness.thick_both(m)):
+                if np.any(t <= 0.0):
+                    surface = ("suction", "pressure")[i_surf]
+                    return (
+                        f"section {i_section}'s {surface} surface with no "
+                        f"thickness at m={m[int(np.argmin(t))]:.2f}"
+                    )
+        return None
+
+    def _check(self, config):
+        """Raise unless this row's thickness can carry the knobs."""
+        from turbigen.thickness import ClarkThickness
+
+        if not 0 <= self.i_row < len(config.blades):
+            raise ValueError(
+                f"i_row={self.i_row} is out of range for a machine with "
+                f"{len(config.blades)} blade row(s)."
+            )
+
+        orders = set()
+        for i_section, section in enumerate(config.blades[self.i_row].sections):
+            thickness = section.thickness
+            where = f"row {self.i_row} section {i_section}"
+
+            if not isinstance(thickness, ClarkThickness):
+                raise ValueError(
+                    f"Shaping a loading profile with thickness needs a "
+                    f"distribution that can differ side to side, and {where} "
+                    f"has a {type(thickness).__name__}, which is the same "
+                    f"both sides of its camber line. Set thickness: "
+                    f"{{type: clark, ...}}."
+                )
+
+            if not thickness.coeff[0]:
+                raise ValueError(
+                    f"{where} has no interior thickness coefficients, so there "
+                    f"is nothing between its nose and its trailing edge to "
+                    f"shape. Write coeff out in full, as two rows of at least "
+                    f"one zero apiece."
+                )
+
+            orders.add(thickness.order)
+
+        if len(orders) > 1:
+            raise ValueError(
+                f"Every section of row {self.i_row} must carry the same number "
+                f"of thickness coefficients, since they are interpolated over "
+                f"the span field by field, got orders {sorted(orders)}."
+            )
 
 
 class MeanLine(Iterator):

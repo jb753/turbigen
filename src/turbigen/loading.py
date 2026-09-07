@@ -183,12 +183,15 @@ def locate_arc_length(blade, spf, xrt, nchord=10000):
     return float(s[i_surf][j]) * (1.0 if i_surf == 0 else -1.0)
 
 
-def _cut_suction_side(result, i_row, spf):
-    """Return the raw suction-surface distribution of row `i_row`, or None.
+def _cut(result, i_row, spf):
+    """Return `(blade, cut, mas, ma_TE)` for row `i_row` at `spf`, or None.
 
-    None for the same reasons :func:`measure` returns None: no blade at this
-    row, no section at this span, or a trailing edge so thin `ma_TE` reads as
-    zero.
+    Everything a surface distribution needs before anything is decided about
+    which half of it to keep --- shared by :func:`_cut_suction_side`, which
+    folds one surface out, and :func:`measure_clark_profile`, which keeps both.
+
+    None where there is nothing to measure: no blade at this row, no section at
+    this span, or a trailing edge so thin `ma_TE` reads as zero.
     """
     if result.grid is None or result.machine is None:
         return None
@@ -208,11 +211,25 @@ def _cut_suction_side(result, i_row, spf):
 
     # The cut wraps the blade from one trailing edge round to the other, so its
     # two ends are the two sides of the trailing edge and their mean is the
-    # exit value. Taken before the suction side is folded out, which is the
-    # only moment both sides are still there.
+    # exit value. Read here, while both sides are certainly still present.
     ma_TE = 0.5 * float(mas[0] + mas[-1])
     if not ma_TE:
         return None
+
+    return blade, cut, mas, ma_TE
+
+
+def _cut_suction_side(result, i_row, spf):
+    """Return the raw suction-surface distribution of row `i_row`, or None.
+
+    None for the same reasons :func:`measure` returns None: no blade at this
+    row, no section at this span, or a trailing edge so thin `ma_TE` reads as
+    zero.
+    """
+    cut_all = _cut(result, i_row, spf)
+    if cut_all is None:
+        return None
+    blade, cut, mas, ma_TE = cut_all
 
     # The geometric nose anchors the stagnation search, exactly as the surface
     # distribution plot anchors it. Either surface would do: the thickness
@@ -393,3 +410,116 @@ def measure_profile(result, i_row, spf, m):
     fac = ma / cut.ma_TE * mach_ratio(result.machine, i_row)
 
     return zeta, fac
+
+
+def measure_clark_profile(result, i_row, spf, m):
+    """Return the loading of both surfaces at each `m`, suction first.
+
+    The two-sided sibling of :func:`measure_profile`, for a
+    :class:`~turbigen.iterate.ClarkProfile` shaping a
+    :class:`~turbigen.thickness.ClarkThickness` against
+    :mod:`turbigen.clark`. Three things differ, and each follows from what
+    that target is written in.
+
+    **Both surfaces, not the folded suction side.** A two-sided thickness has
+    a row of coefficients per surface, and each answers for the distribution
+    over its own side.
+
+    **Measured from the geometric leading edge, not the stagnation point.**
+    Clark's independent variable is ``z = l / L_surf``, the fraction of the
+    way along a surface from where it starts. The stagnation point is not
+    where a surface starts; it is where the flow happened to attach, and with
+    no incidence iterator holding it, it wanders as the very thickness being
+    driven changes. Anchoring on the geometry instead means the abscissa a
+    target is evaluated on does not move with the knobs moving the blade.
+
+    **Plain ``Ma / Ma_TE``, with no ``Ma_2 / Ma_1`` factor.** :mod:`turbigen.clark`
+    works in that, and mixing two normalisations inside one curve --- whose
+    pieces are built from differences between its own parameters --- would
+    not evaluate to anything. Where a designer states a leading edge value in
+    the units :attr:`~Loading.fac_front` uses, the conversion happens once as
+    the parameter goes in, not here.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    i_row : int
+        Blade row to measure.
+    spf : float
+        Span fraction to measure at.
+    m : array_like
+        Normalised chordwise positions to sample at, as
+        :attr:`~turbigen.thickness.ClarkThickness.m_ctl` gives them.
+
+    Returns
+    -------
+    z, fac : ndarray, shape (2, n)
+        Surface fraction of each sample and the isentropic Mach number there
+        referred to the trailing edge, suction surface first --- the order
+        :meth:`~turbigen.blade.Blade.evaluate_section` returns surfaces in and
+        :attr:`~turbigen.thickness.ClarkThickness.coeff` holds its rows in.
+
+    None
+        Where there was nothing to measure at all --- see :func:`measure`.
+
+    """
+    cut_all = _cut(result, i_row, spf)
+    if cut_all is None:
+        return None
+    blade, cut, mas, ma_TE = cut_all
+
+    xrrt = np.stack((cut.x[:, 0], cut.r[:, 0], cut.r[:, 0] * cut.t[:, 0]))
+
+    # Split the loop at its own leading edge. The cut runs from one trailing
+    # edge round to the other, so it crosses the nose exactly once and finding
+    # that crossing is one nearest-node search rather than a match of every
+    # node against both surfaces.
+    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
+    i_nose = int(
+        np.argmin(
+            turbigen.util.vecnorm(xrrt - turbigen.blade.to_xrrt(xrt_nose)[:, None])
+        )
+    )
+
+    # Each half measured from the nose outwards, and normalised by its own
+    # extent -- which is what makes this the same `z` the geometry reports,
+    # agreeing at both ends by construction and differing in between only by
+    # what discretisation and the cut's own offset from the wall disagree
+    # about.
+    zeta = turbigen.util.get_zeta(cut)[:, 0]
+    halves = (slice(i_nose, None, -1), slice(i_nose, None))
+
+    # Which half is which surface, from the blade rather than from the cut:
+    # `get_zeta` runs from index zero whichever way `cut_blade_surfs` happened
+    # to wrap the blade, so the loop direction says nothing about which side of
+    # the camber line a half is on. `locate_arc_length` already answers this,
+    # signing a point by the surface it lands on.
+    z_meas, ma_meas = [None, None], [None, None]
+    for half in halves:
+        distance = np.abs(zeta[half] - zeta[i_nose])
+        extent = distance[-1] or 1.0
+
+        middle = xrrt[:, half][:, len(distance) // 2]
+        i_surf = 0 if locate_arc_length(blade, spf, middle) >= 0.0 else 1
+
+        z_meas[i_surf] = distance / extent
+        ma_meas[i_surf] = mas[half]
+
+    if z_meas[0] is None or z_meas[1] is None:
+        logger.info(
+            f"Both halves of row {i_row}'s section at spf={spf:.2f} placed on "
+            f"the same surface, so its loading cannot be split between them."
+        )
+        return None
+
+    # Where each sample sits, in the same surface fraction, off the geometry
+    # alone -- the two surfaces have different lengths, so one `m` is not one
+    # `z`.
+    m_dense, s = blade.evaluate_arc_length(spf)
+    m = np.asarray(m, dtype=float)
+
+    z = np.stack([np.interp(m, m_dense, s[i]) / (s[i][-1] or 1.0) for i in (0, 1)])
+    fac = np.stack([np.interp(z[i], z_meas[i], ma_meas[i]) / ma_TE for i in (0, 1)])
+
+    return z, fac
