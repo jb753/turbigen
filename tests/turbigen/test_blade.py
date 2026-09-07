@@ -72,8 +72,17 @@ THICKNESS = {
 }
 
 
-def blade(dchi_LE=-8.0, dchi_TE=0.0, **kwargs):
-    """A three-section blade, with the design overridden as asked."""
+PERPENDICULAR = {"fac_tangential": 0.0}
+"""Section override for the plain perpendicular offset, which is what the
+package this replaces does and the only shape the two can be compared in."""
+
+
+def blade(dchi_LE=-8.0, dchi_TE=0.0, section=None, **kwargs):
+    """A three-section blade, with the design overridden as asked.
+
+    `section` is merged into every section, for the fields that are the
+    section's rather than the blade's; `kwargs` go on the blade itself.
+    """
     return {
         "sections": [
             {
@@ -82,6 +91,7 @@ def blade(dchi_LE=-8.0, dchi_TE=0.0, **kwargs):
                 "dchi_TE": dchi_TE,
                 "camber": CAMBER,
                 "thickness": THICKNESS,
+                **(section or {}),
             }
             for spf in SPF
         ],
@@ -108,6 +118,17 @@ def build(blades=None, **kwargs):
 @pytest.fixture
 def machine():
     return build().design()
+
+
+@pytest.fixture
+def machine_perpendicular():
+    """The same machine with the offset left perpendicular to the camber line."""
+    return build(
+        blades=[
+            blade(section=PERPENDICULAR),
+            blade(dchi_LE=2.0, section=PERPENDICULAR),
+        ]
+    ).design()
 
 
 class OldRow:
@@ -528,7 +549,7 @@ def test_a_blade_needs_a_section():
 
 
 @pytest.mark.parametrize("i_row, dchi_LE", [(0, -8.0), (1, 2.0)])
-def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
+def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_LE):
     """The one test that exercises the whole port at once.
 
     Camber, thickness, recamber, stacking and the stream surface all feed
@@ -546,7 +567,14 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
     surface, so the comparison reorders before it compares. The reorder is by
     `theta`, read off the arrays rather than assumed, so it says nothing about
     which convention is right --- only that the same two curves come out.
+
+    Compared with `fac_tangential` at zero, which is the plain perpendicular
+    offset the old package applies. The blend that this package now defaults to
+    is a deliberate departure --- see `SectionDesign.fac_tangential` --- so
+    holding it off here is what keeps this a test of the port rather than of
+    that decision.
     """
+    machine = machine_perpendicular
     old = old_blade(machine, i_row, dchi_LE=dchi_LE)
     new = machine.rows[i_row].blade
 
@@ -824,6 +852,140 @@ def test_a_lopsided_section_is_not_the_mean_of_its_surfaces(machine):
     chord = turbigen.util.arc_length(xrt[:2])
 
     assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) > 0.01 * chord
+
+
+#
+# THE TANGENTIAL BLEND
+#
+# The offset direction is the camber normal rotated toward the circumferential
+# one over mid-chord. These check the two things that buys -- a concave surface
+# that is not over-curved, and two ends left exactly where they were.
+#
+
+
+def _curvature(c):
+    """Signed curvature of a plane curve sampled at `c`, shape (2, n)."""
+    d1 = np.gradient(c, axis=1)
+    d2 = np.gradient(d1, axis=1)
+    return (d1[0] * d2[1] - d1[1] * d2[0]) / (d1[0] ** 2 + d1[1] ** 2) ** 1.5
+
+
+def _plane(blade, spf=0.5, n=8001):
+    """Both surfaces of a section in the (x, r theta) plane, normalised by chord."""
+    surfaces = [np.stack((s[0], s[1] * s[2])) for s in blade.evaluate_section(spf, n)]
+    chord = max(s[0].max() for s in surfaces) - min(s[0].min() for s in surfaces)
+    return [s / chord for s in surfaces]
+
+
+def _thick_blade(fac_tangential):
+    """A section thick enough on a camber curved enough to over-curve.
+
+    The failure needs `t * kappa` to approach one, which the default section is
+    nowhere near; this is the turning and the thickness that get there.
+    """
+    section = {"fac_tangential": fac_tangential}
+    thickness = {**THICKNESS, "t_max": 0.30, "m_tmax": 0.35}
+    return build(
+        blades=[
+            blade(dchi_LE=-30.0, section={**section, "thickness": thickness}),
+            blade(dchi_LE=2.0, section=section),
+        ]
+    ).design()
+
+
+def test_the_blend_takes_the_spike_out_of_the_concave_surface():
+    """What the blend is for: a perpendicular offset over-curves that side.
+
+    An offset surface carries the camber's curvature amplified by
+    `1 / (1 - t kappa)`, so a thick section on a curved camber line grows a
+    curvature spike well before the offset folds at `t kappa = 1`, and the
+    Mach distribution kinks over it.
+    """
+    z = np.linspace(0.0, 1.0, 4001)
+    mid = (z > 0.15) & (z < 0.60)
+
+    def peak(fac):
+        # The concave surface, resampled on arc length so the window is the
+        # same piece of blade whichever way the offset moved the nodes.
+        surface = _plane(_thick_blade(fac).rows[0].blade)[1]
+        s = np.concatenate(([0.0], np.cumsum(np.hypot(*np.diff(surface, axis=1)))))
+        resampled = np.stack([np.interp(z, s / s[-1], c) for c in surface])
+        return np.abs(_curvature(resampled)[mid]).max()
+
+    # Which sign the spike takes is the section's business, not the blend's,
+    # so this is a magnitude. It falls by about three times on this section.
+    assert peak(0.3) < 0.5 * peak(0.0)
+
+
+def test_the_blend_leaves_both_ends_alone():
+    """The nose radius and the trailing edge are what they say they are.
+
+    The weight and its slope vanish at both ends, which is the whole reason
+    for a bump rather than Clark's ramp: a blade blended at the trailing edge
+    is cut off at constant axial position and its wedge angle stops meaning
+    anything.
+    """
+    plain = _plane(_thick_blade(0.0).rows[0].blade)
+    blended = _plane(_thick_blade(0.3).rows[0].blade)
+
+    # Not bit-exact: the aerofoil is rescaled onto the row by how far its
+    # surfaces overhang the camber line, and the blend moves that overhang a
+    # little. A ten-thousandth of chord, against the seven thousandths the
+    # middle of the same section moves, is the ends staying put.
+    for i_surface in (0, 1):
+        np.testing.assert_allclose(
+            blended[i_surface][:, (0, -1)],
+            plain[i_surface][:, (0, -1)],
+            atol=1e-4,
+        )
+
+    nose = slice(20, 120)
+    np.testing.assert_allclose(
+        _curvature(blended[0])[nose], _curvature(plain[0])[nose], rtol=2e-2
+    )
+
+
+def test_no_blend_is_the_perpendicular_offset(machine_perpendicular):
+    """Zero leaves the surfaces exactly where the plain offset puts them."""
+    blade = machine_perpendicular.rows[0].blade
+    m = turbigen.util.cluster_cosine(501)
+
+    camber = blade.evaluate_camber(0.5, m=m)
+    chord = turbigen.util.arc_length(camber[:2])
+    thickness = _interpolate(blade.thicknesses, blade.spf, 0.5)
+
+    for surface, t in zip(blade.evaluate_section(0.5, m=m), thickness.thick_both(m)):
+        offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(camber))
+        np.testing.assert_allclose(offset, t * chord, atol=2e-3 * chord)
+
+
+def test_the_blend_is_interpolated_across_span():
+    """A per-section field, read where a section is asked for, as `dchi` is."""
+    blended = blade()
+    for section, fac in zip(blended["sections"], (0.0, 0.2, 0.4)):
+        section["fac_tangential"] = fac
+    row = build(blades=[blended, blade(dchi_LE=2.0)]).design().rows[0].blade
+
+    for spf, expected in zip(SPF, (0.0, 0.2, 0.4)):
+        assert row.evaluate_fac_tangential(spf) == pytest.approx(expected)
+
+    between = 0.5 * (SPF[0] + SPF[1])
+    assert 0.0 < row.evaluate_fac_tangential(between) < 0.2
+
+
+@pytest.mark.parametrize("fac_tangential", [-0.1, 1.5])
+def test_a_blend_off_the_end_of_its_range_is_rejected(fac_tangential):
+    with pytest.raises(ValueError, match="fac_tangential must satisfy"):
+        SectionDesign.from_dict(
+            {
+                "spf": 0.5,
+                "dchi_LE": 0.0,
+                "dchi_TE": 0.0,
+                "camber": CAMBER,
+                "thickness": THICKNESS,
+                "fac_tangential": fac_tangential,
+            }
+        )
 
 
 #

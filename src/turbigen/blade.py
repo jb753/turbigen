@@ -99,6 +99,16 @@ angles; and :meth:`~Blade.evaluate_chord` and
 :meth:`~Blade.evaluate_surface_length` the meridional chord and the surface
 lengths the count rules read.
 
+**A surface is not simply the camber line offset perpendicular to itself.** A
+perpendicular offset hands back the camber's own curvature amplified by
+``1 / (1 - t kappa)`` on the concave side, so a thick section on a tightly
+curved camber line over-curves that surface --- a spike in surface curvature,
+and a kink in the Mach distribution over it --- well before the offset folds at
+``t kappa = 1``. So the offset direction is rotated toward the circumferential
+one over mid-chord, by a fraction :attr:`~SectionDesign.fac_tangential` peaking
+there and vanishing at both ends, which leaves the nose radius and the trailing
+edge exactly what they were and takes the amplification out of the middle.
+
 **Every pair of surfaces is ordered suction first**, and this is the only place
 that is said: :meth:`~Blade.evaluate_section`,
 :meth:`~Blade.evaluate_arc_length`, :meth:`~Blade.evaluate_surface_length` and
@@ -295,6 +305,43 @@ class SectionDesign(Node):
     thickness: ThicknessDesign
     """Thickness distribution, normalised by meridional chord."""
 
+    fac_tangential: float = 0.3
+    """Fraction of the thickness applied circumferentially at mid-chord [--].
+
+    **Why a surface is not simply offset perpendicular to the camber line.** A
+    perpendicular offset returns the camber's curvature amplified by
+    ``1 / (1 - t kappa)`` on the concave side, so a thick section on a tightly
+    curved camber over-curves that surface long before the offset actually
+    folds at ``t kappa = 1``: a spike in surface curvature, and a kink in the
+    Mach distribution over it. Rotating part of the offset toward the
+    circumferential direction takes the amplification away, since an offset
+    with no meridional component cannot fold at all.
+
+    **Weighted to the middle, which is where the problem is.** The
+    circumferential fraction is ``fac_tangential * 16 m^2 (1 - m)^2``, a bump
+    that peaks at mid-chord --- so this number is read there --- and whose
+    value *and slope* vanish at both ends. That is what keeps the two ends
+    exactly what they were: the nose is a circle of
+    :attr:`~turbigen.thickness.ClarkThickness.R_LE` and the trailing edge
+    stands perpendicular to the camber line, so a wedge angle and a trailing
+    edge thickness still mean what they say. Clark (2019) blends the other way
+    round, from normal at the leading edge to tangential at the trailing edge,
+    which on a staggered blade cuts the trailing edge off at constant axial
+    position.
+
+    Zero is the plain perpendicular offset, and one applies the thickness
+    circumferentially at mid-chord.
+    """
+
+    def __post_init__(self):
+        if not 0.0 <= self.fac_tangential <= 1.0:
+            raise ValueError(
+                f"A thickness is applied somewhere between perpendicular to "
+                f"the camber line and circumferentially, so fac_tangential "
+                f"must satisfy 0 <= fac_tangential <= 1, got "
+                f"{self.fac_tangential}."
+            )
+
 
 class BladeCount(Node):
     """Base for rules setting the number of blades in a row.
@@ -410,6 +457,9 @@ class BladeDesign(Node):
             row_annulus=row_annulus,
             spf=spf,
             dchi=dchi,
+            fac_tangential=np.array(
+                [section.fac_tangential for section in self.sections]
+            ),
             mean_line_row=mean_line_row,
             vortex_exponent=self.vortex_exponent,
             cambers=tuple(section.camber for section in self.sections),
@@ -560,6 +610,15 @@ class Blade:
     dchi: np.ndarray = dataclasses.field(repr=False)
     """Recamber of each section off the local flow angle, shape (n_section, 2) [deg]."""
 
+    fac_tangential: np.ndarray = dataclasses.field(repr=False)
+    """Circumferential fraction of each section's offset, shape (n_section,) [--].
+
+    Carried per section and interpolated where a section is asked for, as
+    :attr:`dchi` is, so a blade can be shaped one way at the hub and another at
+    the casing. See :attr:`SectionDesign.fac_tangential` for what the number
+    means.
+    """
+
     mean_line_row: MeanLine = dataclasses.field(repr=False)
     """Inlet and outlet stations of this row, shape (2,).
 
@@ -629,6 +688,20 @@ class Blade:
             )
 
         return chi
+
+    def evaluate_fac_tangential(self, spf):
+        """Return the circumferential offset fraction at span fraction `spf` [--].
+
+        Interpolated between the sections and extrapolated beyond the end ones,
+        as :meth:`evaluate_chi` interpolates the recamber it is written beside.
+        See :attr:`SectionDesign.fac_tangential` for what it does.
+        """
+        if self.n_section == 1:
+            return float(self.fac_tangential[0])
+
+        return float(
+            turbigen.util.interp1d_linear_extrap(self.spf, self.fac_tangential)(spf)
+        )
 
     @functools.cached_property
     def _suction_is_upper(self):
@@ -701,17 +774,28 @@ class Blade:
         # rather than one being the other reflected in the camber line.
         t_s, t_p = thickness.thick_both(m)
 
-        # Offsets for thickness perpendicular to the camber line. The camber
-        # tangent is (cos chi, sin chi), so its normal is (-sin chi, cos chi),
-        # which points to the higher-angle side; `sgn` turns it round to point
-        # at the suction surface instead. That one sign is the whole of the
-        # suction-first convention -- there is no pair to reorder, only a
-        # direction to choose, and it is chosen once per blade.
+        # Offsets for the thickness. The camber tangent is (cos chi, sin chi),
+        # so its normal is (-sin chi, cos chi), which points to the
+        # higher-angle side; `sgn` turns it round to point at the suction
+        # surface instead. That one sign is the whole of the suction-first
+        # convention -- there is no pair to reorder, only a direction to
+        # choose, and it is chosen once per blade.
+        #
+        # The offset is that normal rotated toward the circumferential
+        # direction by `w chi`, which is the same as offsetting perpendicular
+        # to a camber line of angle `(1 - w) chi`. A unit direction at every
+        # station, so the offset distance is `t` whatever `w` does, and the
+        # present perpendicular offset exactly where `w` is zero -- which is
+        # both ends. See `SectionDesign.fac_tangential` for why the middle is
+        # rotated at all.
+        w = self.evaluate_fac_tangential(spf) * 16.0 * m**2 * (1.0 - m) ** 2
+        chi_offset = (1.0 - w) * chi
+
         sgn = 1.0 if self._suction_is_upper else -1.0
-        Dm_s = -sgn * t_s * np.sin(chi)
-        Dm_p = sgn * t_p * np.sin(chi)
-        Dy_s = sgn * t_s * np.cos(chi)
-        Dy_p = -sgn * t_p * np.cos(chi)
+        Dm_s = -sgn * t_s * np.sin(chi_offset)
+        Dm_p = sgn * t_p * np.sin(chi_offset)
+        Dy_s = sgn * t_s * np.cos(chi_offset)
+        Dy_p = -sgn * t_p * np.cos(chi_offset)
 
         ms = m + Dm_s
         mp = m + Dm_p
