@@ -27,6 +27,14 @@ from turbigen.mesh import Mesher
 
 logger = logging.getLogger("turbigen")
 
+TE_MIN = 1e-4
+"""Thinnest trailing edge a cusp can be built on, as a fraction of chord [--].
+
+Two orders of magnitude under the one per cent of chord a blunt trailing edge
+is drawn at, so that this catches a section that closes to a point rather than
+one a designer deliberately drew thin.
+"""
+
 
 def _by_theta(blade, spf, **kwargs):
     """Return a blade section's two surfaces, the higher-angle one first.
@@ -136,7 +144,12 @@ class H(Mesher):
     Only affects the downstream side of the final row."""
 
     AR_cusp: float = 0.0
-    """Length of the trailing edge cusp, as a multiple of TE thickness."""
+    """Length of the trailing edge cusp, as a multiple of TE thickness.
+
+    Being a multiple of that thickness, this needs a blunt trailing edge to be
+    a multiple of: a blade closing to a point is refused by
+    :meth:`_check_trailing_edges` rather than meshed into crossed surfaces.
+    """
 
     ni_cusp: int = 0
     """Number of streamwise points along the trailing edge cusp."""
@@ -152,6 +165,8 @@ class H(Mesher):
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
         n_row = len(machine.rows)
+        if self.AR_cusp:
+            self._check_trailing_edges(machine)
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
 
         blocks = []
@@ -168,6 +183,43 @@ class H(Mesher):
         self._stitch_mixing_planes(grid)
         grid.connectivity.periodic.pair()
         return grid
+
+    def _check_trailing_edges(self, machine):
+        """Refuse to cusp a blade whose trailing edge has no thickness.
+
+        :attr:`AR_cusp` is a multiple of the trailing edge width, and
+        :func:`add_cusp` builds the cusp by extrapolating each surface's own
+        slope to a tip that far downstream. On a knife edge there is no width
+        to be a multiple of and no gap between the two surfaces to extrapolate
+        into: the sides cross, and what fails is an assertion on the pitchwise
+        ordering of the block coordinates several steps later, naming nothing a
+        designer wrote. Said here instead, before any of the mesh is built,
+        against the trailing edge the sections actually draw rather than
+        against a thickness parameter --- not every distribution has one, and
+        :class:`~turbigen.thickness.ClarkThickness` defaults its to zero.
+        """
+        for i_row, row in enumerate(machine.rows):
+            upper, lower = (surf[:, -1] for surf in row.blade.evaluate_section(0.5))
+            # The angular coordinate turned into a length at the mean radius of
+            # the two points, which is how `evaluate_section` offsets a surface
+            # from the camber line in the first place.
+            gap = np.array(
+                [
+                    upper[0] - lower[0],
+                    upper[1] - lower[1],
+                    0.5 * (upper[1] + lower[1]) * (upper[2] - lower[2]),
+                ]
+            )
+            t_TE = float(util.vecnorm(gap)) / row.blade.evaluate_chord(0.5)
+            if t_TE < TE_MIN:
+                raise ValueError(
+                    f"A trailing edge cusp is built on the width of the "
+                    f"trailing edge, so AR_cusp={self.AR_cusp} needs one to "
+                    f"be there, but row {i_row} closes to t_TE/chord="
+                    f"{t_TE:.2e} at midspan, under the {TE_MIN:g} a cusp can "
+                    f"be built on. Give the blade a blunt trailing edge, or "
+                    f"mesh it square with AR_cusp = 0."
+                )
 
     def _normalise_spacings(self, machine, spacing):
         """Compute normalised hub/casing spacings and tip_ref."""

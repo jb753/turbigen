@@ -403,6 +403,38 @@ def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
         H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
 
 
+def _knife_edged(blade):
+    """Return `blade` with every section closed to a point at the trailing edge."""
+    for section in blade["sections"]:
+        section["thickness"] = {**section["thickness"], "t_TE": 0.0}
+    return blade
+
+
+def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
+    """A knife edge has no width for `AR_cusp` to be a multiple of.
+
+    Left to run, the sides cross and an assertion on the pitchwise ordering of
+    the block coordinates fails several steps later, naming nothing a designer
+    wrote. Measured off the section rather than read off a thickness parameter,
+    so a distribution that closes to a point without saying so is caught too.
+    """
+    config = build(
+        blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=CUSP
+    )
+    machine = config.design()
+
+    with pytest.raises(ValueError, match="cusp is built on the width"):
+        config.mesh.mesh(machine)
+
+
+def test_a_square_trailing_edge_does_not_need_one():
+    """The check is the cusp's, so `AR_cusp = 0` meshes a knife edge as before."""
+    config = build(
+        blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=MESH
+    )
+    config.mesh.mesh(config.design())
+
+
 def test_wall_spacing_is_not_a_config_node():
     """It is a result: computed from the machine, never written to a file."""
     assert not issubclass(WallSpacing, Mesher)
