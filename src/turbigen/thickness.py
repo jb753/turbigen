@@ -16,8 +16,8 @@ shape space meeting at the point of maximum thickness, after
 :class:`Clark` (``clark``) is the two-sided alternative, after Clark (2019): a
 Bernstein polynomial in shape space per surface, so the aerofoil need not be
 symmetric about its camber line. A distribution answers with a half-thickness
-for each surface, and one that says nothing about sides gives the same number
-twice.
+for each surface, suction first, and one that says nothing about sides gives
+the same number twice.
 """
 
 import logging
@@ -53,12 +53,20 @@ class ThicknessDesign(Node):
         raise NotImplementedError(f"{type(self).__name__} must implement thick(m)")
 
     def thick_both(self, m):
-        """Return the half-thickness of each surface, upper first.
+        """Return the half-thickness of each surface, suction first.
 
-        Upper meaning the surface at the higher angular coordinate, which is
-        the order :meth:`~turbigen.blade.Blade.evaluate_section` returns them
-        in --- not the suction surface, which is a fact about the flow rather
-        than about a distribution.
+        The order :meth:`~turbigen.blade.Blade.evaluate_section` returns the
+        surfaces in, so a two-sided distribution and the section it produces
+        index the same way with no permutation between them.
+
+        **A distribution cannot check this about itself.** Which side of a
+        camber line is the suction one is a property of the camber, and a
+        thickness has none --- so "suction first" is a promise the *blade*
+        keeps when it hangs these two numbers off its camber line (see
+        :attr:`~turbigen.blade.Blade._suction_is_upper`), and a claim about
+        intent when it is written in a config file. Evaluated on its own, a
+        distribution can only say that its first answer goes on whichever
+        surface a blade would call suction.
 
         The same number twice unless a distribution says otherwise, so a
         symmetric one need only write :meth:`thick`.
@@ -255,11 +263,15 @@ class Clark(ThicknessDesign):
     """Interior Bernstein coefficients in shape space, one row per surface
     [--].
 
-    The upper surface first, meaning the one at the higher angular
-    coordinate, which is the order
-    :meth:`~turbigen.blade.Blade.evaluate_section` returns the surfaces in.
-    Not the suction surface: which surface the flow makes that is a fact
-    about the flow, and a shape cannot know it in advance.
+    The suction surface first, which is the order
+    :meth:`~turbigen.blade.Blade.evaluate_section` returns the surfaces in and
+    the order :meth:`thick_both` answers in --- so a row here and the surface
+    it shapes line up by index, with nothing in between to get backwards.
+
+    Which side that is comes from the camber line, not from here: see
+    :meth:`ThicknessDesign.thick_both` for why a thickness distribution cannot
+    check its own row ordering, and
+    :attr:`~turbigen.blade.Blade._suction_is_upper` for where it is decided.
 
     The two rows are the same length, and that length sets the order of the
     curve --- `order - 1` interior coefficients, the two endpoint ones being
@@ -296,7 +308,7 @@ class Clark(ThicknessDesign):
     def tau(self, m):
         """Return shape space of each surface at meridional distance `m`.
 
-        Upper first, as :meth:`thick_both` returns them.
+        Suction first, as :meth:`thick_both` returns them.
         """
         m = np.asarray(m, dtype=float)
 
@@ -314,7 +326,7 @@ class Clark(ThicknessDesign):
         )
 
     def thick_both(self, m):
-        """Return the half-thickness of each surface, upper first.
+        """Return the half-thickness of each surface, suction first.
 
         The trailing edge thickness is the total due to both sides, so half of
         it is left on each surface at the trailing edge.

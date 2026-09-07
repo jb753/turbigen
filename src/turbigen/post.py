@@ -848,6 +848,9 @@ class SurfacePlot(Post):
                     continue
 
                 mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
+
+                # Either surface would do for the nose: the thickness vanishes
+                # at m = 0, so the two coincide exactly there.
                 xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
                 zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 

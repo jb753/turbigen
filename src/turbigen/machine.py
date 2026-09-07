@@ -48,7 +48,7 @@ class Machine:
         is the usual sign that a quantity belongs to the thing it is measured
         from rather than to its first consumer.
         """
-        ell = np.array([row.blade.evaluate_surface_length(0.5) for row in self.rows])
+        ell = np.array([row.blade.evaluate_surface_length(0.5)[0] for row in self.rows])
         stations = [
             self.mean_line.get_characteristic_station(i) for i in range(len(self.rows))
         ]

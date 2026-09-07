@@ -53,7 +53,14 @@ class AsOldBlade:
         self.blade = blade
 
     def evaluate_section(self, spf, nchord=10000, m=None):
-        return self.blade.evaluate_section(spf, nchord=nchord, m=m)
+        # The old mesher wants the higher-angle surface first, which is what
+        # this package's `evaluate_section` used to promise and no longer does
+        # -- it orders by surface now, and `hmesh` reorders for the same
+        # reason this does.
+        upper, lower = self.blade.evaluate_section(spf, nchord=nchord, m=m)
+        if upper[2].mean() < lower[2].mean():
+            upper, lower = lower, upper
+        return upper, lower
 
     def get_chi(self, spf):
         return self.blade.evaluate_chi(spf)
@@ -130,7 +137,7 @@ def test_surface_reynolds_number_matches_its_definition(machine):
     for i_row, row in enumerate(machine.rows):
         station = machine.mean_line.get_characteristic_station(i_row)
         expected = (
-            row.blade.evaluate_surface_length(0.5)
+            row.blade.evaluate_surface_length(0.5)[0]
             * station.rho
             * station.V_rel
             / station.mu

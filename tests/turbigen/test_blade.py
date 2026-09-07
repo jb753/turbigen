@@ -16,6 +16,7 @@ import turbigen_ref.annulus
 import turbigen_ref.blade
 import turbigen_ref.nblade
 
+import turbigen.blade
 import turbigen.util
 from turbigen import (
     Blade,
@@ -28,7 +29,19 @@ from turbigen import (
     Taylor,
     ThicknessDesign,
 )
-from turbigen.blade import _Alpha_rel, _interpolate, _to_xrrt
+from turbigen.blade import _Alpha_rel, _interpolate, to_xrrt
+
+
+def _by_theta(surfaces):
+    """Return a pair of surfaces with the higher-angle one first.
+
+    What the old package's `evaluate_section` orders by, and what the mesher
+    wants; this one orders by surface instead. Read off `theta` so that a test
+    comparing the two is comparing curves rather than conventions.
+    """
+    upper, lower = surfaces
+    return (upper, lower) if upper[2].mean() >= lower[2].mean() else (lower, upper)
+
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -528,13 +541,18 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
     flow angle as well as the recamber; here the flow angle is evaluated where
     it is asked for, which is the whole point of `evaluate_chi`. The two are
     the same design and differ by a fifth of a degree at the endwalls.
+
+    The old package orders its pair by angular coordinate and this one by
+    surface, so the comparison reorders before it compares. The reorder is by
+    `theta`, read off the arrays rather than assumed, so it says nothing about
+    which convention is right --- only that the same two curves come out.
     """
     old = old_blade(machine, i_row, dchi_LE=dchi_LE)
     new = machine.rows[i_row].blade
 
     for spf in SPF:
         for surface_new, surface_old in zip(
-            new.evaluate_section(spf), old.evaluate_section(spf)
+            _by_theta(new.evaluate_section(spf)), old.evaluate_section(spf)
         ):
             np.testing.assert_allclose(
                 surface_new,
@@ -546,7 +564,9 @@ def test_matches_the_turbigen_implementation(machine, i_row, dchi_LE):
 
         np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-12)
         np.testing.assert_allclose(
-            new.evaluate_surface_length(spf), old.surface_length(spf), rtol=1e-12
+            new.evaluate_surface_length(spf).max(),
+            old.surface_length(spf),
+            rtol=1e-12,
         )
         np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-12)
 
@@ -572,7 +592,7 @@ def test_camber_line_lies_between_the_surfaces(machine):
     m = np.linspace(0.0, 1.0, 501)
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        xrtu, xrtl = blade.evaluate_section(spf, m=m)
+        xrtu, xrtl = _by_theta(blade.evaluate_section(spf, m=m))
 
         # The ends are excluded: the thickness vanishes at the nose, so there
         # the three curves meet rather than nest.
@@ -816,51 +836,82 @@ def test_a_lopsided_section_is_not_the_mean_of_its_surfaces(machine):
 
 
 def test_arc_length_starts_at_the_leading_edge(machine):
-    """Zero at m=0, since that is where the two surfaces meet."""
+    """Zero at m=0 on both surfaces, since that is where the two meet."""
     for spf in SPF:
         _, s = machine.rows[0].blade.evaluate_arc_length(spf)
-        assert s[0] == pytest.approx(0.0, abs=1e-12)
+        np.testing.assert_allclose(s[:, 0], 0.0, atol=1e-12)
 
 
 def test_arc_length_agrees_with_the_surface_length(machine):
-    """Its last point is what `evaluate_surface_length` reports.
+    """Its last points are what `evaluate_surface_length` reports.
 
-    Two different reductions of the same curve, so they had better agree: one
+    Two different reductions of the same curves, so they had better agree: one
     keeps the whole thing, the other keeps only the number a report wants.
     """
     blade = machine.rows[0].blade
     for spf in SPF:
         _, s = blade.evaluate_arc_length(spf)
-        assert s[-1] == pytest.approx(blade.evaluate_surface_length(spf), rel=1e-9)
+        np.testing.assert_allclose(
+            s[:, -1], blade.evaluate_surface_length(spf), rtol=1e-9
+        )
 
 
 def test_arc_length_is_monotonic(machine):
-    """A cumulative length can only grow."""
+    """A cumulative length can only grow, on either surface."""
     _, s = machine.rows[0].blade.evaluate_arc_length(0.5)
-    assert np.all(np.diff(s) >= 0.0)
+    assert np.all(np.diff(s, axis=1) >= 0.0)
 
 
-def test_arc_length_returns_the_longer_surface(machine):
-    """The suction surface, on a blade turning the flow the ordinary way.
+@pytest.mark.parametrize("i_row", [0, 1])
+def test_the_suction_surface_is_the_longer_one(machine, i_row):
+    """The two ways of telling the surfaces apart agree.
 
-    Checked directly against `evaluate_section`'s own two surfaces rather than
-    trusted blindly: whichever of them is longer at `m=1` is what this must
-    have picked.
+    The blade picks its suction surface off the camber angles, because it has
+    to make the choice before either surface exists --- it is what tells the
+    thickness distribution which side of the camber line to sit on. The reason
+    that works is geometric: the suction surface is the convex side, which
+    wraps a larger radius for the same turning and so sweeps a longer path.
+    This is the test that the derived fact and the measurable one do not part
+    company, on rows turning opposite ways.
+    """
+    blade = machine.rows[i_row].blade
+    for spf in SPF:
+        suction, pressure = blade.evaluate_section(spf)
+        length_suction = turbigen.util.arc_length(to_xrrt(suction))
+        length_pressure = turbigen.util.arc_length(to_xrrt(pressure))
+        assert length_suction > length_pressure
+
+        chi_LE, chi_TE = blade.evaluate_chi(spf)
+        assert (suction[2].mean() >= pressure[2].mean()) == (chi_TE < chi_LE)
+
+
+def test_a_flat_blade_keeps_a_stable_surface_order(machine):
+    """With no turning to read, the angular order stands in for the physics.
+
+    Not because it is right --- a blade this flat has no suction side to be
+    right about --- but because it is the same answer every time. A design
+    being iterated must not swap its two thickness distributions over between
+    iterations on the strength of a sign that is measuring noise.
     """
     blade = machine.rows[0].blade
-    for spf in SPF:
-        _, s = blade.evaluate_arc_length(spf)
-        xrtu, xrtl = blade.evaluate_section(spf)
-        length_upper = turbigen.util.arc_length(_to_xrrt(xrtu))
-        length_lower = turbigen.util.arc_length(_to_xrrt(xrtl))
-        assert s[-1] == pytest.approx(max(length_upper, length_lower), rel=1e-9)
+    chi_LE, chi_TE = blade.evaluate_chi(0.5)
+    assert abs(chi_TE - chi_LE) > turbigen.blade.FLAT_TURNING
+
+    # Recamber the trailing edge back onto the leading edge angle, since it is
+    # the flow the sections are measured from that does most of the turning.
+    turning = np.diff(blade.evaluate_chi(0.5)).item()
+    dchi = blade.dchi - np.array((0.0, turning))
+    flat = dataclasses.replace(blade, dchi=dchi)
+
+    assert abs(np.diff(flat.evaluate_chi(0.5)).item()) < turbigen.blade.FLAT_TURNING
+    assert flat._suction_is_upper
 
 
 def test_arc_length_defaults_to_a_clustered_m(machine):
     """With no `m` given, the curve is `evaluate_section`'s own default."""
     m, s = machine.rows[0].blade.evaluate_arc_length(0.5, nchord=51)
     np.testing.assert_allclose(m, turbigen.util.cluster_cosine(51))
-    assert len(s) == 51
+    assert s.shape == (2, 51)
 
 
 def test_arc_length_reports_the_m_it_was_given(machine):
@@ -868,7 +919,7 @@ def test_arc_length_reports_the_m_it_was_given(machine):
     m_in = np.linspace(0.0, 1.0, 17)
     m_out, s = machine.rows[0].blade.evaluate_arc_length(0.5, m=m_in)
     np.testing.assert_array_equal(m_out, m_in)
-    assert len(s) == len(m_in)
+    assert s.shape == (2, len(m_in))
 
 
 def test_arc_length_places_a_point_measured_off_the_surface(machine):
@@ -887,10 +938,10 @@ def test_arc_length_places_a_point_measured_off_the_surface(machine):
     m_coarse, s_coarse = blade.evaluate_arc_length(spf, nchord=2001)
 
     m_true = 0.37
-    s_true = np.interp(m_true, m_fine, s_fine)
-
-    m_back = np.interp(s_true, s_coarse, m_coarse)
-    assert m_back == pytest.approx(m_true, abs=1e-3)
+    for fine, coarse in zip(s_fine, s_coarse):
+        s_true = np.interp(m_true, m_fine, fine)
+        m_back = np.interp(s_true, coarse, m_coarse)
+        assert m_back == pytest.approx(m_true, abs=1e-3)
 
 
 #

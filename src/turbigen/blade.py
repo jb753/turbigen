@@ -96,11 +96,24 @@ is evaluated at the span fraction asked for.
 of the two surfaces and :meth:`~Blade.evaluate_camber` those of the camber line
 they are hung off; :meth:`~Blade.evaluate_chi` the leading and trailing metal
 angles; and :meth:`~Blade.evaluate_chord` and
-:meth:`~Blade.evaluate_surface_length` the meridional chord and the longer
-surface length used by the count rules.
+:meth:`~Blade.evaluate_surface_length` the meridional chord and the surface
+lengths the count rules read.
+
+**Every pair of surfaces is ordered suction first**, and this is the only place
+that is said: :meth:`~Blade.evaluate_section`,
+:meth:`~Blade.evaluate_arc_length`, :meth:`~Blade.evaluate_surface_length` and
+:meth:`~turbigen.thickness.ThicknessDesign.thick_both` all index the same way,
+so a thickness coefficient and the surface it shapes line up without a
+permutation anywhere between them. Which side that is comes from the camber
+alone --- the suction surface is the convex one, so it is the upper surface when
+the metal angle falls from leading to trailing edge --- and is decided once per
+blade rather than per span fraction; see :attr:`~Blade._suction_is_upper`. The
+angular ordering still exists and the mesher wants it, but it is a fact a
+consumer reads off `theta` itself rather than one this module promises.
 """
 
 import dataclasses
+import functools
 import logging
 from typing import ClassVar
 
@@ -148,7 +161,20 @@ def _is_sequence(value):
     return isinstance(value, (tuple, list, np.ndarray))
 
 
-def _to_xrrt(xrt):
+FLAT_TURNING = 1.0
+"""Turning below which a blade has no suction side to speak of [deg].
+
+The suction surface is read off the sign of the turning, which says nothing at
+all when there is no turning: a blade this flat has two surfaces that are alike
+to within the noise on the comparison, and their order is then arbitrary rather
+than wrong. Falling back to the angular ordering makes it arbitrary *and
+stable*, which is what a design being iterated needs --- a shape that swapped
+its two thickness distributions between iterations would be a different blade
+each time, not a converging one.
+"""
+
+
+def to_xrrt(xrt):
     """Return `xrt` with its angle turned into a distance.
 
     `evaluate_section` reports angular position as `theta`, in radians, which
@@ -470,8 +496,10 @@ class Circulation(BladeCount):
         total_out = cosAlpha_rel[1] / VmR * (centrifugal + tangential)
         total = total_in if A_flow[1] / A_flow[0] > 1.0 else total_out
 
-        # Pitch that delivers the requested circulation coefficient
-        pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)
+        # Pitch that delivers the requested circulation coefficient, written
+        # against the suction surface: it is the one the boundary layer the
+        # coefficient is about actually runs along.
+        pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)[0]
 
         # The coefficient is written in the inlet pitch, so it is the inlet
         # radius that turns a pitch into a count; the count being the same all
@@ -602,23 +630,63 @@ class Blade:
 
         return chi
 
-    def _camber_curve(self, spf, m):
+    @functools.cached_property
+    def _suction_is_upper(self):
+        """Whether the higher-angle surface is the suction one.
+
+        The suction surface is the convex side of the camber line --- it wraps
+        a larger radius than the concave side for the same turning, and so
+        sweeps a longer path --- and a camber line whose metal angle *falls*
+        from leading to trailing edge is convex on the upper side. Read off the
+        angles rather than by comparing the two surface lengths, because the
+        assignment is needed in :meth:`_section_layout` *before* either surface
+        exists: it is what tells the thickness distribution's two answers which
+        side of the camber line to sit on. Checked against the length
+        comparison on both rows of the example machine, which turn opposite
+        ways, at three span fractions apiece; the two agree everywhere.
+
+        Decided once for the whole blade rather than at each span fraction,
+        from mid-span. The metal angles vary over the span, so a lightly loaded
+        blade with enough twist could have the sign differ between its hub and
+        its tip, and a per-section answer would then put the same thickness
+        coefficient on physically opposite surfaces at different heights. That
+        is a mis-shaped blade rather than a mis-read measurement, which is a
+        much worse thing to be uncertain about than the one span the answer is
+        taken from.
+
+        Cached because it is read for every section of every evaluation, and
+        safe to cache because a blade is frozen --- see
+        `RowAnnulus._xr_stations`, which caches for the same reason and by the
+        same mechanism.
+        """
+        chi_LE, chi_TE = self.evaluate_chi(0.5)
+        if abs(chi_TE - chi_LE) < FLAT_TURNING:
+            return True
+        return chi_TE < chi_LE
+
+    def _section_layout(self, spf, m):
         """Return the camber line at `spf`, and what hangs the surfaces off it.
 
-        The one place the camber line is built, so
-        :meth:`evaluate_camber` and :meth:`evaluate_section` cannot answer
-        with different curves.
+        The one place the camber line is built, so :meth:`evaluate_camber` and
+        :meth:`evaluate_section` cannot answer with different curves, and the
+        one place a surface is put on a side of it, so nothing downstream has
+        to know which side that was.
+
+        Stops just short of a section: what it returns is the camber line and
+        each surface's displacement from it, still in the normalised frame.
+        Lifting those displacements onto the surfaces' own radii is
+        :meth:`evaluate_section`'s job and the only thing it adds.
 
         Returns
         -------
         xrt : ndarray, shape (3, n)
             Axial, radial and angular coordinates of the camber line.
-        mu_LTE, ml_LTE : ndarray, shape (n,)
-            Normalised meridional position of the upper and lower surfaces,
-            on the leading-to-trailing edge scale of the aerofoil.
-        Dy_u, Dy_l : ndarray, shape (n,)
-            Thickness offset of the upper and lower surfaces from the camber
-            line, normal to it and normalised by meridional chord.
+        m_LTE : ndarray, shape (2, n)
+            Normalised meridional position of each surface, on the
+            leading-to-trailing edge scale of the aerofoil. Suction first.
+        Dy : ndarray, shape (2, n)
+            Thickness offset of each surface from the camber line, normal to
+            it and normalised by meridional chord. Suction first.
         chord : float
             Meridional length of the camber line [m].
 
@@ -631,25 +699,30 @@ class Blade:
         # Each surface carries its own thickness, the same number twice unless
         # the distribution says otherwise, so the two are offset independently
         # rather than one being the other reflected in the camber line.
-        t_u, t_l = thickness.thick_both(m)
+        t_s, t_p = thickness.thick_both(m)
 
-        # Offsets for thickness perpendicular to the camber line
-        Dm_u = -t_u * np.sin(chi)
-        Dm_l = t_l * np.sin(chi)
-        Dy_u = t_u * np.cos(chi)
-        Dy_l = -t_l * np.cos(chi)
+        # Offsets for thickness perpendicular to the camber line. The camber
+        # tangent is (cos chi, sin chi), so its normal is (-sin chi, cos chi),
+        # which points to the higher-angle side; `sgn` turns it round to point
+        # at the suction surface instead. That one sign is the whole of the
+        # suction-first convention -- there is no pair to reorder, only a
+        # direction to choose, and it is chosen once per blade.
+        sgn = 1.0 if self._suction_is_upper else -1.0
+        Dm_s = -sgn * t_s * np.sin(chi)
+        Dm_p = sgn * t_p * np.sin(chi)
+        Dy_s = sgn * t_s * np.cos(chi)
+        Dy_p = -sgn * t_p * np.cos(chi)
 
-        mu = m + Dm_u
-        ml = m + Dm_l
+        ms = m + Dm_s
+        mp = m + Dm_p
 
         # The surfaces overhang the camber line at the ends, so rescale onto
         # the row so that the aerofoil, not its camber line, spans leading to
         # trailing edge.
-        mcam_LE = np.min((mu.min(), ml.min()))
-        mcam_TE = np.max((mu.max(), ml.max()))
+        mcam_LE = np.min((ms.min(), mp.min()))
+        mcam_TE = np.max((ms.max(), mp.max()))
         mcam_ptp = mcam_TE - mcam_LE
-        mu_LTE = (mu - mcam_LE) / mcam_ptp
-        ml_LTE = (ml - mcam_LE) / mcam_ptp
+        m_LTE = np.stack(((ms - mcam_LE) / mcam_ptp, (mp - mcam_LE) / mcam_ptp))
         mcam = (m - mcam_LE) / mcam_ptp
         chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
 
@@ -663,7 +736,7 @@ class Blade:
         theta -= np.interp(self.m_stack, mcam, theta)
         theta += self.theta_offset
 
-        return np.stack((*xr, theta)), mu_LTE, ml_LTE, Dy_u, Dy_l, chord
+        return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), chord
 
     def evaluate_camber(self, spf, nchord=10000, m=None):
         """Return coordinates of the camber line at `spf`.
@@ -695,10 +768,10 @@ class Blade:
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
 
-        return self._camber_curve(spf, m)[0]
+        return self._section_layout(spf, m)[0]
 
     def evaluate_section(self, spf, nchord=10000, m=None):
-        """Return coordinates of the upper and lower surfaces at `spf`.
+        """Return coordinates of the two surfaces at `spf`, suction first.
 
         Parameters
         ----------
@@ -711,36 +784,39 @@ class Blade:
 
         Returns
         -------
-        xrt_upper, xrt_lower : ndarray, shape (3, n)
-            Axial, radial and angular coordinates of each surface. The upper
-            surface is at the higher angular coordinate.
+        xrt_suction, xrt_pressure : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of each surface. Suction
+            first, as every pair in this module is --- see the module
+            docstring, and :attr:`_suction_is_upper` for how that is decided.
+            Which of them carries the higher angular coordinate is a question
+            for whoever needs it, answered by looking at the third row.
 
         """
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
 
-        xrt, mu_LTE, ml_LTE, Dy_u, Dy_l, chord = self._camber_curve(spf, m)
+        xrt, m_LTE, Dy, chord = self._section_layout(spf, m)
         xr, theta = xrt[:2], xrt[2]
 
-        # Meridional coordinates of the upper and lower surfaces
-        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
-        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
+        surfaces = []
+        for m_surf, Dy_surf in zip(m_LTE, Dy):
+            # Meridional coordinates of this surface
+            xr_surf = self.row_annulus.evaluate_xr(m_surf, spf)
 
-        # Angular offsets to the surfaces, at the mean radius between the
-        # camber line and each surface
-        dtu = Dy_u * chord / xr[1]
-        dtl = Dy_l * chord / xr[1]
-        drtu = dtu * 0.5 * (xr[1] + xru[1])
-        drtl = dtl * 0.5 * (xr[1] + xrl[1])
+            # Angular offset to it, at the mean radius between the camber line
+            # and the surface
+            dt = Dy_surf * chord / xr[1]
+            drt = dt * 0.5 * (xr[1] + xr_surf[1])
 
-        xrtu = np.stack((*xru, (theta * xru[1] + drtu) / xru[1]))
-        xrtl = np.stack((*xrl, (theta * xrl[1] + drtl) / xrl[1]))
+            surfaces.append(
+                np.stack((*xr_surf, (theta * xr_surf[1] + drt) / xr_surf[1]))
+            )
 
-        return xrtu, xrtl
+        return tuple(surfaces)
 
     def evaluate_surface_length(self, spf):
-        """Return the length of the longer of the two surfaces at `spf` [m]."""
-        return self.evaluate_arc_length(spf)[1][-1]
+        """Return the length of each surface at `spf`, suction first [m], shape (2,)."""
+        return self.evaluate_arc_length(spf)[1][:, -1]
 
     def evaluate_chord(self, spf):
         """Return the meridional length of the camber line at `spf` [m]."""
@@ -748,23 +824,16 @@ class Blade:
         return turbigen.util.arc_length(xr)
 
     def evaluate_arc_length(self, spf, m=None, nchord=10000):
-        """Return arc length along the longer surface, as a function of `m`, at `spf`.
+        """Return arc length along each surface, as a function of `m`, at `spf`.
 
-        Zero at the leading edge. The longer surface is the suction one: it is
-        the convex side of the camber, which wraps a larger radius than the
-        concave one for the same turning and so sweeps a longer path --
-        checked against two converged solutions, where the flow's own suction
-        side (higher Mach, lower pressure) matched the longer geometric
-        surface at every sample point tried, by margins of microns against
-        millimetres. Reading it off the shape rather than off a flow field is
-        what lets this be called before either exists.
-
-        That is a fact about a blade turning the flow the way one normally
-        does, not a law of geometry -- :func:`turbigen.util.suction_side`
-        works from the flow instead precisely because the two surfaces can
-        swap over at extreme incidence, which a shape alone cannot see
-        coming. Fine for placing a converging design's own measurements back
-        onto its shape, which never strays that far from where it is headed.
+        Zero at the leading edge, where the two surfaces meet, and suction
+        first as everything in this module is. The suction surface is the
+        longer of the two --- it is the convex side of the camber, which wraps
+        a larger radius than the concave one for the same turning and so
+        sweeps a longer path --- but that is a consequence of the ordering
+        rather than what sets it; see :attr:`_suction_is_upper`, which reads
+        the camber angles because the assignment is needed before either
+        surface exists.
 
         Parameters
         ----------
@@ -780,61 +849,23 @@ class Blade:
 
         Returns
         -------
-        m, s : ndarray, shape (n,)
-            The chordwise positions evaluated at, and the cumulative arc
-            length of the longer surface to every one of them [m].
+        m : ndarray, shape (n,)
+            The chordwise positions evaluated at.
+        s : ndarray, shape (2, n)
+            Cumulative arc length along each surface to every one of them,
+            suction first [m].
 
         """
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
 
-        _, s = self._suction_curve(spf, m)
+        s = np.stack(
+            [
+                turbigen.util.cum_arc_length(to_xrrt(xrt))
+                for xrt in self.evaluate_section(spf, m=m)
+            ]
+        )
         return m, s
-
-    def _suction_curve(self, spf, m):
-        """Return `(xrt, s)` for the longer surface, over `m`, at `spf`.
-
-        The one place :meth:`evaluate_arc_length` and
-        :meth:`locate_suction_arc_length` agree on which surface that is, so
-        the two cannot answer with different surfaces if a future change ever
-        touched only one of them.
-        """
-        xrtu, xrtl = self.evaluate_section(spf, m=m)
-        s_upper = turbigen.util.cum_arc_length(_to_xrrt(xrtu))
-        s_lower = turbigen.util.cum_arc_length(_to_xrrt(xrtl))
-        return (xrtu, s_upper) if s_upper[-1] >= s_lower[-1] else (xrtl, s_lower)
-
-    def locate_suction_arc_length(self, spf, xrt, nchord=10000):
-        """Return the arc length nearest a point close to the suction surface.
-
-        A point measured on the flow -- a stagnation point, say -- is not
-        naturally expressed in `m` or in arc length; it is wherever the flow
-        put it. This is how it gets placed back onto the curve
-        :meth:`evaluate_arc_length` returns: matched by nearest point in true
-        `(x, r, r * theta)` distance, dense enough that the match lands
-        within microns of the truth for any point actually on the surface.
-
-        Parameters
-        ----------
-        spf : float
-            Span fraction to evaluate at.
-        xrt : array_like, shape (3,)
-            A point close to the suction surface, as `(x, r, theta)`.
-        nchord : int
-            Chordwise points the surface is searched at.
-
-        Returns
-        -------
-        float
-            Arc length to the nearest point found, on the scale
-            :meth:`evaluate_arc_length` returns [m].
-
-        """
-        m = turbigen.util.cluster_cosine(nchord)
-        xrt_curve, s = self._suction_curve(spf, m)
-
-        distance = turbigen.util.vecnorm(_to_xrrt(xrt_curve) - np.asarray(xrt)[:, None])
-        return float(s[int(np.argmin(distance))])
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

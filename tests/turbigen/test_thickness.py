@@ -21,7 +21,7 @@ CLARK = {
     "t_TE": 0.02,
     "coeff": [[0.3, 0.1], [-0.1, 0.05]],
 }
-"""A deliberately lopsided section: a fatter upper surface than lower."""
+"""A deliberately lopsided section: a fatter suction surface than pressure."""
 
 MESH = {"type": "h", "dm_TE": 0.05, "resolution_factor": 0.5, "dspf_mid": 0.1}
 """A coarse mesh, so that meshing a blade costs about a second."""
@@ -133,12 +133,18 @@ def test_coefficients_move_only_the_interior():
 
 
 def test_a_positive_coefficient_thickens_its_own_surface():
-    """Which row is which surface: the first is the upper one."""
-    upper, lower = design(coeff=((0.5, 0.5), (0.0, 0.0))).thick_both(0.5)
-    assert upper > lower
+    """Which row is which surface: the first is the suction one.
 
-    upper, lower = design(coeff=((0.0, 0.0), (0.5, 0.5))).thick_both(0.5)
-    assert lower > upper
+    All a distribution on its own can say --- which side of a camber line is
+    the suction side is the blade's to decide, and there is no blade here. What
+    is checkable without one is that the rows do not cross over on the way to
+    the answer.
+    """
+    suction, pressure = design(coeff=((0.5, 0.5), (0.0, 0.0))).thick_both(0.5)
+    assert suction > pressure
+
+    suction, pressure = design(coeff=((0.0, 0.0), (0.5, 0.5))).thick_both(0.5)
+    assert pressure > suction
 
 
 def test_a_scalar_position_gives_scalars_back():
@@ -204,13 +210,18 @@ def test_a_clark_blade_is_shaped_and_counted():
 
     assert row.n_blade > 0
     for spf in SPF:
-        xrtu, xrtl = row.blade.evaluate_section(spf)
-        assert np.all(np.isfinite(xrtu))
-        assert np.all(np.isfinite(xrtl))
+        suction, pressure = row.blade.evaluate_section(spf)
+        assert np.all(np.isfinite(suction))
+        assert np.all(np.isfinite(pressure))
+
         # Lopsided, so the surfaces are not reflections of one another about
-        # the camber line the blade was built on.
+        # the camber line the blade was built on. Measured as a distance from
+        # it rather than as a signed angle, since which side of the camber the
+        # suction surface falls on is the blade's business, not this test's.
         xrt = row.blade.evaluate_camber(spf)
-        assert np.max(xrtu[2] - xrt[2]) > 2.0 * np.max(xrt[2] - xrtl[2])
+        assert np.max(np.abs(suction[2] - xrt[2])) > 2.0 * np.max(
+            np.abs(pressure[2] - xrt[2])
+        )
 
 
 def test_clark_sections_interpolate_over_the_span():

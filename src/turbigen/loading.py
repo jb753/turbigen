@@ -23,6 +23,7 @@ import logging
 
 import numpy as np
 
+import turbigen.blade
 import turbigen.util
 
 logger = logging.getLogger("turbigen")
@@ -111,10 +112,75 @@ class _SuctionCut:
     xrt_stag: np.ndarray
     """The stagnation node's own coordinates, as `(x, r, r * theta)` [m, m, m].
 
-    What :meth:`~turbigen.blade.Blade.locate_suction_arc_length` needs to
-    place the blade's own geometric curve at the same origin this one is
-    already anchored to.
+    What :func:`locate_arc_length` needs to place the blade's own geometric
+    curve at the same origin this one is already anchored to.
     """
+
+
+def locate_arc_length(blade, spf, xrt, nchord=10000):
+    """Return a measured point's arc length on the suction surface's scale.
+
+    A point measured on the flow --- a stagnation point, say --- is not
+    naturally expressed in `m` or in arc length; it is wherever the flow put
+    it. This is how it gets placed back onto the curve
+    :meth:`~turbigen.blade.Blade.evaluate_arc_length` returns: matched by
+    nearest point in true `(x, r, r * theta)` distance, dense enough that the
+    match lands within microns of the truth for any point actually on the
+    surface.
+
+    Here rather than on :class:`~turbigen.blade.Blade` because a blade answers
+    from its design alone and this takes a measurement --- the line this module
+    already draws in its own docstring. Being a free function is also what
+    makes the sampling honest: it passes one `m` to both blade calls, where two
+    methods each defaulting to their own `cluster_cosine(10000)` agreed only by
+    coincidence, and their results are subtracted from one another.
+
+    **Both surfaces are searched, and the answer is signed.** At any positive
+    incidence the stagnation point sits on the pressure side of the nose, and a
+    search restricted to the suction surface answers with approximately the
+    leading edge --- silently, and wrongly by exactly the distance that matters
+    most. A point at arc length `sigma` along the pressure surface is `sigma`
+    from the leading edge the other way round the nose, so a suction-surface
+    point at geometric `s` stands `s + sigma` from it along the blade. Negating
+    such a point's arc length is what says so, and lets a caller subtract this
+    from a suction-surface arc length without knowing which side the point
+    landed on.
+
+    Parameters
+    ----------
+    blade : Blade
+        The blade to place the point on.
+    spf : float
+        Span fraction to evaluate at.
+    xrt : array_like, shape (3,)
+        A point close to the blade, as `(x, r, r * theta)`.
+    nchord : int
+        Chordwise points the surfaces are searched at.
+
+    Returns
+    -------
+    float
+        Arc length to the nearest point found, on the scale
+        :meth:`~turbigen.blade.Blade.evaluate_arc_length` returns, negated
+        where that point is on the pressure surface [m].
+
+    """
+    m = turbigen.util.cluster_cosine(nchord)
+    surfaces = blade.evaluate_section(spf, m=m)
+    _, s = blade.evaluate_arc_length(spf, m=m)
+
+    # Nearest point on each surface, then whichever of the two is nearer. The
+    # sign is the surface it landed on, suction first as everything is.
+    nearest = [
+        turbigen.util.vecnorm(
+            turbigen.blade.to_xrrt(xrt_surf) - np.asarray(xrt)[:, None]
+        )
+        for xrt_surf in surfaces
+    ]
+    i_surf = int(np.argmin([distance.min() for distance in nearest]))
+    j = int(np.argmin(nearest[i_surf]))
+
+    return float(s[i_surf][j]) * (1.0 if i_surf == 0 else -1.0)
 
 
 def _cut_suction_side(result, i_row, spf):
@@ -149,7 +215,9 @@ def _cut_suction_side(result, i_row, spf):
         return None
 
     # The geometric nose anchors the stagnation search, exactly as the surface
-    # distribution plot anchors it.
+    # distribution plot anchors it. Either surface would do: the thickness
+    # vanishes at m = 0, so the two coincide exactly there and which one the
+    # blade hands back first does not come into it.
     xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
 
     # Physical arc length from the flow's own stagnation point -- the coldest
@@ -304,13 +372,17 @@ def measure_profile(result, i_row, spf, m):
         return None
 
     # The blade's own curve, from its leading edge -- not the flow's
-    # stagnation point, which is `locate_suction_arc_length` below's job to
-    # place onto it. Evaluated over the whole chord even though only a few
-    # points are wanted: `evaluate_section` rescales onto the aerofoil from
-    # whatever `m` it is given, so asking for isolated points would rescale
-    # onto them instead of onto the true leading and trailing edges.
+    # stagnation point, which is `locate_arc_length`'s job to place onto it.
+    # Evaluated over the whole chord even though only a few points are wanted:
+    # `evaluate_section` rescales onto the aerofoil from whatever `m` it is
+    # given, so asking for isolated points would rescale onto them instead of
+    # onto the true leading and trailing edges.
+    #
+    # The suction surface, which is what this measures, is the first of the
+    # pair the blade returns.
     m_dense, s_dense = cut.blade.evaluate_arc_length(spf)
-    s_stag = cut.blade.locate_suction_arc_length(spf, cut.xrt_stag)
+    s_dense = s_dense[0]
+    s_stag = locate_arc_length(cut.blade, spf, cut.xrt_stag)
 
     s = np.interp(np.asarray(m, dtype=float), m_dense, s_dense) - s_stag
 

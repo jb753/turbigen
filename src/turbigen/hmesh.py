@@ -28,6 +28,24 @@ from turbigen.mesh import Mesher
 logger = logging.getLogger("turbigen")
 
 
+def _by_theta(blade, spf, **kwargs):
+    """Return a blade section's two surfaces, the higher-angle one first.
+
+    `evaluate_section` orders its pair by which surface the flow will call
+    suction, which is what everything measuring a blade wants and what a
+    thickness distribution is written in. A mesh wants neither: the pitchwise
+    direction is an angle, the upper and lower halves of an H-block are the two
+    sides of a pitch, and which of them the flow accelerates over has nothing
+    to do with where the nodes go. So this is the one place the angular
+    ordering is asked for, and it is read off `theta` rather than promised by
+    the blade.
+    """
+    upper, lower = blade.evaluate_section(spf, **kwargs)
+    if upper[2].mean() < lower[2].mean():
+        upper, lower = lower, upper
+    return upper, lower
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class _RowGeometry:
     pitch_theta: float
@@ -255,7 +273,7 @@ class H(Mesher):
         if self.dm_TE:
             tte = 1.0 - self.dm_TE
         else:
-            xrt_u, xrt_l = machine.rows[i_row].blade.evaluate_section(0.5)
+            xrt_u, xrt_l = _by_theta(machine.rows[i_row].blade, 0.5)
             tq = np.linspace(0.8, 1.0, 500)
             _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
 
@@ -311,7 +329,7 @@ class H(Mesher):
         tte_span = np.full(nj, tte)
         tq_te = np.linspace(0.8, 1.0, 500)
         for j in range(nj):
-            xrt_u_j, xrt_l_j = blade.evaluate_section(span_frac[j])
+            xrt_u_j, xrt_l_j = _by_theta(blade, span_frac[j])
             _, _, tte_j = _theta_limits(tq_te, xrt_u_j, xrt_l_j, np.array((0, 1)))
             if tte_j is not None:
                 tte_span[j] = tte_j
@@ -343,7 +361,7 @@ class H(Mesher):
         theta_lim = np.zeros((2, ni, nj))
         m = util.cluster_cosine(20000)
         for j in range(nj):
-            xrt_u, xrt_l = blade.evaluate_section(span_frac[j], m=m)
+            xrt_u, xrt_l = _by_theta(blade, span_frac[j], m=m)
             assert np.all(xrt_u[2] >= xrt_l[2])
 
             stream_frac_now = stream_frac_span[:, j]
