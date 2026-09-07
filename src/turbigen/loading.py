@@ -436,9 +436,9 @@ def measure_clark_profile(result, i_row, spf, m):
     **Plain ``Ma / Ma_TE``, with no ``Ma_2 / Ma_1`` factor.** :mod:`turbigen.clark`
     works in that, and mixing two normalisations inside one curve --- whose
     pieces are built from differences between its own parameters --- would
-    not evaluate to anything. Where a designer states a leading edge value in
-    the units :attr:`~Loading.fac_front` uses, the conversion happens once as
-    the parameter goes in, not here.
+    not evaluate to anything. Where a designer states a front value in the
+    units :attr:`~Loading.fac_front` uses --- on either surface --- the
+    conversion happens once as the parameter goes in, not here.
 
     Parameters
     ----------

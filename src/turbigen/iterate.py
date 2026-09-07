@@ -2143,7 +2143,7 @@ class ClarkProfile(Iterator):
     Ma_LE: float = 1.8
     """Target suction-surface Mach number at Clark's leading edge station [--].
 
-    **The one parameter carrying the `Ma_2 / Ma_1` factor**, written the way
+    Carries the `Ma_2 / Ma_1` factor, written the way
     :attr:`turbigen.loading.Loading.fac_front` and
     :attr:`LoadingProfile.fac_front` are, so the same number means the same
     style of leading edge across rows of differing duty. Divided back out once,
@@ -2152,10 +2152,17 @@ class ClarkProfile(Iterator):
     own parameters cannot carry two normalisations at once.
     """
 
-    Ma_PS: float = 0.2
+    Ma_PS: float = 0.6
     """Target pressure-surface Mach number on the pre-acceleration plateau [--].
 
-    Plain `Ma / Ma_TE`, as :attr:`Ma_peak` is.
+    Carries the `Ma_2 / Ma_1` factor, as :attr:`Ma_LE` does and for the same
+    reason: these two are what a designer sets to say how the front of each
+    surface should behave, and a pair that meant different things on rows of
+    differing duty would be a trap. Divided back out beside `Ma_LE` on the way
+    into :mod:`turbigen.clark`.
+
+    :attr:`Ma_peak` keeps its plain `Ma / Ma_TE`, being a statement about the
+    trailing edge value rather than about the inlet.
     """
 
     gain: float | tuple[float, ...] = 0.5
@@ -2334,19 +2341,18 @@ class ClarkProfile(Iterator):
         iterates against --- a report drawing a target of its own would be free
         to contradict the design it describes.
         """
-        # The one place `Ma_LE`'s `Ma_2 / Ma_1` factor is taken back out; see
-        # the attribute. Everything past this line is plain `Ma / Ma_TE`.
-        Ma_LE = self.Ma_LE / turbigen.loading.mach_ratio(machine, self.i_row)
+        # The one place the `Ma_2 / Ma_1` factor the two front parameters
+        # carry is taken back out; see the attributes. Everything past this
+        # line is plain `Ma / Ma_TE`.
+        ratio = turbigen.loading.mach_ratio(machine, self.i_row)
+        Ma_LE = self.Ma_LE / ratio
+        Ma_PS = self.Ma_PS / ratio
 
         z = np.asarray(z, dtype=float)
         return np.stack(
             (
-                turbigen.clark.suction(
-                    z[0], self.Ma_peak, self.z_peak, Ma_LE, self.Ma_PS
-                ),
-                turbigen.clark.pressure(
-                    z[1], self.Ma_peak, self.z_peak, Ma_LE, self.Ma_PS
-                ),
+                turbigen.clark.suction(z[0], self.Ma_peak, self.z_peak, Ma_LE, Ma_PS),
+                turbigen.clark.pressure(z[1], self.Ma_peak, self.z_peak, Ma_LE, Ma_PS),
             )
         )
 
