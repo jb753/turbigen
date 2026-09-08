@@ -2167,11 +2167,22 @@ class ClarkProfile(Iterator):
     Ma_PS: float = 0.6
     """Target pressure-surface Mach number on the pre-acceleration plateau [--].
 
-    Carries the `Ma_2 / Ma_1` factor, as :attr:`Ma_LE` does and for the same
-    reason: these two are what a designer sets to say how the front of each
-    surface should behave, and a pair that meant different things on rows of
-    differing duty would be a trap. Divided back out beside `Ma_LE` on the way
-    into :mod:`turbigen.clark`.
+    Carries the `Ma_2 / Max_1` factor --- the exit Mach number over the inlet
+    *axial* one, both relative --- and is divided by it on the way into
+    :mod:`turbigen.clark`. Not the `Ma_2 / Ma_1` :attr:`Ma_LE` carries, though
+    the two agree wherever the flow enters a row nearly axially.
+
+    **Why the plateau is referred to a different velocity from the ramp.** What
+    this states is how far the pressure surface may be allowed to fall before
+    the passage accelerates it again, which is a claim about diffusion through
+    the passage; what is there to diffuse is what passes through it, and that
+    is the axial component. :attr:`Ma_LE` is a statement about how hard the
+    flow is turned around the nose, which the blade meets at whatever angle it
+    arrives, magnitude and all. Referring both to the magnitude makes the
+    plateau demand rise with inlet swirl for no aerodynamic reason: at fifty
+    degrees of relative inlet angle the two differ by half as much again, and a
+    row asked for a plateau it cannot reach shows up as a loading residual that
+    no thickness coefficient can move.
 
     :attr:`Ma_peak` keeps its plain `Ma / Ma_TE`, being a statement about the
     trailing edge value rather than about the inlet.
@@ -2354,12 +2365,14 @@ class ClarkProfile(Iterator):
         iterates against --- a report drawing a target of its own would be free
         to contradict the design it describes.
         """
-        # The one place the `Ma_2 / Ma_1` factor the two front parameters
-        # carry is taken back out; see the attributes. Everything past this
-        # line is plain `Ma / Ma_TE`.
-        ratio = turbigen.loading.mach_ratio(machine, self.i_row)
-        Ma_LE = self.Ma_LE / ratio
-        Ma_PS = self.Ma_PS / ratio
+        # The one place the factors the two front parameters carry are taken
+        # back out; see the attributes. Everything past this line is plain
+        # `Ma / Ma_TE`. The two are not divided by the same thing: the ramp is
+        # referred to the velocity the blade meets and the plateau to the axial
+        # component of it, which agree at low swirl and part company as it
+        # rises.
+        Ma_LE = self.Ma_LE / turbigen.loading.mach_ratio(machine, self.i_row)
+        Ma_PS = self.Ma_PS / turbigen.loading.mach_ratio_axial(machine, self.i_row)
 
         z = np.asarray(z, dtype=float)
         return np.stack(

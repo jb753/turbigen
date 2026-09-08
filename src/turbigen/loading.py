@@ -278,6 +278,29 @@ def mach_ratio(machine, i_row):
     return float(ml.Ma_rel[1] / ml.Ma_rel[0])
 
 
+def mach_ratio_axial(machine, i_row):
+    """Return ``Ma_2 / Max_1`` across row `i_row`, in the relative frame.
+
+    As :func:`mach_ratio`, but referred to the inlet *axial* Mach number rather
+    than the inlet velocity magnitude. The two differ by ``cos`` of the
+    relative inlet flow angle, so they agree on a row the flow enters nearly
+    axially and part company as the swirl rises --- by half as much again at
+    fifty degrees.
+
+    Which one a target should carry depends on what the target is a statement
+    about. A pressure surface running at some fraction of the exit Mach number
+    is a claim about how much the passage may diffuse before it accelerates,
+    and what is available to diffuse is what passes through the throat, not
+    what the blade sees arriving at an angle. See
+    :attr:`turbigen.iterate.ClarkProfile.Ma_PS`.
+
+    Off the nominal mean line, as :func:`mach_ratio` is, and for the same
+    reason.
+    """
+    ml = machine.mean_line[:, i_row]
+    return float(ml.Ma_rel[1] / ml.Max[0])
+
+
 def measure(result, i_row, spf, zeta_front=0.2, zeta_TE=0.98):
     """Return the loading of row `i_row` at span fraction `spf`.
 
