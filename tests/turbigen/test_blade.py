@@ -705,10 +705,17 @@ def test_camber_line_leaves_at_the_metal_angles(machine):
 def test_camber_line_is_near_the_mean_of_the_surfaces(machine):
     """How good the approximation that everything else makes today is.
 
-    Under a thousandth of chord on a symmetric thickness, so nothing that
-    takes the mean is wrong now --- but the two are different curves, and a
-    thickness free to differ side to side would separate them by half that
-    difference rather than by an annulus effect.
+    **The mean of the two surfaces is not the camber line.** It was within a
+    thousandth of chord when both surfaces were offset perpendicular, and it
+    is three hundredths of chord at the `fac_tangential` the sections default
+    to, because only the pressure surface is rotated and nothing on the
+    suction side moves to cancel it. Three per cent of chord and rising with
+    `fac_tangential`: 1.2 per cent at 0.3, 2.9 at 0.7, 4.0 at 1.0.
+
+    Which matters outside this file. `turbigen.post` draws its meridional
+    camber line as the mean of the two surfaces, and now carries that error;
+    anything else that wants the curve the surfaces were hung off should ask
+    `evaluate_camber` for it rather than take a mean.
     """
     blade = machine.rows[0].blade
     m = turbigen.util.cluster_cosine(2001)
@@ -717,7 +724,7 @@ def test_camber_line_is_near_the_mean_of_the_surfaces(machine):
         mean = np.mean(blade.evaluate_section(spf, m=m), axis=0)
         chord = turbigen.util.arc_length(xrt[:2])
 
-        assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) < 1e-3 * chord
+        assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) < 5e-2 * chord
 
 
 def test_camber_line_defaults_to_a_clustered_m(machine):
@@ -915,6 +922,26 @@ def test_the_blend_takes_the_spike_out_of_the_concave_surface():
     # Which sign the spike takes is the section's business, not the blend's,
     # so this is a magnitude. It falls by about three times on this section.
     assert peak(0.3) < 0.5 * peak(0.0)
+
+
+def test_the_blend_leaves_the_convex_surface_alone():
+    """Only the pressure surface is rotated, and this is what says so.
+
+    The amplification is a concave-side effect --- the convex side has its
+    curvature divided by `1 + t kappa` rather than multiplied --- so there is
+    nothing on the suction surface for the blend to take out, and rotating it
+    would only add the term in the weight's own gradient.
+
+    Not asserted bit-exact: the suction surface never reads `fac_tangential`,
+    but the aerofoil is rescaled onto the row by how far *either* surface
+    overhangs the camber line, so a section whose pressure surface sets that
+    overhang carries the blend across as a rescaling.
+    """
+    plain = _plane(_thick_blade(0.0).rows[0].blade)[0]
+    for fac in (0.3, 1.0):
+        np.testing.assert_allclose(
+            _plane(_thick_blade(fac).rows[0].blade)[0], plain, atol=1e-4
+        )
 
 
 def test_the_blend_leaves_both_ends_alone():

@@ -104,10 +104,11 @@ perpendicular offset hands back the camber's own curvature amplified by
 ``1 / (1 - t kappa)`` on the concave side, so a thick section on a tightly
 curved camber line over-curves that surface --- a spike in surface curvature,
 and a kink in the Mach distribution over it --- well before the offset folds at
-``t kappa = 1``. So the offset direction is rotated toward the circumferential
-one over mid-chord, by a fraction :attr:`~SectionDesign.fac_tangential` peaking
-there and vanishing at both ends, which leaves the nose radius and the trailing
-edge exactly what they were and takes the amplification out of the middle.
+``t kappa = 1``. So the pressure surface's offset direction, and only that
+one's, is rotated toward the circumferential direction over mid-chord, by a
+fraction :attr:`~SectionDesign.fac_tangential` peaking there and vanishing at
+both ends, which takes the amplification out of the middle while leaving the
+trailing edge exactly and the nose radius within a per cent of what they were.
 
 **Every pair of surfaces is ordered suction first**, and this is the only place
 that is said: :meth:`~Blade.evaluate_section`,
@@ -305,8 +306,9 @@ class SectionDesign(Node):
     thickness: ThicknessDesign
     """Thickness distribution, normalised by meridional chord."""
 
-    fac_tangential: float = 0.3
-    """Fraction of the thickness applied circumferentially at mid-chord [--].
+    fac_tangential: float = 0.7
+    """Fraction of the pressure surface's thickness applied circumferentially
+    at mid-chord [--].
 
     **Why a surface is not simply offset perpendicular to the camber line.** A
     perpendicular offset returns the camber's curvature amplified by
@@ -317,20 +319,61 @@ class SectionDesign(Node):
     circumferential direction takes the amplification away, since an offset
     with no meridional component cannot fold at all.
 
-    **Weighted to the middle, which is where the problem is.** The
-    circumferential fraction is ``fac_tangential * 16 m^2 (1 - m)^2``, a bump
-    that peaks at mid-chord --- so this number is read there --- and whose
-    value *and slope* vanish at both ends. That is what keeps the two ends
-    exactly what they were: the nose is a circle of
-    :attr:`~turbigen.thickness.ClarkThickness.R_LE` and the trailing edge
-    stands perpendicular to the camber line, so a wedge angle and a trailing
-    edge thickness still mean what they say. Clark (2019) blends the other way
-    round, from normal at the leading edge to tangential at the trailing edge,
-    which on a staggered blade cuts the trailing edge off at constant axial
-    position.
+    **The pressure surface only.** The amplification is a concave-side effect:
+    on the convex side the same offset *divides* the camber curvature by
+    ``1 + t kappa``, so there is nothing there to take out. Rotating that side
+    as well buys nothing and costs something, because the rotation carries a
+    term in its own gradient --- see below --- which on the convex side arrives
+    with nothing to cancel it. Measured on a turbine section, blending both
+    sides raises the suction surface's total variation of curvature by half
+    again at ``fac_tangential = 1`` and leaves the pressure surface exactly
+    where blending one side put it.
 
-    Zero is the plain perpendicular offset, and one applies the thickness
-    circumferentially at mid-chord.
+    **Weighted to the middle, which is where the problem is.** The
+    circumferential fraction is ``fac_tangential * (4 m (1 - m))^1.2``, a bump
+    that peaks at mid-chord --- so this number is read there --- and whose
+    value and slope vanish at both ends. That is what keeps the two ends
+    close to what they were: the nose is a circle of
+    :attr:`~turbigen.thickness.ClarkThickness.R_LE` to within a per cent and
+    the trailing edge stands perpendicular to the camber line exactly, so a
+    wedge angle and a trailing edge thickness still mean what they say. Clark
+    (2019) blends the other way round, from normal at the leading edge to
+    tangential at the trailing edge, which on a staggered blade cuts the
+    trailing edge off at constant axial position.
+
+    **Why that exponent and not a squarer bump.** What the offset actually
+    sees is the turning rate of its own direction, ``(1 - w) chi' - w' chi``,
+    of which the second term is nobody's intention: it is largest where the
+    weight's slope and the camber angle are both large, which is the shoulders
+    of the bump, and it puts back as a curvature reversal a good part of what
+    the first term takes out. Since the weight runs from zero up to
+    ``fac_tangential`` and back, its total variation is fixed and only its
+    slope can be spread out. A softer exponent spreads it further, and the
+    total variation of pressure surface curvature falls with it --- 19.1 at
+    the square this replaces, 15.5 at 1.5, 13.0 at 1.2, 11.8 at 1.05, against
+    74.0 for the plain perpendicular offset and 11.4 for the suction surface,
+    which nothing rotates and which is as smooth as a surface on this section
+    gets. A flat-topped weight does the opposite, steepening the shoulders and
+    undoing the whole thing.
+
+    **And what stops it going softer still.** Below an exponent of two the
+    weight's *second* derivative is unbounded at both ends, so the nose is no
+    longer exactly the circle it asks for: measured against the perpendicular
+    offset, the fitted leading edge radius grows by 0.02 per cent at an
+    exponent of two, 0.17 at 1.5, 0.65 at 1.2 and 1.3 at 1.05. The curvature
+    itself still converges --- it is its gradient that does not --- so this is
+    a small and local price rather than a different nose, and 1.2 is where
+    paying it stops being worth what it buys.
+
+    **Where the weight peaks is not a lever.** Skewing the bump forward, so
+    that it peaks nearer the leading edge where the camber curvature does,
+    buys nothing: holding the leading edge exponent fixed and sliding the peak
+    from mid-chord to 0.42 moves the total variation by under two per cent,
+    and sliding it further forward, or aft at all, makes it worse. Only the
+    exponent matters, and it matters through the two shoulders equally.
+
+    Zero is the plain perpendicular offset, and one applies the pressure
+    surface's thickness circumferentially at mid-chord.
     """
 
     def __post_init__(self):
@@ -611,7 +654,8 @@ class Blade:
     """Recamber of each section off the local flow angle, shape (n_section, 2) [deg]."""
 
     fac_tangential: np.ndarray = dataclasses.field(repr=False)
-    """Circumferential fraction of each section's offset, shape (n_section,) [--].
+    """Circumferential fraction of each section's pressure surface offset,
+    shape (n_section,) [--].
 
     Carried per section and interpolated where a section is asked for, as
     :attr:`dchi` is, so a blade can be shaped one way at the hub and another at
@@ -758,8 +802,10 @@ class Blade:
             Normalised meridional position of each surface, on the
             leading-to-trailing edge scale of the aerofoil. Suction first.
         Dy : ndarray, shape (2, n)
-            Thickness offset of each surface from the camber line, normal to
-            it and normalised by meridional chord. Suction first.
+            Thickness offset of each surface from the camber line,
+            normalised by meridional chord. Suction first, and normal to the
+            camber line on that surface only --- see
+            :attr:`SectionDesign.fac_tangential` for what rotates the other.
         chord : float
             Meridional length of the camber line [m].
 
@@ -781,21 +827,23 @@ class Blade:
         # convention -- there is no pair to reorder, only a direction to
         # choose, and it is chosen once per blade.
         #
-        # The offset is that normal rotated toward the circumferential
-        # direction by `w chi`, which is the same as offsetting perpendicular
-        # to a camber line of angle `(1 - w) chi`. A unit direction at every
-        # station, so the offset distance is `t` whatever `w` does, and the
-        # present perpendicular offset exactly where `w` is zero -- which is
-        # both ends. See `SectionDesign.fac_tangential` for why the middle is
-        # rotated at all.
-        w = self.evaluate_fac_tangential(spf) * 16.0 * m**2 * (1.0 - m) ** 2
-        chi_offset = (1.0 - w) * chi
+        # The pressure surface's offset is that normal rotated toward the
+        # circumferential direction by `w chi`, which is the same as offsetting
+        # perpendicular to a camber line of angle `(1 - w) chi`. A unit
+        # direction at every station, so the offset distance is `t` whatever
+        # `w` does, and the plain perpendicular offset exactly where `w` is
+        # zero -- which is both ends. The suction surface is never rotated: it
+        # is the convex side, where the offset shortens the camber curvature
+        # rather than amplifying it. See `SectionDesign.fac_tangential` for why
+        # the middle of the other side is rotated at all.
+        w = self.evaluate_fac_tangential(spf) * (4.0 * m * (1.0 - m)) ** 1.2
+        chi_p = (1.0 - w) * chi
 
         sgn = 1.0 if self._suction_is_upper else -1.0
-        Dm_s = -sgn * t_s * np.sin(chi_offset)
-        Dm_p = sgn * t_p * np.sin(chi_offset)
-        Dy_s = sgn * t_s * np.cos(chi_offset)
-        Dy_p = -sgn * t_p * np.cos(chi_offset)
+        Dm_s = -sgn * t_s * np.sin(chi)
+        Dm_p = sgn * t_p * np.sin(chi_p)
+        Dy_s = sgn * t_s * np.cos(chi)
+        Dy_p = -sgn * t_p * np.cos(chi_p)
 
         ms = m + Dm_s
         mp = m + Dm_p

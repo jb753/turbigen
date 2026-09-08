@@ -204,8 +204,18 @@ def test_round_trips_through_a_config_dict():
 
 
 def test_a_clark_blade_is_shaped_and_counted():
-    """A row of these is a row like any other, as far as the rest goes."""
-    machine = build(blades=blades()).design()
+    """A row of these is a row like any other, as far as the rest goes.
+
+    Built on the perpendicular offset, which is what leaves the lopsidedness
+    below a statement about the thickness. The blend the sections default to
+    rotates the pressure surface toward the circumferential direction and so
+    lengthens its `theta` departure without changing how thick that side is
+    --- see `turbigen.blade.SectionDesign.fac_tangential`.
+    """
+    rows = blades()
+    for section in rows[0]["sections"]:
+        section["fac_tangential"] = 0.0
+    machine = build(blades=rows).design()
     row = machine.rows[0]
 
     assert row.n_blade > 0

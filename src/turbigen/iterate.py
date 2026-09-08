@@ -2190,7 +2190,7 @@ class ClarkProfile(Iterator):
     clip: float = 0.05
     """Largest change in one shape-space coefficient per iteration [--]."""
 
-    tolerance: float = 0.05
+    tolerance: float = 0.01
     """Converged when every shape residual is within this [--]."""
 
     gain_Co: float = 1.5
@@ -2203,7 +2203,7 @@ class ClarkProfile(Iterator):
     clip_Co: float = 0.05
     """Largest change in the circulation coefficient per iteration [--]."""
 
-    tolerance_Co: float = 0.02
+    tolerance_Co: float = 0.01
     """Converged when the level error is within this [--]."""
 
     def __post_init__(self):
