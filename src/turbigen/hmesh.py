@@ -129,6 +129,9 @@ class H(Mesher):
     nk_min: int = 37
     """Minimum number of pitchwise grid points per row."""
 
+    njtip_min: int = 9
+    """Minimum number of spanwise grid points across the open tip gap."""
+
     nchord_relax: float = 1.0
     """Number of meridional chords over which pitchwise clustering is relaxed."""
 
@@ -157,6 +160,19 @@ class H(Mesher):
     gap_contraction: float = 0.6
     """Fraction of the tip gap over which the blade is pinched to zero
     thickness."""
+
+    pinch_ramp: float = 2.0
+    """Span over which the blade thins into the tip gap, as a multiple of the
+    gap.
+
+    The blade is at full thickness `pinch_ramp` gap-heights below the casing
+    and reaches zero at the top of the pinch, so this sets how abruptly it
+    ends. Too steep and the blade stops in what is nearly a step: the flow over
+    the last solid layer cannot follow it, and the tip can drive the solver
+    non-physical there. What matters is the spanwise distance the collapse
+    takes, not the thickness of the last solid layer, so a wider ramp is the
+    remedy rather than a blunter tip.
+    """
 
     def __post_init__(self):
         if self.ni_cusp and self.dm_TE != 0.0:
@@ -459,7 +475,7 @@ class H(Mesher):
         if row.tip_gap:
             theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
             spf_pinch = [
-                1.0 - tip_ref * 2.0,
+                1.0 - tip_ref * self.pinch_ramp,
                 1.0 - tip_ref * self.gap_contraction,
                 1.0,
             ]
@@ -603,11 +619,11 @@ class H(Mesher):
         if tip:
             Lmain = 1.0 - tip
 
-            # We want at least 9 nodes across the tip gap
+            # We want at least njtip_min nodes across the tip gap
             # So the minimum grid spacing should be the smallest of:
-            #   - 9 pts uniform
+            #   - njtip_min pts uniform
             #   - target shroud spacing
-            njtip_min = 9
+            njtip_min = self.njtip_min
             dspf_tip = np.minimum(dspf_casing, tip / njtip_min)
 
             spf_main = clusterfunc.double.free(
