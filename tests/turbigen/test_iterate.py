@@ -2154,6 +2154,124 @@ def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
         assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
 
 
+#
+# A TRAILING EDGE THAT IS TWO KNOBS RATHER THAN ONE
+#
+
+
+SPLIT_THICKNESS = {**CLARK_THICKNESS, "tanwedge": [0.20, 0.16]}
+"""The same section with a wedge angle per surface."""
+
+
+@pytest.fixture
+def clark_split():
+    """The `clark` config, with each surface leaving at its own wedge angle."""
+    return dataclasses.replace(
+        build(
+            blades=[
+                thickened(thickness=SPLIT_THICKNESS),
+                thickened(thickness=SPLIT_THICKNESS),
+            ]
+        ),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+
+def test_clark_splits_the_trailing_edge_when_the_wedges_do(clark_split):
+    """One more unknown, and it is at the trailing edge rather than the tail.
+
+    The nose stays one knob, one circle having one radius; the interior keys
+    do not move, so a sequence `gain` written for the shared case still lines
+    up with everything after the ends.
+    """
+    assert set(clark_split.iterate.correct[0].unknowns(clark_split)) == {
+        "Co[0]",
+        "tau_LE[0]",
+        "tau_TE[0][0]",
+        "tau_TE[0][1]",
+        "tau[0][0][1]",
+        "tau[0][0][2]",
+        "tau[0][1][1]",
+        "tau[0][1][2]",
+    }
+
+
+def test_clark_writes_each_wedge_to_its_own_surface(clark_split):
+    """What the second knob is for: one surface moves and the other does not."""
+    iterator = clark_split.iterate.correct[0]
+    unknowns = iterator.unknowns(clark_split)
+
+    moved = iterator.with_unknowns(
+        clark_split, {"tau_TE[0][0]": unknowns["tau_TE[0][0]"] + 0.05}
+    )
+
+    for section in moved.blades[0].sections:
+        c = section.thickness.tau_coeff
+        assert c[0][-1] == pytest.approx(unknowns["tau_TE[0][0]"] + 0.05)
+        assert c[1][-1] == pytest.approx(unknowns["tau_TE[0][1]"])
+        # And the nose is still one number, which is the other end's business.
+        assert c[0][0] == pytest.approx(c[1][0])
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["shared", "split"])
+def test_clark_sees_an_antisymmetric_trailing_edge_error_only_when_split(
+    clark, clark_split, monkeypatch, split
+):
+    """The null a shared wedge angle has, and the reason to be able to drop it.
+
+    Two surfaces equally wrong in opposite directions at the trailing edge
+    read as converged through one knob, which reports their mean. Given a knob
+    each, the same measurement reports what each surface is actually doing.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+
+    config = clark_split if split else clark
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    iterator = config.iterate.correct[0]
+    machine = config.design()
+
+    # Right everywhere but the last control point, where the two surfaces are
+    # wrong by the same amount in opposite directions.
+    fac = iterator.target(z, machine) + np.array([[0.0, 0.0, 0.0, 0.1], [0, 0, 0, -0.1]])
+    monkeypatch.setattr(
+        turbigen.loading, "measure_clark_profile", lambda *a: (z, fac)
+    )
+    errors = iterator.error(config, Result(machine=machine, grid=object()))
+
+    if split:
+        assert errors["tau_TE[0][0]"] > 0.05
+        assert errors["tau_TE[0][1]"] < -0.05
+    else:
+        assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_clark_split_ends_cannot_be_driven_by_the_level(clark_split, monkeypatch):
+    """Splitting the wedge does not hand the blade count a way into the shape.
+
+    The level is taken out of the residual before any knob reads it, so the
+    property `test_clark_ends_cannot_be_driven_by_the_level` checks for a
+    shared end holds for two ends as well.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    iterator = clark_split.iterate.correct[0]
+    machine = clark_split.design()
+    target = iterator.target(z, machine)
+
+    errors = []
+    for offset in (0.0, 0.3):
+        fac = target + np.array([[offset], [-offset]])
+        monkeypatch.setattr(
+            turbigen.loading, "measure_clark_profile", lambda *a, f=fac: (z, f)
+        )
+        errors.append(iterator.error(clark_split, Result(machine=machine, grid=object())))
+
+    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.6)
+    for name in ("tau_LE[0]", "tau_TE[0][0]", "tau_TE[0][1]"):
+        assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
+
+
 def test_clark_refuses_a_step_that_closes_the_section(clark):
     """A knob has no bound of its own that keeps an aerofoil open.
 

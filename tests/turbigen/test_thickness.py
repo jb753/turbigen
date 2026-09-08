@@ -372,22 +372,78 @@ def test_moving_the_nose_leaves_the_interior_where_it_was():
     )
 
 
-@pytest.mark.parametrize(
-    "end, where", [(0, "leading"), (-1, "trailing")], ids=["LE", "TE"]
-)
-def test_the_two_surfaces_have_to_agree_at_the_ends(end, where):
-    """One nose radius and one wedge angle is the whole of what this class is.
+def test_the_two_surfaces_have_to_agree_at_the_nose():
+    """One nose radius is what this class cannot do without.
 
-    A caller who has broken that is asking for a section this cannot represent,
+    A caller who has broken it is asking for a section this cannot represent,
     so it says so rather than quietly taking the first row and discarding the
-    other.
+    other. The trailing edge is the opposite case --- see below.
     """
     thickness = design()
     c = thickness.tau_coeff.copy()
-    c[1, end] += 0.1
+    c[1, 0] += 0.1
 
-    with pytest.raises(ValueError, match=f"share one {where} edge"):
+    with pytest.raises(ValueError, match="share one leading edge"):
         thickness.with_tau_coeff(c)
+
+
+def test_the_two_surfaces_need_not_agree_at_the_trailing_edge():
+    """Each surface leaves at its own wedge angle, if it is given one.
+
+    Written through the coefficients rather than the field, which is the path
+    an iterator takes: what comes back carries a pair, and reads back out the
+    coefficients that were put in.
+    """
+    thickness = design()
+    c = thickness.tau_coeff.copy()
+    c[1, -1] += 0.1
+
+    moved = thickness.with_tau_coeff(c)
+    assert moved.tanwedge == pytest.approx((thickness.tanwedge,) * 2 + np.array([0.0, 0.1]))
+    np.testing.assert_allclose(moved.tau_coeff, c, atol=1e-14)
+
+
+def test_one_wedge_angle_reads_as_two():
+    """`tanwedge_both` is the pair however the field was written."""
+    assert design(tanwedge=0.25).tanwedge_both == (0.25, 0.25)
+    assert design(tanwedge=(0.30, 0.20)).tanwedge_both == (0.30, 0.20)
+
+
+def test_a_split_wedge_leaves_each_surface_at_its_own_angle():
+    """Which is what it is for, measured off the thickness rather than asserted."""
+    m = np.linspace(0.9, 1.0, 5001)
+    split = design(tanwedge=(0.30, 0.20), t_TE=0.02)
+
+    slopes = [np.gradient(t, m)[-1] for t in split.thick_both(m)]
+
+    # dt/dm at the trailing edge is -(tanwedge + t_TE / 2) on each surface.
+    for slope, tanwedge in zip(slopes, split.tanwedge_both):
+        assert slope == pytest.approx(-(tanwedge + 0.02 / 2.0), rel=1e-3)
+
+
+def test_a_split_wedge_leaves_the_trailing_edge_where_it_was():
+    """The point does not move; only the direction the surfaces reach it from.
+
+    Half of `t_TE` sits on each surface at `m = 1` whatever the wedge does,
+    that being the linear ramp rather than anything the shape space reaches.
+    """
+    shared = design(tanwedge=0.25, t_TE=0.02)
+    split = design(tanwedge=(0.30, 0.20), t_TE=0.02)
+
+    for thickness in (shared, split):
+        assert thickness.thick_both(1.0) == pytest.approx((0.01, 0.01))
+
+
+def test_a_wedge_angle_is_one_number_or_one_per_surface():
+    with pytest.raises(ValueError, match="one per surface, so two"):
+        design(tanwedge=(0.3, 0.2, 0.1))
+
+
+def test_a_split_wedge_round_trips_through_a_config_dict():
+    """YAML holds the pair as a list, as it holds the coefficients."""
+    thickness = design(tanwedge=(0.30, 0.20))
+    assert ThicknessDesign.from_dict(thickness.to_dict()) == thickness
+    assert thickness.to_dict()["tanwedge"] == [0.30, 0.20]
 
 
 def test_coefficients_have_to_be_shaped_like_the_curve():
