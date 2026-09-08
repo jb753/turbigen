@@ -1001,7 +1001,12 @@ def reconstruct(config, machine, grid, history, field):
         history=history,
     )
 
-    result = dataclasses.replace(result, error=iterate.errors(config, result))
+    # Tolerant, because this is describing a stored field rather than steering
+    # a design off it: a march that diverged has nothing to measure and is
+    # exactly the run whose report someone needs to read.
+    result = dataclasses.replace(
+        result, error=iterate.errors(config, result, strict=False)
+    )
     return dataclasses.replace(result, metrics=metric.measure(config, result))
 
 

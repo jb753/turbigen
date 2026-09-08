@@ -17,8 +17,12 @@ Test cases:
 - test_paths_are_real_leaves: and every path names a leaf that exists
 - test_step_subtracts_the_error: the rule, exactly
 - test_step_clips: a bad early step cannot throw the design
-- test_step_leaves_unmeasured_knobs_alone: a failed run is not a reason to move
-- test_unmeasured_knobs_are_not_converged: nor a reason to stop
+- test_step_refuses_to_move_a_design_it_could_not_measure: a failed run stops it
+- test_unmeasured_knobs_are_not_converged: nor is silence agreement
+- test_each_iterator_keeps_its_own_jacobian_block: the Jacobian is block-diagonal
+- test_a_block_that_did_not_move_keeps_its_prior: a block learns from its own move
+- test_a_block_on_its_clip_does_not_shrink_another: the trust bound is per block
+- test_an_unmeasurable_section_says_where_it_is: a failure names what to fix
 - test_converge_reaches_the_answer: the loop, on an analytic error
 - test_converge_stops_on_a_diverged_march: a blown-up run measures nothing
 - test_converge_gives_up: and stops when it cannot
@@ -48,6 +52,7 @@ import pytest
 from test_blade import FLUID, MEAN_LINE, blade, build
 
 import turbigen.loading
+import turbigen.util
 from turbigen import Config, Result, iterate, node, shapespace
 
 
@@ -82,6 +87,35 @@ class Fixed(iterate.Iterator):
 
     def error(self, config, result):
         return {self.name: self.slope * (config.mean_line.psi - self.target)}
+
+
+class Other(iterate.Iterator):
+    """A second stand-in on a different leaf, so two iterators are disjoint.
+
+    Its error reads *both* leaves, which is the cross-iterator coupling the
+    block-diagonal Jacobian declines to learn: `spill` is how much of the other
+    iterator's knob leaks into this one's error.
+    """
+
+    target: float = 1.0
+    slope: float = 1.0
+    spill: float = 0.0
+    name: str = "other"
+
+    def unknowns(self, config):
+        return {self.name: float(config.mean_line.phi2)}
+
+    def with_unknowns(self, config, values):
+        return dataclasses.replace(
+            config,
+            mean_line=dataclasses.replace(config.mean_line, phi2=values[self.name]),
+        )
+
+    def error(self, config, result):
+        return {
+            self.name: self.slope * (config.mean_line.phi2 - self.target)
+            + self.spill * config.mean_line.psi
+        }
 
 
 class Coupled(iterate.Iterator):
@@ -321,16 +355,20 @@ def test_step_clips():
     assert stepped.mean_line.psi == pytest.approx(psi + 0.1)
 
 
-def test_step_leaves_unmeasured_knobs_alone(config):
-    """A run with nothing to measure is not a reason to move the design."""
-    empty = Result()
-
-    assert iterate.step(config, empty) == config
+def test_step_refuses_to_move_a_design_it_could_not_measure(config):
+    """Stepping knobs nothing was read off is worse than stopping."""
+    with pytest.raises(iterate.MeasurementError):
+        iterate.step(config, Result())
 
 
 def test_unmeasured_knobs_are_not_converged(config):
-    """Nor a reason to stop: silence is not agreement."""
-    assert iterate.converged(config, Result()) is False
+    """Silence is not agreement, and now it is not silence either."""
+    with pytest.raises(iterate.MeasurementError):
+        iterate.converged(config, Result())
+
+    # The tolerant reading still describes the run rather than raising, which
+    # is what a report of a diverged march needs.
+    assert iterate.errors(config, Result(), strict=False) == {}
 
 
 def test_converge_reaches_the_answer():
@@ -426,6 +464,88 @@ def test_a_coupled_system_converges_faster(config):
     assert with_history <= 5
     assert final.mean_line.psi == pytest.approx(3.0, abs=1e-3)
     assert final.mean_line.phi2 == pytest.approx(1.0, abs=1e-3)
+
+
+def _two_blocks(spill=0.0, **kw):
+    """A config whose two iterators own one knob each."""
+    return dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(
+            correct=(Fixed(name="toy", **kw), Other(name="other", spill=spill))
+        ),
+    )
+
+
+def test_each_iterator_keeps_its_own_jacobian_block():
+    """Cross-iterator terms are left at the prior, however loudly they couple."""
+    config = _two_blocks(spill=2.0)
+    result = Result()
+
+    # A pass in which both knobs moved, so a full Broyden update would have
+    # every entry to learn from and would fill the off-diagonal in.
+    previous = (
+        {"toy": config.mean_line.psi - 1.0, "other": config.mean_line.phi2 - 1.0},
+        {"toy": -1.0, "other": -3.0},
+    )
+
+    table = iterate._assembled(config, result, [previous])
+
+    i = table.names.index("toy")
+    j = table.names.index("other")
+    assert table.jacobian[i, j] == 0.0
+    assert table.jacobian[j, i] == 0.0
+    assert [sorted(idx.tolist()) for idx in table.blocks] == [[i], [j]]
+
+
+def test_a_block_that_did_not_move_keeps_its_prior():
+    """The move that teaches a block is its own, not one made elsewhere."""
+    config = _two_blocks()
+    result = Result()
+
+    # `toy` strides, `other` barely twitches. Sharing one DU_MIN would let the
+    # stride carry `other` past the threshold and update it off noise.
+    previous = (
+        {"toy": config.mean_line.psi - 5.0, "other": config.mean_line.phi2 - 1e-9},
+        {"toy": -20.0, "other": -1.0},
+    )
+
+    table = iterate._assembled(config, result, [previous])
+
+    i = table.names.index("toy")
+    j = table.names.index("other")
+    assert table.jacobian[i, i] != table.prior[i]
+    assert table.jacobian[j, j] == table.prior[j]
+
+
+def test_a_block_on_its_clip_does_not_shrink_another():
+    """A trust bound is a statement about one block's step, not everyone's."""
+    far = _two_blocks(target=100.0, clip=0.5)
+    alone = dataclasses.replace(
+        far, iterate=iterate.Iteration(correct=(Other(name="other"),))
+    )
+
+    both = iterate.step(far, Result())
+    only = iterate.step(alone, Result())
+
+    # `toy` is a hundred away and pinned to its clip; `other` must take the
+    # same step it would have taken with nothing beside it.
+    assert both.mean_line.phi2 == pytest.approx(only.mean_line.phi2)
+    assert abs(both.mean_line.psi - far.mean_line.psi) == pytest.approx(0.5)
+
+
+def test_an_unmeasurable_section_says_where_it_is(config, monkeypatch):
+    """A failure the config can act on names the row, the section and the span.
+
+    A section sitting above a clearance gap has no blade surface to stagnate
+    on, and that is a config to fix rather than a knob to hold.
+    """
+    monkeypatch.setattr(turbigen.util, "cut_blade_surfs", lambda grid: [None, None])
+    monkeypatch.setattr(iterate, "_incidence", lambda *a, **k: np.nan)
+
+    result = Result(machine=config.design(), grid=object())
+    with pytest.raises(iterate.MeasurementError, match=r"row 0 section 0") as raised:
+        iterate.Incidence().error(config, result)
+    assert "clearance gap" in str(raised.value)
 
 
 def test_a_move_too_small_to_learn_from_is_ignored():
@@ -1273,8 +1393,9 @@ def test_peak_round_trips_through_a_config_dict(loading):
     assert config.to_dict()["iterate"]["correct"][0]["type"] == "peak_Ma"
 
 
-def test_peak_without_a_grid_measures_nothing(loading):
-    assert iterate.PeakMach().error(loading, Result()) == {}
+def test_peak_without_a_grid_raises(loading):
+    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
+        iterate.PeakMach().error(loading, Result())
 
 
 def test_peak_delegates_to_the_measurement(loading, monkeypatch):
@@ -1366,9 +1487,10 @@ def test_loading_uses_the_inherited_tolerance(loading):
     assert iterator.tolerances(loading) == {"camber_coeff[0][0]": 0.07}
 
 
-def test_loading_without_a_grid_measures_nothing(loading):
-    """A run with no field says nothing about a distribution."""
-    assert loading.iterate.correct[0].error(loading, Result()) == {}
+def test_loading_without_a_grid_raises(loading):
+    """A run with no field cannot say anything, and must say so."""
+    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
+        loading.iterate.correct[0].error(loading, Result())
 
 
 def test_loading_needs_a_bernstein_camber():
@@ -1479,13 +1601,15 @@ def test_loading_delegates_to_the_measurement(loading, monkeypatch):
     assert error["camber_coeff[0][0]"] == pytest.approx(1.95 - 1.8)
 
 
-def test_loading_drops_a_distribution_with_no_suction_surface(loading, monkeypatch):
-    """An unmeasured knob is held, not stepped on a NaN."""
+def test_loading_raises_with_no_suction_surface(loading, monkeypatch):
+    """A knob that cannot be read stops the run rather than leaving the table."""
     monkeypatch.setattr(turbigen.loading, "measure", lambda *a: None)
 
     result = Result(machine=loading.design(), grid=object())
-    assert loading.iterate.correct[0].error(loading, result) == {}
-    assert not iterate.converged(loading, result)
+    with pytest.raises(iterate.MeasurementError, match="suction surface"):
+        loading.iterate.correct[0].error(loading, result)
+    with pytest.raises(iterate.MeasurementError):
+        iterate.converged(loading, result)
 
 
 #
@@ -1608,8 +1732,9 @@ def test_profile_refuses_an_impossible_setting(kwargs):
         iterate.LoadingProfile(**kwargs)
 
 
-def test_profile_without_a_grid_measures_nothing(profile):
-    assert profile.iterate.correct[0].error(profile, Result()) == {}
+def test_profile_without_a_grid_raises(profile):
+    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
+        profile.iterate.correct[0].error(profile, Result())
 
 
 def test_profile_gains_clips_and_tolerances_differ_for_shape_and_level():
@@ -1722,13 +1847,15 @@ def test_profile_all_knobs_held_reports_zero_shape_and_no_level(profile, monkeyp
     assert error == {"camber_coeff[0][0]": 0.0, "camber_coeff[0][1]": 0.0}
 
 
-def test_profile_drops_a_distribution_with_no_suction_surface(profile, monkeypatch):
-    """An unmeasured row is held, not stepped on a NaN."""
+def test_profile_raises_with_no_suction_surface(profile, monkeypatch):
+    """A row that cannot be read stops the run rather than leaving the table."""
     monkeypatch.setattr(turbigen.loading, "measure_profile", lambda *a: None)
 
     result = Result(machine=profile.design(), grid=object())
-    assert profile.iterate.correct[0].error(profile, result) == {}
-    assert not iterate.converged(profile, result)
+    with pytest.raises(iterate.MeasurementError, match="suction surface"):
+        profile.iterate.correct[0].error(profile, result)
+    with pytest.raises(iterate.MeasurementError):
+        iterate.converged(profile, result)
 
 
 #
@@ -2065,14 +2192,13 @@ def test_clark_shifts_every_section_together(clark):
     iterator = clark.iterate.correct[0]
     unknowns = iterator.unknowns(clark)
 
-    moved = iterator.with_unknowns(clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] + 0.1})
+    moved = iterator.with_unknowns(
+        clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] + 0.1}
+    )
 
     shifts = [
-        section.thickness.tau_coeff[0][1]
-        - original.thickness.tau_coeff[0][1]
-        for section, original in zip(
-            moved.blades[0].sections, clark.blades[0].sections
-        )
+        section.thickness.tau_coeff[0][1] - original.thickness.tau_coeff[0][1]
+        for section, original in zip(moved.blades[0].sections, clark.blades[0].sections)
     ]
     assert shifts == pytest.approx([0.1] * len(shifts))
 
@@ -2225,14 +2351,17 @@ def test_clark_refuses_a_step_that_closes_the_section(clark):
     iterator = clark.iterate.correct[0]
     unknowns = iterator.unknowns(clark)
 
-    held = iterator.with_unknowns(clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] - 5.0})
+    held = iterator.with_unknowns(
+        clark, {"tau[0][0][1]": unknowns["tau[0][0][1]"] - 5.0}
+    )
 
     assert held.blades[0].sections == clark.blades[0].sections
 
 
-def test_clark_is_unmeasured_without_a_grid(clark):
+def test_clark_without_a_grid_raises(clark):
     iterator = clark.iterate.correct[0]
-    assert iterator.error(clark, Result(machine=clark.design())) == {}
+    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
+        iterator.error(clark, Result(machine=clark.design()))
 
 
 def test_clark_needs_a_two_sided_thickness():

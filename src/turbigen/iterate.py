@@ -51,6 +51,22 @@ Named apart from what one run says so that `iterate` can quieten a hundred runs
 on the console without losing the few lines that describe the iteration itself.
 """
 
+
+class MeasurementError(Exception):
+    """A knob's error could not be measured from the solution.
+
+    Raised rather than returned as an absent knob, because a knob missing from
+    the table is one the loop stops correcting without ever saying so: the
+    iteration carries on, reports the knobs it still has, and calls itself
+    converged on a design nothing checked. What cannot be measured is a fact
+    about the run, and the run should stop and say it.
+
+    The callers that legitimately have nothing to measure say so themselves:
+    see :func:`errors`, whose `strict` is how a report draws a march that blew
+    up.
+    """
+
+
 TINY = 1e-9
 """Below this a nominal value is treated as zero for a relative tolerance."""
 
@@ -382,11 +398,29 @@ def unknowns(config):
     return merged
 
 
-def errors(config, result):
-    """Return every configured iterator's error, merged."""
+def errors(config, result, strict=True):
+    """Return every configured iterator's error, merged.
+
+    **Strict by default**, which is what the iteration wants: an iterator that
+    cannot measure raises :class:`MeasurementError`, and a loop correcting a
+    design on knobs it can no longer see is worse than a loop that stops.
+
+    `strict=False` is for a caller that is describing a run rather than
+    steering one --- a report of a march that diverged has nothing to measure
+    and is exactly the report someone needs. Each iterator that cannot measure
+    is logged and its knobs omitted, and the rest are returned as usual.
+    """
     merged = {}
     for iterator in config.iterate.correct:
-        merged.update(iterator.error(config, result))
+        try:
+            merged.update(iterator.error(config, result))
+        except MeasurementError as err:
+            if strict:
+                raise
+            logger.warning(
+                f"Leaving the knobs of {type(iterator).__name__} out of the "
+                f"table, because {err}"
+            )
     return merged
 
 
@@ -406,7 +440,7 @@ def converged(config, result):
     return True
 
 
-def measured_errors(config, result):
+def measured_errors(config, result, strict=True):
     """Return the errors `result` reports, preferring the ones it recorded.
 
     A run stores what its iterators measured, so re-measuring would repeat work
@@ -415,7 +449,7 @@ def measured_errors(config, result):
     """
     if result.error:
         return dict(result.error)
-    return errors(config, result)
+    return errors(config, result, strict=strict)
 
 
 def properties(config):
@@ -453,6 +487,7 @@ class _Table:
     e_scale: np.ndarray
     prior: np.ndarray
     jacobian: np.ndarray
+    blocks: list
 
 
 def _assembled(config, result, history):
@@ -461,13 +496,21 @@ def _assembled(config, result, history):
     values = unknowns(config)
     gain, clip, tolerance = properties(config)
 
-    # A knob with nothing measured is held, as is one with no gain, which is
-    # how an iterator says it does not want to move.
-    names = [
-        name
-        for name in values
-        if name in measured and gain[name] and tolerance[name] > TINY
-    ]
+    # A knob with no gain is held, which is how an iterator says it does not
+    # want to move; so is one whose tolerance is nothing to measure against.
+    # Nothing else may be missing: `errors` is strict for the callers that
+    # step a design, so a name absent here is a knob the loop would correct
+    # without ever having looked at it.
+    missing = sorted(set(values) - set(measured))
+    if missing:
+        raise MeasurementError(
+            f"the table is missing {missing}, so those knobs would be stepped "
+            f"on nothing. An iterator that cannot measure raises rather than "
+            f"returning fewer knobs, so this is a caller that assembled a "
+            f"table from a tolerant `errors(..., strict=False)`."
+        )
+
+    names = [name for name in values if gain[name] and tolerance[name] > TINY]
     if not names:
         return None
 
@@ -480,7 +523,10 @@ def _assembled(config, result, history):
     e_scale = np.array([tolerance[name] for name in names])
     prior = np.array([np.sign(gain[name]) for name in names])
 
-    jacobian = _jacobian(names, prior, history, (values, measured), u_scale, e_scale)
+    blocks = _blocks(config, names)
+    jacobian = _jacobian(
+        names, prior, history, (values, measured), u_scale, e_scale, blocks
+    )
     _report_flat(names, jacobian)
 
     return _Table(
@@ -493,7 +539,34 @@ def _assembled(config, result, history):
         e_scale=e_scale,
         prior=prior,
         jacobian=jacobian,
+        blocks=blocks,
     )
+
+
+def _blocks(config, names):
+    """Return the indices into `names` each iterator owns, one array apiece.
+
+    The Jacobian is block-diagonal over these, which is the claim that what an
+    iterator's knobs do to its own errors is worth learning and what they do to
+    another iterator's is not. That is not because the cross terms are zero ---
+    a row's exit angle plainly sets the next row's inlet angle --- but because
+    they were never identifiable from the trajectory a run takes: see
+    :func:`step`.
+    """
+    blocks, seen = [], {}
+    for iterator in config.iterate.correct:
+        own = iterator.unknowns(config)
+        for name in own:
+            if name in seen and name in names:
+                raise ValueError(
+                    f"{name} is claimed by both {seen[name]} and "
+                    f"{type(iterator).__name__}, so it belongs to no one block."
+                )
+            seen[name] = type(iterator).__name__
+        idx = np.array([i for i, name in enumerate(names) if name in own], dtype=int)
+        if idx.size:
+            blocks.append(idx)
+    return blocks
 
 
 def step(config, result, history=()):
@@ -506,10 +579,24 @@ def step(config, result, history=()):
     paid for. **With no history the step is arithmetically identical to
     ``u -= gain * e``**, so a first iteration is never worse than it was.
 
-    What that buys is the off-diagonal terms. The exit angle of a row sets the
-    inlet angle of the next, so correcting one row's deviation moves the next
-    row's incidence by a comparable amount; a diagonal step cannot see that and
-    propagates a correction one row per iteration.
+    What that buys is the off-diagonal terms *within an iterator*: the Jacobian
+    is block-diagonal over :func:`_blocks`, one block per iterator, and each
+    block is solved and bounded on its own.
+
+    **The cross-iterator terms are deliberately not learned**, though they are
+    plainly not zero --- the exit angle of a row sets the inlet angle of the
+    next, so a deviation correction moves the following row's incidence. They
+    are left at the prior because they were never identifiable from the
+    trajectory a run takes. A twenty-iteration run offers at most nineteen
+    rank-one updates against a full matrix of some hundreds of entries, each
+    constraining it along one direction only, and those directions are strongly
+    correlated because every one of them is the Newton step for a residual that
+    moves slowly. Worse, every knob moves on every iteration, so a single
+    `(du, de)` pair cannot say which knob caused which part of the error
+    change, and the update spreads the credit along `du` regardless. Fitting
+    that data to a block of ten is a question the run can answer; fitting it to
+    a matrix of six hundred is one it cannot, and an unidentifiable term
+    learned anyway is worse than a term left honestly at its prior.
 
     Parameters
     ----------
@@ -530,11 +617,7 @@ def step(config, result, history=()):
 
     names, values, _gain, clip = table.names, table.values, table.gain, table.clip
 
-    change = _newton(
-        table.jacobian,
-        np.array([table.measured[n] for n in names]) / table.e_scale,
-        table.prior,
-    )
+    error = np.array([table.measured[n] for n in names]) / table.e_scale
 
     # The clip is the trust bound, and the reason a flat response degrades to
     # the old behaviour rather than to a wild excursion.
@@ -544,7 +627,19 @@ def step(config, result, history=()):
             for name, scale in zip(names, table.u_scale)
         ]
     )
-    change = _bounded(change, limit)
+
+    # Solved and bounded a block at a time, both for the same reason: a block
+    # is meant to be answerable for itself. Solving the assembled
+    # block-diagonal in one go is the same arithmetic but hands every knob to
+    # the worst-conditioned block, since `_newton` reads one condition number
+    # and falls back for everything; bounding it in one go lets a block sitting
+    # on its clip shrink the step of a block that is nowhere near its own.
+    change = np.zeros(len(names))
+    for idx in table.blocks:
+        step_now = _newton(
+            table.jacobian[np.ix_(idx, idx)], error[idx], table.prior[idx]
+        )
+        change[idx] = _bounded(step_now, limit[idx])
 
     moved = {
         name: values[name] + change[i] * table.u_scale[i]
@@ -662,8 +757,19 @@ def calibrate(config, result, history=()):
     )
 
 
-def _jacobian(names, prior, history, current, u_scale, e_scale):
+def _jacobian(names, prior, history, current, u_scale, e_scale, blocks):
     """Return the scaled Jacobian, from the prior and every informative move.
+
+    Block-diagonal over `blocks`, and each block carries its own secant
+    condition ``B_k du_k = de_k`` --- the rank-one update is applied to the
+    restricted vectors rather than applied whole and then masked, which would
+    leave a matrix satisfying nothing in particular.
+
+    **Both guards are per block, and that is the point of them being here.**
+    A move is worth learning from when the knobs doing the learning moved, not
+    when something elsewhere in the table did: a shared `DU_MIN` lets a block
+    that barely moved update itself off another block's stride, which is how
+    a Jacobian learns noise.
 
     Rebuilt from the trajectory on every call rather than carried between
     calls, so that `step` keeps no state and can be reasoned about one call at
@@ -673,23 +779,19 @@ def _jacobian(names, prior, history, current, u_scale, e_scale):
 
     trajectory = list(history) + [current]
     for (values, errs), (values_next, errs_next) in itertools.pairwise(trajectory):
-        if not all(
-            name in mapping
-            for mapping in (values, errs, values_next, errs_next)
-            for name in names
-        ):
-            # A pass that measured different knobs cannot be differenced.
-            continue
+        du_all = np.array([values_next[n] - values[n] for n in names]) / u_scale
+        de_all = np.array([errs_next[n] - errs[n] for n in names]) / e_scale
 
-        du = np.array([values_next[n] - values[n] for n in names]) / u_scale
-        de = np.array([errs_next[n] - errs[n] for n in names]) / e_scale
+        for idx in blocks:
+            du, de = du_all[idx], de_all[idx]
 
-        length = float(du @ du)
-        if np.sqrt(length) < DU_MIN:
-            logger.debug("A move too small to learn from, so the Jacobian stands.")
-            continue
+            length = float(du @ du)
+            if np.sqrt(length) < DU_MIN:
+                logger.debug("A move too small to learn from, so the block stands.")
+                continue
 
-        jacobian = jacobian + np.outer(de - jacobian @ du, du) / length
+            block = jacobian[np.ix_(idx, idx)]
+            jacobian[np.ix_(idx, idx)] = block + np.outer(de - block @ du, du) / length
 
     return jacobian
 
@@ -754,8 +856,13 @@ def _report_flat(names, jacobian):
 
 
 def format_table(config, result):
-    """Return a one-line-per-unknown summary of where the iteration stands."""
-    measured = measured_errors(config, result)
+    """Return a one-line-per-unknown summary of where the iteration stands.
+
+    Tolerant of a knob it cannot measure, which it renders as `nan`: this
+    describes a run rather than steering one, and a table that raised would
+    take the log line away from exactly the run someone needs to read.
+    """
+    measured = measured_errors(config, result, strict=False)
     values = unknowns(config)
 
     tolerances = {}
@@ -1021,8 +1128,10 @@ class Deviation(Iterator):
 
     def error(self, config, result):
         if result.actual is None or result.machine is None:
-            logger.debug("No mixed-out mean line, so no deviation to measure.")
-            return {}
+            raise MeasurementError(
+                "there is no mixed-out mean line to read an exit angle off, so "
+                "the deviation of every row is unmeasured."
+            )
 
         nominal = result.machine.mean_line
         return {
@@ -1120,8 +1229,10 @@ class Incidence(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no incidence to measure.")
-            return {}
+            raise MeasurementError(
+                "there is no solved grid to cut, so the incidence onto every "
+                "row is unmeasured."
+            )
 
         # One cut of each blade, not one per section: the cut is the expensive
         # part of the measurement and does not depend on span.
@@ -1132,13 +1243,15 @@ class Incidence(Iterator):
             incidence = _incidence(
                 result, surfaces[i_row], i_row, section.spf, self.tolerance
             )
-            if np.isfinite(incidence):
-                measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
-            else:
-                logger.info(
-                    f"Could not measure the incidence of row {i_row} "
-                    f"section {i_section}."
+            if not np.isfinite(incidence):
+                raise MeasurementError(
+                    f"the incidence onto row {i_row} section {i_section} could "
+                    f"not be measured at spf={section.spf:.2f}. A section above "
+                    f"a clearance gap has no blade surface to stagnate on: "
+                    f"either the march is not a flow field, or the section sits "
+                    f"in the gap and belongs below it."
                 )
+            measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
 
         return measured
 
@@ -1428,8 +1541,10 @@ class LoadingDistribution(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no loading distribution to measure.")
-            return {}
+            raise MeasurementError(
+                f"there is no solved grid to cut, so the loading distribution "
+                f"of row {self.i_row} is unmeasured."
+            )
 
         self._check(config)
 
@@ -1437,11 +1552,13 @@ class LoadingDistribution(Iterator):
             result, self.i_row, self.spf, self.zeta_front
         )
         if measured is None or not np.isfinite(measured.fac_front):
-            logger.info(
-                f"Could not find a suction surface on row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its front acceleration is unmeasured."
+            raise MeasurementError(
+                f"no suction surface could be read on row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its front acceleration is unmeasured. "
+                f"A section above a clearance gap has no blade to cut: either "
+                f"the march is not a flow field, or the section belongs below "
+                f"the gap."
             )
-            return {}
 
         return dict(zip(self.names(), (measured.fac_front - self.fac_front,)))
 
@@ -1643,8 +1760,10 @@ class PeakMach(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no loading level to measure.")
-            return {}
+            raise MeasurementError(
+                f"there is no solved grid to cut, so the loading level of row "
+                f"{self.i_row} is unmeasured."
+            )
 
         _circulation_count(config, self.i_row)
 
@@ -1652,11 +1771,13 @@ class PeakMach(Iterator):
             result, self.i_row, self.spf, self.zeta_front, self.zeta_TE
         )
         if measured is None or not np.isfinite(measured.fac_peak):
-            logger.info(
-                f"Could not find a suction peak on row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its loading level is unmeasured."
+            raise MeasurementError(
+                f"no suction peak could be fitted on row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its loading level is unmeasured. A "
+                f"section above a clearance gap has no blade to cut: either "
+                f"the march is not a flow field, or the section belongs below "
+                f"the gap."
             )
-            return {}
 
         return {f"Co[{self.i_row}]": measured.fac_peak - self.fac_peak}
 
@@ -1920,8 +2041,10 @@ class LoadingProfile(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no loading profile to measure.")
-            return {}
+            raise MeasurementError(
+                f"there is no solved grid to cut, so the loading profile of "
+                f"row {self.i_row} is unmeasured."
+            )
 
         self._check(config)
         _circulation_count(config, self.i_row)
@@ -1930,11 +2053,13 @@ class LoadingProfile(Iterator):
             result, self.i_row, self.spf, self.knob_m()
         )
         if measured is None:
-            logger.info(
-                f"Could not find a suction surface on row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its loading profile is unmeasured."
+            raise MeasurementError(
+                f"no suction surface could be read on row {self.i_row} at "
+                f"spf={self.spf:.2f}, so its loading profile is unmeasured. A "
+                f"section above a clearance gap has no blade to cut: either "
+                f"the march is not a flow field, or the section belongs below "
+                f"the gap."
             )
-            return {}
         zeta, fac = measured
 
         mach_ratio = turbigen.loading.mach_ratio(result.machine, self.i_row)
@@ -2325,8 +2450,10 @@ class ClarkProfile(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No solved grid, so no loading profile to measure.")
-            return {}
+            raise MeasurementError(
+                f"there is no solved grid to cut, so the loading profile of "
+                f"row {self.i_row} is unmeasured."
+            )
 
         self._check(config)
         _circulation_count(config, self.i_row)
@@ -2335,11 +2462,13 @@ class ClarkProfile(Iterator):
             result, self.i_row, self.spf, self._thickness(config).m_ctl
         )
         if measured is None:
-            logger.info(
-                f"Could not measure both surfaces of row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its loading profile is unmeasured."
+            raise MeasurementError(
+                f"both surfaces of row {self.i_row} could not be read at "
+                f"spf={self.spf:.2f}, so its loading profile is unmeasured. A "
+                f"section above a clearance gap has no blade to cut: either "
+                f"the march is not a flow field, or the section belongs below "
+                f"the gap."
             )
-            return {}
         z, fac = measured
 
         residual = fac - self.target(z, result.machine)
@@ -2627,8 +2756,10 @@ class MeanLine(Iterator):
 
     def error(self, config, result):
         if result.actual is None:
-            logger.debug("No mixed-out mean line, so no design variables to match.")
-            return {}
+            raise MeasurementError(
+                "there is no mixed-out mean line, so the design variables "
+                f"{sorted(self.variables)} are unmeasured."
+            )
 
         achieved = config.mean_line.backward(result.actual)
 
@@ -2765,8 +2896,12 @@ class SurfaceReynolds(Iterator):
 
     def error(self, config, result):
         if result.machine is None:
-            logger.debug("No machine, so no surface Reynolds number to measure.")
-            return {}
+            raise MeasurementError(
+                "there is no machine to take a surface Reynolds number off. "
+                "This one is measured from the design rather than from a "
+                "march, so there is always a machine to read unless something "
+                "handed this a result it never designed."
+            )
 
         Re_surf = result.machine.Re_surf()
         if not len(Re_surf):
@@ -3060,8 +3195,10 @@ class Repeat(Iterator):
 
     def error(self, config, result):
         if result.grid is None or result.machine is None:
-            logger.debug("No grid, so no exit profile to pass upstream.")
-            return {}
+            raise MeasurementError(
+                "there is no solved grid to cut, so the exit profile that "
+                "feeds the inlet is unmeasured."
+            )
 
         measured = exit_profile(result, self.order, self.offset)
         current = self.unknowns(config)
