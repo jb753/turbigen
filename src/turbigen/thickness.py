@@ -38,11 +38,6 @@ _ROOT_TOL = 1e-9
 """Largest imaginary part for a root to count as real."""
 
 
-def _is_pair(value):
-    """Whether a design parameter is written per surface rather than once."""
-    return isinstance(value, (tuple, list, np.ndarray))
-
-
 class ThicknessDesign(Node):
     """Base for thickness distributions, normalised by meridional chord.
 
@@ -249,11 +244,11 @@ class ClarkThickness(ThicknessDesign):
     And the trailing edge thickness, split evenly, so a blunt trailing edge
     stays centred on the camber line however the surfaces arrive at it.
 
-    The wedge angle may be either. One number is the symmetric section this
-    class started as, where the trailing edge metal angle is the camber line's
-    alone to set; a pair lets each surface leave at its own angle, which is a
-    degree of freedom in the rear of the blade and a claim on the exit
-    direction --- see :attr:`tanwedge`.
+    The wedge angle is per surface, always: each leaves the trailing edge at
+    its own angle, which is a degree of freedom in the rear of the blade and a
+    claim on the exit direction --- see :attr:`tanwedge`. Writing the same
+    number twice is the symmetric section this class started as, and is the
+    only way to ask for it.
 
     What is left is the interior of each surface, and only the interior: each
     is the straight line in shape space between its own two endpoints plus a
@@ -290,12 +285,14 @@ class ClarkThickness(ThicknessDesign):
     symmetric about its camber line.
     """
 
-    tanwedge: float | tuple[float, float] = 0.0
-    """Tangent of the trailing edge wedge angle [--].
+    tanwedge: tuple[float, float] = (0.0, 0.0)
+    """Tangent of each surface's trailing edge wedge angle [--].
 
-    One number for both surfaces, or a pair to give each its own, suction
-    first as :attr:`coeff` is. :attr:`tanwedge_both` is the pair either way,
-    and is what everything reads.
+    One per surface, suction first as :attr:`coeff` is, and always a pair:
+    equal entries are how a section asks to be symmetric about its camber line
+    at the trailing edge, rather than a different kind of section. Nothing
+    downstream has to ask which form was written, and the loop that shapes
+    these has the same number of knobs whatever they hold.
 
     **What a pair costs, which is not thickness.** The trailing edge point
     stays where it was: half-thickness at ``m = 1`` is ``t_TE / 2`` on each
@@ -329,17 +326,6 @@ class ClarkThickness(ThicknessDesign):
     t_TE: float = 0.0
     """Trailing edge thickness, the total due to both sides [--]."""
 
-    @property
-    def tanwedge_both(self):
-        """Return the wedge angle tangent of each surface, suction first.
-
-        The pair whether :attr:`tanwedge` was written as one number or two, so
-        that nothing downstream has to ask which it was.
-        """
-        if _is_pair(self.tanwedge):
-            return (float(self.tanwedge[0]), float(self.tanwedge[1]))
-        return (float(self.tanwedge),) * 2
-
     def __post_init__(self):
         if len(self.coeff) != 2:
             raise ValueError(
@@ -359,10 +345,10 @@ class ClarkThickness(ThicknessDesign):
                 f"A leading edge radius must be positive, got R_LE={self.R_LE}."
             )
 
-        if _is_pair(self.tanwedge) and len(self.tanwedge) != 2:
+        if len(self.tanwedge) != 2:
             raise ValueError(
-                f"A wedge angle is one number for both surfaces or one per "
-                f"surface, so two, got {len(self.tanwedge)}."
+                f"A wedge angle is written per surface, so two of them, got "
+                f"{len(self.tanwedge)}."
             )
 
     @property
@@ -430,7 +416,7 @@ class ClarkThickness(ThicknessDesign):
         lines = np.array(
             [
                 tau_LE + (shapespace.tau_TE(self.t_TE, tanwedge) - tau_LE) * k
-                for tanwedge in self.tanwedge_both
+                for tanwedge in self.tanwedge
             ]
         )
 
@@ -490,10 +476,7 @@ class ClarkThickness(ThicknessDesign):
         return dataclasses.replace(
             self,
             R_LE=float(shapespace.R_LE_from_tau(tau_LE)),
-            # One number back out when the two surfaces agree, so that a design
-            # that never asked for a split wedge does not acquire one by being
-            # written through here and read back.
-            tanwedge=wedges[0] if wedges[0] == wedges[1] else wedges,
+            tanwedge=wedges,
             coeff=tuple(tuple(float(v) for v in row[1:-1]) for row in (c - lines)),
         )
 
@@ -516,7 +499,7 @@ class ClarkThickness(ThicknessDesign):
             tau_LE
             + (shapespace.tau_TE(self.t_TE, tanwedge) - tau_LE) * m
             + shapespace.evaluate_bernstein((0.0, *row, 0.0), m)
-            for row, tanwedge in zip(self.coeff, self.tanwedge_both)
+            for row, tanwedge in zip(self.coeff, self.tanwedge)
         )
 
     def thick_both(self, m):

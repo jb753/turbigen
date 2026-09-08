@@ -17,7 +17,7 @@ from turbigen import ClarkThickness, ThicknessDesign, shapespace
 CLARK = {
     "type": "clark",
     "R_LE": 0.01,
-    "tanwedge": 0.25,
+    "tanwedge": [0.25, 0.25],
     "t_TE": 0.02,
     "coeff": [[0.3, 0.1], [-0.1, 0.05]],
 }
@@ -98,18 +98,18 @@ def test_both_surfaces_share_the_nose_radius():
         np.testing.assert_allclose(side, circle, rtol=1e-5)
 
 
-def test_the_wedge_is_the_closing_slope_of_both_surfaces():
-    """One wedge angle, the camber line owning the trailing edge direction.
+def test_the_wedge_is_the_closing_slope_of_its_own_surface():
+    """Each surface closes at the angle written against it, and no other.
 
     Read on a closed trailing edge, where the wedge is the only thing setting
     the slope --- a finite `t_TE` steepens it by a further `t_TE / 2`.
     """
-    tanwedge = 0.25
+    tanwedge = (0.25, 0.15)
     m = 1.0 - np.array([1e-7, 2e-7])
 
-    for side in design(tanwedge=tanwedge, t_TE=0.0).thick_both(m):
+    for side, expected in zip(design(tanwedge=tanwedge, t_TE=0.0).thick_both(m), tanwedge):
         slope = np.diff(side) / np.diff(m)
-        np.testing.assert_allclose(slope, -tanwedge, rtol=1e-5)
+        np.testing.assert_allclose(slope, -expected, rtol=1e-5)
 
 
 def test_coefficients_move_only_the_interior():
@@ -124,7 +124,7 @@ def test_coefficients_move_only_the_interior():
     ends = np.array([0.0, 1.0])
     expected = (
         shapespace.tau_LE(CLARK["R_LE"]),
-        shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"]),
+        shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"][0]),
     )
 
     for coeff in (((), ()), ((2.0, -1.5), (-1.0, 3.0)), ((0.0, 9.0), (9.0, 0.0))):
@@ -291,7 +291,7 @@ def test_the_end_coefficients_are_the_nose_and_the_wedge():
     for row in c:
         assert row[0] == pytest.approx(shapespace.tau_LE(CLARK["R_LE"]))
         assert row[-1] == pytest.approx(
-            shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"])
+            shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"][0])
         )
 
 
@@ -300,7 +300,7 @@ def test_zero_perturbation_is_the_straight_line():
     thickness = design(coeff=((0.0, 0.0), (0.0, 0.0)))
     line = np.linspace(
         shapespace.tau_LE(CLARK["R_LE"]),
-        shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"]),
+        shapespace.tau_TE(CLARK["t_TE"], CLARK["tanwedge"][0]),
         thickness.order + 1,
     )
 
@@ -347,7 +347,7 @@ def test_writing_coefficients_gives_back_plain_numbers():
     back = design().with_tau_coeff(design().tau_coeff)
 
     assert isinstance(back.R_LE, float)
-    assert isinstance(back.tanwedge, float)
+    assert all(isinstance(value, float) for value in back.tanwedge)
     assert all(isinstance(value, float) for row in back.coeff for value in row)
 
 
@@ -399,14 +399,8 @@ def test_the_two_surfaces_need_not_agree_at_the_trailing_edge():
     c[1, -1] += 0.1
 
     moved = thickness.with_tau_coeff(c)
-    assert moved.tanwedge == pytest.approx((thickness.tanwedge,) * 2 + np.array([0.0, 0.1]))
+    assert moved.tanwedge == pytest.approx(np.array(thickness.tanwedge) + [0.0, 0.1])
     np.testing.assert_allclose(moved.tau_coeff, c, atol=1e-14)
-
-
-def test_one_wedge_angle_reads_as_two():
-    """`tanwedge_both` is the pair however the field was written."""
-    assert design(tanwedge=0.25).tanwedge_both == (0.25, 0.25)
-    assert design(tanwedge=(0.30, 0.20)).tanwedge_both == (0.30, 0.20)
 
 
 def test_a_split_wedge_leaves_each_surface_at_its_own_angle():
@@ -417,26 +411,41 @@ def test_a_split_wedge_leaves_each_surface_at_its_own_angle():
     slopes = [np.gradient(t, m)[-1] for t in split.thick_both(m)]
 
     # dt/dm at the trailing edge is -(tanwedge + t_TE / 2) on each surface.
-    for slope, tanwedge in zip(slopes, split.tanwedge_both):
+    for slope, tanwedge in zip(slopes, split.tanwedge):
         assert slope == pytest.approx(-(tanwedge + 0.02 / 2.0), rel=1e-3)
 
 
 def test_a_split_wedge_leaves_the_trailing_edge_where_it_was():
     """The point does not move; only the direction the surfaces reach it from.
 
-    Half of `t_TE` sits on each surface at `m = 1` whatever the wedge does,
+    Half of `t_TE` sits on each surface at `m = 1` whatever the wedges do,
     that being the linear ramp rather than anything the shape space reaches.
     """
-    shared = design(tanwedge=0.25, t_TE=0.02)
-    split = design(tanwedge=(0.30, 0.20), t_TE=0.02)
-
-    for thickness in (shared, split):
+    for tanwedge in ((0.25, 0.25), (0.30, 0.20)):
+        thickness = design(tanwedge=tanwedge, t_TE=0.02)
         assert thickness.thick_both(1.0) == pytest.approx((0.01, 0.01))
 
 
-def test_a_wedge_angle_is_one_number_or_one_per_surface():
-    with pytest.raises(ValueError, match="one per surface, so two"):
-        design(tanwedge=(0.3, 0.2, 0.1))
+def test_a_level_pair_is_a_symmetric_trailing_edge_not_a_different_section():
+    """Equal entries are how symmetry is asked for, and they stay a pair.
+
+    A run that wants the loop to separate the two surfaces starts them level,
+    so nothing may collapse that back to one number on the way through the
+    coefficients --- the knob that would have separated them is the one that
+    would go.
+    """
+    thickness = design(tanwedge=(0.25, 0.25))
+
+    assert thickness.tanwedge == pytest.approx((0.25, 0.25))
+    assert thickness.with_tau_coeff(thickness.tau_coeff).tanwedge == pytest.approx(
+        (0.25, 0.25)
+    )
+
+
+def test_a_wedge_angle_is_written_once_per_surface():
+    for tanwedge in ((0.3,), (0.3, 0.2, 0.1)):
+        with pytest.raises(ValueError, match="per surface, so two of them"):
+            design(tanwedge=tanwedge)
 
 
 def test_a_split_wedge_round_trips_through_a_config_dict():

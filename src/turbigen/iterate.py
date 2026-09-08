@@ -2106,14 +2106,13 @@ class ClarkProfile(Iterator):
     equally wrong in opposite directions, which is the closest one radius comes
     to satisfying two surfaces.
 
-    **The trailing edge is one knob or two, as the section says.** A single
-    :attr:`~turbigen.thickness.ClarkThickness.tanwedge` behaves exactly as the
-    nose does, blind spot included; a pair gives each surface a knob of its
-    own, and the antisymmetric part of the error at that end --- which a
-    shared wedge reads as converged --- becomes something the loop can see and
-    correct. The table grows by one entry, placed with the other ends so that
-    no interior key moves, and stays square: the residual is no longer averaged
-    there either. The nose keeps its blind spot, one circle having one radius.
+    **The trailing edge is two knobs, and has no such blind spot.** Each
+    surface carries its own
+    :attr:`~turbigen.thickness.ClarkThickness.tanwedge`, so the antisymmetric
+    part of the error at that end --- which one shared wedge angle would read
+    as converged, exactly as the nose does --- is something this can see and
+    correct. The residual is not averaged there. The nose keeps its blind spot,
+    one circle having one radius, and that is the only place the loop is blind.
 
     **The level belongs to the blade count**, as it does for every loading
     iterator: a thickness redistributes circulation and cannot create it, so
@@ -2243,12 +2242,11 @@ class ClarkProfile(Iterator):
         Each coefficient is the mean over the row's sections, as
         :meth:`with_unknowns` shifts them all together.
         """
-        order, split = self._layout(config)
         level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
-        coefficients = self._flat_coeff(self._coefficients(config), split)
+        coefficients = self._flat_coeff(self._coefficients(config))
         return level | {
             name: float(value)
-            for name, value in zip(self._names(order, split), coefficients)
+            for name, value in zip(self._names(self._order(config)), coefficients)
         }
 
     def with_unknowns(self, config, values):
@@ -2259,10 +2257,10 @@ class ClarkProfile(Iterator):
         if moved[co_name] != current[co_name]:
             config = _with_circulation(config, self.i_row, moved[co_name])
 
-        order, split = self._layout(config)
-        names = self._names(order, split)
+        order = self._order(config)
+        names = self._names(order)
         shift = self._unflat(
-            np.array([moved[name] - current[name] for name in names]), order, split
+            np.array([moved[name] - current[name] for name in names]), order
         )
         if not np.any(shift):
             return config
@@ -2305,7 +2303,8 @@ class ClarkProfile(Iterator):
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
-            paths |= {f"{stem}.R_LE", f"{stem}.tanwedge"}
+            paths |= {f"{stem}.R_LE"}
+            paths |= {f"{stem}.tanwedge[{i_surf}]" for i_surf in (0, 1)}
             paths |= {
                 f"{stem}.coeff[{i_surf}][{j}]"
                 for i_surf in (0, 1)
@@ -2343,13 +2342,9 @@ class ClarkProfile(Iterator):
         level = float(np.mean(residual[0]) - np.mean(residual[1]))
         shape = residual - np.array([[level / 2.0], [-level / 2.0]])
 
-        order, split = self._layout(config)
         errors = {f"Co[{self.i_row}]": level}
         return errors | dict(
-            zip(
-                self._names(order, split),
-                map(float, self._flat_error(shape, split)),
-            )
+            zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
         )
 
     def target(self, z, machine):
@@ -2381,9 +2376,7 @@ class ClarkProfile(Iterator):
     def _by_knob(self, config, shape_value, level_value):
         """Return `level_value` for `Co` and `shape_value` for every shape knob."""
         values = {f"Co[{self.i_row}]": level_value}
-        return values | {
-            name: shape_value for name in self._names(*self._layout(config))
-        }
+        return values | {name: shape_value for name in self._names(self._order(config))}
 
     def gains(self, config):
         """Return the gain of each knob, with the level's declared separately.
@@ -2409,17 +2402,7 @@ class ClarkProfile(Iterator):
     # KNOBS, AS A FLAT TABLE AND AS A PAIR OF CURVES
     #
 
-    def _layout(self, config):
-        """Return this row's `(order, split)`, which is what shapes the table.
-
-        `split` is whether the sections give each surface its own wedge angle,
-        in which case the trailing edge is two knobs rather than one --- see
-        :attr:`~turbigen.thickness.ClarkThickness.tanwedge`.
-        """
-        thickness = self._thickness(config)
-        return thickness.order, len(set(thickness.tanwedge_both)) > 1
-
-    def _names(self, order, split):
+    def _names(self, order):
         """Return the table key of each shape knob, in a fixed order.
 
         `Co` is not among them: it is not a leaf of a thickness distribution,
@@ -2427,33 +2410,27 @@ class ClarkProfile(Iterator):
         have to skip it by hand. :meth:`unknowns` puts it in front.
 
         The order is load-bearing, because a sequence :attr:`gain` is matched
-        to it. The ends come before the interior so that their index does not
-        move when a design changes order, which would otherwise read a nose
-        sensitivity back as a mid-chord one. A split trailing edge adds its
-        second knob there rather than at the end, for the same reason.
+        to it. The three ends come before the interior so that their index does
+        not move when a design changes order, which would otherwise read a nose
+        sensitivity back as a mid-chord one.
         """
-        ends = [f"tau_LE[{self.i_row}]"]
-        if split:
-            ends += [f"tau_TE[{self.i_row}][{i}]" for i in (0, 1)]
-        else:
-            ends += [f"tau_TE[{self.i_row}]"]
-
-        return ends + [
-            f"tau[{self.i_row}][{i}][{k}]" for i in (0, 1) for k in range(1, order)
+        return [
+            f"tau_LE[{self.i_row}]",
+            *(f"tau_TE[{self.i_row}][{i}]" for i in (0, 1)),
+            *(f"tau[{self.i_row}][{i}][{k}]" for i in (0, 1) for k in range(1, order)),
         ]
 
-    def _flat_coeff(self, c, split):
+    def _flat_coeff(self, c):
         """Return coefficients `(2, order+1)` in :meth:`_names` order.
 
-        A shared end is read off the suction row alone, the two rows being
-        equal there by construction --- `with_tau_coeff` refuses a leading edge
-        that is not, and a trailing edge is shared only when the design wrote
-        one wedge angle.
+        The nose is read off the suction row alone, the two rows being equal
+        there by construction --- `with_tau_coeff` refuses a leading edge that
+        is not. The trailing edge is read off both, each surface leaving at its
+        own wedge angle.
         """
-        ends = [c[0][0]] + ([c[0][-1], c[1][-1]] if split else [c[0][-1]])
-        return ends + [*c[0][1:-1], *c[1][1:-1]]
+        return [c[0][0], c[0][-1], c[1][-1], *c[0][1:-1], *c[1][1:-1]]
 
-    def _flat_error(self, e, split):
+    def _flat_error(self, e):
         """Return residuals `(2, order+1)` in :meth:`_names` order.
 
         Where :meth:`_flat_coeff` reads one shared value, this takes the *mean*
@@ -2462,29 +2439,32 @@ class ClarkProfile(Iterator):
         wrong in opposite directions, which is as close as one radius comes to
         satisfying two surfaces.
 
-        **That null is the reason a trailing edge can be split.** One wedge
-        angle has the same blind spot as one nose radius, and the surfaces do
-        not have to share it: given two, each answers for its own residual and
-        the antisymmetric part of the error at that end stops being invisible.
-        The nose keeps the blind spot, one circle having one radius.
+        **The trailing edge does not share, which is why it has no null.** Each
+        surface's wedge angle answers for its own residual there, so an error
+        that is equal and opposite between the two --- invisible through one
+        shared knob --- is something the loop can see and correct. The nose
+        keeps the blind spot, one circle having one radius.
         """
-        ends = [0.5 * (e[0][0] + e[1][0])]
-        ends += [e[0][-1], e[1][-1]] if split else [0.5 * (e[0][-1] + e[1][-1])]
-        return ends + [*e[0][1:-1], *e[1][1:-1]]
+        return [
+            0.5 * (e[0][0] + e[1][0]),
+            e[0][-1],
+            e[1][-1],
+            *e[0][1:-1],
+            *e[1][1:-1],
+        ]
 
-    def _unflat(self, values, order, split):
+    def _unflat(self, values, order):
         """Return a `(2, order+1)` coefficient shift from :meth:`_names` order.
 
-        The inverse of :meth:`_flat_coeff`: a shared end knob is written back to
+        The inverse of :meth:`_flat_coeff`: the nose knob is written back to
         *both* rows, which is what keeps the surfaces sharing it however far the
-        loop moves them, and a split trailing edge writes one knob to each.
+        loop moves them, and the trailing edge writes one knob to each.
         """
-        n_ends = 3 if split else 2
         shift = np.zeros((2, order + 1))
         shift[:, 0] = values[0]
-        shift[:, -1] = values[1:n_ends] if split else values[1]
-        shift[0, 1:-1] = values[n_ends : n_ends + order - 1]
-        shift[1, 1:-1] = values[n_ends + order - 1 :]
+        shift[:, -1] = values[1:3]
+        shift[0, 1:-1] = values[3 : order + 2]
+        shift[1, 1:-1] = values[order + 2 :]
         return shift
 
     #

@@ -125,7 +125,7 @@ def test_a_point_off_the_surface_lands_on_the_nearest_part_of_it(machine, spf):
 CLARK = {
     "type": "clark",
     "R_LE": 0.05,
-    "tanwedge": 0.18,
+    "tanwedge": [0.18, 0.18],
     "t_TE": 0.03,
     "coeff": [[0.1, 0.05, 0.02], [0.03, -0.05, 0.01]],
 }
