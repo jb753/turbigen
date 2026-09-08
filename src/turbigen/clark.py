@@ -18,7 +18,9 @@ control variables:
 
     Ma_peak   M_p  / M_te      peak Mach fraction                        (Fig 3a)
     z_peak    L_p  / L_surf    surface fraction at which the peak occurs  (Fig 3c)
-    Ma_LE     suction-side Mach fraction at the leading-edge station Z_LE (Fig 3b)
+    Ma_LE     value the ramp line takes at Z_LE, so the height of the      (Fig 3b)
+              leading-edge acceleration rather than a Mach fraction the
+              curve is required to reach there --- see Z_LE below
     Ma_PS     pressure-side Mach fraction on the pre-acceleration plateau (Fig 3c)
 
 Independent variable: surface fraction  z = l / L_surf  in [0, 1], from the
@@ -73,9 +75,14 @@ import numpy as np
 __all__ = ["suction", "pressure", "loading"]
 
 # ---- fixed shape constants (calibrated against digitised Fig. 3) ----------
+# The ramp *line* passes through (Z_LE, Ma_LE); the curve follows it only from
+# z_c onwards, and z_c sits past Z_LE whenever the front is steep enough to
+# need it, so Ma_LE anchors the ramp rather than naming a value the suction
+# surface attains at z = Z_LE. Raising G_LE pulls z_c back toward Z_LE and the
+# two converge, but nothing here requires that they do.
 Z_LE = 0.10  # suction: ramp reference station (ramp line has Ma = Ma_LE here)
 C_RAMP = 1.15  # suction: ramp slope / LE-to-peak secant slope
-G_LE = 13.0  # suction: leading-edge gradient dMa/dz at z = 0
+G_LE = 19.5  # suction: leading-edge gradient dMa/dz at z = 0
 RHO = 0.60  # suction: roll-over start, as a fraction of (z_peak - Z_LE)
 
 Z_RISE = 0.10  # pressure: leading-edge rise completes here

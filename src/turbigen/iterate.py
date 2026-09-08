@@ -2149,7 +2149,12 @@ class ClarkProfile(Iterator):
     """Target surface fraction of the suction peak [--]."""
 
     Ma_LE: float = 1.8
-    """Target suction-surface Mach number at Clark's leading edge station [--].
+    """Height of the target's leading edge acceleration [--].
+
+    The value Clark's ramp line takes at its reference station, which is what
+    sets how hard the suction surface accelerates out of the nose. Not a Mach
+    number the curve is required to reach at that station: see `Z_LE` in
+    :mod:`turbigen.clark` for why the two are not the same thing.
 
     Carries the `Ma_2 / Ma_1` factor, written the way
     :attr:`turbigen.loading.Loading.fac_front` and
