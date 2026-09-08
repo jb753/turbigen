@@ -1092,6 +1092,22 @@ def solve(config, out_dir, restart_path=None, svg=False):
     history = config.solver.solve(grid)
     converged = config.solver.converged(history)
 
+    # Written whatever happened, and written first --- before the mix-out, the
+    # measurements and the tables, every one of which can raise. A march that
+    # did not converge is the one most likely to be picked up and continued, so
+    # withholding its field would be exactly backwards; and nothing downstream
+    # may be able to discard a solution the CFD has already been paid for. The
+    # field is also the whole of what a failure needs to be diagnosed from: the
+    # mesh is not written because `input.yaml` beside it rebuilds one, and the
+    # two together are what `prepare` reads back.
+    restart_path = out_dir / RESTART_NAME
+    restart.save(restart_path, grid, config)
+    run_log.info(f"Wrote the flow field to {restart_path}")
+
+    # Beside the field, and for the same reason: it is what a re-plot needs to
+    # draw the convergence page, and it costs a few kilobytes.
+    save_history(out_dir / HISTORY_NAME, history)
+
     # Reduce the solution to a mean line. A diverged grid has nothing to mix
     # out, and even a converged one can refuse, so this must not cost the run
     # the output it has already earned.
@@ -1144,19 +1160,6 @@ def solve(config, out_dir, restart_path=None, svg=False):
             run_log.info(design_variable_string(config, result))
         except Exception as err:
             logger.warning(f"Could not compare the design against its solution: {err}")
-
-    # Written whatever happened, and written first. A march that did not
-    # converge is the one most likely to be picked up and continued, so
-    # withholding its field would be exactly backwards -- and a post-processor
-    # that raises must not be able to discard a solution the CFD has already
-    # been paid for.
-    restart_path = out_dir / RESTART_NAME
-    restart.save(restart_path, grid, config)
-    run_log.info(f"Wrote the flow field to {restart_path}")
-
-    # Beside the field, and for the same reason: it is what a re-plot needs to
-    # draw the convergence page, and it costs a few kilobytes.
-    save_history(out_dir / HISTORY_NAME, history)
 
     _write_output(config, result, out_dir, svg=svg)
 
@@ -1691,6 +1694,16 @@ def logging_into(args, config_path):
 
     try:
         yield out_dir
+    except Exception:
+        # Logged here rather than left to `main`, which does log it but only
+        # after this handler has been taken away in the `finally` below --- so
+        # the traceback would reach the console and never the file sitting in
+        # the workdir beside the run that failed. A directory whose log stops
+        # mid-iteration saying nothing is the one case where the transcript was
+        # most wanted, and re-raising leaves the exit status to `main` as
+        # before.
+        logger.exception("The run failed, and stopped here")
+        raise
     finally:
         for name in LOGGER_NAMES:
             logging.getLogger(name).removeHandler(handler)

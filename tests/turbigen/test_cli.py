@@ -522,6 +522,35 @@ def test_run_reports_a_failed_solve_in_its_exit_code(run_case):
     assert (run_case.parent / cli.OUTPUT_NAME).exists()
 
 
+def test_a_raising_measurement_still_leaves_the_field_and_the_log(
+    run_case, monkeypatch
+):
+    """The CFD is paid for before anything is measured off it.
+
+    A measurement that raises used to take the whole run down before the field
+    was written, leaving a directory holding the config it tried and a log that
+    stopped mid-march saying nothing --- the one case where the field and the
+    transcript are what someone needs.
+    """
+    from turbigen import iterate
+
+    def refuse(config, result, strict=True):
+        raise iterate.MeasurementError("nothing could be measured, on purpose")
+
+    monkeypatch.setattr(cli.iterate, "errors", refuse)
+
+    assert cli.main(["run", str(run_case)]) == 1
+
+    directory = run_case.parent
+    assert (directory / cli.RESTART_NAME).exists()
+    assert (directory / cli.HISTORY_NAME).exists()
+
+    # And the log beside them says why it stopped, rather than ending mid-march.
+    log = (directory / cli.LOG_NAME).read_text()
+    assert "nothing could be measured, on purpose" in log
+    assert "MeasurementError" in log
+
+
 def test_run_without_a_solver_section_is_a_message(run_case, capsys):
     text = run_case.read_text()
     trimmed = "\n".join(
@@ -1077,12 +1106,15 @@ def test_a_reported_case_is_not_a_run_one(run_case):
 #
 
 
-ITERATE_CASE = RUN_CASE + """
+ITERATE_CASE = (
+    RUN_CASE
+    + """
 iterate:
   correct:
     - type: deviation
     - type: incidence
 """
+)
 
 
 @pytest.fixture
@@ -1539,11 +1571,14 @@ def test_batch_takes_one_datum(batch_case, capsys):
 #
 
 
-GRID_CASE = CASE + """
+GRID_CASE = (
+    CASE
+    + """
 batch:
   values:
     mean_line.psi: [1.4, 1.6, 1.8]
 """
+)
 
 
 @pytest.fixture
