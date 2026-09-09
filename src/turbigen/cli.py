@@ -171,6 +171,15 @@ overlapping jobs, and which of them numbered a run was a thing to remember
 rather than to work out.
 """
 
+NUMBERING_ATTEMPTS = 64
+"""Times to re-ask for a free number before giving up.
+
+Each loss means another process claimed the number first, so this bounds how
+many runs can be launched into one directory at the same instant rather than
+how hard anything retries. Far above any real fan-out, and finite so that a
+directory nothing can be created in fails rather than spinning.
+"""
+
 DIGITS = 4
 """How wide a directory number is written.
 
@@ -254,6 +263,16 @@ def resolve_workdir(workdir):
     thing in the directory at that moment, and deleting it to keep the
     numbering tidy would throw away the evidence for the sake of the filing.
     A number is cheap; the log of the run that did not work is not.
+
+    **The directory is created here, and that is what makes the number safe to
+    hold.** Scanning says what is free and creating says it is taken; between
+    the two, another process asking the same question gets the same answer.
+    Two runs launched together would land on one directory and interleave
+    their iterations into it, silently where their configs happened to match.
+    So the number is claimed by making the directory exclusively --- an atomic
+    operation --- and a loser simply asks again and takes the next one. Which
+    means a caller wanting the config checked before anything appears on disk
+    has to check it before calling this; see :func:`each`.
     """
     text = str(workdir)
     if PLACEHOLDER not in text:
@@ -275,7 +294,22 @@ def resolve_workdir(workdir):
 
     head, _, tail = path.name.partition(PLACEHOLDER)
 
-    return next_numbered_dir(path.parent, head, tail)
+    for _ in range(NUMBERING_ATTEMPTS):
+        candidate = next_numbered_dir(path.parent, head, tail)
+        try:
+            candidate.mkdir(parents=True)
+        except FileExistsError:
+            # Somebody claimed it between the scan and here. Ask again: the
+            # scan reads the highest that exists, so the next answer is past
+            # whatever they took.
+            continue
+        return candidate
+
+    raise ValueError(
+        f"Could not claim a numbered directory under {path.parent} after "
+        f"{NUMBERING_ATTEMPTS} attempts. Something else is making them as "
+        f"fast as they can be asked for."
+    )
 
 
 _HANDLER_TAG = "_turbigen_handler"
@@ -554,8 +588,11 @@ def _copy_into_workdir(args, config_path, workdir):
     """
     data = load_document(config_path, args)
 
-    # Validated before a directory is made, so a config with a typo in it fails
-    # where it was typed rather than leaving an empty workdir behind.
+    # Validated before anything is written into the directory. `each` has
+    # already checked this document when a `%` was resolved -- which it must,
+    # the claim creating the directory -- but a `-o` naming a path outright
+    # arrives here unchecked, and either way a config that will not build has
+    # no business being copied anywhere.
     Config.from_dict(data)
 
     copied = workdir / batch.INPUT_NAME
@@ -634,6 +671,15 @@ def each(args, one):
     # sees the directory that was chosen, the same way `logging_into` records
     # where a verb wrote.
     if getattr(args, "workdir", None) is not None:
+        # Before the workdir is resolved, because resolving a `%` now *makes*
+        # the directory in order to claim its number -- so a config with a typo
+        # in it has to fail here, or it would leave an empty numbered directory
+        # behind and consume a number to say nothing. `_copy_into_workdir`
+        # validates again on the document it actually writes; this is the same
+        # check moved early, not a second opinion.
+        for path in paths:
+            Config.from_dict(load_document(path, args))
+
         args.workdir = str(resolve_workdir(args.workdir))
 
         # A bare `--restart` means the field beside the config you named, and

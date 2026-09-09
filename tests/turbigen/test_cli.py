@@ -1052,6 +1052,39 @@ def test_numbering_ignores_what_is_not_numbered(tmp_path):
     assert cli.next_numbered_dir(tmp_path, "v") == tmp_path / "v0001"
 
 
+def test_a_claimed_number_is_not_offered_twice(tmp_path):
+    """Two runs launched together must not land in one directory.
+
+    Scanning says what is free and creating says it is taken; asking without
+    taking hands the same answer to everyone who asks before the first of them
+    writes anything. Threaded here because the claim is a filesystem operation
+    and the interleaving is what is under test, not the arithmetic.
+    """
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        claimed = list(
+            pool.map(lambda _: cli.resolve_workdir(tmp_path / "v%"), range(16))
+        )
+
+    assert len(set(claimed)) == len(claimed)
+    assert all(path.is_dir() for path in claimed)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        f"v{i:0{cli.DIGITS}d}" for i in range(16)
+    ]
+
+
+def test_a_path_without_a_placeholder_is_not_created(tmp_path):
+    """Only a number needs claiming; a named directory is nobody else's to take.
+
+    So resolving one stays the pure answer it always was, and the directory
+    appears where it always did --- when the config is copied into it.
+    """
+    resolved = cli.resolve_workdir(tmp_path / "exactly_here")
+
+    assert not resolved.exists()
+
+
 def test_a_path_without_a_placeholder_is_taken_as_typed(tmp_path):
     """Numbering is asked for, never imposed."""
     assert cli.resolve_workdir(tmp_path / "exactly_here") == tmp_path / "exactly_here"
