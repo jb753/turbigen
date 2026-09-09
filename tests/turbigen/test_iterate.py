@@ -2090,7 +2090,7 @@ def test_a_pass_runs_on_the_gains_the_last_one_measured():
 CLARK_THICKNESS = {
     "type": "clark",
     "R_LE": 0.05,
-    "tanwedge": [0.18, 0.18],
+    "tanwedge": 0.18,
     "t_TE": 0.03,
     "coeff": [[0.0, 0.0], [0.0, 0.0]],
 }
@@ -2122,8 +2122,7 @@ def test_clark_owns_both_ends_both_surfaces_and_the_level(clark):
     assert set(clark.iterate.correct[0].unknowns(clark)) == {
         "Co[0]",
         "tau_LE[0]",
-        "tau_TE[0][0]",
-        "tau_TE[0][1]",
+        "tau_TE[0]",
         "tau[0][0][1]",
         "tau[0][0][2]",
         "tau[0][1][1]",
@@ -2139,11 +2138,10 @@ def test_clark_puts_the_level_first_and_the_ends_before_the_interior(clark):
     other way round, a calibration measured on one design would be read back
     against different knobs on the next.
     """
-    assert list(clark.iterate.correct[0].unknowns(clark))[:4] == [
+    assert list(clark.iterate.correct[0].unknowns(clark))[:3] == [
         "Co[0]",
         "tau_LE[0]",
-        "tau_TE[0][0]",
-        "tau_TE[0][1]",
+        "tau_TE[0]",
     ]
 
 
@@ -2159,10 +2157,9 @@ def test_clark_reads_the_ends_off_the_shape_space_curve(clark):
     assert unknowns["tau_LE[0]"] == pytest.approx(
         shapespace.tau_LE(CLARK_THICKNESS["R_LE"])
     )
-    for i, tanwedge in enumerate(CLARK_THICKNESS["tanwedge"]):
-        assert unknowns[f"tau_TE[0][{i}]"] == pytest.approx(
-            shapespace.tau_TE(CLARK_THICKNESS["t_TE"], tanwedge)
-        )
+    assert unknowns["tau_TE[0]"] == pytest.approx(
+        shapespace.tau_TE(CLARK_THICKNESS["t_TE"], CLARK_THICKNESS["tanwedge"])
+    )
 
 
 def test_clark_writes_what_it_says_it_writes(clark):
@@ -2248,8 +2245,7 @@ def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
 
     assert error["Co[0]"] == pytest.approx(level)
     assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
-    assert error["tau_TE[0][0]"] == pytest.approx(shape[0][-1])
-    assert error["tau_TE[0][1]"] == pytest.approx(shape[1][-1])
+    assert error["tau_TE[0]"] == pytest.approx(0.5 * (shape[0][-1] + shape[1][-1]))
     assert error["tau[0][0][1]"] == pytest.approx(shape[0][1])
     assert error["tau[0][1][2]"] == pytest.approx(shape[1][2])
 
@@ -2280,39 +2276,24 @@ def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
         errors.append(iterator.error(clark, Result(machine=machine, grid=object())))
 
     assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.6)
-    for name in ("tau_LE[0]", "tau_TE[0][0]", "tau_TE[0][1]"):
+    for name in ("tau_LE[0]", "tau_TE[0]"):
         assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
 
 
 #
-# A TRAILING EDGE THAT IS TWO KNOBS, NOT ONE
+# A TRAILING EDGE THAT IS ONE KNOB, LIKE THE NOSE
 #
 
 
-def test_clark_writes_each_wedge_to_its_own_surface(clark):
-    """What the second knob is for: one surface moves and the other does not."""
-    iterator = clark.iterate.correct[0]
-    unknowns = iterator.unknowns(clark)
+def test_clark_cannot_see_an_antisymmetric_trailing_edge_error(clark, monkeypatch):
+    """The null a shared wedge angle has, at both ends now, and its price.
 
-    moved = iterator.with_unknowns(
-        clark, {"tau_TE[0][0]": unknowns["tau_TE[0][0]"] + 0.05}
-    )
-
-    for section in moved.blades[0].sections:
-        c = section.thickness.tau_coeff
-        assert c[0][-1] == pytest.approx(unknowns["tau_TE[0][0]"] + 0.05)
-        assert c[1][-1] == pytest.approx(unknowns["tau_TE[0][1]"])
-        # And the nose is still one number, which is the other end's business.
-        assert c[0][0] == pytest.approx(c[1][0])
-
-
-def test_clark_sees_an_antisymmetric_trailing_edge_error(clark, monkeypatch):
-    """The null a shared wedge angle would have, and why there is not one.
-
-    Two surfaces equally wrong in opposite directions at the trailing edge
-    would read as converged through a single knob reporting their mean, which
-    is what the nose still does. A knob each reports what each surface is
-    actually doing.
+    Two surfaces equally wrong in opposite directions read as converged
+    through a single knob reporting their mean, because that is the part one
+    knob cannot reach. The trailing edge was a knob per surface and could see
+    this; it gave that up so the thickness would stop laying a second claim on
+    the exit angle --- see `ClarkThickness.tanwedge`. Kept as a test because
+    the blind spot is a cost that should be visible, not a detail.
     """
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
 
@@ -2332,10 +2313,9 @@ def test_clark_sees_an_antisymmetric_trailing_edge_error(clark, monkeypatch):
 
     # The level is the difference of the two surface means, 0.1 here, and half
     # of it comes off each surface --- so what is left at the trailing edge is
-    # the skew, and each knob reports its own half of it.
+    # the skew, and the one knob there reports the mean of it, which is zero.
     assert errors["Co[0]"] == pytest.approx(0.1)
-    assert errors["tau_TE[0][0]"] == pytest.approx(0.05)
-    assert errors["tau_TE[0][1]"] == pytest.approx(-0.05)
+    assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
 
     # And the nose, one radius and so one knob, still cannot see it.
     assert errors["tau_LE[0]"] == pytest.approx(0.0, abs=1e-12)

@@ -244,18 +244,16 @@ class ClarkThickness(ThicknessDesign):
     And the trailing edge thickness, split evenly, so a blunt trailing edge
     stays centred on the camber line however the surfaces arrive at it.
 
-    The wedge angle is per surface, always: each leaves the trailing edge at
-    its own angle, which is a degree of freedom in the rear of the blade and a
-    claim on the exit direction --- see :attr:`tanwedge`. Writing the same
-    number twice is the symmetric section this class started as, and is the
-    only way to ask for it.
+    And the wedge angle, so that the two surfaces depart symmetrically about
+    the camber line and the camber's exit angle is the section's --- see
+    :attr:`tanwedge` for why that sharing is worth a degree of freedom.
 
     What is left is the interior of each surface, and only the interior: each
-    is the straight line in shape space between its own two endpoints plus a
-    Bernstein perturbation pinned at zero at both ends. So the leading edge
-    radius and the wedge angles are exactly what they say however the
-    coefficients move, and all-zero coefficients with one wedge angle give a
-    section symmetric about the camber line.
+    is the straight line in shape space between the two shared endpoints plus
+    a Bernstein perturbation pinned at zero at both ends. So the leading edge
+    radius and the wedge angle are exactly what they say however the
+    coefficients move, and all-zero coefficients give a section symmetric
+    about the camber line.
     """
 
     type: ClassVar[str] = "clark"
@@ -285,42 +283,39 @@ class ClarkThickness(ThicknessDesign):
     symmetric about its camber line.
     """
 
-    tanwedge: tuple[float, float] = (0.0, 0.0)
-    """Tangent of each surface's trailing edge wedge angle [--].
+    tanwedge: float = 0.0
+    """Tangent of the trailing edge wedge angle [--].
 
-    One per surface, suction first as :attr:`coeff` is, and always a pair:
-    equal entries are how a section asks to be symmetric about its camber line
-    at the trailing edge, rather than a different kind of section. Nothing
-    downstream has to ask which form was written, and the loop that shapes
-    these has the same number of knobs whatever they hold.
+    One number, shared by both surfaces, so the two depart symmetrically about
+    the camber line.
 
-    **What a pair costs, which is not thickness.** The trailing edge point
-    stays where it was: half-thickness at ``m = 1`` is ``t_TE / 2`` on each
-    surface whatever the wedge does, that being the linear ramp in
+    **Why this is shared when the interior is not.** A shape-space endpoint
+    moves the thickness as ``m^1.5 (1 - m)``, peaking at ``m = 0.6``, so a
+    wedge angle per surface would be real authority over the rear of each ---
+    the one place :class:`~turbigen.iterate.ClarkProfile` would otherwise have
+    none, since a shared knob reads the two surfaces only through their mean
+    and a pair equally wrong in opposite directions reads as converged.
+
+    It was written that way, and the cost was not worth it. The trailing edge
+    *point* does not move --- half-thickness at ``m = 1`` is ``t_TE / 2`` on
+    each surface whatever the wedge does, that being the linear ramp in
     :func:`~turbigen.shapespace.thickness_from_tau` rather than anything the
-    shape space curve reaches. What moves is the direction the aerofoil
-    leaves in. With one wedge the two surfaces depart symmetrically about the
-    camber line, so the camber's
-    :meth:`~turbigen.blade.Blade.evaluate_chi` *is* the section's exit
-    direction; with two the bisector of the surfaces rotates away from it, by
-    of order twenty-five degrees per unit of difference between them.
+    shape space curve reaches. What moved was the direction the aerofoil left
+    in: with two wedges the bisector of the surfaces rotates away from the
+    camber line by of order twenty-five degrees per unit of difference between
+    them, which makes the thickness a second claim on the exit angle. Nothing
+    bounded that asymmetry, and :class:`~turbigen.iterate.Deviation` reads the
+    rotation as an exit flow angle error and pulls ``dchi_TE`` back against
+    it. The two then chase each other: a design loop measured the pair walking
+    to a difference of 0.13 --- some three degrees of exit angle --- over six
+    iterations with ``dchi_TE`` running to eleven degrees behind it, and no
+    sign of either settling.
 
-    **So a pair is a claim on the exit angle**, which the camber line
-    otherwise owns alone.
-    :class:`~turbigen.iterate.Deviation` will see that rotation as an exit
-    flow angle error and pull ``dchi_TE`` back against it, which is the right
-    answer and within the authority it has; but an asymmetry small enough to
-    move the exit angle by less than that iterator's tolerance is one it will
-    not chase, and the section carries it. Nothing here bounds the asymmetry:
-    it is a design decision, not a range.
-
-    **What a pair buys.** A shape-space endpoint moves the thickness as
-    ``m^1.5 (1 - m)``, peaking at ``m = 0.6``, so splitting this is authority
-    over the rear of the surface rather than a detail at its very end. It is
-    the one place :class:`~turbigen.iterate.ClarkProfile` had none: with one
-    wedge, the two surfaces' residuals at that end enter only as their mean,
-    and a pair that is equally wrong in opposite directions reads as
-    converged.
+    So the exit angle belongs to the camber line alone, and the rear of each
+    surface is the interior coefficients' to answer for. Reaching as far aft
+    as a split wedge did takes a much higher order --- the rearmost interior
+    control point sits at ``m = 0.64`` at order 4 against the endpoint's
+    ``0.82`` --- which is the price of it, paid where it can be seen.
     """
 
     t_TE: float = 0.0
@@ -343,12 +338,6 @@ class ClarkThickness(ThicknessDesign):
         if self.R_LE <= 0.0:
             raise ValueError(
                 f"A leading edge radius must be positive, got R_LE={self.R_LE}."
-            )
-
-        if len(self.tanwedge) != 2:
-            raise ValueError(
-                f"A wedge angle is written per surface, so two of them, got "
-                f"{len(self.tanwedge)}."
             )
 
     @property
@@ -402,25 +391,19 @@ class ClarkThickness(ThicknessDesign):
         rather than one for the interior and something else for the ends, and a
         positive `R_LE` comes for free since it is `c[0]**2 / 2`.
 
-        **The two rows share their first entry and need not share their last.**
-        The first is the one leading edge radius, returned duplicated rather
-        than split out so that a row lines up index for index with
-        :attr:`m_ctl`, and :meth:`with_tau_coeff` checks that a caller writing
-        it back has kept the two equal. The last is that surface's own wedge
-        angle, equal between the rows only when :attr:`tanwedge` was written as
-        one number.
+        **The two rows share both end entries.** The first is the one leading
+        edge radius and the last the one wedge angle, each returned duplicated
+        rather than split out so that a row lines up index for index with
+        :attr:`m_ctl`; :meth:`with_tau_coeff` checks that a caller writing them
+        back has kept both pairs equal.
         """
         n = self.order
         tau_LE = shapespace.tau_LE(self.R_LE)
+        tau_TE = shapespace.tau_TE(self.t_TE, self.tanwedge)
         k = np.arange(n + 1) / n
-        lines = np.array(
-            [
-                tau_LE + (shapespace.tau_TE(self.t_TE, tanwedge) - tau_LE) * k
-                for tanwedge in self.tanwedge
-            ]
-        )
+        line = tau_LE + (tau_TE - tau_LE) * k
 
-        return np.array([[0.0, *row, 0.0] for row in self.coeff]) + lines
+        return np.array([[0.0, *row, 0.0] for row in self.coeff]) + line
 
     def with_tau_coeff(self, c):
         """Return this thickness rebuilt from full shape-space coefficients.
@@ -438,9 +421,8 @@ class ClarkThickness(ThicknessDesign):
         ----------
         c : array_like, shape (2, order + 1)
             Full shape-space coefficients of each surface, suction first. The
-            two rows must agree at the leading edge, that being the one radius
-            the nose has; their trailing edge entries are each surface's own
-            wedge angle and are free to differ.
+            two rows must agree at both ends, those being the one radius the
+            nose has and the one angle the surfaces leave at.
 
         """
         c = np.asarray(c, dtype=float)
@@ -450,34 +432,31 @@ class ClarkThickness(ThicknessDesign):
                 f"of shape {(2, self.order + 1)}, got {c.shape}."
             )
 
-        # Not defaulted to row zero: the surfaces sharing one nose is the
-        # whole of what "one leading edge radius" means here, and a caller who
-        # has broken it is asking for a section this class cannot represent
-        # rather than one it should quietly round off. The trailing edge is not
-        # checked, the two surfaces being free to leave at their own angles.
-        if c[0][0] != c[1][0]:
-            raise ValueError(
-                f"Both surfaces share one leading edge, so their coefficients "
-                f"there must be equal, got {c[0][0]} and {c[1][0]}."
-            )
+        # Not defaulted to row zero: the surfaces sharing one nose and one
+        # wedge is the whole of what those two numbers mean here, and a caller
+        # who has broken either is asking for a section this class cannot
+        # represent rather than one it should quietly round off.
+        for end, name in ((0, "leading"), (-1, "trailing")):
+            if c[0][end] != c[1][end]:
+                raise ValueError(
+                    f"Both surfaces share one {name} edge, so their "
+                    f"coefficients there must be equal, got {c[0][end]} and "
+                    f"{c[1][end]}."
+                )
 
-        tau_LE = c[0][0]
+        tau_LE, tau_TE = c[0][0], c[0][-1]
         k = np.arange(self.order + 1) / self.order
-        lines = np.array([tau_LE + (row[-1] - tau_LE) * k for row in c])
+        line = tau_LE + (tau_TE - tau_LE) * k
 
         # Back to plain floats in plain tuples, which is what a Node holds and
         # what a config file has to be able to carry: `dataclasses.replace`
         # writes whatever it is handed, and numpy scalars survive as far as
         # `to_dict` and the YAML it is written to.
-        wedges = tuple(
-            float(shapespace.tanwedge_from_tau(row[-1], self.t_TE)) for row in c
-        )
-
         return dataclasses.replace(
             self,
             R_LE=float(shapespace.R_LE_from_tau(tau_LE)),
-            tanwedge=wedges,
-            coeff=tuple(tuple(float(v) for v in row[1:-1]) for row in (c - lines)),
+            tanwedge=float(shapespace.tanwedge_from_tau(tau_TE, self.t_TE)),
+            coeff=tuple(tuple(float(v) for v in row[1:-1]) for row in (c - line)),
         )
 
     def tau(self, m):
@@ -493,13 +472,13 @@ class ClarkThickness(ThicknessDesign):
         # `turbigen.shapespace`.
         tau_LE = shapespace.tau_LE(self.R_LE)
 
-        # One line per surface: they leave the same nose and arrive at their
-        # own wedge, which is the whole of what a split wedge angle means.
+        # One line for both surfaces: they leave the same nose and arrive at
+        # the same wedge, so all that separates them is the perturbation.
+        line = tau_LE + (shapespace.tau_TE(self.t_TE, self.tanwedge) - tau_LE) * m
+
         return tuple(
-            tau_LE
-            + (shapespace.tau_TE(self.t_TE, tanwedge) - tau_LE) * m
-            + shapespace.evaluate_bernstein((0.0, *row, 0.0), m)
-            for row, tanwedge in zip(self.coeff, self.tanwedge)
+            line + shapespace.evaluate_bernstein((0.0, *row, 0.0), m)
+            for row in self.coeff
         )
 
     def thick_both(self, m):

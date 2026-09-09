@@ -551,6 +551,49 @@ def test_a_raising_measurement_still_leaves_the_field_and_the_log(
     assert "MeasurementError" in log
 
 
+def test_a_raising_measurement_leaves_the_whole_grid(run_case, monkeypatch):
+    """The flow field alone cannot be read back without a mesh to hang it on.
+
+    `restart.npz` holds primitives and a stamp, on the reasoning that the
+    config beside it rebuilds the mesh --- which holds only while the mesher is
+    the code that wrote it. A failure being chased across a change to that code
+    is exactly the one that cannot be rebuilt, so the grid itself goes down
+    beside the field.
+    """
+    import ember.grid
+
+    def refuse(config, result, strict=True):
+        raise iterate.MeasurementError("nothing could be measured, on purpose")
+
+    monkeypatch.setattr(cli.iterate, "errors", refuse)
+
+    assert cli.main(["run", str(run_case)]) == 1
+
+    path = run_case.parent / cli.GRID_NAME
+    assert path.is_file()
+
+    # Read back through ember's own reader, carrying the geometry the field
+    # does not: coordinates, and the patches that say which face an
+    # index-space divergence report is pointing at.
+    grid = ember.grid.Grid.read_emb(str(path))
+    assert len(grid) == 1
+    assert grid[0].x.shape == grid[0].P.shape
+    assert grid[0].patches
+
+
+def test_a_run_that_measures_leaves_no_grid(run_case):
+    """Only failures pay for it: it is tens of megabytes, written per march.
+
+    An iteration writes one of these every pass, so a grid beside every run
+    would cost more than the field does and describe geometry the config
+    already determines.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert (run_case.parent / cli.RESTART_NAME).is_file()
+    assert not (run_case.parent / cli.GRID_NAME).exists()
+
+
 def test_run_without_a_solver_section_is_a_message(run_case, capsys):
     text = run_case.read_text()
     trimmed = "\n".join(

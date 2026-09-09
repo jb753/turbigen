@@ -2223,21 +2223,29 @@ class ClarkProfile(Iterator):
     surface's own arc length to a surface fraction --- the two surfaces are not
     the same length, so one `m` is not one `z`.
 
-    **A shared end is one knob, and that is what leaves the loop determined.**
-    One nose radius serves both surfaces, so its error is the *mean* of the two
-    surfaces' residuals there, and in that mean the level cancels exactly: the
-    nose answers only for the common mode at its end, and can neither be driven
-    by the blade count nor fight it. It nulls where the two surfaces are
-    equally wrong in opposite directions, which is the closest one radius comes
-    to satisfying two surfaces.
+    **A shared end is one knob against two residuals, and the mean is what it
+    can answer for.** One nose radius serves both surfaces and one wedge angle
+    serves both, so each end's error is the *mean* of the two surfaces'
+    residuals there --- the least-squares move for a single knob, being the `x`
+    that minimises `(r_s - x)^2 + (r_p - x)^2`. Reading one surface alone
+    instead would move both to suit it, making the other worse by as much, and
+    would report converged with an unbounded error on the surface nobody read.
 
-    **The trailing edge is two knobs, and has no such blind spot.** Each
-    surface carries its own
-    :attr:`~turbigen.thickness.ClarkThickness.tanwedge`, so the antisymmetric
-    part of the error at that end --- which one shared wedge angle would read
-    as converged, exactly as the nose does --- is something this can see and
-    correct. The residual is not averaged there. The nose keeps its blind spot,
-    one circle having one radius, and that is the only place the loop is blind.
+    In that mean the level cancels exactly, so a shared end answers only for
+    the common mode there and can neither be driven by the blade count nor
+    fight it. What it costs is a null: an end where the two surfaces are
+    equally wrong in opposite directions reads as converged, because that is
+    the part one knob cannot reach. Both ends now carry that blind spot, and
+    the interior is where per-surface authority lives --- see
+    :attr:`~turbigen.thickness.ClarkThickness.tanwedge` for why the trailing
+    edge gave it up.
+
+    **Knobs and signals are born together**, which is what leaves the loop
+    determined however the order changes: the knobs are read at
+    :attr:`~turbigen.thickness.ClarkThickness.m_ctl`, which is a property of
+    the order alone, so a coefficient and the point it is measured at arrive
+    and depart as a pair. Sharing an end removes a knob and collapses two
+    residuals into one at the same stroke.
 
     **The level belongs to the blade count**, as it does for every loading
     iterator: a thickness redistributes circulation and cannot create it, so
@@ -2440,7 +2448,7 @@ class ClarkProfile(Iterator):
         for i_section in range(len(config.blades[self.i_row].sections)):
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
-            paths |= {f"{stem}.tanwedge[{i_surf}]" for i_surf in (0, 1)}
+            paths |= {f"{stem}.tanwedge"}
             paths |= {
                 f"{stem}.coeff[{i_surf}][{j}]"
                 for i_surf in (0, 1)
@@ -2558,39 +2566,31 @@ class ClarkProfile(Iterator):
         """
         return [
             f"tau_LE[{self.i_row}]",
-            *(f"tau_TE[{self.i_row}][{i}]" for i in (0, 1)),
+            f"tau_TE[{self.i_row}]",
             *(f"tau[{self.i_row}][{i}][{k}]" for i in (0, 1) for k in range(1, order)),
         ]
 
     def _flat_coeff(self, c):
         """Return coefficients `(2, order+1)` in :meth:`_names` order.
 
-        The nose is read off the suction row alone, the two rows being equal
-        there by construction --- `with_tau_coeff` refuses a leading edge that
-        is not. The trailing edge is read off both, each surface leaving at its
-        own wedge angle.
+        Both ends are read off the suction row alone, the two rows being equal
+        there by construction --- `with_tau_coeff` refuses either end that is
+        not.
         """
-        return [c[0][0], c[0][-1], c[1][-1], *c[0][1:-1], *c[1][1:-1]]
+        return [c[0][0], c[0][-1], *c[0][1:-1], *c[1][1:-1]]
 
     def _flat_error(self, e):
         """Return residuals `(2, order+1)` in :meth:`_names` order.
 
         Where :meth:`_flat_coeff` reads one shared value, this takes the *mean*
-        of the two surfaces: one nose radius serves both, so what it can answer
-        for is how wrong they are together. It nulls where they are equally
-        wrong in opposite directions, which is as close as one radius comes to
-        satisfying two surfaces.
-
-        **The trailing edge does not share, which is why it has no null.** Each
-        surface's wedge angle answers for its own residual there, so an error
-        that is equal and opposite between the two --- invisible through one
-        shared knob --- is something the loop can see and correct. The nose
-        keeps the blind spot, one circle having one radius.
+        of the two surfaces: one knob serves both, so what it can answer for is
+        how wrong they are together, and the mean is the least-squares move for
+        it. Both ends null where the surfaces are equally wrong in opposite
+        directions, that being the part one knob cannot reach.
         """
         return [
             0.5 * (e[0][0] + e[1][0]),
-            e[0][-1],
-            e[1][-1],
+            0.5 * (e[0][-1] + e[1][-1]),
             *e[0][1:-1],
             *e[1][1:-1],
         ]
@@ -2598,15 +2598,15 @@ class ClarkProfile(Iterator):
     def _unflat(self, values, order):
         """Return a `(2, order+1)` coefficient shift from :meth:`_names` order.
 
-        The inverse of :meth:`_flat_coeff`: the nose knob is written back to
-        *both* rows, which is what keeps the surfaces sharing it however far the
-        loop moves them, and the trailing edge writes one knob to each.
+        The inverse of :meth:`_flat_coeff`: both end knobs are written back to
+        *both* rows, which is what keeps the surfaces sharing them however far
+        the loop moves them.
         """
         shift = np.zeros((2, order + 1))
         shift[:, 0] = values[0]
-        shift[:, -1] = values[1:3]
-        shift[0, 1:-1] = values[3 : order + 2]
-        shift[1, 1:-1] = values[order + 2 :]
+        shift[:, -1] = values[1]
+        shift[0, 1:-1] = values[2 : order + 1]
+        shift[1, 1:-1] = values[order + 1 :]
         return shift
 
     #

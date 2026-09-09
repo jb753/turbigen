@@ -112,6 +112,16 @@ LOG_NAME = "log_turbigen.txt"
 RESTART_NAME = "restart.npz"
 """What a run calls the flow field it leaves behind, and `--restart` looks for."""
 
+GRID_NAME = "grid.emb"
+"""What a run calls the whole grid, written only when something went wrong.
+
+Written by ember's own `write_emb`, gzipped, rather than by a pickle of our
+own: a `Grid` carries weakrefs --- a patch back to its block, the connectivity
+manager to its grid --- so a plain `pickle.dumps` refuses it, and a reducer
+written here to dodge them would be ours to keep in step with a class that is
+not. `Grid.read_emb` brings it back.
+"""
+
 HISTORY_NAME = "conv.cnv"
 """What a run calls its convergence history, written beside the flow field.
 
@@ -1077,6 +1087,20 @@ def write_input(config, out_dir):
     return path
 
 
+def save_grid(path, grid):
+    """Write the whole grid to `path`, for a run that is not going to finish.
+
+    Never allowed to be the thing that ends a run: this is called on paths that
+    are already failing, and a diagnostic that raises on its way out would
+    replace the error someone needs to read with one about writing a file.
+    """
+    try:
+        grid.write_emb(str(path), compress=True)
+        logger.info(f"Wrote the grid to {path}")
+    except Exception as err:
+        logger.warning(f"Could not write the grid to {path}: {err}")
+
+
 def solve(config, out_dir, restart_path=None, svg=False):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
@@ -1108,6 +1132,17 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # draw the convergence page, and it costs a few kilobytes.
     save_history(out_dir / HISTORY_NAME, history)
 
+    # A march that fell over is the one nobody can rebuild their way back to.
+    # `restart.npz` holds the flow and nothing else, on the reasoning that
+    # `input.yaml` beside it rebuilds the mesh -- which is true only while the
+    # mesher is the code that wrote it, and a failure worth keeping is often
+    # one being chased across a change to that code. It is also the case that
+    # needs the geometry most: a divergence reports where it happened in index
+    # space, and turning `i[144:144]` into a trailing edge takes coordinates.
+    # So the whole grid goes down, coordinates, patches and all.
+    if getattr(history, "diverged", False):
+        save_grid(out_dir / GRID_NAME, grid)
+
     # Reduce the solution to a mean line. A diverged grid has nothing to mix
     # out, and even a converged one can refuse, so this must not cost the run
     # the output it has already earned.
@@ -1130,11 +1165,23 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # Measured whether or not anything is iterating: the exit angle a row
     # achieved and the incidence its leading edge saw are observations of the
     # flow, and they can only be taken while the grid is in memory.
-    result = dataclasses.replace(result, error=iterate.errors(config, result))
+    #
+    # A measurement that refuses is the other half of the case the divergence
+    # flag covers above, and the harder one: the march converged, so nothing
+    # says the geometry is suspect, and yet a leading edge had no stagnation
+    # point to find or a section had no surface to cut. That is a question
+    # about the grid, asked of a grid about to go out of scope. Written once,
+    # whichever of these raises, and the error goes on to be raised.
+    try:
+        result = dataclasses.replace(result, error=iterate.errors(config, result))
 
-    # Anything the config asked to measure from the field, for the same reason
-    # and against the same deadline.
-    result = dataclasses.replace(result, metrics=metric.measure(config, result))
+        # Anything the config asked to measure from the field, for the same
+        # reason and against the same deadline.
+        result = dataclasses.replace(result, metrics=metric.measure(config, result))
+    except Exception:
+        if not (out_dir / GRID_NAME).is_file():
+            save_grid(out_dir / GRID_NAME, grid)
+        raise
 
     # Where a throttled exit turned out to sit, for the same reason and with
     # the same deadline: the pressure the controller chose is on the patch, and
