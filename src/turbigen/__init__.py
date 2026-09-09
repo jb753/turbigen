@@ -33,7 +33,13 @@ from turbigen.blade import (
     Row,
     SectionDesign,
 )
-from turbigen.camber import Bernstein, CamberDesign, CamberLine, Quadratic
+from turbigen.camber import (
+    Bernstein,
+    CamberDesign,
+    CamberLine,
+    CircularArc,
+    Quadratic,
+)
 from turbigen.chic import Chic
 from turbigen.config import Config
 from turbigen.database import Database
@@ -89,6 +95,7 @@ __all__ = [
     "CamberLine",
     "CamberPlot",
     "Chic",
+    "CircularArc",
     "Circulation",
     "ClarkThickness",
     "Config",

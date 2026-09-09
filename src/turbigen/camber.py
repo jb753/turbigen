@@ -11,6 +11,11 @@ flow angle plus the recamber asked for by a
 :class:`~turbigen.blade.SectionDesign` --- so the split here is the same one made
 everywhere else, one level down.
 
+A shape states one thing: the camber line slope, between the end tangents it is
+handed. Everything else about a shape is a statement about *which function of
+the camber angle* runs smoothly along the chord, and the built-in shapes do not
+agree on that, which is why the slope itself is the protocol:
+
 :class:`Quadratic` (``quadratic``) is the built-in shape: the camber line slope
 varies quadratically along the chord, with :attr:`~Quadratic.aft_loading`
 shifting the turning towards the trailing edge.
@@ -20,6 +25,13 @@ angle-tangent ramp plus :attr:`~Bernstein.order` ``- 1`` interior Bernstein
 coefficients that perturb it. The endpoint coefficients are pinned at zero so
 the ends stay put, and all-zero coefficients recover :class:`Quadratic` with
 zero aft loading.
+
+:class:`CircularArc` (``circular_arc``) is the shape with no parameters at all:
+constant curvature, which the end angles alone fix. Both shapes above
+distribute ``tan chi`` along the chord, and so normalise into a curve that is
+the same whatever the end angles are; an arc distributes ``sin chi``, and does
+not. That is the whole reason a shape is asked for a slope between two known
+tangents rather than for a normalised camber it could state on its own.
 """
 
 import dataclasses
@@ -37,17 +49,18 @@ logger = logging.getLogger("turbigen")
 class CamberDesign(Node):
     """Base for camber line shapes.
 
-    A shape knows nothing of the blade angles: it interpolates between them.
-    The :doc:`/blade` page covers where the angles come from.
+    The :doc:`/blade` page covers where the end angles come from.
     """
 
-    def chi_hat(self, m):
-        """Return normalised camber at normalised meridional distance `m`.
+    def dydm(self, m, tanchi_LE, tanchi_TE):
+        """Return camber line slope at normalised meridional distance `m`.
 
-        Zero at the leading edge and one at the trailing edge, so that the
-        camber angle is recovered by interpolating the end angles with it.
+        Running between `tanchi_LE` at the leading edge and `tanchi_TE` at the
+        trailing edge, which a shape is handed rather than choosing: they are
+        the mean line's business, and only the path between them is the
+        shape's.
         """
-        raise NotImplementedError(f"{type(self).__name__} must implement chi_hat(m)")
+        raise NotImplementedError(f"{type(self).__name__} must implement dydm(...)")
 
 
 class Quadratic(CamberDesign):
@@ -62,11 +75,11 @@ class Quadratic(CamberDesign):
     aft, negative values forward.
     """
 
-    def chi_hat(self, m):
+    def dydm(self, m, tanchi_LE, tanchi_TE):
         shapespace.validate_domain(m)
         a = self.aft_loading
         m = np.asarray(m, dtype=float)
-        return m * (a * m + (1.0 - a))
+        return tanchi_LE + m * (a * m + (1.0 - a)) * (tanchi_TE - tanchi_LE)
 
 
 class Bernstein(CamberDesign):
@@ -127,7 +140,7 @@ class Bernstein(CamberDesign):
             b = shapespace.elevate_bernstein((0.0, *self.coeff, 0.0), n)
             object.__setattr__(self, "coeff", tuple(float(v) for v in b[1:-1]))
 
-    def chi_hat(self, m):
+    def dydm(self, m, tanchi_LE, tanchi_TE):
         shapespace.validate_domain(m)
         n = self.order
         m = np.asarray(m, dtype=float)
@@ -136,7 +149,39 @@ class Bernstein(CamberDesign):
         # coefficients, which leaves the coefficients purely the perturbation
         # and its ends pinned at zero.
         c = np.zeros(n - 1) if not self.coeff else np.asarray(self.coeff)
-        return m + shapespace.evaluate_bernstein((0.0, *c, 0.0), m)
+        chi_hat = m + shapespace.evaluate_bernstein((0.0, *c, 0.0), m)
+        return tanchi_LE + chi_hat * (tanchi_TE - tanchi_LE)
+
+
+class CircularArc(CamberDesign):
+    """Camber line of constant curvature between the end angles.
+
+    The shape with nothing to state: the end angles fix the arc, so there is
+    no parameter here and nothing for an iterator to move. Constant curvature
+    means the camber angle turns uniformly with arc length, or
+    ``sin chi = (1 - m) sin chi_LE + m sin chi_TE`` against meridional
+    distance --- closed form, so the arc costs no more to evaluate than the
+    polynomial shapes do.
+
+    The curvature is constant in the unwrapped meridional-tangential plane the
+    other shapes are written in, before
+    :meth:`~turbigen.blade.Blade.evaluate_section` projects onto the annulus.
+    On a constant-radius annulus that is a true circle in ``(m, r theta)``;
+    where the radius changes it is not, which is the same approximation every
+    shape here already makes.
+    """
+
+    type: ClassVar[str] = "circular_arc"
+
+    def dydm(self, m, tanchi_LE, tanchi_TE):
+        shapespace.validate_domain(m)
+        # No guard on the square root: the interior sine is a convex
+        # combination of the two end sines, and a metal angle at or beyond 90
+        # degrees is refused by `Blade.evaluate_chi` long before it reaches a
+        # shape, so the magnitude here is strictly below one.
+        s_LE, s_TE = (t / np.hypot(1.0, t) for t in (tanchi_LE, tanchi_TE))
+        s = s_LE + np.asarray(m, dtype=float) * (s_TE - s_LE)
+        return s / np.sqrt(1.0 - s * s)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -157,15 +202,9 @@ class CamberLine:
     tanchi_TE: float
     """Tangent of the metal angle at the trailing edge."""
 
-    @property
-    def Dtanchi(self):
-        """Change in the tangent of the metal angle, leading to trailing [--]."""
-        return self.tanchi_TE - self.tanchi_LE
-
     def dydm(self, m):
         """Return camber line slope at normalised meridional distance `m`."""
-        shapespace.validate_domain(m)
-        return self.tanchi_LE + self.shape.chi_hat(m) * self.Dtanchi
+        return self.shape.dydm(m, self.tanchi_LE, self.tanchi_TE)
 
     def chi(self, m):
         """Return camber angle at normalised meridional distance `m` [deg]."""

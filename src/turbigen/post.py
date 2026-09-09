@@ -377,7 +377,7 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
 
 
 class CamberPlot(Post):
-    """Normalised camber line of each row.
+    """Metal angle along the camber line of each row.
 
     The design-side companion to :class:`SurfacePlot`: that draws what the
     flow did with a blade, this draws the blade. Where a `loading_profile`
@@ -386,10 +386,14 @@ class CamberPlot(Post):
     measured in `zeta`, and seeing the knobs on the curve they actually move
     is what makes a saturated or a flat one recognisable.
 
-    The normalised shape and nothing else, as the package this replaces drew
-    it. That is what a camber design states and what an iterator moves; the
-    metal angle it lands on is the mean line's business, and the thickness
-    wrapped around it is a plot of its own.
+    The angle itself, in degrees, rather than a shape normalised between the
+    ends. Not every camber design has such a normalised form --- a
+    :class:`~turbigen.camber.CircularArc` is fixed by the end angles and says
+    nothing without them --- and the one curve every shape can be drawn as is
+    the angle it actually lands on. It reads directly against the metal angles
+    the mean line set, and a section with no turning draws as the flat line it
+    is rather than as nothing at all. The thickness wrapped around it is a
+    plot of its own.
     """
 
     type: ClassVar[str] = "camber"
@@ -413,7 +417,7 @@ class CamberPlot(Post):
         for i_row, row in enumerate(rows):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_title(f"Row {i_row} Camber")
-            ax.set_ylabel(r"Normalised Metal Angle, $\hat{\chi}$")
+            ax.set_ylabel(r"Metal Angle, $\chi$ / deg")
             ax.set_xlabel(r"Meridional Distance, $m/c_m$")
             ax.set_xlim((0.0, 1.0))
 
@@ -421,7 +425,7 @@ class CamberPlot(Post):
                 camber, _ = row.blade._get_cam_thick(spf)
                 color = f"C{i_spf}"
 
-                ax.plot(m, camber.shape.chi_hat(m), color=color, label=f"spf={spf:.2f}")
+                ax.plot(m, camber.chi(m), color=color, label=f"spf={spf:.2f}")
 
                 # Only where an iterator reads this row and span: a knob drawn
                 # at a section nobody shapes would be a claim the design never
@@ -434,7 +438,7 @@ class CamberPlot(Post):
                 m_knob = profile.knob_m()
                 ax.plot(
                     m_knob,
-                    camber.shape.chi_hat(m_knob),
+                    camber.chi(m_knob),
                     "o",
                     color=color,
                     fillstyle="none",
