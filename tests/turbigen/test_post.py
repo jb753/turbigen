@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 import yaml
 from test_blade import build
-from test_cli import RUN_CASE
+from test_cli import ITERATE_CASE, RUN_CASE
 from test_mesh import MESH, TIP
 
 from turbigen import (
@@ -31,11 +31,13 @@ from turbigen import (
     SurfacePlot,
     VelocityTrianglePlot,
     cli,
+    iterate,
     loading,
     mixout,
     post,
     util,
 )
+from turbigen.post import IterationPlot
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -1094,3 +1096,89 @@ def test_camber_plot_leaves_an_unshaped_row_unmarked(bladed, meshed):
 
 def test_camber_plot_without_blades_is_empty(config, result):
     assert CamberPlot().report(config, result) == []
+
+
+#
+# THE DESIGN LOOP'S OWN HISTORY, which is a sequence of designs rather than one
+# --- so it takes a trajectory, and a trajectory is plain data.
+#
+
+
+@pytest.fixture
+def iterating():
+    """A config with two iterators, and the knobs they own."""
+    config = Config.from_dict(yaml.safe_load(ITERATE_CASE))
+    return config, list(iterate.unknowns(config))
+
+
+def trajectory_of(config, names, n, drop=()):
+    """Return `n` passes, each erring less than the last.
+
+    `drop` names knobs left out of the middle pass, as an iterator that could
+    not measure leaves its own out.
+    """
+    return [
+        (
+            config,
+            Result(
+                error={
+                    name: 0.5 * 0.5**k
+                    for j, name in enumerate(names)
+                    if not (k == n // 2 and name in drop)
+                }
+            ),
+        )
+        for k in range(n)
+    ]
+
+
+def test_the_iteration_plot_draws_a_page_for_each_iterator(iterating):
+    """An overview that puts every knob on one axis, then one page each."""
+    config, names = iterating
+
+    figures = IterationPlot().report(trajectory_of(config, names, 4))
+
+    assert len(figures) == 1 + len(config.iterate.correct)
+
+    # The overview divides by tolerance, so it is one axes; the per-iterator
+    # pages carry the values beneath the errors, so they are two.
+    assert len(figures[0].axes) == 1
+    assert all(len(figure.axes) == 2 for figure in figures[1:])
+    assert [figure.axes[0].get_title() for figure in figures[1:]] == [
+        f"{iterator.type} Iteration" for iterator in config.iterate.correct
+    ]
+
+
+def test_one_iteration_is_not_a_history(iterating):
+    """Nothing to draw from a single design, as a march with no records draws
+    no convergence plot."""
+    config, names = iterating
+
+    assert IterationPlot().report(trajectory_of(config, names, 1)) == []
+    assert IterationPlot().report([]) == []
+
+
+def test_a_knob_nobody_measured_is_a_gap_not_a_zero(iterating):
+    """An iterator that could not measure omits its knobs, and a zero there
+    would draw as converged."""
+    config, names = iterating
+    missing = names[0]
+
+    figures = IterationPlot().report(trajectory_of(config, names, 5, drop={missing}))
+
+    drawn = [
+        line
+        for figure in figures[1:]
+        for line in figure.axes[0].lines
+        if line.get_label() == missing
+    ]
+    assert drawn, missing
+
+    y = np.asarray(drawn[0].get_ydata(), dtype=float)
+    assert np.isnan(y).sum() == 1
+    assert not (y == 0.0).any()
+
+
+def test_a_design_that_iterates_nothing_has_no_history(config, result):
+    """The plot needs iterators to group by, and `run` configures none."""
+    assert IterationPlot().report([(config, result), (config, result)]) == []

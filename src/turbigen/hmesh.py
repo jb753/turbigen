@@ -327,6 +327,7 @@ class H(Mesher):
             dspf_hub, dspf_casing, tip_ref * self.gap_contraction
         )
         nj = len(span_frac)
+        assert not (nj - 1) % 8, f"nj-1={nj - 1} not divisible by 8"
 
         # Streamwise: choose inlet/exit lengths
         if n_row == 1:
@@ -650,6 +651,27 @@ class H(Mesher):
 
             spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
             spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
+
+            # The two pieces share a node, so the span carries
+            # `len(main) + len(tip) - 1` of them, and a multigrid level halves
+            # that only if it is one more than a multiple of eight. Each piece
+            # is separately so when `clusterfunc` chooses its own count, but
+            # `njtip_min` is used as an exact count on the fallback above, and
+            # nothing makes an `njtip_min` of five into eight-and-one.
+            #
+            # The main passage makes up the difference, being the piece with
+            # room to absorb it: adding a node there moves the spanwise
+            # spacing by a fraction of a per cent, where adding one across a
+            # gap resolved by five would be a fifth of the clearance. The tip
+            # gets the count that was asked for and the mesh stays halvable.
+            deficit = -(len(spf_main) + len(spf_tip) - 2) % 8
+            if deficit:
+                logger.debug(
+                    f"Adding {deficit} spanwise points to the main passage so "
+                    f"the span is a multigrid count."
+                )
+                spf_main = util.resample_to(spf_main, len(spf_main) + deficit)
+
             spf = np.concatenate((spf_main[:-1], spf_tip))
 
             assert spf[0] == 0.0

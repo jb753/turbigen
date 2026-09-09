@@ -1304,6 +1304,158 @@ class SpanwisePlot(Post):
         return fig
 
 
+class PostChain:
+    """Draws a sequence of designs, where a :class:`Post` draws one.
+
+    A `Post` answers "what did this design do"; a `PostChain` answers "where
+    is the loop going", which needs every design it has been through. So the
+    signature differs --- one trajectory rather than one config and one result
+    --- and that is the whole of the distinction between the two families.
+
+    **Not a `Post` and not a `Node`.** Not a `Post` because the argument is
+    not the same thing; not a `Node` because there is nothing to configure. A
+    run either has a trajectory to draw or it does not, and a plot of the loop
+    is wanted whenever there is a loop, so these are always on and never named
+    in a config file.
+
+    A trajectory is a sequence of ``(config, result)`` pairs, oldest first,
+    each the design one iteration ran and what it achieved. Plain data: no
+    grid, no filesystem, and a test can build one by hand.
+    """
+
+    def report(self, trajectory):
+        """Return figures describing `trajectory`, which may be empty."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement report(trajectory)"
+        )
+
+
+class IterationPlot(PostChain):
+    """How each iterator's errors and knobs moved, iteration by iteration.
+
+    The design loop's own convergence history, as
+    :class:`ConvergencePlot` is the march's. A run of twenty iterations
+    otherwise says nothing about itself but a table per pass in the log, and a
+    table cannot show a knob walking steadily away from where it started.
+
+    **An overview page, then one page per iterator.** The overview divides
+    every error by its own tolerance, so a recamber in degrees, a loss
+    coefficient and a shape-space coefficient can be read on one axis, with a
+    rule at one: below it is converged. The per-iterator pages give the same
+    errors in their own units, and beneath them the *values* of the knobs.
+
+    **The value panel is the point of this plot.** An error that is not
+    falling looks the same whether the knob is inching towards an answer or
+    sitting on its clip, and only the value says which --- a recamber walking
+    to eleven degrees, or a coefficient pinned where the clip left it, is a
+    design running away rather than one converging slowly.
+    """
+
+    def report(self, trajectory):
+        from turbigen import iterate
+
+        if len(trajectory) < 2:
+            logger.info("Fewer than two iterations, so there is no history to draw.")
+            return []
+
+        config = trajectory[-1][0]
+        if not config.iterate.correct:
+            logger.info("Nothing was being corrected, skipping the iteration plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        # Read once for every page below. A knob missing from an iteration is
+        # a gap rather than a zero: an iterator that could not measure omits
+        # its knobs, and a zero there would draw as converged.
+        n = len(trajectory)
+        errors, values = {}, {}
+        for i, (config_i, result_i) in enumerate(trajectory):
+            for name, value in result_i.error.items():
+                errors.setdefault(name, np.full(n, np.nan))[i] = value
+            for name, value in iterate.unknowns(config_i).items():
+                values.setdefault(name, np.full(n, np.nan))[i] = value
+
+        iterators = list(config.iterate.correct)
+        figures = [self._overview(plt, config, iterators, errors, n)]
+        for i_iterator, iterator in enumerate(iterators):
+            figure = self._one(plt, config, iterator, i_iterator, errors, values, n)
+            if figure is not None:
+                figures.append(figure)
+
+        return figures
+
+    def _overview(self, plt, config, iterators, errors, n):
+        """Every knob against its own tolerance, on one axis."""
+        fig, ax = plt.subplots(layout="constrained")
+        ax.set_title("Design Iteration")
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel(r"$|\epsilon|$ / tolerance")
+        ax.set_yscale("log")
+
+        for i_iterator, iterator in enumerate(iterators):
+            tolerances = iterator.tolerances(config)
+            for name, tolerance in tolerances.items():
+                if name not in errors or not tolerance:
+                    continue
+                ax.plot(
+                    np.arange(n),
+                    np.abs(errors[name]) / tolerance,
+                    color=f"C{i_iterator}",
+                    linewidth=1.0,
+                )
+            # One legend entry per iterator, not per knob: twenty-five lines
+            # named individually is a legend nobody reads.
+            ax.plot([], [], color=f"C{i_iterator}", label=iterator.type)
+
+        # Converged is below one, whatever the knob is measured in, which is
+        # the whole reason for dividing through.
+        ax.axhline(1.0, color="k", linestyle="--", linewidth=1.0)
+        ax.legend()
+        return fig
+
+    def _one(self, plt, config, iterator, i_iterator, errors, values, n):
+        """One iterator's errors, and the knobs that answer for them."""
+        names = [name for name in iterator.unknowns(config) if name in errors]
+        if not names:
+            return None
+
+        fig, (ax_err, ax_val) = plt.subplots(2, 1, sharex=True, layout="constrained")
+        ax_err.set_title(f"{iterator.type} Iteration")
+        ax_err.set_ylabel(r"Error, $\epsilon$")
+        ax_val.set_ylabel("Value")
+        ax_val.set_xlabel("Iteration")
+
+        tolerances = iterator.tolerances(config)
+        iteration = np.arange(n)
+        for i_name, name in enumerate(names):
+            color = f"C{i_name}"
+            ax_err.plot(iteration, errors[name], color=color, label=name)
+            if name in values:
+                ax_val.plot(iteration, values[name], color=color)
+
+        # Drawn as a band rather than two lines, and only where every knob
+        # shares a tolerance -- which is the common case, and where a single
+        # band means anything.
+        band = {tolerances[name] for name in names if name in tolerances}
+        if len(band) == 1:
+            tolerance = band.pop()
+            if tolerance:
+                ax_err.axhspan(-tolerance, tolerance, color="k", alpha=0.1)
+
+        ax_err.legend(fontsize="small")
+        return fig
+
+
+STANDARD_CHAIN = (IterationPlot(),)
+"""The chain plots every report draws, there being nothing to configure.
+
+The counterpart of :data:`STANDARD`, and separate from it because the two
+families take different arguments. A tuple rather than one class so that a
+second chain plot -- a `chic` sweep, say -- is one line here.
+"""
+
+
 STANDARD = (
     VelocityTrianglePlot(),
     AnnulusPlot(),

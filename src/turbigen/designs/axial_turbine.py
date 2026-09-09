@@ -6,6 +6,14 @@ import numpy as np
 
 from turbigen.design import DesignError, MeanLineDesign
 
+N_GUESS = 30
+"""Passes closing the blade-speed guess against the loading it has to deliver.
+
+Cheap arithmetic on four numbers, and the map is relaxed rather than tight, so
+this is set by what converges across the whole design space rather than by
+what any one case needs.
+"""
+
 VT1_FRACTION = 0.05
 """Fraction of the guessed blade speed to start the inlet swirl at.
 
@@ -157,7 +165,34 @@ class AxialTurbine(MeanLineDesign):
             ml.set_Omega([0.0, U / r_rms])
 
         # Guesses. The rotor exit swirl is negative for a turbine.
+        #
+        # The blade speed is found by iterating rather than assumed, because
+        # `psi` is a statement about it: the stage loading is `dh0 / U^2`, and
+        # `dh0` is `U (Vt2 - Vt3)`, so a repeating stage satisfies
+        # `U (1 + psi) = Vt2 - Vt3_rel` -- with the swirls following from the
+        # exit Mach number and the axial velocity, which follow from `U`. A
+        # few passes close that loop.
+        #
+        # Fixed at half the exit velocity it was blind to `psi` altogether,
+        # giving the same 229 m/s across a box whose answers run 283 down to
+        # 212: nineteen per cent out at low loading, where the guess has to be
+        # good, because the least-squares cost has a local minimum near enough
+        # to the root that a starting point on the wrong side of it converges
+        # to a design that does not exist. Iterated, the guess tracks the
+        # answer and sits under four per cent of it throughout.
         U0 = ao1 * self.Ma2 * 0.5
+        for _ in range(N_GUESS):
+            Vx_g = U0 * phi2
+            Vt2_g = np.sqrt(max((self.Ma2 * ao1) ** 2 - Vx_g**2, (0.5 * Vx_g) ** 2))
+            Vt3_rel_g = -np.sqrt(
+                max(
+                    (self.fac_Ma3_rel * self.Ma2 * ao1) ** 2 - Vx_g**2,
+                    (0.5 * Vx_g) ** 2,
+                )
+            )
+            # Relaxed, the map being a contraction only for part of the range
+            # this has to cover.
+            U0 = 0.5 * U0 + 0.5 * (Vt2_g - Vt3_rel_g) / (1.0 + self.psi)
         # Off zero, though an axial inlet is what this converges to. A guess
         # of exactly zero degenerates the finite-difference step: it is taken
         # relative to the value, floored at one, so Vt1 got a step of 3.5e-04

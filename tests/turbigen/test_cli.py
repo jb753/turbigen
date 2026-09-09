@@ -1215,6 +1215,49 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
     assert all(isinstance(value, float) for value in result.error.values())
 
 
+def test_a_report_hands_the_chain_the_whole_trajectory(tmp_path, monkeypatch):
+    """The dispatch that lets the loop be drawn without a `Result` carrying it.
+
+    An ordinary `Post` draws one design and is handed the last pair; a
+    `PostChain` draws the sequence and is handed all of it. Both come off the
+    same trajectory, so nothing has to be read back off disk and nothing about
+    other designs rides on a `Result`.
+    """
+    from turbigen import post
+
+    seen = {}
+
+    class _Chained(post.PostChain):
+        def report(self, trajectory):
+            seen["chain"] = list(trajectory)
+            return []
+
+    class _One(post.Post):
+        type = "_test_one"
+
+        def report(self, config, result):
+            seen["post"] = (config, result)
+            return []
+
+    monkeypatch.setattr(post, "STANDARD_CHAIN", (_Chained(),))
+    monkeypatch.setattr(post, "STANDARD", (_One(),))
+
+    import yaml
+
+    from turbigen.config import Config
+    from turbigen.result import Result
+
+    config = Config.from_dict(yaml.safe_load(CASE))
+    # Distinguishable, so that "the last pair" is a claim about which one and
+    # not merely about the shape of it.
+    trajectory = [(config, Result(error={"k": float(i)})) for i in range(3)]
+
+    cli.write_report(trajectory, tmp_path)
+
+    assert seen["chain"] == trajectory
+    assert seen["post"][1] is trajectory[-1][1]
+
+
 METRIC_CASE = RUN_CASE + "\nmetrics:\n  - type: _test_grid_stats\n"
 
 

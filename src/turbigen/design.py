@@ -211,6 +211,23 @@ _DIFF_STEP = float(np.sqrt(np.finfo(np.float32).eps))
 """Relative finite-difference step, sized for the float32 mean-line storage."""
 
 
+N_RESTART = 4
+"""Times a stalled solve is tried again from a fresh starting point.
+
+Bounded because a restart is only worth taking while it is cheap against the
+solve itself: the measured case used thirty-two of its five hundred
+evaluations, so four more attempts are affordable, and a design that needs
+more than that is telling you about its guess rather than about the solver.
+"""
+
+RESTART_SPREAD = 0.25
+"""How far a restart moves each unknown, as a fraction of its first guess.
+
+Wide enough to leave the basin the last try settled in, narrow enough that the
+restart is still a guess at the same design rather than a different one.
+"""
+
+
 class DesignError(Exception):
     """A mean-line design could not be produced."""
 
@@ -437,27 +454,77 @@ class MeanLineDesign(Node):
             history.append((x.copy(), float(np.max(np.abs(out)))))
             return out
 
-        solution = scipy.optimize.least_squares(
-            residual,
-            x0,
-            # Unknowns routinely span orders of magnitude (a blade speed of
-            # ~200 alongside a swirl velocity near 0), so let the solver take
-            # its variable scaling from the Jacobian rather than assuming unity.
-            x_scale="jac",
-            # A mean line stores its state as float32. The default
-            # finite-difference step is sized for float64 (~1e-8 relative) and
-            # is smaller than float32 can resolve, so the Jacobian comes back
-            # as rounding noise and the solve stalls short of the answer.
-            diff_step=_DIFF_STEP,
-            max_nfev=max_iter * (x0.size + 1),
-        )
+        def attempt(x_start):
+            return scipy.optimize.least_squares(
+                residual,
+                x_start,
+                # Unknowns routinely span orders of magnitude (a blade speed of
+                # ~200 alongside a swirl velocity near 0), so let the solver take
+                # its variable scaling from the Jacobian rather than assuming unity.
+                x_scale="jac",
+                # A mean line stores its state as float32. The default
+                # finite-difference step is sized for float64 (~1e-8 relative) and
+                # is smaller than float32 can resolve, so the Jacobian comes back
+                # as rounding noise and the solve stalls short of the answer.
+                diff_step=_DIFF_STEP,
+                max_nfev=max_iter * (x0.size + 1),
+            )
+
+        # Restarted from somewhere else when the first go stops short, because
+        # what it stops at is usually not a failure to *reach* the root but a
+        # local minimum of the least-squares cost that is not one. Measured on
+        # a stage that would not design: `xtol` satisfied after thirty-two of
+        # five hundred evaluations, gradient down at 6e-05, residual stuck at
+        # 9e-03 -- a solver correctly reporting that it cannot move, from a
+        # place it should not have been. Neighbouring designs a thousandth of
+        # a Mach number away solved, which is what a basin boundary looks like
+        # from the outside.
+        #
+        # Perturbing the *original* guess rather than the point it failed at:
+        # that point is a minimum, and a step from it tends to return to it.
+        # Seeded, so a design that needed three tries needs the same three
+        # tomorrow.
+        rng = np.random.default_rng(0)
+        solution = attempt(x0)
+        for i_retry in range(1, N_RESTART + 1):
+            err_now = float(np.max(np.abs(solution.fun)))
+            if err_now <= rtol:
+                break
+            logger.debug(
+                f"{self._who(label)}: restart {i_retry} of {N_RESTART}, the "
+                f"last try having stopped at residual {err_now:.3e} with "
+                f"status {solution.status} ({solution.message.strip()})"
+            )
+            scale = 1.0 + RESTART_SPREAD * rng.uniform(-1.0, 1.0, x0.shape)
+            retried = attempt(x0 * scale)
+            if np.max(np.abs(retried.fun)) < err_now:
+                solution = retried
 
         err = float(np.max(np.abs(solution.fun)))
+
+        # Why the solver stopped, which the residual alone does not say: a
+        # trust region that ran out of evaluations is short of an answer it was
+        # still approaching, where one that met `ftol` or `xtol` has decided it
+        # is already there. Those want opposite fixes -- more budget against a
+        # better starting guess -- and telling them apart from the outside is
+        # otherwise guesswork.
+        logger.debug(
+            f"{self._who(label)}: least_squares stopped with status "
+            f"{solution.status} ({solution.message.strip()}); "
+            f"nfev={solution.nfev} of {max_iter * (x0.size + 1)}, "
+            f"njev={solution.njev}, cost={solution.cost:.6e}, "
+            f"optimality={solution.optimality:.3e}, residual={err:.3e}"
+        )
+
         if err > rtol:
             raise DesignError(
                 f"{self._who(label)}: did not converge. Scaled residual "
                 f"{err:.3e} exceeds rtol {rtol:.3e} after {len(history)} "
                 f"evaluation(s).\n"
+                f"  stopped:  status {solution.status}, "
+                f"{solution.message.strip()}\n"
+                f"  nfev:     {solution.nfev} of {max_iter * (x0.size + 1)}, "
+                f"optimality {solution.optimality:.3e}\n"
                 f"  unknowns: {unpack(solution.x)}\n"
                 f"  targets:  {target_keys}\n"
                 f"  history:  {_format_history(history)}"

@@ -991,7 +991,7 @@ def _report_one(args, config_path):
 
         result = answer or Result(machine=machine, grid=grid, history=history)
 
-        write_report(config, result, out_dir, svg=args.svg)
+        write_report([(config, result)], out_dir, svg=args.svg)
         _write_report_output(config, answer, out_dir)
 
     return 0
@@ -1147,12 +1147,18 @@ def save_grid(path, grid):
         logger.warning(f"Could not write the grid to {path}: {err}")
 
 
-def solve(config, out_dir, restart_path=None, svg=False):
+def solve(config, out_dir, restart_path=None, svg=False, trajectory=()):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
     second copy of one -- which is how `turbigen.main` came to hold the same
     pipeline three times over, two of them unreachable and already drifted.
+
+    `trajectory` is what the design loop has been through so far, if anything,
+    which the report draws the loop's own convergence from. Passed in rather
+    than reachable from here, because a run knows nothing of the loop that may
+    be repeating it -- and passed *through* rather than kept, because the pair
+    this call is about does not exist until the solve is over.
     """
     config, machine, grid = prepare(config, restart_path)
 
@@ -1254,7 +1260,7 @@ def solve(config, out_dir, restart_path=None, svg=False):
         except Exception as err:
             logger.warning(f"Could not compare the design against its solution: {err}")
 
-    _write_output(config, result, out_dir, svg=svg)
+    _write_output(config, result, out_dir, svg=svg, trajectory=trajectory)
 
     return result
 
@@ -1430,6 +1436,60 @@ def _chic_one(args, config_path):
     return 0 if any(point.converged for point in points) else 2
 
 
+@dataclasses.dataclass
+class _Chain:
+    """Solve one iteration per call, chaining the field and keeping the record.
+
+    What `iterate.converge` calls, satisfying the ``(config, i_iter)`` contract
+    it asks for while carrying the two things that have to survive between
+    calls. A closure did this and carried `previous` by `nonlocal`; a second
+    piece of hidden state in a nested function is where that stops being
+    reasonable.
+
+    **It owns the trajectory because it is the only thing that sees it.**
+    `converge` holds a history of its own for the Jacobian and cannot reach
+    the report, which is drawn inside `solve`; this sits between the two, so
+    the record can go down to the report without `converge` learning anything
+    about directories. That is why nothing was added to `Result` and nothing
+    was read back off disk.
+
+    The grid and the march history are dropped from what is kept. A stripped
+    `Result` is a few hundred numbers where a grid is tens of megabytes, which
+    is the difference between keeping every pass and keeping none.
+    """
+
+    out_dir: Path
+    """Where the numbered iteration directories go."""
+
+    previous: Path | None = None
+    """The field the next call starts from, advanced as each one finishes."""
+
+    trajectory: list = dataclasses.field(default_factory=list)
+    """Every ``(config, result)`` pair so far, oldest first."""
+
+    def __call__(self, config_now, i_iter):
+        iter_dir = self.out_dir / f"iter_{i_iter:04d}"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # Where this iteration's knobs stood, which the next one moves: the
+        # sequence is reproducible from the datum, but no single member of it
+        # is.
+        write_input(config_now, iter_dir)
+
+        # Chained: each iteration starts from the field the last one reached,
+        # which is most of the saving. Index-space interpolation covers the
+        # mesh moving with the design.
+        result = solve(config_now, iter_dir, self.previous, trajectory=self.trajectory)
+        self.previous = iter_dir / RESTART_NAME
+
+        self.trajectory.append(
+            (config_now, dataclasses.replace(result, grid=None, history=None))
+        )
+
+        return result
+
+
 def converge_design(config, out_dir, previous=None):
     """Iterate `config` to convergence, keeping every iteration under `out_dir`.
 
@@ -1472,30 +1532,13 @@ def converge_design(config, out_dir, previous=None):
     # anyone's is in there to lose.
     config = database.warm_start(config, out_dir, exclude=(out_dir,))
 
-    def run(config_now, i_iter):
-        """Solve one iteration into a directory of its own."""
-        nonlocal previous
+    runner = _Chain(out_dir=out_dir, previous=previous)
 
-        iter_dir = out_dir / f"iter_{i_iter:04d}"
-        iter_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+    config, result, converged = iterate.converge(
+        config, runner, config.iterate.max_iter
+    )
 
-        # Where this iteration's knobs stood, which the next one moves: the
-        # sequence is reproducible from the datum, but no single member of it
-        # is.
-        write_input(config_now, iter_dir)
-
-        # Chained: each iteration starts from the field the last one reached,
-        # which is most of the saving. Index-space interpolation covers the
-        # mesh moving with the design.
-        result = solve(config_now, iter_dir, previous)
-        previous = iter_dir / RESTART_NAME
-
-        return result
-
-    config, result, converged = iterate.converge(config, run, config.iterate.max_iter)
-
-    field = promote_final(out_dir, previous.parent, converged)
+    field = promote_final(out_dir, runner.previous.parent, converged)
 
     return _with_achieved(config, result), result, converged, field
 
@@ -1780,7 +1823,7 @@ def _open_batch(args, datum_dir):
     return out_dir
 
 
-def _write_output(config, result, out_dir, svg=False):
+def _write_output(config, result, out_dir, svg=False, trajectory=()):
     """Write what a run achieved, and draw it.
 
     Only the verbs that solve call this, and that is what makes it safe:
@@ -1794,7 +1837,7 @@ def _write_output(config, result, out_dir, svg=False):
     case.write(config_path, config, result)
     run_log.info(f"Wrote resolved configuration to {config_path}")
 
-    write_report(config, result, out_dir, svg=svg)
+    write_report([*trajectory, (config, result)], out_dir, svg=svg)
 
 
 def grid_string(grid):
@@ -1911,8 +1954,16 @@ def processors(config):
     return standard + list(config.post_process)
 
 
-def write_report(config, result, out_dir, svg=False):
+def write_report(trajectory, out_dir, svg=False):
     """Run the post-processors and collect their figures into one PDF.
+
+    `trajectory` is the sequence of ``(config, result)`` pairs the run has been
+    through, oldest first and never empty. A :class:`~turbigen.post.Post` draws
+    one design and is handed the last of them; a
+    :class:`~turbigen.post.PostChain` draws the sequence and is handed all of
+    them. Passing the sequence rather than a pair is what lets the loop be
+    drawn without a `Result` carrying anything about designs other than its
+    own.
 
     Nothing is produced without an output directory, so the figures are only
     made when there is somewhere to put them. With one, a report is always
@@ -1938,6 +1989,8 @@ def write_report(config, result, out_dir, svg=False):
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
 
+    config, result = trajectory[-1]
+
     path = out_dir / "post.pdf"
     n_page = 0
     # styled() spans figure creation, not just savefig: rcParams are read as
@@ -1953,6 +2006,21 @@ def write_report(config, result, out_dir, svg=False):
                     figure.savefig(
                         out_dir / f"post_{i_processor:02d}_{processor.type}"
                         f"_{i_figure}.svg"
+                    )
+                plt.close(figure)
+                n_page += 1
+
+        # After the per-design pages, and named apart from them: a chain plot
+        # is not in `processors`, so numbering its figures alongside would let
+        # adding one rename the images of the plots before it.
+        for i_processor, processor in enumerate(post.STANDARD_CHAIN):
+            logger.debug(f"Running chain post-processor {processor}")
+            for i_figure, figure in enumerate(processor.report(trajectory)):
+                pdf.savefig(figure)
+                if svg:
+                    name = type(processor).__name__.lower()
+                    figure.savefig(
+                        out_dir / f"chain_{i_processor:02d}_{name}_{i_figure}.svg"
                     )
                 plt.close(figure)
                 n_page += 1

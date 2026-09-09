@@ -129,14 +129,27 @@ def resample(x, f, mult=None):
     if np.isclose(f, 1.0):
         return x
 
-    xnorm = (x - x[0]) / np.ptp(x)
-    npts = len(x)
-    npts_new = np.round((npts - 1) * f).astype(int) + 1
+    npts_new = np.round((len(x) - 1) * f).astype(int) + 1
     if mult:
         npts_new = int(mult * np.ceil((npts_new - 1) / mult)) + 1
 
-    inorm = np.linspace(0.0, 1.0, npts)
-    inorm_new = np.linspace(0.0, 1.0, npts_new)
+    return resample_to(x, npts_new)
+
+
+def resample_to(x, npts):
+    """Return `x` with exactly `npts` points, keeping its relative spacing.
+
+    What :func:`resample` does once it has decided on a count, and what a
+    caller wants when the count is decided elsewhere --- a mesh direction
+    assembled from two pieces, where one has to make up whatever the other
+    leaves before the total can be halved by a multigrid level.
+    """
+    if npts == len(x):
+        return x
+
+    xnorm = (x - x[0]) / np.ptp(x)
+    inorm = np.linspace(0.0, 1.0, len(x))
+    inorm_new = np.linspace(0.0, 1.0, npts)
     xnew = np.interp(inorm_new, inorm, xnorm) * np.ptp(x) + x[0]
 
     assert np.allclose(xnew[(0, -1),], x[(0, -1),])
