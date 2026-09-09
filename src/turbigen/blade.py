@@ -41,7 +41,8 @@ level:
      - a mean-line row, a :class:`~turbigen.annulus.RowAnnulus`
      - :class:`Row` --- a :class:`Blade`, ``n_blade``, ``tip_gap``
 
-:class:`~turbigen.camber.Quadratic`, :class:`~turbigen.camber.Bernstein` and
+:class:`~turbigen.camber.Quadratic`, :class:`~turbigen.camber.Bernstein`,
+:class:`~turbigen.camber.ClarkCamber` and
 :class:`~turbigen.camber.CircularArc` are the built-in camber shapes. :class:`~turbigen.thickness.Taylor` is the built-in
 thickness distribution and :class:`~turbigen.thickness.ClarkThickness` the
 two-sided alternative, which gives each surface its own thickness about the

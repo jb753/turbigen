@@ -85,6 +85,54 @@ class Loading:
 
 
 @dataclasses.dataclass(frozen=True)
+class ClarkMeasurement:
+    """What a solved row tells a :class:`~turbigen.iterate.ClarkProfile`.
+
+    The samples its knobs are read at, and the circulation the blade actually
+    drew --- which is not a reduction of those samples but a separate integral
+    over the whole cut, and the reason this is a class rather than a pair.
+    """
+
+    z: np.ndarray
+    """Surface fraction of each sample, shape (2, n), suction first."""
+
+    fac: np.ndarray
+    """Isentropic Mach at each sample over the trailing edge value, shape
+    (2, n), suction first."""
+
+    Co: float
+    """Circulation coefficient the blade drew [--].
+
+    Coull and Hodson's coefficient as :class:`~turbigen.blade.Circulation`
+    writes it --- the blade circulation over an ideal one carrying exit
+    velocity along the whole suction surface --- so it is directly comparable
+    to the `Co` a design asked for, and not merely proportional to it.
+
+    **Under a uniform acoustic speed.** The circulation is `∮V·dl` and what is
+    integrated here is `∮Ma·dl`, because :mod:`turbigen.clark` is written in
+    Mach number and a target expressed in `Ma / Ma_TE` can only be compared
+    against a measurement in the same. Dividing by the trailing edge value is
+    what makes the two stand in for `V / V_exit`.
+
+    **Over the whole cut, not the samples.** Every node of both surfaces, nose
+    and trailing edge included, weighted by its own arc length. A mean of the
+    samples would be none of those things: they are unevenly spaced, they
+    leave about a third of each surface unvisited at the two ends, and they
+    move when the curve `order` changes --- which would make the measured
+    circulation of an unchanged flow depend on how the thickness happens to be
+    parameterised.
+    """
+
+    length_ratio: float
+    """Pressure surface length over suction surface length [--].
+
+    Carried because the caller needs it to convert a circulation error into
+    the surface offset that would cause it, and recomputing it there would be
+    a second opinion on a number this measurement already formed.
+    """
+
+
+@dataclasses.dataclass(frozen=True)
 class _SuctionCut:
     """The raw suction-surface distribution of one cut, before any reduction.
 
@@ -477,11 +525,12 @@ def measure_clark_profile(result, i_row, spf, m):
 
     Returns
     -------
-    z, fac : ndarray, shape (2, n)
-        Surface fraction of each sample and the isentropic Mach number there
-        referred to the trailing edge, suction surface first --- the order
+    ClarkMeasurement
+        The samples at `m`, suction surface first --- the order
         :meth:`~turbigen.blade.Blade.evaluate_section` returns surfaces in and
-        :attr:`~turbigen.thickness.ClarkThickness.coeff` holds its rows in.
+        :attr:`~turbigen.thickness.ClarkThickness.coeff` holds its rows in ---
+        and the circulation the blade drew, which is measured over the whole
+        cut rather than from those samples.
 
     None
         Where there was nothing to measure at all --- see :func:`measure`.
@@ -545,4 +594,23 @@ def measure_clark_profile(result, i_row, spf, m):
     z = np.stack([np.interp(m, m_dense, s[i]) / (s[i][-1] or 1.0) for i in (0, 1)])
     fac = np.stack([np.interp(z[i], z_meas[i], ma_meas[i]) / ma_TE for i in (0, 1)])
 
-    return z, fac
+    # The loop the blade drew, off the measured distribution rather than off
+    # the samples above. `z_meas` is each surface's own arc length normalised
+    # by its own extent, so an integral over it is a mean along that surface
+    # and the length puts it back into a circulation: the two surfaces are not
+    # the same length, and a difference of per-surface means would be
+    # `Γ_ss/L_ss - Γ_ps/L_ps` rather than anything proportional to `Γ`.
+    #
+    # Divided through by the suction surface length, which is the ideal
+    # circulation Coull and Hodson normalise by -- so what comes out is `Co`
+    # itself and can be read against the one the design asked for.
+    L = blade.evaluate_surface_length(spf)
+    length_ratio = float(L[1] / L[0]) if L[0] else 1.0
+    loop = [float(np.trapezoid(ma_meas[i] / ma_TE, z_meas[i])) for i in (0, 1)]
+
+    return ClarkMeasurement(
+        z=z,
+        fac=fac,
+        Co=loop[0] - length_ratio * loop[1],
+        length_ratio=length_ratio,
+    )

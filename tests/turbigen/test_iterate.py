@@ -665,6 +665,34 @@ def test_mean_line_tolerance_scales_with_the_nominal():
     assert tolerances["mean_line.Ys[0]"] == pytest.approx(0.01 * config.mean_line.Ys[0])
 
 
+def test_mean_line_clip_scales_with_the_nominal():
+    """The clip is relative for the reason the tolerance is, and to the same
+    nominal --- two conventions in one config would have `clip: 0.01` permit a
+    third of one loss coefficient and an eighth of the next."""
+    config = dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(
+            correct=(iterate.MeanLine(variables=("psi", "Ys"), clip=0.05),)
+        ),
+    )
+
+    clips = config.iterate.correct[0].clips(config)
+
+    assert clips["mean_line.psi"] == pytest.approx(0.05 * config.mean_line.psi)
+    assert clips["mean_line.Ys[0]"] == pytest.approx(0.05 * config.mean_line.Ys[0])
+    assert clips["mean_line.Ys[1]"] == pytest.approx(0.05 * config.mean_line.Ys[1])
+
+
+def test_mean_line_no_clip_stays_no_clip():
+    """Zero is what the stepper reads as unbounded, so it must not be scaled."""
+    config = dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(correct=(iterate.MeanLine(variables=("Ys",)),)),
+    )
+
+    assert set(config.iterate.correct[0].clips(config).values()) == {0.0}
+
+
 def test_mean_line_restores_a_scalar_as_a_scalar():
     config = dataclasses.replace(
         build(),
@@ -1879,99 +1907,6 @@ def solve_nothing(config_now, i_iter):
     return Result()
 
 
-def test_calibration_measures_the_slope():
-    """A true slope of 1 is a gain of 1, whatever the file declared."""
-    config = with_fixed(slope=1.0, target=3.0, gain=0.5)
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
-    # The config handed in is not touched, here or anywhere else.
-    assert config.iterate.correct[0].gain == 0.5
-
-
-def test_calibration_measures_a_steeper_slope():
-    """The size is measured too: twice the slope is half the gain."""
-    config = with_fixed(slope=2.0, target=3.0, gain=0.5)
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    assert final.iterate.correct[0].gain == pytest.approx(0.5, rel=1e-6)
-
-
-def test_calibration_measures_a_sign_it_did_not_expect():
-    """A flipped response is written back, not vetoed.
-
-    The declared gain has the wrong sign here, so the first step goes the wrong
-    way; Broyden sees that within the run and recovers. What the next run needs
-    is the sign this one measured, and refusing to record it would leave the
-    same wrong first step to be paid for again.
-    """
-    config = with_fixed(slope=-1.0, target=3.0, gain=1.0)
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    assert final.iterate.correct[0].gain == pytest.approx(-1.0, rel=1e-6)
-
-
-def test_a_run_with_nothing_to_learn_keeps_its_gain():
-    """A knob that never moved is seeded with its prior and comes back as it went in.
-
-    This is the fixed point that makes the update safe to apply unconditionally:
-    with no informative move the Jacobian is the diagonal the gain asserts, so
-    the calibration is arithmetically the identity.
-    """
-    config = with_fixed(slope=1.0, target=float(build().mean_line.psi), gain=0.37)
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    assert final.iterate.correct[0].gain == pytest.approx(0.37)
-
-
-def test_calibration_keeps_every_iterator():
-    """The gains are calibrated on a view, and the view is put back in place.
-
-    Only the solution iterators are stepped, and only they are calibrated: a
-    design-only knob is on its target before the solve, so its error is zero
-    while its value has moved, which is a slope of zero. It must still come
-    back, untouched, in the place it was declared.
-    """
-    config = dataclasses.replace(
-        build(),
-        iterate=iterate.Iteration(
-            correct=(
-                iterate.SurfaceReynolds(target=4e5),
-                Fixed(slope=1.0, target=3.0, gain=0.5, tolerance=1e-3),
-            )
-        ),
-    )
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    inner, outer = final.iterate.correct
-    assert inner == config.iterate.correct[0]
-    assert outer.gain == pytest.approx(1.0, rel=1e-6)
-
-
-def test_the_ceiling_is_what_a_clip_and_a_tolerance_leave_measurable():
-    """The bound is `clip / (margin * DU_MIN * tolerance)`, and unbounded without a clip.
-
-    `deviation`'s numbers, which is where this was first needed: a clip of 2
-    degrees against a tolerance of half of one.
-    """
-    assert iterate._ceiling(2.0, 0.5) == pytest.approx(8.0)
-    assert iterate._ceiling(2.0, 5.0) == pytest.approx(0.8)
-
-    # No clip is no bound: a knob free to move as far as the step asks can
-    # always make a move large enough to learn from.
-    assert iterate._ceiling(0.0, 0.5) == np.inf
-
-
 def with_bounded(**kwargs):
     """A config iterating one analytic knob under a clip, so a ceiling exists.
 
@@ -1982,101 +1917,6 @@ def with_bounded(**kwargs):
         build(),
         iterate=iterate.Iteration(correct=(Fixed(**kwargs),)),
     )
-
-
-def test_a_flat_response_cannot_calibrate_past_what_it_can_measure():
-    """A gain big enough to make its own moves illegible is capped there.
-
-    `step` divides a move by `|gain| * tolerance` before deciding it is worth
-    learning from, so a large enough gain freezes the Jacobian at whatever it
-    already believed --- including a sign a flat response got wrong. This
-    knob's slope of 0.025 asks for a gain of 40, past the 8 its own clip and
-    tolerance leave measurable.
-    """
-    psi = float(build().mean_line.psi)
-    config = with_bounded(
-        slope=0.025, target=psi - 40.0, gain=1.0, clip=2.0, tolerance=0.5
-    )
-
-    final, _, _converged = iterate.converge(config, solve_nothing, max_iter=3)
-
-    gain = final.iterate.correct[0].gain
-    assert abs(gain) == pytest.approx(iterate._ceiling(2.0, 0.5))
-
-    # Capped, not reverted: the sign it measured still stands, so the
-    # correction keeps going the way the run found out it should.
-    assert gain > 0.0
-
-
-def test_a_gain_inside_the_ceiling_is_written_back_untouched():
-    """The cap bounds the pathological case, it does not rescale every run."""
-    config = with_bounded(slope=1.0, target=3.0, gain=0.5, clip=2.0, tolerance=0.5)
-
-    final, _, converged = iterate.converge(config, solve_nothing, max_iter=50)
-
-    assert converged
-    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
-
-
-def test_a_loading_profile_keeps_every_gain_it_measured():
-    """Each knob's own slope survives, level included, with `Co` leading.
-
-    Three knobs answer to three different sensitivities, so a calibration is
-    three numbers. Reducing them --- which this used to do, writing the mean of
-    the camber gains and the level's separately --- discards the difference
-    between a coefficient at the front of a blade and one at the back, and lets
-    a single flat knob move the gain of every other.
-    """
-    profile = iterate.LoadingProfile(i_row=0, order=3, gain=-0.5, gain_Co=1.5)
-    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN)])
-
-    calibrated = profile.with_gains(
-        config,
-        {
-            "camber_coeff[0][0]": -0.2,
-            "camber_coeff[0][1]": -0.4,
-            "Co[0]": 2.0,
-        },
-    )
-
-    # `Co` first, then one per camber coefficient -- `unknowns` order.
-    assert calibrated.gain == pytest.approx((2.0, -0.2, -0.4))
-
-    # The declared priors are untouched: `gain_Co` says where the level starts,
-    # not where it ended up, and nothing reads it once `gain` carries a
-    # sequence.
-    assert calibrated.gain_Co == pytest.approx(1.5)
-
-    # And what it now reports per knob is what it was handed.
-    assert calibrated.gains(config) == pytest.approx(
-        {"Co[0]": 2.0, "camber_coeff[0][0]": -0.2, "camber_coeff[0][1]": -0.4}
-    )
-
-
-def test_a_pass_runs_on_the_gains_the_last_one_measured():
-    """A calibration is carried into the next pass, not held back to the end.
-
-    Which is what puts it in each iteration's own record: `solve` writes the
-    config it was handed, so a gain that reaches the next pass reaches that
-    pass's `output.yaml` with no further machinery.
-
-    The first two passes run on the declared gain --- the first has no history
-    to learn from, so its calibration is the identity --- and the third runs on
-    the slope the second measured.
-    """
-    config = with_fixed(slope=1.0, target=3.0, gain=0.5)
-    seen = []
-
-    def run(config_now, i_iter):
-        seen.append(config_now.iterate.correct[0].gain)
-        return Result()
-
-    final, _, converged = iterate.converge(config, run, max_iter=50)
-
-    assert converged
-    assert seen[0] == 0.5
-    assert seen[-1] == pytest.approx(1.0, rel=1e-6)
-    assert final.iterate.correct[0].gain == pytest.approx(1.0, rel=1e-6)
 
 
 #
@@ -2114,6 +1954,28 @@ def clark():
     return dataclasses.replace(
         build(blades=[thickened(), thickened()]),
         iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+
+def measured_as(z, fac, ratio=1.0, Co=None):
+    """A `ClarkMeasurement` standing in for a solved row.
+
+    `Co` defaults to the loop those samples would give if they were the whole
+    distribution, which is what the real measurement integrates from the cut.
+    Given explicitly where a test wants the two to disagree.
+    """
+    z, fac = np.asarray(z, dtype=float), np.asarray(fac, dtype=float)
+    if Co is None:
+        Co = float(np.trapezoid(fac[0], z[0]) - ratio * np.trapezoid(fac[1], z[1]))
+    return turbigen.loading.ClarkMeasurement(z=z, fac=fac, Co=Co, length_ratio=ratio)
+
+
+def target_loop(iterator, machine, ratio):
+    """The circulation the target asks for, as `error` forms it."""
+    dense = np.linspace(0.0, 1.0, iterate.N_LOOP)
+    wanted = iterator.target(np.stack((dense, dense)), machine)
+    return float(
+        np.trapezoid(wanted[0], dense) - ratio * np.trapezoid(wanted[1], dense)
     )
 
 
@@ -2220,28 +2082,33 @@ def test_clark_keeps_one_nose_and_one_wedge(clark):
 def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
     """`error` builds the target and divides it; the rest is the measurement.
 
-    Two samples per surface here rather than four, so the arithmetic can be
-    written out: the level is the mean suction residual less the mean pressure
-    one, and each surface then gives up half of it.
+    The level is the circulation the blade drew less the one the target asks
+    for, and the shape is what is left once the surface offset that would
+    cause that level is taken back off --- `level / (1 + ratio)` on one side
+    and its negative on the other, which is a half each only when the two
+    surfaces are the same length. A ratio away from one here, so the weighting
+    is pinned rather than cancelling.
     """
+    ratio = 0.8
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
-        lambda *a: (
-            np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]]),
-            np.zeros((2, 4)),
-        ),
+        lambda *a: measured_as(z, np.zeros((2, 4)), ratio),
     )
 
     iterator = clark.iterate.correct[0]
-    error = iterator.error(clark, Result(machine=clark.design(), grid=object()))
+    machine = clark.design()
+    error = iterator.error(clark, Result(machine=machine, grid=object()))
 
     # Everything measured zero, so each residual is minus its own target.
-    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
-    residual = -iterator.target(z, clark.design())
-    level = np.mean(residual[0]) - np.mean(residual[1])
-    shape = residual - np.array([[level / 2.0], [-level / 2.0]])
+    residual = -iterator.target(z, machine)
+    level = measured_as(z, np.zeros((2, 4)), ratio).Co - target_loop(
+        iterator, machine, ratio
+    )
+    delta = level / (1.0 + ratio)
+    shape = residual - np.array([[delta], [-delta]])
 
     assert error["Co[0]"] == pytest.approx(level)
     assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
@@ -2254,10 +2121,16 @@ def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
     """The property that leaves the loop determined.
 
     A shared end reports the *mean* of the two surfaces' residuals there, and
-    the level is taken off one surface and added to the other --- so it cancels
-    exactly. The nose and the wedge answer only for the common mode at their
-    end, and can neither be moved by the blade count nor fight it.
+    the offset is taken off one surface and added to the other --- so it
+    cancels exactly. The nose and the wedge answer only for the common mode at
+    their end, and can neither be moved by the blade count nor fight it.
+
+    A surface lifted by `d` and the other dropped by `d` opens the loop by
+    `d (1 + ratio)`, the two surfaces entering the circulation weighted by
+    their own lengths. The ratio is away from one here, so that weighting is
+    what the number below tests rather than something that cancels.
     """
+    ratio = 0.8
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
 
     z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
@@ -2266,16 +2139,26 @@ def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
     target = iterator.target(z, machine)
 
     # Two measurements differing by a pure level: one surface lifted and the
-    # other dropped, which is what opening the loop does and nothing else.
+    # other dropped, which is what opening the loop does and nothing else. The
+    # circulation is stated rather than integrated from these four samples,
+    # which span only part of the surface -- the real one integrates the whole
+    # cut, so a uniform offset reaches it whole.
+    base = target_loop(iterator, machine, ratio)
     errors = []
     for offset in (0.0, 0.3):
         fac = target + np.array([[offset], [-offset]])
+        loop = base + offset * (1.0 + ratio)
         monkeypatch.setattr(
-            turbigen.loading, "measure_clark_profile", lambda *a, f=fac: (z, f)
+            turbigen.loading,
+            "measure_clark_profile",
+            lambda *a, f=fac, c=loop: measured_as(z, f, ratio, Co=c),
         )
         errors.append(iterator.error(clark, Result(machine=machine, grid=object())))
 
-    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.6)
+    # The first is the target's own loop, so it reports no circulation error.
+    assert errors[0]["Co[0]"] == pytest.approx(0.0, abs=1e-12)
+
+    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.3 * (1.0 + ratio))
     for name in ("tau_LE[0]", "tau_TE[0]"):
         assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
 
@@ -2304,21 +2187,97 @@ def test_clark_cannot_see_an_antisymmetric_trailing_edge_error(clark, monkeypatc
     # Right everywhere but the two ends, where the surfaces are wrong by the
     # same amount in opposite directions.
     skew = np.array([[0.1, 0.0, 0.0, 0.1], [-0.1, 0.0, 0.0, -0.1]])
+    fac = iterator.target(z, machine) + skew
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
-        lambda *a, f=iterator.target(z, machine) + skew: (z, f),
+        lambda *a: measured_as(z, fac),
     )
     errors = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # The level is the difference of the two surface means, 0.1 here, and half
-    # of it comes off each surface --- so what is left at the trailing edge is
-    # the skew, and the one knob there reports the mean of it, which is zero.
-    assert errors["Co[0]"] == pytest.approx(0.1)
+    # Whatever the skew does to the level, the offset takes the same amount
+    # off one surface and adds it to the other --- so at the trailing edge the
+    # antisymmetric part survives untouched, and the one knob there reports
+    # the mean of it, which is zero.
     assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
 
     # And the nose, one radius and so one knob, still cannot see it.
     assert errors["tau_LE[0]"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
+    """What the offset is for: the shape never sees the loop.
+
+    A circulation error is the blade count's alone, a thickness being able to
+    move loading about but not to create it. So the surface offset that would
+    have caused the measured level is taken back off before any coefficient
+    reads its own residual --- and at unequal surface lengths that offset is
+    `level / (1 + ratio)`, not half each.
+    """
+    ratio = 0.6
+    delta = 0.25
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+
+    # On target everywhere, then lifted and dropped by a pure offset -- so
+    # every residual is the offset and nothing else.
+    fac = iterator.target(z, machine) + np.array([[delta], [-delta]])
+    loop = target_loop(iterator, machine, ratio) + delta * (1.0 + ratio)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_clark_profile",
+        lambda *a: measured_as(z, fac, ratio, Co=loop),
+    )
+    errors = iterator.error(clark, Result(machine=machine, grid=object()))
+
+    # The whole of it lands on the count, and every shape knob reads zero.
+    assert errors["Co[0]"] == pytest.approx(delta * (1.0 + ratio))
+    for name, value in errors.items():
+        if name != "Co[0]":
+            assert value == pytest.approx(0.0, abs=1e-12), name
+
+
+def test_clark_measures_a_level_the_curve_order_cannot_move(monkeypatch):
+    """The circulation is a property of the flow, not of the parameterisation.
+
+    It used to be a mean over the control points, so raising the order moved
+    every sample and reported a different loop for an unchanged flow --- a
+    design variable reading differently because of how the thickness happened
+    to be written down. Measured over the cut, the order cannot reach it.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+
+    levels, orders = [], []
+    for coeff in ([[0.0, 0.0], [0.0, 0.0]], [[0.0] * 4, [0.0] * 4]):
+        section = {**CLARK_THICKNESS, "coeff": coeff}
+        config = dataclasses.replace(
+            build(blades=[thickened(section), thickened(section)]),
+            iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+        )
+        iterator = config.iterate.correct[0]
+        machine = config.design()
+        orders.append(config.blades[0].sections[0].thickness.order)
+
+        # The same flow either way, stated as one circulation and a
+        # distribution sitting exactly on target wherever it is sampled.
+        m_ctl = config.blades[0].sections[0].thickness.m_ctl
+        z = np.stack((m_ctl, m_ctl))
+        monkeypatch.setattr(
+            turbigen.loading,
+            "measure_clark_profile",
+            lambda *a, zz=z, it=iterator, mc=machine: measured_as(
+                zz, it.target(zz, mc), 1.0, Co=0.7
+            ),
+        )
+        levels.append(
+            iterator.error(config, Result(machine=machine, grid=object()))["Co[0]"]
+        )
+
+    assert orders[0] != orders[1]
+    assert levels[0] == pytest.approx(levels[1])
 
 
 def test_clark_refuses_a_step_that_closes_the_section(clark):

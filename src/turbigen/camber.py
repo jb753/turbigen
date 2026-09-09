@@ -26,6 +26,14 @@ coefficients that perturb it. The endpoint coefficients are pinned at zero so
 the ends stay put, and all-zero coefficients recover :class:`Quadratic` with
 zero aft loading.
 
+:class:`ClarkCamber` (``clark``) is the shape after :cite:`Clark2019`, the
+companion of the thickness distribution of the same name: the end tangents
+faded along the chord by a common power, whose :attr:`~ClarkCamber.exponent`
+is the one parameter. An exponent of two is :class:`Quadratic` with no aft
+loading; above that the chord flattens and the turning moves towards the more
+turned end. The stagger it lands on is a *result*, which
+:meth:`~ClarkCamber.stagger` reports.
+
 :class:`CircularArc` (``circular_arc``) is the shape with no parameters at all:
 constant curvature, which the end angles alone fix. Both shapes above
 distribute ``tan chi`` along the chord, and so normalise into a curve that is
@@ -182,6 +190,99 @@ class CircularArc(CamberDesign):
         s_LE, s_TE = (t / np.hypot(1.0, t) for t in (tanchi_LE, tanchi_TE))
         s = s_LE + np.asarray(m, dtype=float) * (s_TE - s_LE)
         return s / np.sqrt(1.0 - s * s)
+
+
+class ClarkCamber(CamberDesign):
+    """Power-law camber line after :cite:`Clark2019`.
+
+    The camber line of the paper whose thickness distribution is
+    :class:`~turbigen.thickness.ClarkThickness`, written in the slope the
+    protocol here asks for. Clark states the camber itself,
+
+    ``zeta = a m^n + b (1 - m)^n``, with ``a = tanchi_TE / n`` and
+    ``b = -tanchi_LE / n``,
+
+    whose slope is ``tanchi_TE m^(n-1) + tanchi_LE (1 - m)^(n-1)`` --- the two
+    end tangents, each faded out along the chord by the same power. The ends
+    are then exact for any :attr:`exponent` above one, and the rise of the
+    line is ``(tanchi_LE + tanchi_TE) / n``, so that the stagger angle falls
+    out of the exponent rather than the other way about.
+
+    **Clark asks for the stagger and solves for the exponent; this asks for
+    the exponent.** Both say the same curve, and stagger is the more physical
+    of the two --- a designer has a view on it, and it is what the paper's
+    optimiser and its network actually output. But the staggers a camber line
+    can reach are an open interval its end angles fix, and taking the stagger
+    as the parameter would put those angles into the meaning of the parameter:
+    the same configured number would be a different curve at hub and at
+    casing, a shape could refuse angles it is handed, a
+    :class:`~turbigen.iterate.Deviation` moving ``dchi_TE`` could walk it into
+    that refusal, and there would be no value to default to. The exponent has
+    none of that, and it is the parameter the other shapes here are written
+    like: a normalised curve, the same whatever the ends are. Ask
+    :meth:`stagger` for the angle it lands on.
+
+    An exponent of two gives ``tanchi_LE + m (tanchi_TE - tanchi_LE)``, exactly
+    :class:`Quadratic` with zero aft loading, at the stagger of the mean of the
+    end tangents that :class:`~turbigen.blade.DiffusionFactor` already assumes
+    when it resolves a true chord. The converged designs of the paper sit
+    between about 1.9 and 3.2, read off its Fig. 11.
+
+    **The exponent flattens the middle rather than shifting the loading aft.**
+    Both faded tangents carry the same factor ``0.5^(n-1)`` at mid-chord, so
+    raising the exponent drives the camber angle there towards axial and packs
+    the turning into the two ends. On a turbine that reads as aft loading, but
+    only because the leading edge is the end already near axial: between metal
+    angles of 20 and -70 degrees, 78% of the turning is done by mid-chord at an
+    exponent of two and 41% of it at four. Turn a section the other way about,
+    so the leading edge is the more turned end, and the same change front-loads
+    it; on a section symmetric about axial it changes no fore-and-aft balance
+    at all, only how tightly the turning bunches in the middle.
+
+    **Above two, end tangents of the same sign give an inflected camber line.**
+    The slope has an interior stationary point for any ``n > 2``, and where the
+    ends turn the same way that point lies outside both of them --- the camber
+    angle turns past its exit angle and comes back, an S in the annulus. A
+    section that turns through axial has a monotonic slope at any exponent,
+    which is every section in the paper; compressors it claims only as an
+    extension.
+    """
+
+    type: ClassVar[str] = "clark"
+
+    exponent: float = 2.0
+    """Power the end tangents are faded along the chord by [--].
+
+    Strictly greater than one, or the camber line does not reach the tangents
+    it is placed between: the fading factors ``m^(n-1)`` and ``(1 - m)^(n-1)``
+    only vanish at the far end for a positive power. Two is the quadratic
+    camber line.
+    """
+
+    def __post_init__(self):
+        if not self.exponent > 1.0:
+            raise ValueError(
+                f"A clark camber line needs an exponent greater than one to "
+                f"reach the metal angles it is placed between, got "
+                f"{self.exponent}. Two is the quadratic camber line."
+            )
+
+    def stagger(self, tanchi_LE, tanchi_TE):
+        """Return the stagger angle between these end tangents [deg].
+
+        The rise of the camber line over its chord, which is what
+        :cite:`Clark2019` states and solves the exponent from. Here it is the
+        other way round and this is a result, so it is a method taking the end
+        angles rather than a field: a shape is not handed them until it is
+        evaluated.
+        """
+        return np.degrees(np.arctan((tanchi_LE + tanchi_TE) / self.exponent))
+
+    def dydm(self, m, tanchi_LE, tanchi_TE):
+        shapespace.validate_domain(m)
+        m = np.asarray(m, dtype=float)
+        power = self.exponent - 1.0
+        return tanchi_TE * m**power + tanchi_LE * (1.0 - m) ** power
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

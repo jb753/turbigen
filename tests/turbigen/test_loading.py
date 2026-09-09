@@ -153,7 +153,8 @@ def test_both_surfaces_are_measured(solved):
     config, result = solved
     m_ctl = _thickness(config).m_ctl
 
-    z, fac = measure_clark_profile(result, 0, 0.5, m_ctl)
+    measured = measure_clark_profile(result, 0, 0.5, m_ctl)
+    z, fac = measured.z, measured.fac
 
     assert z.shape == (2, len(m_ctl))
     assert fac.shape == (2, len(m_ctl))
@@ -169,7 +170,7 @@ def test_each_surface_is_its_own_fraction(solved):
     measured rather than shared.
     """
     config, result = solved
-    z, _ = measure_clark_profile(result, 0, 0.5, _thickness(config).m_ctl)
+    z = measure_clark_profile(result, 0, 0.5, _thickness(config).m_ctl).z
 
     assert np.all(z > 0.0) and np.all(z < 1.0)
     assert np.all(np.diff(z, axis=1) > 0.0)
@@ -186,7 +187,7 @@ def test_the_trailing_edge_is_the_reference(solved):
     which is the one value the two surfaces share, so they straddle it.
     """
     config, result = solved
-    _, fac = measure_clark_profile(result, 0, 0.5, np.array([1.0]))
+    fac = measure_clark_profile(result, 0, 0.5, np.array([1.0])).fac
 
     assert np.mean(fac) == pytest.approx(1.0, abs=1e-6)
 
@@ -199,7 +200,7 @@ def test_the_leading_edge_is_the_origin(solved):
     holding it, moves as the very thickness being driven changes.
     """
     config, result = solved
-    z, _ = measure_clark_profile(result, 0, 0.5, np.array([0.0]))
+    z = measure_clark_profile(result, 0, 0.5, np.array([0.0])).z
 
     np.testing.assert_allclose(z.ravel(), 0.0, atol=1e-12)
 

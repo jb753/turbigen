@@ -1252,29 +1252,6 @@ def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
     assert not (out / cli.RESTART_NAME).exists()
 
 
-def test_an_unsettled_design_still_records_its_gains(iterate_case):
-    """A run that gave up is exactly where a badly declared gain shows up.
-
-    Nothing is promoted, so the record it leaves is the last iteration's own
-    `output.yaml` --- which is also the file `promote_final` moves to the root
-    when a design does settle, so one rule covers both.
-    """
-    from turbigen import case
-
-    out = iterate_case.parent
-
-    assert cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"]) == 2
-
-    # The first pass has no history to learn from, so it runs and records the
-    # gains the file declared; the last one is the one with a slope to write.
-    declared, _ = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
-    measured, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)
-
-    assert [iterator.gain for iterator in measured.iterate.correct] != [
-        iterator.gain for iterator in declared.iterate.correct
-    ]
-
-
 def test_a_settled_design_leaves_a_run_directory(settled_case):
     """A finished iterate reads as a run, because that is what it is now."""
     out = settled_case.parent

@@ -1277,40 +1277,6 @@ def _iterate_one(args, config_path):
     return 0 if converged else 2
 
 
-def _record_calibration(iter_dir, config):
-    """Write the gains of the last pass into the iteration it measured them on.
-
-    Every other iteration records its own already: `converge` carries a
-    calibration forward into the config the next pass runs, so `solve` writes
-    it out with everything else. The last pass has no next one --- the loop
-    returns rather than stepping --- so its measurement, which is the one taken
-    on the settled design, would otherwise live only in the returned config.
-
-    Whatever the run did. A design that gave up is exactly where a badly
-    declared gain shows up, and `promote_final` leaves an unsettled run's
-    iterations where they are, so this is the file that keeps it.
-
-    **The `iterate:` section is patched rather than the file rewritten.** The
-    iteration's own config also holds the design-only knobs that the nested
-    `iterate.resolve` moved on a copy inside the run; they exist in that file
-    and nowhere else, and rewriting from the returned config would drop them.
-    """
-    path = iter_dir / OUTPUT_NAME
-    if not path.is_file():
-        return
-
-    try:
-        stored, result = case.read(path, design=False)
-        case.write(path, dataclasses.replace(stored, iterate=config.iterate), result)
-    except Exception as err:
-        # A calibration is a bonus. Failing to record one must not be able to
-        # discard the answer the CFD has already been paid for.
-        logger.warning(f"Could not record the calibrated gains in {path}: {err}")
-        return
-
-    iterate.logger.info(f"Recorded the calibrated gains in {path}")
-
-
 def cmd_chic(args):
     """Converge the design, then sweep it to its stability limit."""
     if not args.verbose and not args.queue:
@@ -1482,10 +1448,6 @@ def converge_design(config, out_dir, previous=None):
         return result
 
     config, result, converged = iterate.converge(config, run, config.iterate.max_iter)
-
-    # Before the promotion, so that a settled design's root `output.yaml` is
-    # the calibrated one rather than a copy taken a moment too early.
-    _record_calibration(previous.parent, config)
 
     field = promote_final(out_dir, previous.parent, converged)
 

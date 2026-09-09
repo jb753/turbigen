@@ -384,6 +384,26 @@ def test_the_refinement_stands_on_the_node_it_is_given():
     )
 
 
+def test_a_stagnation_point_swept_round_the_nose_is_still_found():
+    """The window holds the sweep, not just the nose it is centred on.
+
+    The stagnation point moves round the leading edge with incidence, and a
+    window narrow enough to cut into that sweep reports not-found on a section
+    whose stagnation point is perfectly well defined --- or worse, keeps a
+    flank of the flat pressure plateau around it and reads the ripples there
+    as the peak.
+    """
+    block = stagnation_block(i_peak=22.0)
+
+    # The geometric nose is the midpoint, so the peak is two nodes away, which
+    # on this uniform mesh is 0.10 in normalised arc length.
+    xrt_LE = np.asarray(block.xrt)[20, 0, :]
+    i_stag, found = util.get_i_stag(block, xrt_LE=xrt_LE)
+
+    assert found.all()
+    assert (i_stag == 22).all()
+
+
 def test_a_stagnation_point_that_was_not_found_says_so():
     """A monotonic surface still returns an index, flagged as a guess.
 
@@ -444,9 +464,7 @@ def test_the_normal_yaw_is_the_angle_swept_from_the_nose(swept):
     cut = nose_arc(ARC)
     node = int(np.argmin(np.abs(ARC - (180.0 + swept))))
 
-    yaw = util.surface_normal_yaw(
-        cut, util.get_zeta(cut)[node, :], MERIDIONAL, 0.0
-    )
+    yaw = util.surface_normal_yaw(cut, util.get_zeta(cut)[node, :], MERIDIONAL, 0.0)
 
     # Differenced centrally on a finely drawn arc, so it is recovered to a
     # hundred-thousandth of a degree. Nothing here needs it that tight.
@@ -499,10 +517,7 @@ def test_the_normal_yaw_moves_smoothly_between_nodes():
     zeta = zeta_line[node] + fractions * (zeta_line[node + 1] - zeta_line[node])
 
     yaw = np.array(
-        [
-            util.surface_normal_yaw(cut, np.full(3, z), MERIDIONAL, 0.0)[0]
-            for z in zeta
-        ]
+        [util.surface_normal_yaw(cut, np.full(3, z), MERIDIONAL, 0.0)[0] for z in zeta]
     )
 
     # A cell is one node spacing of sweep, and it is traversed evenly.
@@ -519,7 +534,13 @@ def test_the_normal_yaw_moves_smoothly_between_nodes():
 # march looks like.
 #
 
-TARGET = {"zeta_front": 0.1, "zeta_peak": 0.55, "ma_front": 0.585, "ma_peak": 1.3, "ma_TE": 1.0}
+TARGET = {
+    "zeta_front": 0.1,
+    "zeta_peak": 0.55,
+    "ma_front": 0.585,
+    "ma_peak": 1.3,
+    "ma_TE": 1.0,
+}
 """A distribution in the middle of the family, to perturb away from."""
 
 
@@ -595,7 +616,9 @@ def test_the_fit_survives_a_flat_top():
     assert 0.1 < zeta < 0.98
 
 
-@pytest.mark.parametrize("ma", [lambda z: z, lambda z: 2.0 - z, lambda z: 0.0 * z + 1.0])
+@pytest.mark.parametrize(
+    "ma", [lambda z: z, lambda z: 2.0 - z, lambda z: 0.0 * z + 1.0]
+)
 def test_the_fit_refuses_a_curve_with_no_peak(ma):
     """Rising, falling and flat all have no interior maximum to place.
 

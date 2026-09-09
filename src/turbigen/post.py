@@ -52,6 +52,16 @@ resolution for geometry and not for a line on a page.
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
 
+MAS_STEP = 0.1
+"""Step the isentropic Mach axis is rounded up to on a surface distribution.
+
+Fixed at the bottom and rounded at the top rather than left to autoscale: the
+distributions of several rows are read against each other, and an axis that
+starts wherever a row's lowest point happened to land makes a peak look higher
+on the row that stagnated harder. Zero is where the stagnation point sits and
+is the one meaningful bottom.
+"""
+
 N_SPAN_ANNULUS = 10
 """Spanwise stations for the blade outline drawn on the annulus plot.
 
@@ -835,7 +845,7 @@ def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
     measured = measure_clark_profile(result, i_row, spf, thickness.m_ctl)
     if measured is None:
         return
-    z_knob, fac_knob = measured
+    z_knob, fac_knob = measured.z, measured.fac
 
     ax.plot(
         z_knob.ravel(),
@@ -948,6 +958,15 @@ class SurfacePlot(Post):
             if not ax.lines:
                 plt.close(fig)
                 continue
+
+            # Off the data bound rather than the autoscaled one, which carries
+            # a margin -- so the top is a round number the curve reaches, not a
+            # round number plus five per cent. Everything drawn counts, targets
+            # included: an axis that cut off the curve being iterated towards
+            # would hide exactly the gap the plot is for.
+            top = float(ax.dataLim.y1)
+            if np.isfinite(top) and top > 0.0:
+                ax.set_ylim(0.0, np.ceil(top / MAS_STEP) * MAS_STEP)
 
             ax.legend()
             figures.append(fig)

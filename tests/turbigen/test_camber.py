@@ -4,8 +4,8 @@ A :class:`~turbigen.camber.CamberDesign` states the camber line slope between
 the end tangents it is handed; these check the built-in shapes evaluate
 correctly, that the ``bernstein`` shape reduces to ``quadratic`` when it is not
 perturbed, matching the Bernstein camber line carried by the package this
-replaces, and that ``circular_arc`` is the constant-curvature line the end
-angles alone fix.
+replaces, that ``clark`` is the power law of the stated exponent, and that
+``circular_arc`` is the constant-curvature line the end angles alone fix.
 
 The polynomial shapes are evaluated between tangents of 0 and 1, where the
 slope is exactly the normalised camber the old protocol stated, so the
@@ -21,6 +21,11 @@ Test cases:
 - test_selected_from_a_config_dict: it round-trips through the Node protocol
 - test_matches_reference_bernstein: the port agrees with the old maths
 - test_wraps_into_a_camber_line: it drives a CamberLine to the end tangents
+- test_clark_matches_quadratic: an exponent of two is the quadratic line
+- test_clark_reaches_the_end_tangents: any exponent above one keeps the ends
+- test_clark_rises_by_its_stagger: the reported stagger is the chord it lands on
+- test_clark_bad_exponent_is_an_error: an exponent of one or less is refused
+- test_clark_selected_from_a_config_dict: it round-trips through the Node protocol
 - test_arc_reaches_the_end_tangents: the arc starts and ends where it is told
 - test_arc_turns_uniformly: sin of the arc's camber angle is linear in m
 - test_arc_of_equal_angles_is_straight: no turning gives a straight line
@@ -32,7 +37,7 @@ import numpy as np
 import pytest
 import turbigen_ref.new_geometry
 
-from turbigen import Bernstein, CircularArc, Quadratic
+from turbigen import Bernstein, CircularArc, ClarkCamber, Quadratic
 from turbigen.camber import CamberDesign, CamberLine
 
 M = np.linspace(0.0, 1.0, 51)
@@ -107,6 +112,51 @@ def test_wraps_into_a_camber_line():
     assert line.dydm(0.0) == pytest.approx(0.1)
     assert line.dydm(1.0) == pytest.approx(1.4)
     assert np.all(np.isfinite(line.chi(M)))
+
+
+TANCHI = (np.tan(np.radians(20.0)), np.tan(np.radians(-70.0)))
+"""End tangents of a turbine section, whose ends turn opposite ways."""
+
+EXPONENTS = (1.5, 2.0, 3.0, 4.0)
+"""Exponents to check the power law over, spanning the range Clark (2019) used."""
+
+
+def test_clark_matches_quadratic():
+    """An exponent of two is the quadratic camber line, exactly."""
+    clark = ClarkCamber(exponent=2.0).dydm(M, *TANCHI)
+    assert np.allclose(clark, Quadratic(aft_loading=0.0).dydm(M, *TANCHI))
+    assert ClarkCamber().exponent == 2.0
+
+
+@pytest.mark.parametrize("exponent", EXPONENTS)
+def test_clark_reaches_the_end_tangents(exponent):
+    """Whatever the exponent, the power law starts and ends on the tangents."""
+    shape = ClarkCamber(exponent=exponent)
+    assert shape.dydm(0.0, *TANCHI) == pytest.approx(TANCHI[0])
+    assert shape.dydm(1.0, *TANCHI) == pytest.approx(TANCHI[1])
+
+
+@pytest.mark.parametrize("exponent", EXPONENTS)
+def test_clark_rises_by_its_stagger(exponent):
+    """Integrating the slope gives the chord line the shape says it lands on."""
+    shape = ClarkCamber(exponent=exponent)
+    m = np.linspace(0.0, 1.0, 20001)
+    rise = np.trapezoid(shape.dydm(m, *TANCHI), m)
+    assert rise == pytest.approx(np.tan(np.radians(shape.stagger(*TANCHI))), rel=1e-6)
+
+
+@pytest.mark.parametrize("exponent", (1.0, 0.5, -2.0))
+def test_clark_bad_exponent_is_an_error(exponent):
+    """At an exponent of one or below the ends are not reached, so it is refused."""
+    with pytest.raises(ValueError, match="exponent greater than one"):
+        ClarkCamber(exponent=exponent)
+
+
+def test_clark_selected_from_a_config_dict():
+    """A config mapping builds the power law and carries its exponent."""
+    shape = CamberDesign.from_dict({"type": "clark", "exponent": 3.0})
+    assert isinstance(shape, ClarkCamber)
+    assert shape.to_dict() == {"type": "clark", "exponent": 3.0}
 
 
 def test_arc_reaches_the_end_tangents():

@@ -38,6 +38,7 @@ from turbigen.camber import (
     CamberDesign,
     CamberLine,
     CircularArc,
+    ClarkCamber,
     Quadratic,
 )
 from turbigen.chic import Chic
@@ -97,6 +98,7 @@ __all__ = [
     "Chic",
     "CircularArc",
     "Circulation",
+    "ClarkCamber",
     "ClarkThickness",
     "Config",
     "ContourPlot",

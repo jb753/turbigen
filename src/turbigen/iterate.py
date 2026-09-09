@@ -30,7 +30,6 @@ Here an iterator returns a new config and owns no state at all.
 import dataclasses
 import itertools
 import logging
-import math
 from typing import ClassVar
 
 import ember.average
@@ -68,7 +67,7 @@ class MeasurementError(Exception):
 
 
 TINY = 1e-9
-"""Below this a nominal value is treated as zero for a relative tolerance."""
+"""Below this a nominal value is treated as zero when something is relative to it."""
 
 DU_MIN = 0.25
 """Smallest move, in tolerance-equivalent steps, that may update the Jacobian.
@@ -84,42 +83,6 @@ COND_MAX = 1e6
 
 FLAT = 0.1
 """A diagonal below this fraction of its prior counts as a flat response."""
-
-GAIN_MARGIN = 2.0
-"""How far inside the measurable range :func:`_ceiling` keeps a capped gain.
-
-At exactly the bound a full-clip move is worth `DU_MIN` and nothing smaller
-teaches the Jacobian anything, which is a knife edge to sit a loop on. Two puts
-a full-clip move at twice the floor, so half of one still counts.
-"""
-
-
-def _ceiling(clip, tolerance):
-    """Return the largest gain a knob can carry and still be measurable.
-
-    `step` divides a move by ``|gain| * tolerance`` before `_jacobian` decides
-    whether it is worth learning from, and the largest move a knob can make is
-    its clip. So the scaled move a knob can offer is at most
-    ``clip / (|gain| * tolerance)``, and a gain large enough to push that under
-    `DU_MIN` locks the Jacobian at whatever it already believed --- including a
-    sign that a flat response got wrong.
-
-    Infinite where there is nothing to bound it with: a knob with no clip can
-    move as far as the step asks, so no gain makes its move illegible.
-    """
-    if not clip or not tolerance:
-        return np.inf
-    return float(clip / (GAIN_MARGIN * DU_MIN * tolerance))
-
-
-def _one_or_many(values):
-    """Return a lone value as a scalar and several as a tuple.
-
-    What keeps a single-knob iterator writing ``gain: -1.0`` in its config
-    rather than ``gain: [-1.0]``: the sequence form exists to carry knobs that
-    differ, and one knob cannot differ from itself.
-    """
-    return values[0] if len(values) == 1 else tuple(values)
 
 
 class Iterator(Node):
@@ -150,10 +113,12 @@ class Iterator(Node):
     rises declares a negative gain. Reciprocal of an assumed slope, so it is
     the crudest possible Newton step.
 
-    An input *and* an output: what a file declares is where the first step
-    goes, and :func:`calibrate` writes back the slope the run went on to
-    measure, so a design iterated twice starts the second time from the
-    sensitivity it saw rather than from the guess it was given.
+    An input only. A run measures the real slopes and they live in the
+    Jacobian, which :func:`_jacobian` rebuilds from the history on every call;
+    nothing writes one back into a design. A gain written into a config would
+    be read against whatever knobs the *next* design has, and a sequence
+    measured on one blade means nothing on another --- see :meth:`_gain_each`,
+    which refuses the mismatch it can see and cannot see the rest.
 
     **One number or one per knob.** A scalar is a single declared prior, spread
     over every knob the iterator owns; a sequence carries them separately, in
@@ -249,8 +214,8 @@ class Iterator(Node):
         """Return the gain of each unknown, by name.
 
         A scalar :attr:`gain` is spread over every knob; a sequence is matched
-        to them in the order :meth:`unknowns` returns, which is the order
-        :meth:`with_gains` wrote it in.
+        to them in the order :meth:`unknowns` returns, which is the order a
+        config file has to declare it in.
         """
         names = list(self.unknowns(config))
         return dict(zip(names, self._gain_each(names)))
@@ -259,12 +224,11 @@ class Iterator(Node):
         """Return the gain of each name in `names`, spreading a scalar over them.
 
         A declared sequence has to match the knobs it claims to describe. It
-        will not when a config carries a calibration measured against a
-        different design --- a blade that has gained a section, a
-        :class:`LoadingProfile` whose `order` was changed --- and silently
-        reinterpreting those numbers against knobs they were never measured on
-        is worse than refusing them, because it would be a wrong sensitivity
-        rather than an absent one.
+        will not when a config carries one written for a different design ---
+        a blade that has gained a section, a :class:`LoadingProfile` whose
+        `order` was changed --- and silently reinterpreting those numbers
+        against knobs they were never meant for is worse than refusing them,
+        because it would be a wrong sensitivity rather than an absent one.
         """
         names = list(names)
         if isinstance(self.gain, (int, float)):
@@ -278,26 +242,6 @@ class Iterator(Node):
                 f"prior for all of them."
             )
         return [float(value) for value in self.gain]
-
-    def with_gains(self, config, gains):
-        """Return this iterator carrying the gains a run measured.
-
-        The dual of :meth:`gains`, as :meth:`with_unknowns` is of
-        :meth:`unknowns`. Every measurement is kept, one per knob, because
-        knobs an iterator happens to own together are not measurements of one
-        constant: two sections of a recamber, or two camber coefficients at
-        different points on a chord, have genuinely different sensitivities and
-        a run measures each of them.
-
-        A lone knob is written back as a scalar, so that the common case reads
-        in a config file exactly as it was declared.
-
-        Overridden where an iterator carries a gain outside :meth:`unknowns`,
-        which only :class:`LoadingProfile` does.
-        """
-        prior = self.gains(config)
-        measured = [float(gains.get(name, prior[name])) for name in prior]
-        return dataclasses.replace(self, gain=_one_or_many(measured))
 
 
 class Iteration(Node):
@@ -352,31 +296,6 @@ def selected(config, from_solution):
                 if iterator.from_solution == from_solution
             ),
         ),
-    )
-
-
-def restored(config, view):
-    """Return `config` carrying the iterators `view` holds, in their old places.
-
-    The inverse of :func:`selected`, and needed because the calibration is done
-    on a view: putting `config.iterate` back, which is how a *stepped* config
-    regains the iterators it was filtered down from, would throw away the very
-    members that were changed.
-
-    Positional, not by name: `selected` filters in order and changes nothing
-    else, so the nth member of the view is the nth member of `config` with that
-    `from_solution`.
-    """
-    members = iter(view.iterate.correct)
-    from_solution = {iterator.from_solution for iterator in view.iterate.correct}
-
-    correct = tuple(
-        next(members) if iterator.from_solution in from_solution else iterator
-        for iterator in config.iterate.correct
-    )
-
-    return dataclasses.replace(
-        config, iterate=dataclasses.replace(config.iterate, correct=correct)
     )
 
 
@@ -473,7 +392,7 @@ class _Table:
     """The flat table the module docstring draws, ready for arithmetic.
 
     Assembled once by :func:`_assembled` so that everything reading a run ---
-    the step it takes and the gains it calibrates --- reads the same names, the
+    the step it takes and the table it prints --- reads the same names, the
     same scales and the same Jacobian, rather than two nearly identical
     assemblies free to drift apart.
     """
@@ -654,107 +573,6 @@ def step(config, result, history=()):
             config = iterator.with_unknowns(config, mine)
 
     return config
-
-
-def calibrate(config, result, history=()):
-    """Return `config` with each iterator's gain set to the slope the run measured.
-
-    A gain is the reciprocal of an assumed slope, and :func:`step` spends the
-    run measuring the real one: the scaled Jacobian is
-    ``J_ii = (de_i/du_i) * |gain_i|``, so the gain that turns the Newton step
-    into a unit step is::
-
-        gain_new = abs(gain_old) / J_ii
-
-    with the sign falling out of `J_ii` rather than being carried over. The
-    fixed point is what makes this safe to apply unconditionally: a knob that
-    never moved far enough to learn from keeps the prior it was seeded with,
-    ``J_ii = sign(gain)``, and comes back exactly as it went in.
-
-    Only the diagonal. What the off-diagonal terms know is a property of the
-    trajectory a run took, and it stays inside that run.
-
-    **Bounded, or a flat response is unrecoverable.** A knob whose measured
-    response is near zero gives a near-zero denominator, and the gain that
-    comes back is enormous with a sign read off noise. The clip bounds the
-    *step* that gain asks for, but not the gain itself, and the gain is written
-    into the design --- so what looks like a bounded excursion is really a
-    march of exactly one clip per iteration, indefinitely.
-
-    Worse, it cannot be measured out again. `step` scales a move by
-    ``|gain| * tolerance`` before the Broyden update looks at it, and declines
-    to learn from anything below `DU_MIN`; the largest move a knob can make is
-    its clip. So a gain above ``clip / (DU_MIN * tolerance)`` makes even a
-    full-clip move illegible, the Jacobian freezes at the sign of the wrong
-    gain, and the loop can no longer discover its mistake. The gain scales the
-    measurement that would correct the gain.
-
-    :func:`_ceiling` is that bound with a factor of two in hand, so a
-    full-clip move stays worth twice the floor rather than landing exactly on
-    it. A cap, not a floor on the denominator: a floor bounds the *ratio* of
-    one step, which two flat passes in a row simply spend twice.
-
-    Parameters
-    ----------
-    config : Config
-        The design that was run.
-    result : Result
-        What running it achieved.
-    history : sequence
-        Earlier ``(unknowns, errors)`` pairs from this run, oldest first, as
-        :func:`step` takes them.
-
-    Returns
-    -------
-    config : Config
-        The same config with the gains of its iterators replaced.
-
-    """
-    table = _assembled(config, result, history)
-    if table is None:
-        logger.debug("Nothing was measured, so the gains stand as declared.")
-        return config
-
-    calibrated = {}
-    for i, name in enumerate(table.names):
-        gain = abs(table.gain[name]) / table.jacobian[i, i]
-        if not np.isfinite(gain):
-            # A knob whose measured slope came out at zero says nothing about
-            # its own reciprocal. Never propagate a NaN into a design, as
-            # `_newton` does not.
-            logger.info(f"The measured slope of {name} is zero, so its gain stands.")
-            continue
-
-        ceiling = _ceiling(table.clip[name], table.e_scale[i])
-        if abs(gain) > ceiling:
-            logger.info(
-                f"The measured gain of {name} is {gain:.3g}, past the "
-                f"{ceiling:.3g} its clip and tolerance leave measurable; "
-                f"capping it there."
-            )
-            gain = math.copysign(ceiling, gain)
-
-        calibrated[name] = float(gain)
-
-    correct = []
-    for iterator in config.iterate.correct:
-        mine = {
-            name: calibrated[name]
-            for name in iterator.unknowns(config)
-            if name in calibrated
-        }
-        if mine:
-            was = iterator.gains(config)
-            logger.info(
-                "Calibrated "
-                + ", ".join(f"{n}: {was[n]:.3g} -> {g:.3g}" for n, g in mine.items())
-            )
-            iterator = iterator.with_gains(config, mine)
-        correct.append(iterator)
-
-    return dataclasses.replace(
-        config, iterate=dataclasses.replace(config.iterate, correct=tuple(correct))
-    )
 
 
 def _jacobian(names, prior, history, current, u_scale, e_scale, blocks):
@@ -1005,39 +823,32 @@ def converge(config, run, max_iter=10):
         # move, which is two different designs on one row.
         logger.info(f"Iteration {i_iter}:\n{format_table(stepping, result)}")
 
-        # Before the verdict, so that the pass which converges is the one whose
-        # slopes are kept: it is a measurement like any other, and the run that
-        # settles is the run most worth learning from.
-        calibration = calibrate(stepping, result, history)
-
         if converged(stepping, result):
             logger.info(f"Converged after {i_iter + 1} iteration(s).")
-            return restored(config, calibration), result, True
+            return config, result, True
 
         # The stepped config is what the next pass runs, so the one returned
-        # alongside a result is always the one that produced it -- and it
-        # carries the gains this pass measured as well as the knobs it moved.
+        # alongside a result is always the one that produced it.
         #
-        # **Carried rather than held back to the end.** A gain is only ever the
-        # seed of the Jacobian: `_jacobian` rebuilds from the history on every
-        # call, so every direction the run has already moved in is governed by
-        # the Broyden estimate rather than by the declared slope, and a Newton
-        # step is invariant to the diagonal rescaling a new gain amounts to.
-        # Folding it in is therefore almost a no-op for the step, and it is
-        # what makes each iteration's `output.yaml` record the sensitivities
-        # that iteration was run under rather than the guess the file opened
-        # with. Where the gain does act alone is `DU_MIN`, which admits a move
-        # to the update in units of `|gain| * tolerance`: a measured scale
-        # there is a better threshold than an assumed one.
+        # **The gains it carries are the ones it was declared with.** A run
+        # measures slopes and they live in the Jacobian, which `_jacobian`
+        # rebuilds from the history on every call --- so every direction the
+        # run has already moved in is governed by the Broyden estimate rather
+        # than by the declared gain, and writing a measured slope back into the
+        # design would be a diagonal rescaling a Newton step is invariant to.
+        # What it would not be invariant to is everything downstream: a gain
+        # written into a config is read back against whatever knobs the *next*
+        # design has, and a sequence measured on one blade means nothing on
+        # another. So a gain is a declared prior and stays one.
+        # `iterate` put back whole: `stepping` is a view holding only the
+        # solution iterators, so the config `step` hands back has lost the
+        # design-only ones. They are unchanged either way, gains included.
         stepped = dataclasses.replace(
-            step(stepping, result, history),
-            iterate=restored(config, calibration).iterate,
+            step(stepping, result, history), iterate=config.iterate
         )
         history.append((unknowns(stepping), measured_errors(stepping, result)))
         config = stepped
 
-    # No calibration to apply here: the config that came out of the last pass
-    # is carrying it already.
     logger.warning(f"Not converged after {max_iter} iteration(s).")
     return config, result, False
 
@@ -1187,7 +998,7 @@ class Incidence(Iterator):
     # the rate from the second iteration on, so being cautious here costs a
     # gentle opening step rather than a slow iteration.
     gain: float = -0.05
-    clip: float = 2.0
+    clip: float = 1.0
     tolerance: float = 5.0
     """Permissible error on local incidence [deg].
 
@@ -1359,6 +1170,15 @@ def _report_resolution(cut, i_stag, e_m, chi, i_row, spf, tolerance):
             "being iterated to. Refine the nose, or ask for less."
         )
 
+
+N_LOOP = 501
+"""Points a target curve is integrated on to give the circulation it asks for.
+
+Dense enough that the trapezoid is not what a `Co` error is limited by: the
+Clark curve is piecewise and smooth, so the error falls as the square of the
+spacing and five hundred intervals put it far below any tolerance a design
+would set on a circulation coefficient.
+"""
 
 N_COEFF = 1
 """Interior Bernstein coefficients a loading distribution moves.
@@ -1839,9 +1659,7 @@ class LoadingProfile(Iterator):
     residuals fall with the camber coefficients, the same disagreement that
     made `PeakMach` a member of its own rather than a third knob on
     `LoadingDistribution`. A single declared number cannot carry both signs, so
-    :attr:`gain_Co` is written beside :attr:`gain` --- see :meth:`gains`. What
-    a run *measures* needs no such split: :attr:`Iterator.gain` holds one
-    calibrated value per knob, this iterator's level included.
+    :attr:`gain_Co` is written beside :attr:`gain` --- see :meth:`gains`.
 
     **`fac_peak` here means what `PeakMach.fac_peak` means:** plain
     `Ma_peak / Ma_TE`, one more than the diffusion factor
@@ -1913,9 +1731,8 @@ class LoadingProfile(Iterator):
     **As a scalar this describes the camber coefficients only**, with
     :attr:`gain_Co` carrying the level beside it; the two disagree on sign, so
     one number cannot be both. As a sequence it carries every knob, `Co` first
-    and then one per coefficient, which is the form :func:`calibrate` writes
-    back once a run has measured each of them separately. See
-    :meth:`unknowns` for why `Co` leads.
+    and then one per coefficient, for a design that wants to state each
+    separately. See :meth:`unknowns` for why `Co` leads.
     """
 
     clip: float = 0.1
@@ -1933,7 +1750,7 @@ class LoadingProfile(Iterator):
     rather than being its first element: a scalar prior cannot carry two signs,
     and the level's is known.
 
-    **Read only while :attr:`gain` is a scalar.** Once a run has calibrated,
+    **Read only while :attr:`gain` is a scalar.** Declared as a sequence,
     `gain` carries every knob including this one, and what is written here no
     longer reaches the loop.
     """
@@ -2123,10 +1940,9 @@ class LoadingProfile(Iterator):
 
         A scalar :attr:`gain` describes the *camber* knobs only, and
         :attr:`gain_Co` supplies the level, because the two disagree on sign
-        and no single number covers both. A sequence carries every knob
-        already --- `Co` at index zero, as :meth:`unknowns` orders them --- and
-        is what a run writes back, so `gain_Co` is the level's prior rather
-        than its permanent home.
+        and no single number covers both. A sequence declares every knob
+        instead --- `Co` at index zero, as :meth:`unknowns` orders them --- and
+        then carries the level itself, leaving `gain_Co` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
@@ -2249,10 +2065,19 @@ class ClarkProfile(Iterator):
 
     **The level belongs to the blade count**, as it does for every loading
     iterator: a thickness redistributes circulation and cannot create it, so
-    the mean suction residual less the mean pressure one --- the loop the
-    target asks for against the loop the blade drew --- drives `Co`, and what
-    is left after taking half of it from each surface is the shape's to answer
-    for. See :class:`PeakMach` for why the level cannot simply be ignored.
+    the loop is `Co`'s to answer for and what is left of the residuals is the
+    shape's. See :class:`PeakMach` for why it cannot simply be ignored.
+
+    **And the level is a circulation, measured as one.** Not a reduction of
+    the samples above: those are unevenly spaced, leave about a third of each
+    surface unvisited at the two ends, and move when the curve `order`
+    changes, so a mean of them would make the measured circulation of an
+    unchanged flow depend on how the thickness happens to be parameterised.
+    :class:`~turbigen.loading.ClarkMeasurement` integrates the whole cut
+    instead, weights each surface by its own length, and normalises the way
+    :class:`~turbigen.blade.Circulation` does --- so the error is
+    `Co` achieved less `Co` asked for, in the units of the knob it drives, and
+    the two are directly comparable rather than merely proportional.
 
     **Assumes no incidence iterator.** The abscissa here is measured from the
     geometric leading edge rather than from the flow's stagnation point, so
@@ -2334,13 +2159,14 @@ class ClarkProfile(Iterator):
     slope is positive, since raising a coefficient thickens the surface,
     accelerates the flow over it and lifts the `fac` the error is measured in.
     A surface running faster than its target is therefore one to thin. The
-    *size* is still a guess, and :func:`calibrate` writes back the sequence a
-    run measures.
+    *size* is still a guess, improved by the Broyden update inside a run
+    rather than written back into the design.
 
     :attr:`gain_Co` carries the level beside it, as
-    :attr:`LoadingProfile.gain_Co` does --- though here the two agree on sign,
-    so what that separation buys is a level whose size can be calibrated apart
-    from the shape's rather than a sign the shape's cannot carry.
+    :attr:`LoadingProfile.gain_Co` does --- though for a different reason: the
+    two agree on sign here, and what keeps them apart is that a circulation
+    coefficient and a shape-space coefficient are not the same quantity. See
+    :meth:`gains`.
     """
 
     clip: float = 0.05
@@ -2349,8 +2175,17 @@ class ClarkProfile(Iterator):
     tolerance: float = 0.01
     """Converged when every shape residual is within this [--]."""
 
-    gain_Co: float = 1.5
+    gain_Co: float = 1.0
     """How much of the level error to subtract from `Co`, as a prior [--].
+
+    **One, because the error is in the units of the knob.** The level is a
+    circulation coefficient too high or too low, and `Co` is the circulation
+    coefficient, so moving it by the whole error is the Newton step under a
+    slope of one --- which is what a coefficient measured against itself
+    should have. That the blade does not land exactly there is loss,
+    deviation and the uniform acoustic speed
+    :attr:`~turbigen.loading.ClarkMeasurement.Co` assumes; a few per cent on a
+    step, not a different order of magnitude.
 
     Positive, for the reason :attr:`PeakMach.gain` is. **Read only while
     :attr:`gain` is a scalar**, exactly as :attr:`LoadingProfile.gain_Co` is.
@@ -2360,7 +2195,10 @@ class ClarkProfile(Iterator):
     """Largest change in the circulation coefficient per iteration [--]."""
 
     tolerance_Co: float = 0.01
-    """Converged when the level error is within this [--]."""
+    """Converged when the circulation is within this of the target's [--].
+
+    A `Co` of order 0.7, so this is a per cent or so of it.
+    """
 
     def __post_init__(self):
         if not 0.0 < self.z_peak < 1.0:
@@ -2477,18 +2315,31 @@ class ClarkProfile(Iterator):
                 f"the march is not a flow field, or the section belongs below "
                 f"the gap."
             )
-        z, fac = measured
+        residual = measured.fac - self.target(measured.z, result.machine)
 
-        residual = fac - self.target(z, result.machine)
+        # What the blade count got wrong, as a circulation: the loop the blade
+        # drew against the loop the target asks for, both as `Co`. The target's
+        # is integrated from `target` itself on a dense grid rather than from a
+        # closed form written here, for the reason `target` is public at all
+        # --- a second opinion on the Clark curve would be free to contradict
+        # the one the design is iterated against.
+        dense = np.linspace(0.0, 1.0, N_LOOP)
+        wanted = self.target(np.stack((dense, dense)), result.machine)
+        Co_target = float(
+            np.trapezoid(wanted[0], dense)
+            - measured.length_ratio * np.trapezoid(wanted[1], dense)
+        )
+        level = float(measured.Co - Co_target)
 
-        # The level is what the blade count got wrong: opening the loop lifts
-        # one surface while dropping the other, so the difference of the two
-        # means is the part of the error the count answers for, where an
-        # average over both surfaces together would partly cancel it. What is
-        # left, half taken from each surface so the two are treated alike, is
-        # the shape's.
-        level = float(np.mean(residual[0]) - np.mean(residual[1]))
-        shape = residual - np.array([[level / 2.0], [-level / 2.0]])
+        # Taken back off the residuals, so what is left is the shape's alone: a
+        # thickness redistributes circulation and cannot create it, and a
+        # coefficient chasing the loop would push every knob one way for
+        # nothing. A uniform shift of `d` on one surface and `-d` on the other
+        # moves the loop by `d (1 + L_ps/L_ss)`, so that is what a level of
+        # this size stands on -- and at equal surface lengths it is the half
+        # each that the two surfaces being treated alike has always meant.
+        delta = level / (1.0 + measured.length_ratio)
+        shape = residual - np.array([[delta], [-delta]])
 
         errors = {f"Co[{self.i_row}]": level}
         return errors | dict(
@@ -2532,10 +2383,22 @@ class ClarkProfile(Iterator):
         """Return the gain of each knob, with the level's declared separately.
 
         A scalar :attr:`gain` describes the *shape* knobs only, and
-        :attr:`gain_Co` supplies the level: the two disagree on sign and no
-        single number covers both. A sequence carries every knob already ---
-        `Co` at index zero, as :meth:`unknowns` orders them --- and is what a
-        run writes back.
+        :attr:`gain_Co` supplies the level.
+
+        **Not for the reason :meth:`LoadingProfile.gains` splits them**, which
+        is that its two disagree on sign; here they agree, both being positive.
+        The reason is units. A gain is knob units per error unit, and `Co` is a
+        circulation coefficient where the others are shape-space coefficients,
+        so one number spread over both would be two different assumed slopes
+        wearing one value. :meth:`clips` splits for the same reason and has no
+        sequence form to fall back on. Only :meth:`tolerances` splits without
+        needing to --- a level residual and a shape residual are both in `fac`
+        --- and it splits so that the two can be converged to different
+        criteria.
+
+        A sequence :attr:`gain` declares every knob instead --- `Co` at index
+        zero, as :meth:`unknowns` orders them --- and then carries the level
+        itself, leaving `gain_Co` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
@@ -2719,6 +2582,23 @@ class MeanLine(Iterator):
     tolerance: float = 0.01
     """Permissible error, as a fraction of the nominal value."""
 
+    clip: float = 0.0
+    """Largest change in one iteration, as a fraction of the nominal value.
+
+    Relative for the reason :attr:`tolerance` is, and to the same nominal:
+    design variables have no common scale, so an absolute number would mean
+    something different for every one of them. Written absolutely --- which is
+    what :attr:`Iterator.clip` means everywhere else, the other iterators
+    moving angles in degrees and coefficients that are already dimensionless
+    --- a single ``clip: 0.01`` beside a two-row ``Ys`` of ``[0.030, 0.076]``
+    permits a third of the first and an eighth of the second, while the
+    tolerance a line above it means one per cent of each. Two conventions, two
+    adjacent numbers, and a loss coefficient free to walk a third of its value
+    per pass.
+
+    Zero for no limit, as it is on the base class.
+    """
+
     def unknowns(self, config):
         merged = {}
         for name in self.variables:
@@ -2773,19 +2653,31 @@ class MeanLine(Iterator):
         return merged
 
     def tolerances(self, config):
-        """Return absolute tolerances, scaled from the relative one declared.
+        """Return absolute tolerances, scaled from the relative one declared."""
+        return self._scaled(config, self.tolerance)
+
+    def clips(self, config):
+        """Return absolute clips, scaled from the relative one declared.
+
+        A clip of zero stays zero, which is what the stepper reads as no limit
+        --- scaling it by a nominal value would be scaling nothing.
+        """
+        return self._scaled(config, self.clip)
+
+    def _scaled(self, config, declared):
+        """Return `declared` against each variable's own nominal value.
 
         Design variables have no common scale --- a loss coefficient of 0.05
         sits beside a stage loading of 1.6 --- so one absolute number cannot
         serve them all. A nominal value of zero has nothing to be relative to,
-        and falls back to taking the tolerance as absolute.
+        and falls back to taking the number as absolute.
         """
         merged = {}
         for name in self.variables:
             nominal = self._values(config, name)
             for key, value in zip(self._names(name, len(nominal)), nominal):
                 scale = np.abs(value) if np.abs(value) > TINY else 1.0
-                merged[key] = self.tolerance * float(scale)
+                merged[key] = declared * float(scale)
         return merged
 
     def _values(self, config, name):

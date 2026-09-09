@@ -363,7 +363,22 @@ def get_i_stag(block, xrt_LE=None):
     else:
         z_nose = np.zeros((nj,))
 
-    half_window = 0.05
+    # How far either side of the nose to look, in normalised arc length, where
+    # the whole section perimeter spans two. The stagnation point sweeps round
+    # the nose with incidence, and a window that cuts into that sweep does not
+    # merely lose the answer: the pressure near a stagnation point is flat, so
+    # a truncated window keeps the flank of the plateau and reports its ripples
+    # as the peak. Measured on a stator at three degrees of incidence, the
+    # maxima spanned 0.13 in `z` within 0.09 per cent of each other in
+    # pressure, and windows of 0.08 and 0.10 selected flanks that read as -29
+    # and -17 degrees against the +4 the plateau's own peak gives.
+    #
+    # So it is set wide enough to hold the whole plateau and let the highest
+    # pressure in it decide, rather than tight enough to be sure of excluding
+    # the far side of the blade. The far side is far: on the same section its
+    # nearest maximum sat at 0.27 and the other row's at 0.87, against the
+    # 0.15 here.
+    half_window = 0.15
     i_stag = np.full((nj,), 0, dtype=int)
     found = np.full((nj,), False)
 
