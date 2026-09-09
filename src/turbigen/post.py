@@ -1022,7 +1022,7 @@ class ContourPlot(Post):
             m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
             xr_curve = annulus.evaluate_xr(m, spf).T
 
-            cut = ember.cut.structured_meridional(result.grid, xr_curve)
+            cut = turbigen.util.cut_spanwise(result.grid, xr_curve)
             if not len(cut):
                 logger.info(f"No block reaches spf={spf}, skipping its contour plot.")
                 continue

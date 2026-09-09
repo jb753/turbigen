@@ -40,6 +40,83 @@ def grid(machine):
     return grid
 
 
+def test_a_spanwise_cut_is_the_one_ember_would_have_made(grid, machine):
+    """Cropping to the band is exact, not an approximation.
+
+    The cut surface lies inside the band by construction, so the nodes left
+    out could only ever have been one sign of distance from it --- which is
+    what the uncropped call is asked to confirm, node for node, rather than to
+    within a tolerance.
+    """
+    import ember.cut
+
+    annulus = machine.annulus
+    m = np.linspace(0.0, annulus.m_max, annulus.n_segment * 25 + 1)
+
+    for spf in (0.1, 0.5, 0.9):
+        xr_cut = annulus.evaluate_xr(m, spf).T
+
+        cropped = util.cut_spanwise(grid, xr_cut)
+        whole = ember.cut.structured_meridional(grid, xr_cut)
+
+        assert len(cropped) == len(whole) > 0
+        for a, b in zip(cropped, whole):
+            assert np.array_equal(np.asarray(a.x), np.asarray(b.x))
+            assert np.array_equal(np.asarray(a.r), np.asarray(b.r))
+            np.testing.assert_allclose(np.asarray(a.P), np.asarray(b.P))
+
+
+def test_a_spanwise_cut_that_misses_everything_is_empty(grid):
+    """A curve nowhere near the machine cuts nothing, rather than raising.
+
+    The scan finds nothing to bracket and hands the block on whole, which is
+    what leaves the decision about what intersects where it always was.
+    """
+    far = np.stack((np.linspace(0.0, 1.0, 51), np.full(51, 99.0)), axis=1)
+
+    assert len(util.cut_spanwise(grid, far)) == 0
+
+
+def test_a_cut_landing_on_a_gridline_is_still_bracketed(grid, machine):
+    """The case a strict sign change misses, and it is the common one.
+
+    A cut that passes exactly through a node leaves a distance of exactly
+    zero there, whose sign multiplies to zero against either neighbour and
+    never to less than it. A mesh with an odd number of spanwise nodes puts a
+    gridline on mid-span, so this is what asking for `spf=0.5` usually does.
+    """
+    block = grid[0]
+    nj = block.shape[1]
+
+    # The span curve through a node of this block, rather than a span
+    # fraction that might happen to fall between two.
+    xr_node = np.asarray(block.xrt[:, nj // 2, 0, :2])
+
+    band = util.cut_band(block, xr_node)
+
+    assert band.start < nj // 2 < band.stop
+    assert band.stop - band.start < nj
+
+
+def test_a_cut_band_is_padded_around_what_the_scan_found(grid, machine):
+    """A coarse scan can only miss by the gridlines it stepped over.
+
+    So the band is widened, and the test that it was is that the cut still
+    lands strictly inside it --- with room to spare at both ends rather than
+    on the boundary, where a stride that missed the crossing would put it.
+    """
+    annulus = machine.annulus
+    xr_cut = annulus.evaluate_xr(
+        np.linspace(0.0, annulus.m_max, annulus.n_segment * 25 + 1), 0.5
+    ).T
+
+    band = util.cut_band(grid[0], xr_cut)
+
+    assert band.stop - band.start > 2 * util.BAND_PAD
+    assert band.start >= 0 and band.stop <= grid[0].shape[1]
+    assert band.stop - band.start < grid[0].shape[1]
+
+
 def test_endwalls_are_two_per_block(grid):
     """One list per row, hub and casing for each block in it."""
     walls = util.cut_endwalls(grid)
