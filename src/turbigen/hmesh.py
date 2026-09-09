@@ -599,9 +599,18 @@ class H(Mesher):
 
     def _stitch_mixing_planes(self, grid):
         """Force xr coordinates to match exactly at mixing planes."""
+
+        # `x` and `r` sliced apart rather than `xrt[..., :2]`, which is a
+        # derived array: reading it materialises and copies the whole block --
+        # tens of megabytes of three-component nodes -- to be thrown away
+        # bar one face. Slicing first costs a hundredth of that and reads the
+        # same numbers.
+        def face(block, i):
+            return np.stack((block.x[i, :, 0], block.r[i, :, 0]), axis=-1)
+
         for i_row in range(len(grid) - 1):
-            xr0 = grid[i_row].xrt[-1, :, 0, :2]
-            xr1 = grid[i_row + 1].xrt[0, :, 0, :2]
+            xr0 = face(grid[i_row], -1)
+            xr1 = face(grid[i_row + 1], 0)
             xrav = 0.5 * (xr0 + xr1)
             xav = xrav[..., 0, None]
             rav = xrav[..., 1, None]

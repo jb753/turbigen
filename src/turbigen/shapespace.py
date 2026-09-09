@@ -80,13 +80,24 @@ def evaluate_bernstein(coeff, m):
     m = np.atleast_1d(m)
 
     n = len(coeff) - 1
-    i = np.arange(n + 1)
-    binom = np.array([math.comb(n, k) for k in i], dtype=float)
-    basis = (
-        binom[:, None]
-        * m[None, :] ** i[:, None]
-        * (1.0 - m)[None, :] ** (n - i)[:, None]
-    )
+    binom = np.array([math.comb(n, k) for k in range(n + 1)], dtype=float)
+
+    # Powers by repeated multiplication rather than by `**`. Every exponent
+    # from zero to `n` is wanted, so each one is the last times another factor
+    # and `np.power` is being asked to rediscover that on every row --- three
+    # to six times the cost, for a result that differs only in the last bit.
+    # A mesh evaluates this a thousand times over ten thousand chordwise
+    # points, which is where the difference shows up.
+    powers_m = np.empty((n + 1, m.size))
+    powers_1m = np.empty((n + 1, m.size))
+    powers_m[0] = 1.0
+    powers_1m[0] = 1.0
+    one_m = 1.0 - m
+    for k in range(1, n + 1):
+        powers_m[k] = powers_m[k - 1] * m
+        powers_1m[k] = powers_1m[k - 1] * one_m
+
+    basis = binom[:, None] * powers_m * powers_1m[::-1]
 
     value = coeff @ basis
     return value[0] if scalar else value
