@@ -39,6 +39,7 @@ from numpy.polynomial import legendre
 
 import turbigen.clark
 import turbigen.loading
+import turbigen.shapespace
 import turbigen.util
 from turbigen.node import Node
 from turbigen.result import Result
@@ -76,6 +77,18 @@ The slope a secant infers has error of order `noise / du`, and the errors here
 are measured from a march that is only partly converged --- the same deviation
 slope read +1.27 from a 200-step solve and about +0.3 from a 50-step one. A
 quarter of a step is where an update stops saying more than the noise does.
+"""
+
+DU_PIN = 0.1
+"""Below this a knob counts as not having moved, in tolerance-equivalent steps.
+
+Per knob, where :data:`DU_MIN` is per block. A knob its geometry would not let
+move --- a nose against its ``R_LE_lim`` bound, a thickness the mesher refuses
+--- sits here while the rest of its block strides on. Its secant row is then a
+frozen residual measured over someone else's move, which the update learns as
+real coupling, and its column is a near-singular direction that amplifies the
+block's Newton step. Held out of both until it moves again, it falls back to
+the decoupled prior-gain step the same way a singular block does.
 """
 
 COND_MAX = 1e6
@@ -201,6 +214,39 @@ class Iterator(Node):
     #
     # PROVIDED
     #
+
+    learns: ClassVar[bool] = True
+    """Whether a run improves this iterator's sensitivities, or keeps them.
+
+    True by default: the declared :attr:`gain` is a guess, and the Broyden
+    update spends the run replacing it with what the trajectory measured.
+
+    False where the sensitivity is closer to a definition than to a guess,
+    and the loop is better off taking the step the gain asserts than a step
+    fitted to a handful of near-parallel moves. A block that does not learn
+    keeps `diag(sign(gain))`, and because the scaling folds `|gain|` into
+    `u_scale`, the Newton step on it is exactly `u -= gain * e` --- the step
+    the first iteration takes, kept for all of them.
+
+    **What it gives up.** Broyden recovers within a run from a gain declared
+    with the wrong sign; nothing here does. Only worth setting where the sign
+    follows from what the knob *is*.
+    """
+
+    def blocks(self, config):
+        """Return the Jacobian block each unknown belongs to, by name.
+
+        A block is learned as a unit, so this says what is worth learning
+        together. One block per iterator by default, which is the claim that
+        an iterator's knobs act on its own errors and not usefully on anyone
+        else's.
+
+        Overridden where that is wrong. A blade's recamber and its thickness
+        shape the same leading edge, so a run that moves one and measures the
+        other is measuring a coupling that exists --- and an iterator boundary
+        drawn between them is a claim that it does not.
+        """
+        return {name: id(self) for name in self.unknowns(config)}
 
     def tolerances(self, config):
         """Return the tolerance on each unknown, by name."""
@@ -407,6 +453,10 @@ class _Table:
     prior: np.ndarray
     jacobian: np.ndarray
     blocks: list
+    pinned: np.ndarray
+    """Per knob: did not move on the last iteration, so it is held out of the
+    coupled Newton solve and given the decoupled prior step instead. See
+    :data:`DU_PIN`."""
 
 
 def _assembled(config, result, history):
@@ -447,6 +497,7 @@ def _assembled(config, result, history):
         names, prior, history, (values, measured), u_scale, e_scale, blocks
     )
     _report_flat(names, jacobian)
+    pinned = _pinned(names, values, history, u_scale)
 
     return _Table(
         names=names,
@@ -459,32 +510,72 @@ def _assembled(config, result, history):
         prior=prior,
         jacobian=jacobian,
         blocks=blocks,
+        pinned=pinned,
     )
+
+
+def _pinned(names, values, history, u_scale):
+    """Return a mask of the knobs that did not move on the last iteration.
+
+    Read from the trajectory rather than reported by the iterators: the signal
+    is "was told to move and did not", whatever refused it --- an ``R_LE_lim``
+    bound, the meshability guard, a closed section. A knob that has simply
+    converged sits here too, and holding one that is already on its target
+    costs nothing; it rejoins its block the moment its error moves it again.
+    """
+    if not history:
+        return np.zeros(len(names), dtype=bool)
+
+    was = history[-1][0]
+    du = np.array([values[n] - was[n] if n in was else 0.0 for n in names]) / u_scale
+    return np.abs(du) < DU_PIN
 
 
 def _blocks(config, names):
     """Return the indices into `names` each iterator owns, one array apiece.
 
-    The Jacobian is block-diagonal over these, which is the claim that what an
-    iterator's knobs do to its own errors is worth learning and what they do to
-    another iterator's is not. That is not because the cross terms are zero ---
-    a row's exit angle plainly sets the next row's inlet angle --- but because
-    they were never identifiable from the trajectory a run takes: see
+    The Jacobian is block-diagonal over these, which is the claim that what
+    the knobs in a block do to its errors is worth learning and what they do
+    to another block's is not. That is not because the cross terms are zero
+    --- a row's exit angle plainly sets the next row's inlet angle --- but
+    because they were never identifiable from the trajectory a run takes: see
     :func:`step`.
+
+    A block is not an iterator, though it is one by default. Each knob says
+    which block it belongs to, so a coupling worth learning can cross an
+    iterator boundary without the two iterators having to become one --- see
+    :meth:`Iterator.blocks`.
     """
-    blocks, seen = [], {}
+    seen, grouped, learns = {}, {}, {}
     for iterator in config.iterate.correct:
-        own = iterator.unknowns(config)
-        for name in own:
+        for name, key in iterator.blocks(config).items():
             if name in seen and name in names:
                 raise ValueError(
                     f"{name} is claimed by both {seen[name]} and "
                     f"{type(iterator).__name__}, so it belongs to no one block."
                 )
             seen[name] = type(iterator).__name__
+            grouped.setdefault(key, set()).add(name)
+
+            # Learning is a property of the block, the update being applied to
+            # it whole, so iterators sharing one have to agree. Refused rather
+            # than resolved: either rule -- the doubters win, or the learners
+            # do -- makes `learns` mean something different depending on what
+            # it sits beside, which is worse than a setting that will not load.
+            was = learns.setdefault(key, (iterator.learns, type(iterator).__name__))
+            if was[0] != iterator.learns:
+                raise ValueError(
+                    f"{was[1]} and {type(iterator).__name__} share a Jacobian "
+                    f"block but disagree on whether it learns "
+                    f"({was[0]} against {iterator.learns}). A block is updated "
+                    f"whole, so they must agree."
+                )
+
+    blocks = []
+    for key, own in grouped.items():
         idx = np.array([i for i, name in enumerate(names) if name in own], dtype=int)
         if idx.size:
-            blocks.append(idx)
+            blocks.append((idx, learns[key][0]))
     return blocks
 
 
@@ -501,6 +592,14 @@ def step(config, result, history=()):
     What that buys is the off-diagonal terms *within an iterator*: the Jacobian
     is block-diagonal over :func:`_blocks`, one block per iterator, and each
     block is solved and bounded on its own.
+
+    **A knob the geometry pinned last iteration is held out of its block.** A
+    nose against its ``R_LE_lim`` bound moves nowhere however hard it is
+    pushed, so in the block Newton solve it is a near-singular direction that
+    amplifies the coupled knobs' step --- which is how one clamped nose came
+    to swing a blade count by eight per cent. Held out, it takes the decoupled
+    prior-gain step and rejoins its block the first iteration it moves again.
+    See :data:`DU_PIN`.
 
     **The cross-iterator terms are deliberately not learned**, though they are
     plainly not zero --- the exit angle of a row sets the inlet angle of the
@@ -554,11 +653,27 @@ def step(config, result, history=()):
     # and falls back for everything; bounding it in one go lets a block sitting
     # on its clip shrink the step of a block that is nowhere near its own.
     change = np.zeros(len(names))
-    for idx in table.blocks:
-        step_now = _newton(
-            table.jacobian[np.ix_(idx, idx)], error[idx], table.prior[idx]
-        )
-        change[idx] = _bounded(step_now, limit[idx])
+    for idx, _ in table.blocks:
+        # A knob its geometry would not let move last time is held out of the
+        # coupled solve --- in the block it is a near-singular direction that
+        # amplifies everyone else's step --- and falls back to the decoupled
+        # prior-gain step, which the clip bounds. It rejoins the block the
+        # first iteration it moves. All of a block pinned is a singular block,
+        # which is the case `_newton` already degrades to the prior for.
+        held = table.pinned[idx]
+        active, stuck = idx[~held], idx[held]
+
+        if active.size:
+            step_now = _newton(
+                table.jacobian[np.ix_(active, active)],
+                error[active],
+                table.prior[active],
+            )
+            change[active] = _bounded(step_now, limit[active])
+
+        if stuck.size:
+            step_prior = -table.prior[stuck] * error[stuck]
+            change[stuck] = np.clip(step_prior, -limit[stuck], limit[stuck])
 
     moved = {
         name: values[name] + change[i] * table.u_scale[i]
@@ -600,16 +715,33 @@ def _jacobian(names, prior, history, current, u_scale, e_scale, blocks):
         du_all = np.array([values_next[n] - values[n] for n in names]) / u_scale
         de_all = np.array([errs_next[n] - errs[n] for n in names]) / e_scale
 
-        for idx in blocks:
+        for idx, learns in blocks:
+            if not learns:
+                continue
+
             du, de = du_all[idx], de_all[idx]
 
-            length = float(du @ du)
-            if np.sqrt(length) < DU_MIN:
+            if np.sqrt(du @ du) < DU_MIN:
                 logger.debug("A move too small to learn from, so the block stands.")
                 continue
 
-            block = jacobian[np.ix_(idx, idx)]
-            jacobian[np.ix_(idx, idx)] = block + np.outer(de - block @ du, du) / length
+            # Only the knobs that actually moved carry secant information. One
+            # the geometry pinned has du ~ 0 while its block moved; its row is
+            # a frozen residual over someone else's stride, and learning it is
+            # learning noise as coupling. Restricted to the movers, the update
+            # is the same arithmetic on the sub-block they span.
+            moved = np.abs(du) >= DU_PIN
+            sub = idx[moved]
+            du_m, de_m = du[moved], de[moved]
+
+            length = float(du_m @ du_m)
+            if length == 0.0:
+                continue
+
+            block = jacobian[np.ix_(sub, sub)]
+            jacobian[np.ix_(sub, sub)] = (
+                block + np.outer(de_m - block @ du_m, du_m) / length
+            )
 
     return jacobian
 
@@ -858,6 +990,15 @@ def converge(config, run, max_iter=10):
 #
 
 
+def _AEROFOIL_BLOCK(i_row):
+    """Return the Jacobian block that shapes row `i_row`'s aerofoil.
+
+    What :class:`Incidence`, :class:`Deviation` and :class:`ClarkProfile` all
+    answer with for the same row, so their knobs are learned as one.
+    """
+    return ("aerofoil", int(i_row))
+
+
 def _recamber_unknowns(config, field):
     """Return the mean recamber of each row, under `field`.
 
@@ -923,13 +1064,41 @@ class Deviation(Iterator):
 
     type: ClassVar[str] = "deviation"
 
-    gain: float = 1.0
-    clip: float = 2.0
+    gain: float = 0.5
+    clip: float = 1.0
+    """Largest recamber in one iteration [deg].
+
+    One degree, not two: this knob shares a Jacobian block with the leading
+    edge and the thickness, and a learned block that has picked up a bad
+    sensitivity --- most often from a nose held against its ``R_LE_lim`` bound
+    --- discharges it as a single large recamber that moves the blade count
+    and throws the solution off. A tighter clip bounds that excursion to
+    something the next iteration can walk back.
+    """
     tolerance: float = 1.0
     """Permissible error on exit flow angle [deg]."""
 
     def unknowns(self, config):
         return _recamber_unknowns(config, "dchi_TE")
+
+    def blocks(self, config):
+        """Return the aerofoil block each recamber belongs to.
+
+        A row's recamber and its thickness distribution shape the same
+        aerofoil: moving the leading edge round changes the incidence, which
+        is most of what the front thickness coefficients are for, and moving
+        the trailing edge changes the exit angle the rear ones are shaped
+        against. Learned together, that coupling is a term in the Jacobian;
+        learned apart, it is two iterators pushing on one nose and reading
+        each other's work as noise.
+
+        Keyed by row, because that is as far as the coupling reaches --- one
+        row's aerofoil is not the next one's.
+        """
+        return {
+            name: _AEROFOIL_BLOCK(i_row)
+            for i_row, name in enumerate(_recamber_unknowns(config, "dchi_TE"))
+        }
 
     def with_unknowns(self, config, values):
         return _with_recamber(config, "dchi_TE", values)
@@ -1013,6 +1182,25 @@ class Incidence(Iterator):
         return {
             f"dchi_LE[{i_row}][{i_section}]": float(section.dchi_LE)
             for i_row, i_section, section in _sections(config)
+        }
+
+    def blocks(self, config):
+        """Return the aerofoil block each recamber belongs to.
+
+        A row's recamber and its thickness distribution shape the same
+        aerofoil: moving the leading edge round changes the incidence, which
+        is most of what the front thickness coefficients are for, and moving
+        the trailing edge changes the exit angle the rear ones are shaped
+        against. Learned together, that coupling is a term in the Jacobian;
+        learned apart, it is two iterators pushing on one nose and reading
+        each other's work as noise.
+
+        Keyed by row, because that is as far as the coupling reaches --- one
+        row's aerofoil is not the next one's.
+        """
+        return {
+            f"dchi_LE[{i_row}][{i_section}]": _AEROFOIL_BLOCK(i_row)
+            for i_row, i_section, _ in _sections(config)
         }
 
     def with_unknowns(self, config, values):
@@ -2079,11 +2267,14 @@ class ClarkProfile(Iterator):
     `Co` achieved less `Co` asked for, in the units of the knob it drives, and
     the two are directly comparable rather than merely proportional.
 
-    **Assumes no incidence iterator.** The abscissa here is measured from the
-    geometric leading edge rather than from the flow's stagnation point, so
-    that a target stays still while the thickness under it moves. With an
-    `incidence` member also running, the two would be shaping the same nose
-    from different directions.
+    **Measured from the geometric leading edge, not the stagnation point**, so
+    that a target stays still while the thickness under it moves. That leaves
+    an `incidence` member shaping the same nose as this does, which is why the
+    two are learned in one Jacobian block rather than kept apart --- see
+    :meth:`blocks`. Held apart they read each other's work as noise: measured
+    on a five-corner sweep, `dchi_LE` was the only knob whose response the
+    stepper reported flat, on every run it appeared in, while sitting on its
+    clip every pass.
     """
 
     type: ClassVar[str] = "clark_profile"
@@ -2200,6 +2391,49 @@ class ClarkProfile(Iterator):
     A `Co` of order 0.7, so this is a per cent or so of it.
     """
 
+    tolerance_tau_LE: float = 0.05
+    """Converged when the leading-edge shape residual is within this [--].
+
+    Declared apart from :attr:`tolerance`, and looser by default, because the
+    nose is the knob most often left short of its target: a loading that wants
+    a sharper leading edge than :attr:`R_LE_lim` allows holds ``tau_LE``
+    against that bound every pass, with a residual no step can clear. One shape
+    tolerance wider than the rest keeps a clamped nose from stalling a design
+    the other knobs have converged, without slackening them.
+    """
+
+    R_LE_lim: tuple[float, float] = (0.02, 0.1)
+    """Bounds on the leading edge radius, normalised by chord [--].
+
+    **A bound on where the knob arrives, which no clip provides.** `clip`
+    limits one step and not a run of them, so a nose can be thickened by a
+    hundredth every pass and be six times its original size ten passes later
+    without any single step being refused. Measured on a stage whose loading
+    target the nose could not meet: `R_LE` climbed from 0.016 to 0.097 over
+    nine passes, monotonically, and the two iterations that followed diverged
+    in the CFD --- a nose radius of a tenth of a chord is a cylinder rather
+    than a leading edge.
+
+    **Clamped, not refused.** The closed-section guard above returns the
+    config untouched, which is right for a section that cannot be meshed at
+    all; here it would freeze ten other knobs because one reached a limit.
+    Clamping lets the rest move and leaves this one against its bound with its
+    error still in the table, which is where a knob that cannot get what it
+    wants should be visible.
+
+    That costs the step its Newton direction for the pass, as any per-knob
+    truncation does --- see :func:`_bounded`. Accepted because a bound reached
+    is already an abnormal pass: the alternative, scaling the whole block to
+    respect it, would let one saturated nose shorten every other knob's step.
+
+    The loop is not made to converge by this. A radius that walks one way
+    without turning is a target the nose cannot reach, and the nose is where
+    :meth:`_flat_error` is blind by construction --- a shared end reports only
+    the mean of the two surfaces. What the bound buys is a design that stays
+    meshable and says so, rather than one that runs away and announces it as a
+    divergence two iterations later.
+    """
+
     def __post_init__(self):
         if not 0.0 < self.z_peak < 1.0:
             raise ValueError(
@@ -2209,6 +2443,10 @@ class ClarkProfile(Iterator):
         for name in ("Ma_peak", "Ma_LE", "Ma_PS"):
             if not getattr(self, name) > 0.0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
+        if not self.tolerance_tau_LE > 0.0:
+            raise ValueError(
+                f"tolerance_tau_LE must be positive, got {self.tolerance_tau_LE}."
+            )
 
     #
     # THE PROTOCOL
@@ -2268,6 +2506,8 @@ class ClarkProfile(Iterator):
             for section in blade.sections
         )
 
+        sections = self._within_R_LE(sections)
+
         closed = self._too_thin(sections)
         if closed is not None:
             logger.info(
@@ -2279,6 +2519,37 @@ class ClarkProfile(Iterator):
 
         blades[self.i_row] = dataclasses.replace(blade, sections=sections)
         return dataclasses.replace(config, blades=tuple(blades))
+
+    def _within_R_LE(self, sections):
+        """Return `sections` with any nose radius pulled back inside its bounds.
+
+        Written on the radius rather than on the shape-space coefficient it
+        comes from, because the bound is a statement about the aerofoil: a
+        reader asking how blunt a nose is allowed to get should not have to
+        square a coefficient to find out.
+        """
+        lo, hi = self.R_LE_lim
+        held = []
+        for section in sections:
+            R_LE = float(section.thickness.R_LE)
+            bounded = min(max(R_LE, lo), hi)
+            if bounded == R_LE:
+                held.append(section)
+                continue
+
+            logger.info(
+                f"Row {self.i_row}'s nose would go to R_LE={R_LE:.4g}, outside "
+                f"the {lo:.4g} to {hi:.4g} it is allowed; holding it at "
+                f"{bounded:.4g}."
+            )
+            coeff = section.thickness.tau_coeff.copy()
+            coeff[:, 0] = turbigen.shapespace.tau_LE(bounded)
+            held.append(
+                dataclasses.replace(
+                    section, thickness=section.thickness.with_tau_coeff(coeff)
+                )
+            )
+        return tuple(held)
 
     def paths(self, config):
         order = self._order(config)
@@ -2374,6 +2645,16 @@ class ClarkProfile(Iterator):
     # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
     #
 
+    def blocks(self, config):
+        """Return this row's aerofoil block for every knob.
+
+        The same block :class:`Incidence` and :class:`Deviation` put this
+        row's recamber in --- see :meth:`Deviation.blocks`. A thickness
+        distribution and the angles the flow meets it at are one aerofoil, and
+        the loop learns them as one.
+        """
+        return {name: _AEROFOIL_BLOCK(self.i_row) for name in self.unknowns(config)}
+
     def _by_knob(self, config, shape_value, level_value):
         """Return `level_value` for `Co` and `shape_value` for every shape knob."""
         values = {f"Co[{self.i_row}]": level_value}
@@ -2409,7 +2690,9 @@ class ClarkProfile(Iterator):
         return self._by_knob(config, self.clip, self.clip_Co)
 
     def tolerances(self, config):
-        return self._by_knob(config, self.tolerance, self.tolerance_Co)
+        by_knob = self._by_knob(config, self.tolerance, self.tolerance_Co)
+        by_knob[f"tau_LE[{self.i_row}]"] = self.tolerance_tau_LE
+        return by_knob
 
     #
     # KNOBS, AS A FLAT TABLE AND AS A PAIR OF CURVES
@@ -2573,6 +2856,16 @@ class MeanLine(Iterator):
     """
 
     type: ClassVar[str] = "mean_line"
+
+    learns: ClassVar[bool] = False
+    """A loss coefficient relaxed onto its own answer, which needs no fitting.
+
+    This does not correct a design against a target it might reach in several
+    ways: it moves a nominal value onto the one the CFD measured, so the error
+    *is* the distance left to travel and the sensitivity is one by
+    construction. A Broyden update here fits that constant to a few
+    near-parallel moves and gets something slightly wrong instead.
+    """
 
     variables: tuple[str, ...] = ()
     """Names of the design variables to relax, as the mean-line design spells
