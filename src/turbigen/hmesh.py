@@ -129,8 +129,22 @@ class H(Mesher):
     nk_min: int = 37
     """Minimum number of pitchwise grid points per row."""
 
-    njtip_min: int = 9
-    """Minimum number of spanwise grid points across the open tip gap."""
+    njtip_min: int = 5
+    """Minimum number of spanwise grid points across the open tip gap.
+
+    Five rather than nine, because nine is not always affordable: the count
+    sets a spacing, and a wide passage stretches the pitchwise direction
+    around it while the radial spacing stays at a tenth of a millimetre. On a
+    stage of pitch-to-chord 1.14 that gave cells up to 37:1 across the
+    clearance, and a march that failed in the tip flow at step 30 -- where the
+    same design at five ran four design iterations without trouble.
+
+    A minimum, not a target: where the wall spacing is already finer than the
+    clearance divided by this, the clustering puts in more. The total spanwise
+    count stays a multigrid one either way; see
+    :meth:`spanwise_grid`, where the main passage makes up whatever the gap
+    leaves.
+    """
 
     nchord_relax: float = 1.0
     """Number of meridional chords over which pitchwise clustering is relaxed."""

@@ -25,6 +25,12 @@ MESH = {
     "dm_TE": 0.05,
     "resolution_factor": 0.5,
     "dspf_mid": 0.1,
+    # Stated rather than defaulted, because the reference mesher hard-codes
+    # nine and takes no argument for it: comparing against it means asking
+    # both for the same number. Our own default is lower, so what the golden
+    # test pins is the algorithm rather than the choice of default -- which is
+    # the right division, the default being ours to move and the algorithm not.
+    "njtip_min": 9,
 }
 """A deliberately coarse mesh, so that the tests run in about a second each."""
 
@@ -98,7 +104,12 @@ def old_grid(machine, mesh, spacing):
         None,
     )
 
-    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k != "type"})
+    # `type` names the mesher rather than configuring it, and `njtip_min` is a
+    # setting the reference does not have -- it hard-codes nine, which is what
+    # the fixture states so that both sides are asked for the same thing. A
+    # key this mesher never took cannot be part of what the comparison pins.
+    unknown = {"type", "njtip_min"}
+    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k not in unknown})
     reference = mesher.make_grid(
         None, mac, spacing.hub, spacing.casing, spacing.surface
     )
