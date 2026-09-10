@@ -99,7 +99,7 @@ extensions = [
 # resolves against this inventory, so a mismatched version silently drops or
 # misdirects the link. Keep the two in sync: bump both together.
 intersphinx_mapping = {
-    "ember": ("https://ember-cfd.org/0.4.0/", None),
+    "ember": ("https://ember-cfd.org/0.4.1/", None),
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }

@@ -231,13 +231,13 @@ def _within_the_machine(cut, planes):
     # one on any machine, which is what makes this a statement about the
     # convention rather than about an axial layout.
     exit_midpoint = planes[-1].mean(axis=0)[None]
-    assert ember.cut._signed_distance(planes[0], exit_midpoint) < 0.0, (
+    assert ember.cut.signed_distance(planes[0], exit_midpoint) < 0.0, (
         "signed distance is not negative downstream; the clip would keep the "
         "ducts and drop the machine"
     )
 
-    after_inlet = ember.cut._signed_distance(planes[0], xr) <= 0.0
-    before_exit = ember.cut._signed_distance(planes[-1], xr) >= 0.0
+    after_inlet = ember.cut.signed_distance(planes[0], xr) <= 0.0
+    before_exit = ember.cut.signed_distance(planes[-1], xr) >= 0.0
 
     return after_inlet & before_exit
 

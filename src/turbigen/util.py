@@ -897,7 +897,7 @@ def cut_band(block, xr_cut, stride=SCAN_STRIDE, pad=BAND_PAD):
     """
     whole = slice(0, block.shape[1])
 
-    d = ember.cut._signed_distance(
+    d = ember.cut.signed_distance(
         xr_cut, np.asarray(block.xrt[::stride, :, ::stride, :2])
     )
 
