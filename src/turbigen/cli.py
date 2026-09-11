@@ -1147,12 +1147,37 @@ def save_grid(path, grid):
     Never allowed to be the thing that ends a run: this is called on paths that
     are already failing, and a diagnostic that raises on its way out would
     replace the error someone needs to read with one about writing a file.
+
+    Catching the exception is not enough for that, because writing a grid moves
+    it. `Grid.write_emb` detaches every patch before pickling and re-attaches
+    them afterwards, so a write that fails partway can leave a perfectly good
+    grid with patches that no longer know their block --- and the next thing to
+    read a surface off it dies on that instead, far from here and looking like
+    a fault of its own. So the grid is put back before the warning goes out,
+    and the run carries on with what it was given.
     """
     try:
         grid.write_emb(str(path), compress=True)
         logger.info(f"Wrote the grid to {path}")
     except Exception as err:
         logger.warning(f"Could not write the grid to {path}: {err}")
+        _reattach_patches(grid)
+
+
+def _reattach_patches(grid):
+    """Re-establish every patch's link to its block, quietly.
+
+    What :meth:`ember.grid.Grid.write_emb` does on its way out, done again for
+    a write that did not get that far. Quiet because it is already the second
+    thing to go wrong: the first is on its way to the log, and this one has
+    nothing to add that the grid being unreadable will not say later.
+    """
+    try:
+        for block in grid:
+            for patch in block.patches:
+                patch.attach_to_block(block)
+    except Exception as err:
+        logger.debug(f"Could not re-attach the grid's patches: {err}")
 
 
 def soft_start(solver, grid):
