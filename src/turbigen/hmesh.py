@@ -77,6 +77,9 @@ class _RowGrids:
     ni: int
     nj: int
     nk: int
+    jtip: int
+    """Spanwise index of the node at the top of the blade, `nj - 1` without a
+    gridded tip gap."""
     L: tuple
     tte: float
 
@@ -183,13 +186,38 @@ class H(Mesher):
     ni_cusp: int = 0
     """Number of streamwise points along the trailing edge cusp."""
 
+    nk_tip: int = 0
+    """Number of points across the blade thickness in a gridded tip block.
+
+    Zero pinches the blade to nothing over the clearance, which is what this
+    mesher has always done: the two sides of the section are brought together
+    and the collapsed faces made periodic, so the flow crosses where the blade
+    used to be. Non-zero gives the clearance a block of its own, filling the
+    blade-shaped prism between the tip and the casing, and the blade keeps the
+    thickness it was designed with all the way up.
+
+    The prism closes to a line at the leading edge and at the trailing edge or
+    cusp tip, so the block is degenerate at both ends of `i`. Those faces carry
+    no flux, having no area, and are marked as such rather than left to look
+    like walls; see :meth:`_tip_block`.
+
+    A count, not a flag, because the thickness has to be resolved: nine is the
+    least a multigrid level can halve twice, and `gap_contraction` and
+    `pinch_ramp` mean nothing once this is set.
+    """
+
     gap_contraction: float = 0.6
     """Fraction of the tip gap over which the blade is pinched to zero
-    thickness."""
+    thickness.
+
+    Ignored when :attr:`nk_tip` grids the clearance instead of pinching it.
+    """
 
     pinch_ramp: float = 2.0
     """Span over which the blade thins into the tip gap, as a multiple of the
     gap.
+
+    Ignored when :attr:`nk_tip` grids the clearance instead of pinching it.
 
     The blade is at full thickness `pinch_ramp` gap-heights below the casing
     and reaches zero at the top of the pinch, so this sets how abruptly it
@@ -203,6 +231,11 @@ class H(Mesher):
     def __post_init__(self):
         if self.ni_cusp and self.dm_TE != 0.0:
             raise ValueError("ni_cusp requires dm_TE = 0.0")
+        if self.nk_tip and (self.nk_tip < 9 or (self.nk_tip - 1) % 8):
+            raise ValueError(
+                f"nk_tip={self.nk_tip} is not a count a multigrid level can "
+                f"halve; give it nine or more, one above a multiple of eight."
+            )
 
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
@@ -212,17 +245,26 @@ class H(Mesher):
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
 
         blocks = []
+        passages = []
         for i_row in range(n_row):
             geom = self._row_geometry(machine, i_row, spacing)
             grids = self._row_1d_grids(
                 machine, i_row, geom, dspf_hub, dspf_casing, tip_ref, n_row
             )
             coords = self._row_coords(machine, i_row, geom, grids, tip_ref, n_row)
-            blocks.append(self._row_block(machine, i_row, geom, grids, coords, n_row))
+            passage = self._row_block(machine, i_row, geom, grids, coords, n_row)
+            blocks.append(passage)
+            passages.append(passage)
+            if self.nk_tip and machine.rows[i_row].tip_gap:
+                blocks.append(self._tip_block(machine, i_row, geom, grids, coords))
             del coords
 
         grid = ember.grid.Grid(blocks)
-        self._stitch_mixing_planes(grid)
+        # The passage blocks alone, in row order: a mixing plane is between two
+        # rows, and a tip block is inside one. With a gridded clearance the
+        # block index is no longer the row index, and it is the row that this
+        # stitches.
+        self._stitch_mixing_planes(passages)
         grid.connectivity.periodic.pair()
         return grid
 
@@ -273,7 +315,27 @@ class H(Mesher):
             ]
         )
         tip_all = np.array([row.tip_gap for row in machine.rows])
-        tip_ref = np.max(tip_all / span_all)
+        tip_frac = tip_all / span_all
+        tip_ref = np.max(tip_frac)
+
+        # Every row is meshed on one spanwise vector, because a mixing plane
+        # matches its two sides span-for-span and will not join rows of
+        # different spanwise count. A pinch does not mind: it only asks for
+        # clustering near the casing, and where the pinch ends is a meshing
+        # choice. A gridded tip does mind, its blocks meeting at the node that
+        # sits at the top of the blade, so one level has to serve every row
+        # that has a gap.
+        if self.nk_tip:
+            gaps = tip_frac[tip_frac > 0.0]
+            if gaps.size and not np.allclose(gaps, gaps[0], rtol=1e-6):
+                raise ValueError(
+                    f"A gridded tip puts a grid line at the top of the blade, "
+                    f"and every row is meshed on one spanwise grid, so the "
+                    f"rows that have a clearance must have the same one as a "
+                    f"fraction of span. This machine has {tip_frac} -- pinch "
+                    f"it with nk_tip = 0, or give the rows equal clearance."
+                )
+
         span_ref = annulus.evaluate_span(1)
         return spacing.hub / span_ref, spacing.casing / span_ref, tip_ref
 
@@ -348,12 +410,32 @@ class H(Mesher):
         assert not (nk - 1) % 8, f"nk-1={nk - 1} not divisible by 8"
         logger.debug(f"nk={nk}, nk_not_resampled={nk_not_resampled}")
 
-        # Spanwise
+        # Spanwise. A pinch is a shape imposed on the top of the span and can
+        # end wherever `gap_contraction` puts it; a gridded tip is a block
+        # boundary and has to sit at the top of the blade exactly.
         span_frac = self.spanwise_grid(
-            dspf_hub, dspf_casing, tip_ref * self.gap_contraction
+            dspf_hub,
+            dspf_casing,
+            tip_ref if self.nk_tip else tip_ref * self.gap_contraction,
         )
         nj = len(span_frac)
         assert not (nj - 1) % 8, f"nj-1={nj - 1} not divisible by 8"
+
+        # Index of the node at the top of the blade, which is the one the two
+        # blocks of a gridded row meet on. Found by value rather than counted
+        # out of `spanwise_grid`, the two pieces being concatenated about it so
+        # that it is exact rather than nearly so.
+        if self.nk_tip and tip_ref:
+            jtip = int(np.argmin(np.abs(span_frac - (1.0 - tip_ref))))
+            assert np.isclose(span_frac[jtip], 1.0 - tip_ref), (
+                f"no spanwise node at the top of the blade: "
+                f"spf={span_frac[jtip]} against 1-tip={1.0 - tip_ref}"
+            )
+            assert not (nj - 1 - jtip) % 8, (
+                f"tip gap spans {nj - jtip} nodes, which a multigrid level cannot halve"
+            )
+        else:
+            jtip = nj - 1
 
         # Streamwise: choose inlet/exit lengths
         if n_row == 1:
@@ -372,13 +454,27 @@ class H(Mesher):
             tq = np.linspace(0.8, 1.0, 500)
             _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
 
+        # The tip block runs from the leading edge to the cusp tip, so that
+        # span of streamwise cells has to be one a multigrid level can halve.
+        # It already is wherever there is a cusp: `ile` is a multiple of eight,
+        # `chord_deficit` pins the total, and `dn_deficit` pins the downstream
+        # count against `ni_cusp` -- three conditions that between them leave
+        # `icusp - ile` divisible by eight for any `ni_TE` and any `ni_cusp`.
+        # Square, `icusp` is `ite` and loses the cusp's own `-1`, which lands
+        # the same arithmetic one short. Asking the downstream count for one
+        # more point shifts it back, and `chord_deficit` re-balances the total
+        # around it, so nothing else has to be constrained.
+        ni_cusp_align = self.ni_cusp + 8
+        if self.nk_tip and not self.ni_cusp:
+            ni_cusp_align += 1
+
         stream_frac, ile, ite = self.streamwise_grid(
             geom.pitch_chord_ref,
             nk_not_resampled,
             L,
             geom.AR_row,
             tte,
-            ni_cusp=self.ni_cusp + 8,
+            ni_cusp=ni_cusp_align,
         )
 
         ni = len(stream_frac)
@@ -396,6 +492,7 @@ class H(Mesher):
             ni=ni,
             nj=nj,
             nk=nk,
+            jtip=jtip,
             L=L,
             tte=tte,
         )
@@ -499,7 +596,13 @@ class H(Mesher):
         assert np.isfinite(pitch_frac_relax).all()
         assert (pitch_frac_relax >= 0.0).all() and (pitch_frac_relax <= 1.0).all()
 
-        if row.tip_gap:
+        if row.tip_gap and self.nk_tip:
+            # The blade keeps its thickness; the clearance gets a block of its
+            # own. Nothing to do to the section here, the top of the span
+            # already carrying it -- only the count of nodes the two blocks
+            # share, which is what the patches are written against.
+            njtip = grids.nj - grids.jtip
+        elif row.tip_gap:
             theta_mid = np.mean(theta_lim, axis=0, keepdims=True)
             spf_pinch = [
                 1.0 - tip_ref * self.pinch_ramp,
@@ -559,10 +662,19 @@ class H(Mesher):
         ]
         if self.AR_cusp:
             logger.debug(f"Adding cusps {ite, icusp}")
+            # A cusp is the wake of a blade that has ended, so it stops where
+            # the blade does. Over a gridded clearance the same two faces are
+            # the sides of the tip block and the flow crosses them, which the
+            # tip patch below says; a cusp there would say the opposite.
+            jlim_cusp = (0, grids.jtip) if njtip and self.nk_tip else (0, -1)
             patches.extend(
                 [
-                    ember.patch.CuspPatch(i=(ite, icusp), k=0, label="cusp_k0"),
-                    ember.patch.CuspPatch(i=(ite, icusp), k=-1, label="cusp_nk"),
+                    ember.patch.CuspPatch(
+                        i=(ite, icusp), j=jlim_cusp, k=0, label="cusp_k0"
+                    ),
+                    ember.patch.CuspPatch(
+                        i=(ite, icusp), j=jlim_cusp, k=-1, label="cusp_nk"
+                    ),
                 ]
             )
 
@@ -624,8 +736,126 @@ class H(Mesher):
 
         return block
 
-    def _stitch_mixing_planes(self, grid):
-        """Force xr coordinates to match exactly at mixing planes."""
+    def _tip_block(self, machine, i_row, geom, grids, coords):
+        """Assemble the block filling a row's tip clearance.
+
+        The prism between the top of the blade and the casing, which the main
+        block leaves empty: its two sides are the two surfaces of the section,
+        its floor is the tip of the blade and its roof the casing. Built from
+        the coordinates the main block was built from, sliced rather than
+        recomputed, so that the faces the two share agree exactly rather than
+        to the tolerance of a second evaluation of the same geometry.
+        """
+        ile, jtip = grids.ile, grids.jtip
+        icusp = coords.ite + self.ni_cusp - 1 if self.ni_cusp else coords.ite
+        ni = icusp - ile + 1
+        nj = grids.nj - jtip
+        nk = self.nk_tip
+
+        assert not (ni - 1) % 8, f"tip block ni-1={ni - 1} not divisible by 8"
+        assert not (nj - 1) % 8, f"tip block nj-1={nj - 1} not divisible by 8"
+
+        # The section's two angular limits over the window, upper first. These
+        # meet at both ends of the window: at the leading edge because both
+        # surfaces start there, and at the trailing edge or cusp tip because
+        # that is where they are joined. So the block is degenerate at i=0 and
+        # i=-1 by construction rather than by a tolerance.
+        theta_lim = coords.theta_lim[:, ile : icusp + 1, jtip:]
+        xr = coords.xr[:, ile : icusp + 1, jtip:]
+
+        # Across the thickness: a distribution per streamwise station, each
+        # sized on the thickness there, so the cell against the surface is the
+        # wall spacing all along the chord.
+        #
+        # That surface is shared with the passage block, which puts its own
+        # first cell at the same spacing, so holding it constant is what makes
+        # the two agree along the whole join rather than only where the
+        # section happens to be thickest. One distribution for the block
+        # cannot do it: spent as a fraction it thins with the section, and by
+        # the trailing edge the cell against the surface is a twentieth of
+        # what the passage meets it with.
+        #
+        # Where the section is too thin to hold the spacing -- the last few
+        # stations at each end, which run out to a point -- the stations are
+        # spaced evenly instead, that being the coarsest they can be. The
+        # changeover is smooth, Vinokur stretching tending to an even spacing
+        # as the wall spacing approaches its share of the thickness.
+        thick = (theta_lim[0] - theta_lim[1]) * xr[1]
+        d_surf = geom.drt_norm * geom.pitch_rtheta_max
+        uniform = np.linspace(0.0, 1.0, nk)
+
+        frac = np.empty((ni, nk))
+        n_even = 0
+        for i in range(ni):
+            # One thickness per station, averaged over the height of the gap:
+            # the section changes little over a clearance, and a distribution
+            # per station keeps the k lines of a station together.
+            t_i = float(np.mean(thick[i]))
+            dmin = d_surf / t_i if t_i > 0.0 else np.inf
+            if dmin >= 1.0 / (nk - 1):
+                frac[i] = uniform
+                n_even += 1
+                continue
+            try:
+                frac[i] = clusterfunc.symmetric.fixed(dmin, nk)
+            except clusterfunc.exceptions.ClusteringException:
+                frac[i] = uniform
+                n_even += 1
+        logger.debug(
+            f"Tip block: {ni - n_even} of {ni} stations clustered to "
+            f"dsurf={d_surf:.3g}, the rest too thin and spaced evenly."
+        )
+        frac = frac.reshape(ni, 1, nk)
+
+        xrt_now = np.empty((3, ni, nj, nk))
+        xrt_now[:2] = xr[..., np.newaxis]
+
+        # k=-1 is the upper surface, k=0 the lower, which is the sense the main
+        # block ends up in after its own pitchwise flip: its k=0 face is the
+        # upper limit and its k=-1 face the lower one a pitch away. Meeting
+        # face to face, the two blocks run their k in opposite directions.
+        np.add(
+            frac * theta_lim[0][..., np.newaxis],
+            (1.0 - frac) * theta_lim[1][..., np.newaxis],
+            out=xrt_now[2],
+        )
+        assert np.isfinite(xrt_now).all()
+
+        patches = [
+            # The two sides of the section, which the main block has as the two
+            # sides of its passage. The upper is coincident with the main
+            # block's k=0 face; the lower is its k=-1 face, one pitch away.
+            ember.patch.PeriodicPatch(k=0, label="tip_lower"),
+            ember.patch.PeriodicPatch(k=-1, label="tip_upper"),
+            # Collapsed to a line at each end of the chord. No area, so no
+            # flux and no boundary condition -- but they have to be told apart
+            # from walls, which every unpatched face otherwise is.
+            ember.patch.NotWallPatch(i=0, label="tip_LE"),
+            ember.patch.NotWallPatch(i=-1, label="tip_TE"),
+            # The casing stands still over a turning row, as it does over the
+            # main block; `bconds` values it.
+            ember.patch.RotatingPatch(j=-1, label="casing"),
+        ]
+        # j=0 is left bare: it is the tip of the blade, a wall turning with the
+        # row, which is what an unpatched face already means.
+
+        block = ember.block.Block(shape=(ni, nj, nk))
+        block.set_label(f"row{i_row}_tip")
+        block.set_Nb(machine.rows[i_row].n_blade)
+        block.set_x(xrt_now[0])
+        block.set_r(xrt_now[1])
+        block.set_t(xrt_now[2])
+        block.patches.extend(patches)
+
+        return block
+
+    def _stitch_mixing_planes(self, passages):
+        """Force xr coordinates to match exactly at mixing planes.
+
+        Takes the passage blocks in row order rather than the grid: a tip
+        block is inside a row and has no mixing plane of its own, so once one
+        exists the block index and the row index are different numbers.
+        """
 
         # `x` and `r` sliced apart rather than `xrt[..., :2]`, which is a
         # derived array: reading it materialises and copies the whole block --
@@ -635,16 +865,16 @@ class H(Mesher):
         def face(block, i):
             return np.stack((block.x[i, :, 0], block.r[i, :, 0]), axis=-1)
 
-        for i_row in range(len(grid) - 1):
-            xr0 = face(grid[i_row], -1)
-            xr1 = face(grid[i_row + 1], 0)
+        for i_row in range(len(passages) - 1):
+            xr0 = face(passages[i_row], -1)
+            xr1 = face(passages[i_row + 1], 0)
             xrav = 0.5 * (xr0 + xr1)
             xav = xrav[..., 0, None]
             rav = xrav[..., 1, None]
-            grid[i_row][-1].set_x(xav)
-            grid[i_row + 1][0].set_x(xav)
-            grid[i_row][-1].set_r(rav)
-            grid[i_row + 1][0].set_r(rav)
+            passages[i_row][-1].set_x(xav)
+            passages[i_row + 1][0].set_x(xav)
+            passages[i_row][-1].set_r(rav)
+            passages[i_row + 1][0].set_r(rav)
 
     #
     # ONE-DIMENSIONAL GRID VECTORS
@@ -660,6 +890,13 @@ class H(Mesher):
             #   - njtip_min pts uniform
             #   - target shroud spacing
             njtip_min = self.njtip_min
+            if self.nk_tip:
+                # Gridded, the gap is a block and its spanwise count is the
+                # block's, so it has to be one a multigrid level can halve.
+                # Pinched it is a slice of one, free to be the five a tip flow
+                # has been found to run at, and the fallback below is where
+                # that five is spent exactly.
+                njtip_min = int(8 * np.ceil((njtip_min - 1) / 8)) + 1
             dspf_tip = np.minimum(dspf_casing, tip / njtip_min)
 
             spf_main = clusterfunc.double.free(
