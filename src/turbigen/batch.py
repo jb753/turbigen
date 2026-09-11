@@ -210,7 +210,7 @@ class Batch(Node):
             )
 
 
-def generate(config, n=None, start=0):
+def generate(config, n=None, start=0, edges=None):
     """Return the designs this config's `batch:` section asks for.
 
     Pairs of ``(index, config)``. The index is the point's position in the
@@ -231,6 +231,10 @@ def generate(config, n=None, start=0):
     start : int
         Where to enter the sequence. ``0`` begins a batch; anything else
         extends one. A grid has no tail to extend.
+    edges : int or None
+        When set, ignore `n` and `start` and run the surface of the `bounds:`
+        box instead of drawing from it: the `edges`-level grid over the box,
+        keeping only the points with a coordinate at a bound. `bounds:` only.
 
     """
     spec = config.batch
@@ -239,10 +243,71 @@ def generate(config, n=None, start=0):
 
     spec.check(config)
 
+    if edges is not None:
+        if spec.is_grid():
+            raise ValueError(
+                "--edges walks the surface of a bounds: box; this batch: "
+                "section names its points with values:."
+            )
+        return _edges(config, spec, edges)
+
     if spec.is_grid():
         return _grid(config, spec)
 
     return _sequence(config, spec, DEFAULT_NUMBER if n is None else n, start)
+
+
+def _edges(config, spec, edges):
+    """Return the designs on the surface of the box, `edges` points per axis.
+
+    The full `edges`-level grid over `bounds:`, keeping only the points with at
+    least one coordinate sitting on a bound --- the corners of the box, the
+    edges between them, and for three variables or more the face centres, but
+    none of the interior. ``edges=2`` is the corners alone.
+
+    Deterministic, like :func:`_grid`, and indexed the same way: the index is
+    the position in the *full* product, so the interior points that were left
+    out leave numbered gaps and a surviving corner keeps the number that says
+    which corner it is.
+    """
+    if edges < 2:
+        raise ValueError(
+            f"--edges is {edges}; it takes at least 2, the two ends of each bound."
+        )
+
+    paths = spec.paths()
+    lo, hi = spec.limits()
+    axes = [np.linspace(a, b, edges) for a, b in zip(lo, hi)]
+
+    logger.info(
+        f"Running the surface of the box, {edges} point(s) per edge, over "
+        f"{len(paths)} design variable(s):\n" + _format_bounds(spec)
+    )
+
+    datum = config.to_dict()
+    built = []
+
+    for index, corner in enumerate(itertools.product(*(range(edges) for _ in paths))):
+        if not any(k in (0, edges - 1) for k in corner):
+            continue  # an interior point, which the surface leaves out
+
+        values = np.array([axis[k] for axis, k in zip(axes, corner)])
+        candidate, why = _build(config, datum, paths, values)
+
+        if candidate is None:
+            logger.warning(
+                f"Point {index} ({_format_point(paths, values)}) does not "
+                f"design, so it is skipped: {why}"
+            )
+        else:
+            built.append((index, candidate))
+
+    if not built:
+        raise ValueError(
+            "None of the box-surface points could be designed:\n" + _format_bounds(spec)
+        )
+
+    return built
 
 
 def _sequence(config, spec, n, start):

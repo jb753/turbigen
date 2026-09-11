@@ -101,6 +101,18 @@ class H(Mesher):
     AR_stream: float = 2.0
     """Aspect ratio in blade-to-blade plane of cells at outlet boundary."""
 
+    AR_mix: float = 2.0
+    """Aspect ratio in blade-to-blade plane of cells at a mixing plane.
+
+    The row-to-row interface, as against the true machine inlet and outlet
+    that :attr:`AR_stream` governs. Same default, so a mesh is unchanged until
+    this is lowered --- which tightens the streamwise cells feeding a mixing
+    plane without refining the real boundaries. A coarse mixing-plane cell is
+    where a restart from a neighbouring design tends to come apart: a small
+    design change can drop a multigrid block out of the wake there, and the
+    field resampled onto the coarser grid then blows up.
+    """
+
     AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
@@ -760,8 +772,13 @@ class H(Mesher):
         assert (pitch_chord > 0.0).all()
         assert nrt > 1
 
-        # Normalised grid spacings at endpoints (normalised by their gap chord)
-        dm_boundary = self.AR_stream * pitch_chord / nrt
+        # Normalised grid spacings at endpoints (normalised by their gap chord).
+        # An end is a true machine boundary when its inlet/exit length is the
+        # full 1.0 gap-chord, and a mixing plane when it is the 0.5 half-gap ---
+        # so `L` tells the two ends apart without threading the row index down.
+        ar_up = self.AR_stream if L[0] == 1.0 else self.AR_mix
+        ar_dn = self.AR_stream if L[-1] == 1.0 else self.AR_mix
+        dm_boundary = np.array([ar_up, self.AR_stream, ar_dn]) * pitch_chord / nrt
 
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
 
@@ -769,6 +786,22 @@ class H(Mesher):
         dm_upstream_LE = self.dm_LE * pitch_chord[0] / pitch_chord[1]
         dm_TE = (1.0 - tte) / self.ni_TE
         dm_downstream_TE = dm_TE * pitch_chord[-1] / pitch_chord[1]
+
+        logger.debug(
+            "streamwise_grid drivers: pitch_chord=%s L=%s AR_row=%.4f tte=%.4f "
+            "chord_factor=%.4f | dm_boundary=%s dm_mid=%.4g dm_upstream_LE=%.4g "
+            "dm_TE=%.4g dm_downstream_TE=%.4g",
+            np.array2string(np.asarray(pitch_chord), precision=4),
+            np.array2string(np.asarray(L), precision=4),
+            AR_row,
+            tte,
+            chord_factor,
+            np.array2string(np.asarray(dm_boundary), precision=4),
+            dm_mid,
+            dm_upstream_LE,
+            dm_TE,
+            dm_downstream_TE,
+        )
 
         t_upstream = 1.0 - np.flip(
             clusterfunc.single.free(
@@ -828,6 +861,13 @@ class H(Mesher):
                 t_chord,
             )
 
+        logger.debug(
+            "streamwise segments (upstream, chord, te, downstream) = %s, "
+            "chord_deficit=%d -> ni=%d",
+            (len(t_upstream), len(t_chord), len(t_te), len(t_downstream)),
+            chord_deficit,
+            len(t_upstream) + len(t_chord) + len(t_te) + len(t_downstream) - 3,
+        )
         logger.debug(f"ni_TE={self.ni_TE}, tte={tte}")
         logger.debug(f"t_te ({len(t_te)} pts): {t_te}")
 

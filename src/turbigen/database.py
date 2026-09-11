@@ -93,10 +93,21 @@ class Database(Node):
             Directories whose contents are not samples.
 
         """
+        return [sample for _, sample, _ in self.load_samples(config, anchor, exclude)]
+
+    def load_samples(self, config, anchor, exclude=()):
+        """Return ``(path, config, result)`` for every sample the glob matches.
+
+        The same walk :meth:`load` does, keeping the two things a warm start
+        wants besides the knobs: where the sample lives, so its ``restart.npz``
+        can be found beside it, and the :class:`~turbigen.result.Result` that
+        :func:`_sample` had to read anyway to check the run finished --- so the
+        one glob-and-parse serves both the geometry blend and the field seed.
+        """
         wanted = set(iterate.unknowns(config))
         excluded = tuple(Path(directory).resolve() for directory in exclude)
 
-        samples = []
+        rows = []
         for match in sorted(Path(anchor).glob(self.path)):
             resolved = match.resolve()
 
@@ -107,9 +118,9 @@ class Database(Node):
 
             sample = _sample(resolved, wanted)
             if sample is not None:
-                samples.append(sample)
+                rows.append((resolved, *sample))
 
-        return samples
+        return rows
 
     def candidates(self, config, samples):
         """Return the design variables to measure distance in, sorted.
@@ -146,7 +157,7 @@ class Database(Node):
         return tuple(sorted(varying))
 
 
-def warm_start(config, anchor, exclude=()):
+def warm_start(config, anchor, exclude=(), samples=None):
     """Return `config` with its iterators started from designs already run.
 
     Returns `config` untouched, saying why, whenever there is nothing to go on:
@@ -163,6 +174,10 @@ def warm_start(config, anchor, exclude=()):
     exclude : sequence of Path
         Directories whose contents are not samples, normally this run's own
         output.
+    samples : sequence, optional
+        Rows from :meth:`Database.load_samples`, when the caller has already
+        loaded them --- :func:`nearest_field` wants the same set, and the glob
+        and parse behind it is the expensive part. Loaded here when not given.
 
     """
     if config.database is None:
@@ -173,7 +188,9 @@ def warm_start(config, anchor, exclude=()):
         logger.warning("Nothing is being iterated, so there is nothing to start.")
         return config
 
-    samples = config.database.load(config, anchor, exclude)
+    if samples is None:
+        samples = config.database.load_samples(config, anchor, exclude)
+    samples = [sample for _, sample, _ in samples]
     if not samples:
         logger.warning(
             "No finished runs matched the database, so the design starts "
@@ -219,8 +236,57 @@ def warm_start(config, anchor, exclude=()):
     return config
 
 
+def nearest_field(config, samples):
+    """Return the converged flow field to seed the CFD from, or None.
+
+    The path to the ``restart.npz`` of the design-space nearest sample that has
+    one; None when nothing qualifies.
+
+    The geometry blend in :func:`warm_start` moves the *knobs*; this picks the
+    *field* the march starts from. One field, not a blend --- interpolating two
+    3D solutions node by node needs them on one grid, and the nearest converged
+    neighbour already carries the boundary layers, wakes and real turning that
+    the meridional guess does not.
+
+    Only the field is returned. What that field *is* cannot be read off the
+    sample it came from: :func:`turbigen.restart.apply` interpolates it onto
+    different geometry, so the sample's own mixed-out mean line no longer
+    describes it. :meth:`turbigen.warm_field.Seed.apply` measures it where it
+    lands instead.
+
+    `samples` are rows from :meth:`Database.load_samples`, so the caller shares
+    one glob-and-parse with :func:`warm_start`.
+    """
+    from turbigen import restart
+
+    if config.database is None or not samples:
+        return None
+
+    configs = [sample for _, sample, _ in samples]
+    variables = config.database.candidates(config, configs)
+    flat = [node.flatten(sample) for sample in configs]
+
+    X = np.array([[leaves[path] for path in variables] for leaves in flat], float)
+    xq = np.array([node.flatten(config)[path] for path in variables], float)
+    lo, span = _scale(X)
+    distance = np.linalg.norm((X - lo) / span - (xq - lo) / span, axis=1)
+
+    for idx in np.argsort(distance):
+        path, _, _ = samples[idx]
+        field = path.parent / restart.RESTART_NAME
+        # A field and nothing more. `_sample` has already turned away anything
+        # that did not finish, so a `restart.npz` beside one of these is a
+        # march that ran --- and even one that did not converge is a better
+        # place to start than a uniform guess.
+        if field.is_file():
+            logger.info(f"Seeding the march from the converged field in {field}")
+            return field
+
+    return None
+
+
 def _sample(path, wanted):
-    """Return the config at `path` if it is a sample, and None if it is not."""
+    """Return ``(config, result)`` if `path` is a sample, and None if it is not."""
     # Imported here because `case` reads a `Config`, and a `Config` holds a
     # `Database`: at module scope this closes a cycle that only stays unbroken
     # while `turbigen/__init__.py` happens to import `case` before `config`.
@@ -250,7 +316,7 @@ def _sample(path, wanted):
         # correspondence between its knobs and this design's.
         return None
 
-    return config
+    return config, result
 
 
 def _scale(X):

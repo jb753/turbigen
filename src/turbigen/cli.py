@@ -66,6 +66,7 @@ from turbigen import (
     plugins,
     post,
     restart,
+    warm_field,
 )
 from turbigen.config import Config
 from turbigen.result import Result
@@ -109,8 +110,10 @@ beside it, so without the refusal it would write over its own input.
 LOG_NAME = "log_turbigen.txt"
 """What a run calls its transcript, beside everything else it wrote."""
 
-RESTART_NAME = "restart.npz"
-"""What a run calls the flow field it leaves behind, and `--restart` looks for."""
+RESTART_NAME = restart.RESTART_NAME
+"""Re-exported from :mod:`turbigen.restart`, where the name now lives so that
+:func:`turbigen.database.nearest_field` can find a neighbour's field without
+importing the CLI."""
 
 GRID_NAME = "grid.emb"
 """What a run calls the whole grid, written only when something went wrong.
@@ -841,7 +844,7 @@ def _design_one(args, config_path):
     return 0
 
 
-def prepare(config, restart_path=None):
+def prepare(config, restart_path=None, warm=None):
     """Return the resolved config, the machine, and a grid ready to solve.
 
     Shared by every verb that needs a grid, so there is one definition of
@@ -881,10 +884,15 @@ def prepare(config, restart_path=None):
     guess.apply(grid, machine)
 
     # A stored field supersedes the meridional guess. Applied after it rather
-    # than instead of it, so that a block the restart cannot fill is still
-    # left with something sane in it.
+    # than instead of it, so that a block the field cannot fill is still left
+    # with something sane in it. An explicit or chained `restart_path` wins; a
+    # `warm` seed (a database neighbour's field, perturbed onto this design's
+    # mean line) is the fallback for the first solve of a loop when nothing has
+    # been chained yet.
     if restart_path is not None:
         restart.apply(grid, restart_path)
+    elif warm is not None:
+        warm.apply(grid, machine)
 
     return config, machine, grid
 
@@ -1147,7 +1155,7 @@ def save_grid(path, grid):
         logger.warning(f"Could not write the grid to {path}: {err}")
 
 
-def solve(config, out_dir, restart_path=None, svg=False, trajectory=()):
+def solve(config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
@@ -1159,8 +1167,11 @@ def solve(config, out_dir, restart_path=None, svg=False, trajectory=()):
     than reachable from here, because a run knows nothing of the loop that may
     be repeating it -- and passed *through* rather than kept, because the pair
     this call is about does not exist until the solve is over.
+
+    `warm` is a :class:`turbigen.warm_field.Seed` for the first solve of a loop,
+    used only when nothing has been chained into `restart_path` yet.
     """
-    config, machine, grid = prepare(config, restart_path)
+    config, machine, grid = prepare(config, restart_path, warm=warm)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
@@ -1464,6 +1475,10 @@ class _Chain:
     previous: Path | None = None
     """The field the next call starts from, advanced as each one finishes."""
 
+    warm: object | None = None
+    """A :class:`turbigen.warm_field.Seed` for the first solve, when there is a
+    database neighbour to start from. Used only while `previous` is None."""
+
     trajectory: list = dataclasses.field(default_factory=list)
     """Every ``(config, result)`` pair so far, oldest first."""
 
@@ -1479,8 +1494,16 @@ class _Chain:
 
         # Chained: each iteration starts from the field the last one reached,
         # which is most of the saving. Index-space interpolation covers the
-        # mesh moving with the design.
-        result = solve(config_now, iter_dir, self.previous, trajectory=self.trajectory)
+        # mesh moving with the design. The first pass has no chained field, so
+        # it takes the warm seed instead when there is one.
+        warm = self.warm if self.previous is None else None
+        result = solve(
+            config_now,
+            iter_dir,
+            self.previous,
+            trajectory=self.trajectory,
+            warm=warm,
+        )
         self.previous = iter_dir / RESTART_NAME
 
         self.trajectory.append(
@@ -1513,6 +1536,22 @@ def converge_design(config, out_dir, previous=None):
         The flow field it reached, for whatever runs next.
 
     """
+    # The database is globbed and parsed once, here: the geometry blend in
+    # `warm_start` and the field seed in `nearest_field` both want the same
+    # finished runs, and reading a directory of result files is the cost.
+    samples = (
+        config.database.load_samples(config, out_dir, exclude=(out_dir,))
+        if config.database is not None
+        else None
+    )
+
+    def seed(cfg):
+        """A neighbour's field, perturbed onto this design, or None."""
+        if previous is not None or not samples:
+            return None
+        field = database.nearest_field(cfg, samples)
+        return warm_field.Seed(field) if field is not None else None
+
     if not config.iterate.correct:
         design_dir = out_dir / "iter_0000"
         design_dir.mkdir(parents=True, exist_ok=True)
@@ -1520,7 +1559,7 @@ def converge_design(config, out_dir, previous=None):
 
         write_input(config, design_dir)
 
-        result = solve(config, design_dir, previous)
+        result = solve(config, design_dir, previous, warm=seed(config))
         field = promote_final(out_dir, design_dir, result.converged)
 
         return _with_achieved(config, result), result, result.converged, field
@@ -1530,9 +1569,9 @@ def converge_design(config, out_dir, previous=None):
     # excluding that same directory because it is where this run's own
     # iterations will land -- one directory being one run, nothing else of
     # anyone's is in there to lose.
-    config = database.warm_start(config, out_dir, exclude=(out_dir,))
+    config = database.warm_start(config, out_dir, exclude=(out_dir,), samples=samples)
 
-    runner = _Chain(out_dir=out_dir, previous=previous)
+    runner = _Chain(out_dir=out_dir, previous=previous, warm=seed(config))
 
     config, result, converged = iterate.converge(
         config, runner, config.iterate.max_iter
@@ -1581,6 +1620,7 @@ def cmd_batch(args):
     # leave an empty batch behind and burn a number on its way out.
     config.batch.check(config)
     _check_grid_options(args, config.batch)
+    _check_edges_options(args, config.batch)
 
     # Scanned before the new batch directory exists, so it cannot count itself.
     # A batch is never written into, only beside, so nothing can be lost.
@@ -1594,7 +1634,7 @@ def cmd_batch(args):
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in batch.generate(config, args.number, start):
+    for index, member in batch.generate(config, args.number, start, args.edges):
         member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
@@ -1637,6 +1677,41 @@ def _check_grid_options(args, spec):
         raise ValueError(
             "A batch: section with values: is already the whole grid, so there "
             "is nothing to --continue. Widen values: and write another batch."
+        )
+
+
+def _check_edges_options(args, spec):
+    """Refuse ``--edges`` where it does not apply, before a number is burned.
+
+    Like :func:`_check_grid_options`, and for the same reason: the surface of
+    the box is a closed set drawn from `bounds:` alone, so it has no `-n` to
+    size it and no tail to `--continue`, and there is nothing for it to walk
+    when the section names its points with `values:`.
+    """
+    if args.edges is None:
+        return
+
+    if spec.is_grid():
+        raise ValueError(
+            "--edges walks the surface of a bounds: box; this batch: section "
+            "names its points with values:. Give bounds: instead."
+        )
+
+    if args.number is not None:
+        raise ValueError(
+            "--edges sizes the batch from the box surface, so there is no -n "
+            "to choose as well."
+        )
+
+    if args.carry_on:
+        raise ValueError(
+            "--edges is the whole surface of the box, a closed set, so there "
+            "is nothing to --continue."
+        )
+
+    if args.edges < 2:
+        raise ValueError(
+            f"--edges is {args.edges}; it takes at least 2, the two ends of each bound."
         )
 
 
@@ -2204,6 +2279,17 @@ def _make_parser():
             f"how many designs to draw from bounds: (default "
             f"{batch.DEFAULT_NUMBER}; Sobol' balance holds at powers of two). "
             "Not for values:, whose count is the product of what it names"
+        ),
+    )
+    batch_.add_argument(
+        "--edges",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "instead of drawing from bounds:, run the surface of the box: the "
+            "N-level grid over it, keeping only points with a coordinate at a "
+            "bound. bounds: only, and not with -n or --continue"
         ),
     )
     _add_queue_argument(batch_)

@@ -152,6 +152,67 @@ def test_from_is_the_tail_of_a_longer_batch():
 
 
 #
+# THE SURFACE OF THE BOX
+#
+
+
+def _points(pairs):
+    """Return each emitted design as a (psi, phi2) tuple."""
+    from turbigen import node
+
+    return [
+        (
+            node.flatten(c)["mean_line.psi"],
+            node.flatten(c)["mean_line.phi2"],
+        )
+        for _, c in pairs
+    ]
+
+
+def test_edges_runs_the_surface_of_the_box():
+    """Every point sits on a bound; the interior centre is not among them."""
+    pairs = batch.generate(make(BOX), edges=3)
+    pts = _points(pairs)
+
+    (plo, phi), (flo, fhi) = BOX["mean_line.psi"], BOX["mean_line.phi2"]
+    assert len(pts) == 3**2 - 1**2
+    for psi, phi2 in pts:
+        assert psi in (plo, phi) or phi2 in (flo, fhi)
+    assert (0.5 * (plo + phi), 0.5 * (flo + fhi)) not in pts
+
+
+def test_edges_two_is_the_corners():
+    pairs = batch.generate(make(BOX), edges=2)
+    (plo, phi), (flo, fhi) = BOX["mean_line.psi"], BOX["mean_line.phi2"]
+
+    assert sorted(_points(pairs)) == sorted(
+        [(plo, flo), (plo, fhi), (phi, flo), (phi, fhi)]
+    )
+
+
+def test_edges_indexes_the_full_product():
+    """An interior point left out leaves its number a gap, as a grid hole does."""
+    indices = [i for i, _ in batch.generate(make(BOX), edges=3)]
+
+    assert indices == [0, 1, 2, 3, 5, 6, 7, 8]  # 4 is the centre
+
+
+def test_edges_ignores_n_and_start():
+    plain = batch.generate(make(BOX), edges=3)
+    assert _points(batch.generate(make(BOX), n=64, start=9, edges=3)) == _points(plain)
+
+
+def test_edges_needs_bounds_not_values():
+    with pytest.raises(ValueError, match="names its points with values:"):
+        batch.generate(make(values=GRID), edges=3)
+
+
+def test_edges_below_two_is_refused():
+    with pytest.raises(ValueError, match="at least 2"):
+        batch.generate(make(BOX), edges=1)
+
+
+#
 # THE GRID
 #
 

@@ -414,6 +414,46 @@ def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
         H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
 
 
+def _stream_ends(grid):
+    """Return (inlet cell, exit cell) streamwise spacing of each block, midspan."""
+    ends = []
+    for block in grid:
+        m = np.hypot(
+            np.diff(block.x[:, block.shape[1] // 2, block.shape[2] // 2]),
+            np.diff(block.r[:, block.shape[1] // 2, block.shape[2] // 2]),
+        )
+        ends.append((m[0], m[-1]))
+    return ends
+
+
+def test_ar_mix_defaults_to_ar_stream():
+    """No behaviour change until it is lowered."""
+    assert H().AR_mix == H().AR_stream
+
+    machine = build(mesh=MESH).design()
+    same = build(mesh={**MESH, "AR_mix": H().AR_stream}).mesh.mesh(machine)
+    base = build(mesh=MESH).mesh.mesh(machine)
+
+    for a, b in zip(same, base):
+        assert a.shape == b.shape
+
+
+def test_ar_mix_tightens_the_mixing_plane_and_not_the_true_boundaries():
+    machine = build(mesh=MESH).design()
+    wide = build(mesh=MESH).mesh.mesh(machine)  # AR_mix == AR_stream
+    tight = build(mesh={**MESH, "AR_mix": 1.0}).mesh.mesh(machine)
+
+    (in0_w, ex0_w), (in1_w, ex1_w) = _stream_ends(wide)
+    (in0_t, ex0_t), (in1_t, ex1_t) = _stream_ends(tight)
+
+    # Row 0 exit and row 1 inlet are the mixing plane: finer with AR_mix = 1.
+    assert ex0_t < 0.9 * ex0_w
+    assert in1_t < 0.9 * in1_w
+    # Row 0 inlet is the true machine inlet, row 1 exit the true outlet: untouched.
+    assert in0_t == pytest.approx(in0_w, rel=0.02)
+    assert ex1_t == pytest.approx(ex1_w, rel=0.02)
+
+
 def _knife_edged(blade):
     """Return `blade` with every section closed to a point at the trailing edge."""
     for section in blade["sections"]:

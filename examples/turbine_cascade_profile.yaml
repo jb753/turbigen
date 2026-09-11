@@ -1,0 +1,114 @@
+# Turbine cascade, with the whole loading profile shaped
+#
+# The same cascade as turbine_cascade.yaml, but the camber line is a
+# `bernstein` one of order 3 -- two interior coefficients -- and a single
+# `loading_profile` iterator moves both of them, and the blade count besides,
+# until the suction surface Mach distribution matches a two-line template:
+# `zeta_front`/`fac_front` at the front, `zeta_peak`/`fac_peak` at the peak,
+# and a straight line to the trailing edge either side of it.
+#
+# Unlike `loading` + `peak_Ma` in turbine_cascade_loading.yaml, this is one
+# iterator rather than two that have to be configured together: with the
+# whole curve sampled instead of one point, the *mean* of every sampled
+# point's error against the template is what the level got wrong, and drives
+# `Co`; what is left after subtracting that mean out is the shape's to answer
+# for, and drives the camber coefficients. See `LoadingProfile` for why that
+# works.
+#
+# Run it, and watch the camber_coeff rows walk their errors to zero while
+# Co[0] finds the level:
+#
+#     turbigen iterate examples/turbine_cascade_profile.yaml -o runs/profile%
+#
+# `post.pdf` in the working directory draws the achieved distribution; the
+# target overlay `loading` gets is not drawn for this iterator yet.
+
+fluid:
+  type: perfect
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-5
+
+mean_line:
+  type: turbine_cascade
+  span: [0.1, 0.11]
+  Alpha: [40.0, -65.0]
+  Ma2: 0.6
+  Ys: 0.029
+  htr: 0.95
+  Po1: 1.0e5
+  To1: 300.0
+
+annulus:
+  type: aspect_ratio
+  AR_row: [2.0]
+  AR_gap: [1.0, 1.0]
+
+blades:
+  - count:
+      type: Co
+      Co: 0.7
+    sections:
+      - spf: 0.5
+        dchi_LE: 10.0
+        dchi_TE: -2.0
+        # Both interior coefficients written out, not left to be zero-padded:
+        # the iterator moves them, so each one has to be a leaf of the config.
+        # All-zero is the quadratic camber line the other examples use.
+        camber:
+          type: bernstein
+          order: 3
+          coeff: [0.0, 0.0]
+        # Both surfaces written out to the same order as the camber line, for
+        # the same reason: the iterator moves every interior coefficient, so
+        # each one has to be a leaf of the config. Suction surface first.
+        # All-zero is a section symmetric about the camber line, the two-sided
+        # start the one-sided examples begin from.
+        thickness:
+          type: clark
+          R_LE: 0.04
+          t_TE: 0.03
+          tanwedge: 0.18
+          coeff:
+            - [0.0, 0.0, 0.0]
+            - [0.0, 0.0, 0.0]
+
+mesh:
+  type: h
+  yplus: 30.0
+  dm_TE: 0.0
+  AR_cusp: 2.0
+  ni_cusp: 5
+
+iterate:
+  max_iter: 15
+  correct:
+    - type: Re_surf
+      target: 4.0e5
+    - type: deviation
+      tolerance: 0.5
+    - type: mean_line
+      variables: [Ys]
+      clip: 0.01
+      tolerance: 0.05
+    - type: clark_profile
+      i_row: 0
+      Ma_LE: 1.5
+      Ma_PS: 0.9
+      z_peak: 0.55
+      Ma_peak: 1.3
+
+solver:
+  type: ember
+  n_step: 500
+  n_step_avg: 250
+  n_step_log: 50
+  cfl: 4
+  n_stage: 4
+  sf_resid: 1
+  fac_mgrid: 0.2
+  n_levels: 3
+  dampin: 25.0
+  gain_filt: 1
+  delta_filt: 0.1
+  expon_mgrid: 2.0
