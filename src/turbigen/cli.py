@@ -1155,7 +1155,35 @@ def save_grid(path, grid):
         logger.warning(f"Could not write the grid to {path}: {err}")
 
 
-def solve(config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None):
+def soft_start(solver, grid):
+    """March `grid` with a detuned copy of `solver`, and return what it did.
+
+    Nothing of it is kept. The grid is marched in place, so the production
+    march that follows simply continues from the field this leaves, and the
+    history comes back only so the caller can see whether it survived.
+
+    The step count is the config's, replacing the one `soft()` names: how long
+    to spend on a robust start depends on the case and the guess it is starting
+    from, which the solver has no way to know.
+    """
+    if solver.n_step_soft < 0:
+        raise ValueError(
+            f"solver.n_step_soft must be >= 0, got {solver.n_step_soft}. It is "
+            "a number of steps to march, and 0 is how a soft start is declined."
+        )
+
+    soft = dataclasses.replace(solver.soft(), n_step=solver.n_step_soft)
+
+    run_log.info(f"Soft start: {solver.n_step_soft} steps")
+    history = soft.solve(grid)
+    run_log.info(convergence_string(history, solver.converged(history)))
+
+    return history
+
+
+def solve(
+    config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None, soft=False
+):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
@@ -1170,13 +1198,35 @@ def solve(config, out_dir, restart_path=None, svg=False, trajectory=(), warm=Non
 
     `warm` is a :class:`turbigen.warm_field.Seed` for the first solve of a loop,
     used only when nothing has been chained into `restart_path` yet.
+
+    `soft` says this is the first solve of the invocation, which is the one
+    entitled to a soft start if the config asked for one. Passed in rather than
+    inferred from `restart_path`, because a restarted run is still a first
+    solve: the field it was handed may be a neighbour's, or its own from before
+    a change to the design, and both are exactly what a robust pass is for.
+    What disqualifies a solve is having a loop's previous iteration behind it,
+    which only the caller knows.
     """
     config, machine, grid = prepare(config, restart_path, warm=warm)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
 
-    history = config.solver.solve(grid)
+    history = None
+    if soft and config.solver.n_step_soft:
+        history = soft_start(config.solver, grid)
+
+        # A soft pass that blew up leaves a field of NaNs, and marching the
+        # production settings from those is CFD paid for and certain to reach
+        # no answer. Its history stands as the run's own, so everything below
+        # writes the failure and the field it failed in, which is the only
+        # record there is of what happened here.
+        if config.solver.converged(history):
+            history = None
+
+    if history is None:
+        history = config.solver.solve(grid)
+
     converged = config.solver.converged(history)
 
     # Written whatever happened, and written first --- before the mix-out, the
@@ -1235,8 +1285,19 @@ def solve(config, out_dir, restart_path=None, svg=False, trajectory=(), warm=Non
     # point to find or a section had no surface to cut. That is a question
     # about the grid, asked of a grid about to go out of scope. Written once,
     # whichever of these raises, and the error goes on to be raised.
+    #
+    # Strict only when the march reached an answer, because that is the only
+    # time an unmeasurable knob means something is wrong. A diverged march
+    # measures nothing by construction -- there is no mixed-out mean line to
+    # read an exit angle off a field of NaNs -- and raising about it here
+    # aborted the whole loop with a traceback, from inside the call
+    # `iterate.converge` makes, before it could reach its own divergence check
+    # and stop with the design that produced it. Describing the failure is what
+    # is wanted; steering on it is what is refused.
     try:
-        result = dataclasses.replace(result, error=iterate.errors(config, result))
+        result = dataclasses.replace(
+            result, error=iterate.errors(config, result, strict=converged)
+        )
 
         # Anything the config asked to measure from the field, for the same
         # reason and against the same deadline.
@@ -1292,7 +1353,11 @@ def _run_one(args, config_path):
             )
 
         result = solve(
-            config, out_dir, resolve_restart(args, config_path), svg=args.svg
+            config,
+            out_dir,
+            resolve_restart(args, config_path),
+            svg=args.svg,
+            soft=True,
         )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
@@ -1497,12 +1562,20 @@ class _Chain:
         # mesh moving with the design. The first pass has no chained field, so
         # it takes the warm seed instead when there is one.
         warm = self.warm if self.previous is None else None
+
+        # And the first pass is the one a soft start is for, whatever field it
+        # begins from: nothing of this design has been marched yet. `previous`
+        # cannot answer that -- a loop handed a restart has one from the
+        # outset -- but the trajectory can, being empty until a call returns.
+        first = not self.trajectory
+
         result = solve(
             config_now,
             iter_dir,
             self.previous,
             trajectory=self.trajectory,
             warm=warm,
+            soft=first,
         )
         self.previous = iter_dir / RESTART_NAME
 
@@ -1521,9 +1594,13 @@ def converge_design(config, out_dir, previous=None):
     repeatedly. Written out twice, the two would drift, which is what happened
     to `turbigen.main`.
 
-    A config with no `iterate:` section still gets its design point solved
-    once, because the sweep that follows needs a field to start from and an
-    answer to be a departure from.
+    A config with nothing to correct still gets its design point solved once,
+    because the sweep that follows needs a field to start from and an answer to
+    be a departure from. That branch is `chic`'s alone: `iterate` refuses an
+    empty `correct:` list before it ever gets here, so the one pass is not a
+    degenerate iteration but the whole of what a fixed geometry needs before it
+    can be swept. It runs through the same `_Chain` as any other iteration,
+    which is what keeps one definition of where an iteration writes.
 
     Returns
     -------
@@ -1552,30 +1629,33 @@ def converge_design(config, out_dir, previous=None):
         field = database.nearest_field(cfg, samples)
         return warm_field.Seed(field) if field is not None else None
 
-    if not config.iterate.correct:
-        design_dir = out_dir / "iter_0000"
-        design_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Design point in {design_dir}")
-
-        write_input(config, design_dir)
-
-        result = solve(config, design_dir, previous, warm=seed(config))
-        field = promote_final(out_dir, design_dir, result.converged)
-
-        return _with_achieved(config, result), result, result.converged, field
-
     # Iteration -1: where the knobs start. Anchored on the config file's own
     # directory, because a config is often run from somewhere else, and
     # excluding that same directory because it is where this run's own
     # iterations will land -- one directory being one run, nothing else of
     # anyone's is in there to lose.
-    config = database.warm_start(config, out_dir, exclude=(out_dir,), samples=samples)
+    #
+    # Guarded on there being knobs at all rather than on `correct:`, which is
+    # the test `warm_start` itself makes of what it was handed: a design point
+    # with nothing to correct has nothing to start warm, and reaching in to be
+    # told so would warn about a config that is perfectly in order.
+    if iterate.unknowns(config):
+        config = database.warm_start(
+            config, out_dir, exclude=(out_dir,), samples=samples
+        )
 
+    # Built after the warm start, never before: the seed is the nearest
+    # neighbour to this design, and the warm start is what moves the design.
     runner = _Chain(out_dir=out_dir, previous=previous, warm=seed(config))
 
-    config, result, converged = iterate.converge(
-        config, runner, config.iterate.max_iter
-    )
+    if config.iterate.correct:
+        config, result, converged = iterate.converge(
+            config, runner, config.iterate.max_iter
+        )
+    else:
+        # Nothing to correct, so the loop is one pass of it.
+        result = runner(config, 0)
+        converged = result.converged
 
     field = promote_final(out_dir, runner.previous.parent, converged)
 

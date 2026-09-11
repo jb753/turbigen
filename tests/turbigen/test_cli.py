@@ -492,6 +492,142 @@ def test_run_writes_a_config_that_reads_back(run_case):
     assert Config.from_file(written) == Config.from_file(run_case)
 
 
+#
+# A soft start: `solver.n_step_soft` steps of `soft()` -- the same problem on
+# the same grid, detuned -- before the march that counts, on the first solve of
+# an invocation and no other.
+#
+
+
+@pytest.fixture
+def marches(monkeypatch):
+    """Every solver configuration that marched, in the order they did.
+
+    The whole of what a soft start has to be tested against is *which* settings
+    ran and how many times, which nothing on disk records: the point of the
+    feature is that the soft pass leaves no trace but the field it improved.
+    """
+    from turbigen.solver import Ember
+
+    seen = []
+    real = Ember.solve
+
+    def spy(self, grid):
+        seen.append(self)
+        return real(self, grid)
+
+    monkeypatch.setattr(Ember, "solve", spy)
+    return seen
+
+
+def test_a_run_does_not_soft_start_unless_asked(run_case, marches):
+    """Off at its default, and the steps are not spent."""
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert len(marches) == 1
+    assert marches[0].n_step == 10
+
+
+def test_a_soft_start_marches_twice_the_real_settings_last(run_case, marches, capsys):
+    """The detuned pass first, then the config's own settings from its field."""
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 0
+
+    soft, production = marches
+
+    assert soft.n_step == 5
+    assert production.n_step == 10
+
+    # Detuned, not merely shorter: the second march is the config as written.
+    assert soft.dampin != production.dampin
+    assert production.dampin == 0.0
+    assert production.sf2 == 0.002
+
+    # And a soft pass that cost time says so, rather than doubling the march
+    # with nothing in the log to explain it.
+    assert "Soft start: 5 steps" in capsys.readouterr().err
+
+
+def test_a_soft_start_leaves_nothing_behind_but_the_field(run_case, marches):
+    """Its history is not the run's, and its settings are not the run's either.
+
+    The answer a run records has to describe the march that produced it. A soft
+    pass is a starting guess reached expensively, so what it converged to is of
+    no interest to anything downstream -- `database` above all, which fits
+    against `solver:` as written.
+    """
+    from turbigen import case
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 0
+
+    config, result = case.read(run_case.parent / cli.OUTPUT_NAME, design=False)
+
+    assert config.solver.n_step_soft == 5
+    assert config.solver.n_step == 10
+    assert result.converged
+
+    # One record per log step of the march that counts, and none of the other.
+    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    assert history.i_log + 1 == 1
+
+
+def test_a_restarted_run_still_soft_starts(run_case, marches):
+    """A field is not proof that this design has been marched.
+
+    It may be a neighbour's, or this design's own from before the geometry
+    moved. Both are exactly what a robust pass is for, so `--restart` is no
+    reason to skip one -- unlike a loop's own previous iteration, which is.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+    marches.clear()
+
+    code = cli.main(
+        ["run", str(run_case), "--restart", "-f", "-s", "solver.n_step_soft=5"]
+    )
+
+    assert code == 0
+    assert [march.n_step for march in marches] == [5, 10]
+
+
+def test_a_diverged_soft_start_stops_before_the_real_march(
+    run_case, marches, monkeypatch
+):
+    """Marching production settings from NaNs is CFD that cannot reach an answer.
+
+    So the soft pass's history stands as the run's own: the verb reports a
+    failed solve, and what goes to disk is the field it failed in, which is the
+    only record of what happened here.
+    """
+
+    real_soft_start = cli.soft_start
+
+    def diverging(solver, grid):
+        # The real pass, reported as having blown up. A genuine divergence
+        # would leave NaNs that the mix-out and the report would then be tested
+        # against, which is a different test from this one.
+        history = real_soft_start(solver, grid)
+        history.diverged = True
+        return history
+
+    monkeypatch.setattr(cli, "soft_start", diverging)
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 2
+
+    # The soft pass marched; nothing followed it.
+    assert [march.n_step for march in marches] == [5]
+
+    # And its evidence is on disk, as any failed march's is.
+    assert (run_case.parent / cli.RESTART_NAME).is_file()
+    assert (run_case.parent / cli.HISTORY_NAME).is_file()
+    assert (run_case.parent / cli.GRID_NAME).is_file()
+
+
+def test_a_negative_soft_step_count_is_a_message(run_case, capsys):
+    """Not an ember error about an averaging window, several frames down."""
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=-5"]) == 1
+
+    assert "n_step_soft must be >= 0" in capsys.readouterr().err
+
+
 # The march is driven unstable on purpose, so ember's warning that the outlet
 # has gone supersonic is the expected behaviour rather than a problem. Without
 # this the suite's `filterwarnings = error` turns it into an exception, and the
@@ -1328,6 +1464,31 @@ def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
     assert not (out / cli.RESTART_NAME).exists()
 
 
+def test_only_the_first_iteration_soft_starts(iterate_case, marches):
+    """Once per invocation, not once per iteration.
+
+    Every pass after the first begins from the field the last one reached,
+    which is a solution to very nearly this design -- the guess a soft start
+    exists to manufacture. Paying for one again each time would be most of a
+    second march, every iteration, for a field that is already there.
+    """
+    code = cli.main(
+        [
+            "iterate",
+            str(iterate_case),
+            "-s",
+            "iterate.max_iter=2",
+            "-s",
+            "solver.n_step_soft=5",
+        ]
+    )
+
+    assert code == 2  # Two iterations is not enough to settle this design.
+
+    # Iteration 0 marches twice, iteration 1 once.
+    assert [march.n_step for march in marches] == [5, 10, 10]
+
+
 def test_a_settled_design_leaves_a_run_directory(settled_case):
     """A finished iterate reads as a run, because that is what it is now."""
     out = settled_case.parent
@@ -1445,6 +1606,37 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
     assert cli.main(["report", str(iter_dir / batch.INPUT_NAME)]) == 0
 
     assert (iter_dir / "post.pdf").is_file()
+
+
+@pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
+@pytest.mark.filterwarnings("ignore:invalid value")
+@pytest.mark.filterwarnings("ignore:divide by zero")
+@pytest.mark.filterwarnings("ignore:overflow encountered")
+def test_a_diverged_iteration_stops_the_loop_rather_than_crashing_it(
+    iterate_case, capsys
+):
+    """A march that blew up is an answer about the design, not a broken tool.
+
+    The loop has always known what to do with one -- stop, and keep the design
+    that produced it -- but could not get there: measuring the iterators is
+    strict, and a field of NaNs has no mixed-out mean line to read an exit
+    angle off, so the `MeasurementError` came out of the solve as a traceback
+    and took the whole invocation with it, exit 1 and no answer written.
+    """
+    code = cli.main(["iterate", str(iterate_case), "-s", "solver.cfl=50.0"])
+
+    # A failed solve, not a failed program.
+    assert code == 2
+
+    printed = capsys.readouterr().err
+    assert "diverged, so there is nothing to correct towards" in printed
+    assert "Traceback" not in printed
+
+    # And the iteration that diverged is on disk to be looked at, field,
+    # history, whole grid and all.
+    iter_dir = iterate_case.parent / "iter_0000"
+    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, cli.GRID_NAME):
+        assert (iter_dir / name).is_file(), name
 
 
 def test_iterate_puts_its_answer_where_a_run_would_have(settled_case):
