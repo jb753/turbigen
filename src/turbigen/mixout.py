@@ -16,6 +16,7 @@ import ember.cut
 import numpy as np
 
 import turbigen.annulus
+import turbigen.util
 
 logger = logging.getLogger("turbigen")
 
@@ -100,9 +101,13 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
         # is isentropic and does not move `mixed.s`, so this is measured at the
         # true cut area regardless of it. `mass_average` only takes a structured
         # block, so the cut is interpolated to the resolution of the row it
-        # sits beside first.
+        # sits beside first. The passage of that row, not whichever of its
+        # blocks came first: a block gridding a tip clearance is a fraction of
+        # the span and a fraction of the pitch, and interpolating a whole
+        # station onto its shape would throw most of the cut away.
         i_row = i_station // 2
-        nj, nk = grid.rows[i_row][0].shape[1:]
+        passage, _ = turbigen.util.row_blocks(grid, i_row)
+        nj, nk = passage.shape[1:]
         structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
         s_cut = float(ember.average.mass_average(structured.s, structured))
         Ds_mix_flat[i_station] = float(mixed.s) - s_cut

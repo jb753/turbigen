@@ -621,6 +621,64 @@ def _wall_Omega(block, const_dim, at_end):
     return speeds.pop()
 
 
+def row_blocks(grid, i_row):
+    """Split one row into the block flow passes through and the rest.
+
+    A row is a list of blocks and nothing says which is which, but the
+    difference matters to everything that reads a surface off a mesh: the
+    passage is where the blade, the endwalls and the edges are, and a tip
+    block meshing a clearance is a piece hanging inside it.
+
+    Told apart by where the row's flow enters and leaves, which is a property
+    of the topology rather than of one mesher: a passage carries an inlet, a
+    mixing plane or an outlet on each of its `i` faces, and a block filling a
+    clearance carries none. Preferred to counting blocks, reading a label, or
+    taking the one with the most spanwise points --- the first stops being
+    true the moment a row has two blocks, and the other two are a convention
+    of whichever mesher wrote them.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    i_row : int
+        Which row, in the order `grid.rows` gives them.
+
+    Returns
+    -------
+    tuple
+        The passage block, and a list of the other blocks in the row.
+
+    Raises
+    ------
+    ValueError
+        If the row does not have exactly one passage block, which no mesh
+        turbigen builds produces and which nothing downstream could read.
+
+    """
+    row = grid.rows[i_row]
+    throughflow = (
+        ember.patch.InletPatch,
+        ember.patch.OutletPatch,
+        ember.patch.MixingPatch,
+    )
+    passage = [
+        block
+        for block in row
+        if any(
+            isinstance(patch, throughflow) and patch.const_dim == 0
+            for patch in block.patches
+        )
+    ]
+    if len(passage) != 1:
+        raise ValueError(
+            f"Row {i_row} has {len(passage)} blocks the flow passes through, "
+            f"and a row is read through exactly one. Blocks: "
+            f"{[block.label for block in row]}."
+        )
+    return passage[0], [block for block in row if block is not passage[0]]
+
+
 def cut_blade_sides(grid, offset=0):
     """Return the pressure and suction side cuts of each row.
 
@@ -658,40 +716,42 @@ def cut_blade_sides(grid, offset=0):
         ite = None
         j_gap = None
 
-        for block in grid.rows[i]:
-            for patch in block.patches.periodic:
-                # A pitchwise periodic spans the span and sits on one k face,
-                # and the pair of them stop at the two edges of the blade.
-                lim = patch.ijk_lim_abs
-                spans_j = np.allclose(lim[1], [0, block.shape[1] - 1])
-                spans_i = np.allclose(lim[0], [0, block.shape[0] - 1])
-                at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
-                    lim[2, 0] == 0 or lim[2, 0] == block.shape[2] - 1
-                )
+        # The passage alone: a block filling a clearance carries k-face
+        # periodics of its own, spanning all of its own i and j, and they say
+        # nothing about where the blade begins or ends.
+        passage, _ = row_blocks(grid, i)
 
-                if spans_j and at_k_boundary and not spans_i:
-                    if lim[0, 0] == 0:
-                        ile = lim[0, 1]
-                    elif lim[0, 1] == block.shape[0] - 1:
-                        ite = lim[0, 0]
+        for patch in passage.patches.periodic:
+            # A pitchwise periodic spans the span and sits on one k face,
+            # and the pair of them stop at the two edges of the blade.
+            lim = patch.ijk_lim_abs
+            spans_j = np.allclose(lim[1], [0, passage.shape[1] - 1])
+            spans_i = np.allclose(lim[0], [0, passage.shape[0] - 1])
+            at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
+                lim[2, 0] == 0 or lim[2, 0] == passage.shape[2] - 1
+            )
 
-                # The one k-face periodic that does not span the span is the
-                # clearance gap: it runs along the blade rather than upstream
-                # or downstream of it. Both sides carry one with the same
-                # limits, so finding it twice is finding the same gap.
-                if at_k_boundary and not spans_j and not spans_i:
-                    j_gap = lim[1]
+            if spans_j and at_k_boundary and not spans_i:
+                if lim[0, 0] == 0:
+                    ile = lim[0, 1]
+                elif lim[0, 1] == passage.shape[0] - 1:
+                    ite = lim[0, 0]
 
-            # A cusp or an inviscid patch on a k face marks the trailing edge
-            # where the periodics do not.
-            for patch in block.patches:
-                if (
-                    isinstance(
-                        patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
-                    )
-                    and patch.const_dim == 2
-                ):
-                    ite = patch.ijk_lim_abs[0, 0]
+            # The one k-face periodic that does not span the span is the
+            # clearance gap: it runs along the blade rather than upstream
+            # or downstream of it. Both sides carry one with the same
+            # limits, so finding it twice is finding the same gap.
+            if at_k_boundary and not spans_j and not spans_i:
+                j_gap = lim[1]
+
+        # A cusp or an inviscid patch on a k face marks the trailing edge
+        # where the periodics do not.
+        for patch in passage.patches:
+            if (
+                isinstance(patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch))
+                and patch.const_dim == 2
+            ):
+                ite = patch.ijk_lim_abs[0, 0]
 
         if not ile or not ite:
             cuts.append(None)
@@ -699,7 +759,7 @@ def cut_blade_sides(grid, offset=0):
 
         # Where the gap sits comes from its own patch rather than being assumed
         # to be at the casing, so a hub clearance would trim the other end.
-        nj = grid[i].shape[1]
+        nj = passage.shape[1]
         if j_gap is None:
             jst, jen = 0, nj
         elif j_gap[1] == nj - 1:
@@ -708,13 +768,13 @@ def cut_blade_sides(grid, offset=0):
             jst, jen = j_gap[1], nj
 
         sides = [
-            grid[i][ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
-            grid[i][ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
+            passage[ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
+            passage[ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
         ]
         # The patches described the block these were sliced out of, not the
         # slices. Read the wall speed off the block first, the patches that say
         # it being among those about to go.
-        speeds = [_wall_Omega(grid[i], 2, at_end) for at_end in (False, True)]
+        speeds = [_wall_Omega(passage, 2, at_end) for at_end in (False, True)]
         for side, Omega in zip(sides, speeds):
             side.patches.clear()
             side.set_Omega(Omega)
@@ -722,12 +782,29 @@ def cut_blade_sides(grid, offset=0):
         # Bring the two sides into one pitch, so a surface made of them is
         # continuous rather than a pitch apart.
         upper = np.argmax([side.t.max() for side in sides])
-        sides[upper].set_t(sides[upper].t - grid[i].pitch)
+        sides[upper].set_t(sides[upper].t - passage.pitch)
 
         cuts.append(sides)
 
     assert len(cuts) == len(grid.rows)
     return cuts
+
+
+def _is_h_mesh(grid):
+    """Whether a grid's rows are H passages rather than O blocks.
+
+    Read off the first row's passage: an H passage carries the pitchwise
+    periodics that bound it either side of the blade, on a k face and spanning
+    the span. An O block has no such face, being wrapped around the blade
+    instead.
+    """
+    passage, _ = row_blocks(grid, 0)
+    return any(
+        patch.const_dim == 2
+        and np.allclose(patch.ijk_lim_abs[1], [0, passage.shape[1] - 1])
+        and not np.allclose(patch.ijk_lim_abs[0], [0, passage.shape[0] - 1])
+        for patch in passage.patches.periodic
+    )
 
 
 def cut_blade_surfs(grid, offset=0):
@@ -752,10 +829,13 @@ def cut_blade_surfs(grid, offset=0):
     """
     surfs = []
 
-    # One block per row is an H-mesh, where the blade is two k faces to be
-    # joined; anything else is an O-mesh, where a block already wraps the
-    # blade and only has to be recognised.
-    if len(grid) == len(grid.rows):
+    # An H-mesh passage is bounded pitchwise by the blade, so its blade is two
+    # k faces to be joined; an O-mesh has a block already wrapping the blade,
+    # which only has to be recognised. Told apart by asking the passage of the
+    # first row which it is, rather than by counting blocks against rows --- a
+    # count that says H-mesh only while no row has a second block, and a
+    # gridded tip clearance is one.
+    if _is_h_mesh(grid):
         for sides in cut_blade_sides(grid, offset):
             if sides is None:
                 surfs.append(None)
@@ -800,10 +880,17 @@ def cut_endwalls(grid, offset=0):
 
     The endwalls need none of the edge-hunting `cut_blade_sides` does. The
     mesher's convention is that ``j`` runs hub to casing, so an endwall is one
-    whole ``j`` face of a block and there is nothing to search for. A tip gap
-    does not change that: the gap is periodic patches on the ``k`` faces of the
-    same block, and the casing over it is still a wall, only one turning at its
-    own speed rather than the blade's.
+    whole ``j`` face of a block and there is nothing to search for.
+
+    How many faces that is depends on how the row is built. A pinched tip gap
+    leaves one block spanning the whole annulus, so the two endwalls are two
+    faces. A gridded one puts a block in the clearance, and the casing is then
+    the passage's ``j = -1`` outside the blade and the tip block's inside it
+    --- two pieces that tile it exactly once between them. So this returns a
+    list per row of whatever length the mesh implies, and a caller that wants
+    the casing wants all of the pieces rather than one of them. What is never
+    returned is the tip block's ``j = 0``: that face is the tip of the blade,
+    not an endwall, and :func:`cut_blade_tips` has it.
 
     Each cut carries the speed its own wall turns at rather than the frame its
     block was solved in, so `ho_rel` on it is the stagnation enthalpy the
@@ -821,26 +908,71 @@ def cut_endwalls(grid, offset=0):
     Returns
     -------
     list
-        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise,
-        hub then casing for each block in the row. Never `None`: unlike a
-        blade surface, an endwall is always there.
+        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise, of
+        no fixed length. Never `None`: unlike a blade surface, an endwall is
+        always there.
 
     """
     walls = []
 
-    for row_block in grid.rows:
+    for i_row in range(len(grid.rows)):
+        passage, others = row_blocks(grid, i_row)
         walls.append([])
-        for block in row_block:
-            for at_end, j in ((False, 0 + offset), (True, -1 - offset)):
-                # Copied, not sliced: a view shares its block's angular
-                # velocity, so setting the wall speed on one would re-time the
-                # grid itself.
-                wall = block[:, j, :].copy(keep_patches=False)
-                wall.patches.clear()
-                wall.set_Omega(_wall_Omega(block, 1, at_end))
-                walls[-1].append(wall)
+
+        faces = [(passage, False), (passage, True)]
+        # A block inside the row reaches the casing and not the hub, its lower
+        # face being the tip of the blade it sits on.
+        faces += [(block, True) for block in others]
+
+        for block, at_end in faces:
+            j = -1 - offset if at_end else offset
+            # Copied, not sliced: a view shares its block's angular velocity,
+            # so setting the wall speed on one would re-time the grid itself.
+            wall = block[:, j, :].copy(keep_patches=False)
+            wall.patches.clear()
+            wall.set_Omega(_wall_Omega(block, 1, at_end))
+            walls[-1].append(wall)
 
     return walls
+
+
+def cut_blade_tips(grid, offset=0):
+    """Return the tip face of each row's blade, where the mesh has one.
+
+    The face closing the top of a blade against its clearance, which exists as
+    a surface only where the clearance is gridded: pinched, the blade is
+    brought to nothing over the gap and there is no tip to cut. It is blade
+    rather than endwall --- it turns with the row, and the loss on it belongs
+    with the blade's --- but it is not part of a surface distribution either,
+    running chordwise by pitchwise where a blade surface runs chordwise by
+    spanwise. So it is its own cut and its own bucket.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    offset : int
+        Cells away from the surface, for reading just off the wall.
+
+    Returns
+    -------
+    list
+        One list of 2D ``(ni, nk)`` cuts per row, empty for a row whose
+        clearance is pinched or which has none.
+
+    """
+    tips = []
+
+    for i_row in range(len(grid.rows)):
+        _, others = row_blocks(grid, i_row)
+        tips.append([])
+        for block in others:
+            tip = block[:, offset, :].copy(keep_patches=False)
+            tip.patches.clear()
+            tip.set_Omega(_wall_Omega(block, 1, False))
+            tips[-1].append(tip)
+
+    return tips
 
 
 #

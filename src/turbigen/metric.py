@@ -24,6 +24,15 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
+I_TIP = 2
+"""Where the blade tips sit on the surface-type axis of `SurfaceDissipation`.
+
+The endwalls and the blades are at 0 and 1, and are read by position like
+every other pair of them in this package. The tips are named because they are
+the one type whose absence means zero rather than unmeasured, and the line
+saying so has to point at them.
+"""
+
 
 class Metric(Node):
     """Base for quantities measured from a solved field."""
@@ -110,12 +119,20 @@ class SurfaceDissipation(Metric):
         -------
         dict
             ``Sdot_surf`` [W/K], ``A_surf`` [m^2] and ``Vcu_surf`` [m^5/s^3],
-            each shaped like the mean line at ``(2, n_row)`` --- but with the
-            leading axis running over *surface type*, 0 for the endwalls and 1
-            for the blades, where a mean line's runs over station. `A_surf`
-            and `Vcu_surf` are integrated over the same faces, so `Vcu/A` says
-            whether a change in loss came from area or from the velocity over
-            it.
+            each shaped ``(3, n_row)`` --- like the mean line in its second
+            axis, but with the leading axis running over *surface type* where
+            a mean line's runs over station: 0 for the endwalls, 1 for the
+            blades and 2 for the blade tips. `A_surf` and `Vcu_surf` are
+            integrated over the same faces, so `Vcu/A` says whether a change
+            in loss came from area or from the velocity over it.
+
+            The tips are their own row rather than added to the blades,
+            because they are there only when a clearance is gridded: summed
+            into the blades they would make a mesh change look like a design
+            one. A row whose tip is pinched, or which has no clearance, reads
+            zero there rather than `nan` --- there is no such surface, so
+            there is no area for a loss to be generated on, which is a
+            measurement and not a gap in one.
 
         """
         grid, machine = result.grid, result.machine
@@ -127,11 +144,12 @@ class SurfaceDissipation(Metric):
         planes = machine.annulus.cut_planes()
         endwalls = turbigen.util.cut_endwalls(grid)
         blades = turbigen.util.cut_blade_surfs(grid)
+        tips = turbigen.util.cut_blade_tips(grid)
 
         n_row = len(grid.rows)
-        Sdot = np.full((2, n_row), np.nan)
-        A = np.full((2, n_row), np.nan)
-        Vcu = np.full((2, n_row), np.nan)
+        Sdot = np.full((3, n_row), np.nan)
+        A = np.full((3, n_row), np.nan)
+        Vcu = np.full((3, n_row), np.nan)
 
         for i_row in range(n_row):
             # The free stream entering this row, not the machine: a downstream
@@ -140,13 +158,20 @@ class SurfaceDissipation(Metric):
             # machine inlet would be a velocity nothing in the domain has.
             s_ref = float(result.actual[:, i_row].s[0])
 
-            for i_surf, cuts in enumerate((endwalls[i_row], blades[i_row] or [])):
-                if not cuts:
+            # Each surface type is a list of cuts of no fixed length: one
+            # endwall is two faces on a plain row and three where a gridded
+            # clearance splits the casing, and a blade is one surface or none.
+            surfaces = (endwalls[i_row], blades[i_row] or [], tips[i_row])
+            for i_surf, cuts in enumerate(surfaces):
+                if not cuts and i_surf != I_TIP:
                     # A row whose blade surface could not be cut is not a row
                     # whose blades did not dissipate, so it is unmeasured
                     # rather than zero.
                     continue
 
+                # A tip with no cut is the other thing: the surface is absent
+                # rather than unreadable, because the clearance is pinched or
+                # there is none, and an absent surface dissipates nothing.
                 totals = np.zeros(3)
                 for cut in cuts:
                     totals += _dissipation(cut, s_ref, self.Cd, planes)
