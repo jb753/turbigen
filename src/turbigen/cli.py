@@ -358,7 +358,18 @@ def setup_logging(verbose):
         if isinstance(handler, logging.FileHandler):
             handler.close()
 
-    _add_handler(logging.StreamHandler(sys.stderr))
+    # Ember's log messages use Greek symbols (eps, psi, zeta) for its
+    # coefficients; a console whose encoding cannot represent them --- cp1252,
+    # the Windows default for a redirected stream --- would otherwise crash
+    # `emit` with a UnicodeEncodeError. backslashreplace degrades to `\uXXXX`
+    # instead, which is always encodable, rather than losing the log line.
+    stream = sys.stderr
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
+    _add_handler(logging.StreamHandler(stream))
 
 
 def load_document(config_path, args):
@@ -1966,7 +1977,10 @@ def logging_into(args, config_path):
     # where it is most use: a long run scrolls its first line out of sight.
     args.out_dir = out_dir
 
-    handler = logging.FileHandler(out_dir / LOG_NAME)
+    # Explicit encoding rather than the platform default (cp1252 on Windows):
+    # this file is turbigen's own artifact, read back by a text editor, not by
+    # whatever console produced it, so it should always be UTF-8.
+    handler = logging.FileHandler(out_dir / LOG_NAME, encoding="utf-8")
     _add_handler(handler)
     logger.info(f"Output directory: {out_dir}")
 
@@ -1998,7 +2012,7 @@ def _open_batch(args, datum_dir):
     out_dir = next_batch_dir(datum_dir)
     out_dir.mkdir(parents=True)
     args.out_dir = out_dir
-    _add_handler(logging.FileHandler(out_dir / LOG_NAME))
+    _add_handler(logging.FileHandler(out_dir / LOG_NAME, encoding="utf-8"))
     logger.info(f"Output directory: {out_dir}")
     return out_dir
 
