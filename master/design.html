@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Mean-line designers &#8212; turbigen 3.0.1.dev24+g11478bbd7 documentation</title>
+    <title>Mean-line designers &#8212; turbigen 3.0.1.dev84+g1e92d9922 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f747c255"></script>
+    <script src="_static/documentation_options.js?v=f5d19708"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev24+g11478bbd7</p>
+<p class="blurb">Version 3.0.1.dev84+g1e92d9922</p>
 
 
 
@@ -65,6 +65,8 @@
 <li class="toctree-l2"><a class="reference internal" href="#design-process">Design process</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#implicit-design-problems">Implicit design problems</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#thermodynamic-datum">Thermodynamic datum</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.design.N_RESTART"><code class="docutils literal notranslate"><span class="pre">N_RESTART</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.design.RESTART_SPREAD"><code class="docutils literal notranslate"><span class="pre">RESTART_SPREAD</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.design.DesignError"><code class="docutils literal notranslate"><span class="pre">DesignError</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.design.MeanLineDesign"><code class="docutils literal notranslate"><span class="pre">MeanLineDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.design.MeanLineDesign.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
@@ -258,16 +260,16 @@ fills it in using the setters documented at <a class="reference internal" href="
 It should make no assumption about the equation of state: a design written in
 terms of enthalpy and entropy works for a perfect gas and a real one alike.
 <a class="reference internal" href="tutorial.html#tut-forward"><span class="std std-ref">Forward method</span></a> builds one line by line from the design equations.</p>
-<p>The <cite>fluid</cite> it is passed is the equation of state named by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.
+<p>The <cite>fluid</cite> it is passed is the equation of state named by <a class="reference internal" href="config.html#config-fluid"><span class="std std-ref">fluid:</span></a>, whose interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#module-ember.fluid" title="(in ember v0.4.2)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.
 Thermodynamic properties come
 from its two method families: a <cite>set_X_Y</cite> returns the density and internal
 energy pair for the two properties named —
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_s()</span></code></a>,
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.set_h_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_h_s()</span></code></a> and the
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.set_P_T" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.set_P_s" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_s()</span></code></a>,
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.set_P_h" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_P_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.set_h_s" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_h_s()</span></code></a> and the
 rest — and a <cite>get_Z</cite> evaluates one property from that pair, so
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_s()</span></code></a>,
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_T" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid.get_a" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_a()</span></code></a> and so on.
-The whole interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#module-ember.fluid" title="(in ember v0.4.0)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.</p>
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.get_h" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_h()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.get_s" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_s()</span></code></a>,
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.get_T" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_T()</span></code></a>, <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid.get_a" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_a()</span></code></a> and so on.
+The whole interface is documented in <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#module-ember.fluid" title="(in ember v0.4.2)"><code class="xref py py-mod docutils literal notranslate"><span class="pre">ember.fluid</span></code></a>.</p>
 <p><a class="reference internal" href="#turbigen.design.MeanLineDesign.backward" title="turbigen.design.MeanLineDesign.backward"><code class="xref py py-meth docutils literal notranslate"><span class="pre">backward()</span></code></a> goes the other way, returning a plain dict
 keyed by field name. A key that is not a field is reported for information but
 never checked, so a design is free to return whatever else is worth printing
@@ -335,8 +337,26 @@ mean line carries. <a class="reference internal" href="#turbigen.design.MeanLine
 a mean line and the grid meshed from it always measure entropy and internal
 energy from the same zero, and nothing downstream has to convert between them.
 Only the datum moves; the state does not.</p>
-<p>See <a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#datum-state" title="(in ember v0.4.0)"><span>Datum state</span></a> for more detail on this part of the fluid API.</p>
+<p>See <a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#datum-state" title="(in ember v0.4.2)"><span>Datum state</span></a> for more detail on this part of the fluid API.</p>
 </section>
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.design.N_RESTART">
+<span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">N_RESTART</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">4</span></span><a class="headerlink" href="#turbigen.design.N_RESTART" title="Link to this definition">¶</a></dt>
+<dd><p>Times a stalled solve is tried again from a fresh starting point.</p>
+<p>Bounded because a restart is only worth taking while it is cheap against the
+solve itself: the measured case used thirty-two of its five hundred
+evaluations, so four more attempts are affordable, and a design that needs
+more than that is telling you about its guess rather than about the solver.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.design.RESTART_SPREAD">
+<span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">RESTART_SPREAD</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.25</span></span><a class="headerlink" href="#turbigen.design.RESTART_SPREAD" title="Link to this definition">¶</a></dt>
+<dd><p>How far a restart moves each unknown, as a fraction of its first guess.</p>
+<p>Wide enough to leave the basin the last try settled in, narrow enough that the
+restart is still a guess at the same design rather than a different one.</p>
+</dd></dl>
+
 <dl class="py exception">
 <dt class="sig sig-object py" id="turbigen.design.DesignError">
 <span class="property"><span class="k"><span class="pre">exception</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.design.</span></span><span class="sig-name descname"><span class="pre">DesignError</span></span><a class="headerlink" href="#turbigen.design.DesignError" title="Link to this definition">¶</a></dt>
@@ -359,7 +379,7 @@ Only the datum moves; the state does not.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.forward">
-<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.design.MeanLineDesign.forward" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.2)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.design.MeanLineDesign.forward" title="Link to this definition">¶</a></dt>
 <dd><p>Return a mean line built from this design’s variables.</p>
 <p>Use <a class="reference internal" href="#turbigen.design.MeanLineDesign.allocate" title="turbigen.design.MeanLineDesign.allocate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">allocate()</span></code></a> for the empty mean line, fill it in, and return
 it.</p>
@@ -373,11 +393,11 @@ it.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.allocate">
-<span class="sig-name descname"><span class="pre">allocate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.allocate" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">allocate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.2)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.allocate" title="Link to this definition">¶</a></dt>
 <dd><p>Return an empty mean line of the right size, ready to fill in.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>fluid</strong> (<a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><em>ember.fluid.Fluid</em></a>) – The equation of state, already built from the config. A design
+<dd class="field-odd"><p><strong>fluid</strong> (<a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.2)"><em>ember.fluid.Fluid</em></a>) – The equation of state, already built from the config. A design
 never sees the config node, only the fluid object it describes.</p>
 </dd>
 </dl>
@@ -385,7 +405,7 @@ never sees the config node, only the fluid object it describes.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.design.MeanLineDesign.design">
-<span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.0/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.0)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.design" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fluid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://ember-cfd.org/0.4.2/api/fluid.html#ember.fluid.Fluid" title="(in ember v0.4.2)"><span class="pre">Fluid</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></span><a class="headerlink" href="#turbigen.design.MeanLineDesign.design" title="Link to this definition">¶</a></dt>
 <dd><p>Return a mean line built from this design.</p>
 <p>Checks that the result inverts back to the design variables that asked
 for it, moves it onto its own referenced fluid, then freezes it at the

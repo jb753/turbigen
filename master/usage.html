@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Command-line interface &#8212; turbigen 3.0.1.dev24+g11478bbd7 documentation</title>
+    <title>Command-line interface &#8212; turbigen 3.0.1.dev84+g1e92d9922 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f747c255"></script>
+    <script src="_static/documentation_options.js?v=f5d19708"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev24+g11478bbd7</p>
+<p class="blurb">Version 3.0.1.dev84+g1e92d9922</p>
 
 
 
@@ -485,7 +485,8 @@ and <cite>–verbose</cite>.</p>
 <span id="usage-batch"></span><h2>batch<a class="headerlink" href="#batch" title="Link to this heading">¶</a></h2>
 <p><p>Write one config per design over the design variables the batch: section names. With bounds:, designs are drawn from a Sobol’ sequence over the box; with values:, the batch is every combination of the values named, which is the parameter study a shell loop over –set cannot write. Points that cannot be designed are skipped, so no cluster time is spent finding that out. Nothing is run unless –queue asks for it. The batch is written beside the datum config, in the next free batch_NNNN, whose path is printed on stdout.</p>
 </p>
-<div class="highlight-default notranslate" id="turbigen-batch"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">batch</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">n</span> <span class="n">N</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span> <span class="p">[</span><span class="o">--</span><span class="k">continue</span><span class="p">]</span>
+<div class="highlight-default notranslate" id="turbigen-batch"><div class="highlight"><pre><span></span><span class="n">usage</span><span class="p">:</span> <span class="n">turbigen</span> <span class="n">batch</span> <span class="p">[</span><span class="o">-</span><span class="n">h</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">s</span> <span class="n">KEY</span><span class="o">=</span><span class="n">VALUE</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">v</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">n</span> <span class="n">N</span><span class="p">]</span> <span class="p">[</span><span class="o">--</span><span class="n">edges</span> <span class="n">N</span><span class="p">]</span> <span class="p">[</span><span class="o">-</span><span class="n">Q</span><span class="p">]</span>
+                      <span class="p">[</span><span class="o">--</span><span class="k">continue</span><span class="p">]</span>
                       <span class="n">CONFIG_YAML</span> <span class="p">[</span><span class="n">CONFIG_YAML</span> <span class="o">...</span><span class="p">]</span>
 </pre></div>
 </div>
@@ -510,6 +511,9 @@ and <cite>–verbose</cite>.</p>
 </dd>
 <dt><kbd>-n, --number</kbd></dt>
 <dd><p>how many designs to draw from bounds: (default 32; Sobol’ balance holds at powers of two). Not for values:, whose count is the product of what it names</p>
+</dd>
+<dt><kbd>--edges</kbd></dt>
+<dd><p>instead of drawing from bounds:, run the surface of the box: the N-level grid over it, keeping only points with a coordinate at a bound. bounds: only, and not with -n or –continue</p>
 </dd>
 <dt><kbd>-Q, --queue</kbd></dt>
 <dd><p>submit to the queue named by the job: section instead of running here; every config becomes one submission</p>

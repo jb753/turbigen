@@ -5,14 +5,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Blade shapes &#8212; turbigen 3.0.1.dev24+g11478bbd7 documentation</title>
+    <title>Blade shapes &#8212; turbigen 3.0.1.dev84+g1e92d9922 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f747c255"></script>
+    <script src="_static/documentation_options.js?v=f5d19708"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Changelog" href="changelog.html" />
@@ -33,7 +34,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev24+g11478bbd7</p>
+<p class="blurb">Version 3.0.1.dev84+g1e92d9922</p>
 
 
 
@@ -66,12 +67,15 @@
 <li class="toctree-l2"><a class="reference internal" href="#built-in-shapes">Built-in shapes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#design-process">Design process</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#evaluating-a-blade">Evaluating a blade</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.FLAT_TURNING"><code class="docutils literal notranslate"><span class="pre">FLAT_TURNING</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.to_xrrt"><code class="docutils literal notranslate"><span class="pre">to_xrrt()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.SectionDesign"><code class="docutils literal notranslate"><span class="pre">SectionDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_LE"><code class="docutils literal notranslate"><span class="pre">dchi_LE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_TE"><code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.camber"><code class="docutils literal notranslate"><span class="pre">camber</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.thickness"><code class="docutils literal notranslate"><span class="pre">thickness</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.fac_tangential"><code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.BladeCount"><code class="docutils literal notranslate"><span class="pre">BladeCount</span></code></a><ul>
@@ -113,16 +117,22 @@
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.Blade"><code class="docutils literal notranslate"><span class="pre">Blade</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.row_annulus"><code class="docutils literal notranslate"><span class="pre">row_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.tanchi"><code class="docutils literal notranslate"><span class="pre">tanchi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.dchi"><code class="docutils literal notranslate"><span class="pre">dchi</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.fac_tangential"><code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.mean_line_row"><code class="docutils literal notranslate"><span class="pre">mean_line_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.vortex_exponent"><code class="docutils literal notranslate"><span class="pre">vortex_exponent</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.cambers"><code class="docutils literal notranslate"><span class="pre">cambers</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.thicknesses"><code class="docutils literal notranslate"><span class="pre">thicknesses</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.theta_offset"><code class="docutils literal notranslate"><span class="pre">theta_offset</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.n_section"><code class="docutils literal notranslate"><span class="pre">n_section</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_chi"><code class="docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_fac_tangential"><code class="docutils literal notranslate"><span class="pre">evaluate_fac_tangential()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_camber"><code class="docutils literal notranslate"><span class="pre">evaluate_camber()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_section"><code class="docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_surface_length"><code class="docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_chord"><code class="docutils literal notranslate"><span class="pre">evaluate_chord()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.evaluate_arc_length"><code class="docutils literal notranslate"><span class="pre">evaluate_arc_length()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.Row"><code class="docutils literal notranslate"><span class="pre">Row</span></code></a><ul>
@@ -133,27 +143,39 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#camber-lines">Camber lines</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.CamberDesign"><code class="docutils literal notranslate"><span class="pre">CamberDesign</span></code></a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberDesign.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberDesign.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.Quadratic"><code class="docutils literal notranslate"><span class="pre">Quadratic</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Quadratic.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Quadratic.aft_loading"><code class="docutils literal notranslate"><span class="pre">aft_loading</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Quadratic.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Quadratic.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.Bernstein"><code class="docutils literal notranslate"><span class="pre">Bernstein</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.order"><code class="docutils literal notranslate"><span class="pre">order</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.coeff"><code class="docutils literal notranslate"><span class="pre">coeff</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.chi_hat"><code class="docutils literal notranslate"><span class="pre">chi_hat()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.upsample"><code class="docutils literal notranslate"><span class="pre">upsample</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.Bernstein.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.CircularArc"><code class="docutils literal notranslate"><span class="pre">CircularArc</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CircularArc.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CircularArc.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.ClarkCamber"><code class="docutils literal notranslate"><span class="pre">ClarkCamber</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.ClarkCamber.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.ClarkCamber.exponent"><code class="docutils literal notranslate"><span class="pre">exponent</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.ClarkCamber.stagger"><code class="docutils literal notranslate"><span class="pre">stagger()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.ClarkCamber.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.camber.CamberLine"><code class="docutils literal notranslate"><span class="pre">CamberLine</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.shape"><code class="docutils literal notranslate"><span class="pre">shape</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.tanchi_LE"><code class="docutils literal notranslate"><span class="pre">tanchi_LE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.tanchi_TE"><code class="docutils literal notranslate"><span class="pre">tanchi_TE</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.Dtanchi"><code class="docutils literal notranslate"><span class="pre">Dtanchi</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.dydm"><code class="docutils literal notranslate"><span class="pre">dydm()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.camber.CamberLine.chi"><code class="docutils literal notranslate"><span class="pre">chi()</span></code></a></li>
 </ul>
@@ -161,6 +183,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#thickness-distributions">Thickness distributions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign"><code class="docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.Taylor"><code class="docutils literal notranslate"><span class="pre">Taylor</span></code></a><ul>
@@ -174,6 +197,20 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.peak"><code class="docutils literal notranslate"><span class="pre">peak()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.ClarkThickness"><code class="docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.R_LE"><code class="docutils literal notranslate"><span class="pre">R_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.coeff"><code class="docutils literal notranslate"><span class="pre">coeff</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.tanwedge"><code class="docutils literal notranslate"><span class="pre">tanwedge</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.t_TE"><code class="docutils literal notranslate"><span class="pre">t_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.order"><code class="docutils literal notranslate"><span class="pre">order</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.m_ctl"><code class="docutils literal notranslate"><span class="pre">m_ctl</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.tau_coeff"><code class="docutils literal notranslate"><span class="pre">tau_coeff</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.with_tau_coeff"><code class="docutils literal notranslate"><span class="pre">with_tau_coeff()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -303,9 +340,12 @@ level:</p>
 </tr>
 </tbody>
 </table>
-<p><a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a> and <a class="reference internal" href="#turbigen.camber.Bernstein" title="turbigen.camber.Bernstein"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bernstein</span></code></a> are
-the built-in camber shapes and <a class="reference internal" href="#turbigen.thickness.Taylor" title="turbigen.thickness.Taylor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Taylor</span></code></a> the built-in
-thickness distribution; all are documented in the sections below.</p>
+<p><a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a>, <a class="reference internal" href="#turbigen.camber.Bernstein" title="turbigen.camber.Bernstein"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bernstein</span></code></a>,
+<a class="reference internal" href="#turbigen.camber.ClarkCamber" title="turbigen.camber.ClarkCamber"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkCamber</span></code></a> and
+<a class="reference internal" href="#turbigen.camber.CircularArc" title="turbigen.camber.CircularArc"><code class="xref py py-class docutils literal notranslate"><span class="pre">CircularArc</span></code></a> are the built-in camber shapes. <a class="reference internal" href="#turbigen.thickness.Taylor" title="turbigen.thickness.Taylor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Taylor</span></code></a> is the built-in
+thickness distribution and <a class="reference internal" href="#turbigen.thickness.ClarkThickness" title="turbigen.thickness.ClarkThickness"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a> the
+two-sided alternative, which gives each surface its own thickness about the
+same camber line. All are documented in the sections below.</p>
 <p>The number of blades comes from a <a class="reference internal" href="#turbigen.blade.BladeCount" title="turbigen.blade.BladeCount"><code class="xref py py-class docutils literal notranslate"><span class="pre">BladeCount</span></code></a> rule on the design:</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="#turbigen.blade.FixedCount" title="turbigen.blade.FixedCount"><code class="xref py py-class docutils literal notranslate"><span class="pre">FixedCount</span></code></a> (<code class="docutils literal notranslate"><span class="pre">Nb</span></code>) states it directly;</p></li>
@@ -325,12 +365,13 @@ and the chord.</p></li>
 a row <a class="reference internal" href="#turbigen.blade.BladeDesign" title="turbigen.blade.BladeDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">BladeDesign</span></code></a> and, once the mean line and annulus are built, passes
 them <a class="reference internal" href="#turbigen.blade.BladeDesign.design" title="turbigen.blade.BladeDesign.design"><code class="xref py py-meth docutils literal notranslate"><span class="pre">design()</span></code></a> which:</p>
 <ol class="arabic simple">
-<li><p>Calculates leading and trailing edge metal angles for each section as the local
-relative flow angle plus the recambers <a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_LE" title="turbigen.blade.SectionDesign.dchi_LE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dchi_LE</span></code></a> and
-<a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_TE" title="turbigen.blade.SectionDesign.dchi_TE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dchi_TE</span></code></a>. The flow angle is read from the mean-line row,
-with the swirl varied radially using the
-<a class="reference internal" href="#turbigen.blade.BladeDesign.vortex_exponent" title="turbigen.blade.BladeDesign.vortex_exponent"><code class="xref py py-attr docutils literal notranslate"><span class="pre">vortex_exponent</span></code></a> onto the section span fraction;</p></li>
-<li><p>Camber and thickness designs, the metal angles, the stacking
+<li><p>Collects the recambers <a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_LE" title="turbigen.blade.SectionDesign.dchi_LE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dchi_LE</span></code></a> and
+<a class="reference internal" href="#turbigen.blade.SectionDesign.dchi_TE" title="turbigen.blade.SectionDesign.dchi_TE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dchi_TE</span></code></a> of each section, together with the mean-line
+row and the <a class="reference internal" href="#turbigen.blade.BladeDesign.vortex_exponent" title="turbigen.blade.BladeDesign.vortex_exponent"><code class="xref py py-attr docutils literal notranslate"><span class="pre">vortex_exponent</span></code></a> the local flow angle they
+are measured off is evaluated with. The two are added when a metal angle is
+asked for rather than here, so a blade defined by one section still varies
+over the span with the vortex distribution;</p></li>
+<li><p>Camber and thickness designs, the recambers, the stacking
 position and the blade rotation are collected across all sections into a
 <a class="reference internal" href="#turbigen.blade.Blade" title="turbigen.blade.Blade"><code class="xref py py-class docutils literal notranslate"><span class="pre">Blade</span></code></a> for each row;</p></li>
 <li><p>The <a class="reference internal" href="#turbigen.blade.BladeCount" title="turbigen.blade.BladeCount"><code class="xref py py-class docutils literal notranslate"><span class="pre">BladeCount</span></code></a> rule reads the finished <a class="reference internal" href="#turbigen.blade.Blade" title="turbigen.blade.Blade"><code class="xref py py-class docutils literal notranslate"><span class="pre">Blade</span></code></a> to fix the
@@ -341,16 +382,65 @@ number of blades.</p></li>
 <span id="blade-evaluate"></span><h2>Evaluating a blade<a class="headerlink" href="#evaluating-a-blade" title="Link to this heading">¶</a></h2>
 <p>A <a class="reference internal" href="#turbigen.blade.Blade" title="turbigen.blade.Blade"><code class="xref py py-class docutils literal notranslate"><span class="pre">Blade</span></code></a> is addressed by span fraction, and every geometric quantity is
 read off it with an <code class="docutils literal notranslate"><span class="pre">evaluate_</span></code> method that interpolates the section designs
-field by field, extrapolating beyond the end sections.
+field by field, extrapolating beyond the end sections. The metal angles are the
+exception: only the recamber is interpolated, and the flow angle it is added to
+is evaluated at the span fraction asked for.
 <a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> gives the axial, radial and angular coordinates
-of the two surfaces; <a class="reference internal" href="#turbigen.blade.Blade.evaluate_chi" title="turbigen.blade.Blade.evaluate_chi"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a> the leading and trailing metal
+of the two surfaces and <a class="reference internal" href="#turbigen.blade.Blade.evaluate_camber" title="turbigen.blade.Blade.evaluate_camber"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_camber()</span></code></a> those of the camber line
+they are hung off; <a class="reference internal" href="#turbigen.blade.Blade.evaluate_chi" title="turbigen.blade.Blade.evaluate_chi"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a> the leading and trailing metal
 angles; and <a class="reference internal" href="#turbigen.blade.Blade.evaluate_chord" title="turbigen.blade.Blade.evaluate_chord"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_chord()</span></code></a> and
-<a class="reference internal" href="#turbigen.blade.Blade.evaluate_surface_length" title="turbigen.blade.Blade.evaluate_surface_length"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a> the meridional chord and the longer
-surface length used by the count rules.</p>
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_surface_length" title="turbigen.blade.Blade.evaluate_surface_length"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a> the meridional chord and the surface
+lengths the count rules read.</p>
+<p><strong>A surface is not simply the camber line offset perpendicular to itself.</strong> A
+perpendicular offset hands back the camber’s own curvature amplified by
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">t</span> <span class="pre">kappa)</span></code> on the concave side, so a thick section on a tightly
+curved camber line over-curves that surface — a spike in surface curvature,
+and a kink in the Mach distribution over it — well before the offset folds at
+<code class="docutils literal notranslate"><span class="pre">t</span> <span class="pre">kappa</span> <span class="pre">=</span> <span class="pre">1</span></code>. So the pressure surface’s offset direction, and only that
+one’s, is rotated toward the circumferential direction over mid-chord, by a
+fraction <a class="reference internal" href="#turbigen.blade.SectionDesign.fac_tangential" title="turbigen.blade.SectionDesign.fac_tangential"><code class="xref py py-attr docutils literal notranslate"><span class="pre">fac_tangential</span></code></a> peaking there and vanishing at
+both ends, which takes the amplification out of the middle while leaving the
+trailing edge exactly and the nose radius within a per cent of what they were.</p>
+<p><strong>Every pair of surfaces is ordered suction first</strong>, and this is the only place
+that is said: <a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a>,
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_arc_length" title="turbigen.blade.Blade.evaluate_arc_length"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_arc_length()</span></code></a>, <a class="reference internal" href="#turbigen.blade.Blade.evaluate_surface_length" title="turbigen.blade.Blade.evaluate_surface_length"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a> and
+<a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick_both" title="turbigen.thickness.ThicknessDesign.thick_both"><code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code></a> all index the same way,
+so a thickness coefficient and the surface it shapes line up without a
+permutation anywhere between them. Which side that is comes from the camber
+alone — the suction surface is the convex one, so it is the upper surface when
+the metal angle falls from leading to trailing edge — and is decided once per
+blade rather than per span fraction; see <code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code>. The
+angular ordering still exists and the mesher wants it, but it is a fact a
+consumer reads off <cite>theta</cite> itself rather than one this module promises.</p>
 </section>
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.blade.FLAT_TURNING">
+<span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">FLAT_TURNING</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.0</span></span><a class="headerlink" href="#turbigen.blade.FLAT_TURNING" title="Link to this definition">¶</a></dt>
+<dd><p>Turning below which a blade has no suction side to speak of [deg].</p>
+<p>The suction surface is read off the sign of the turning, which says nothing at
+all when there is no turning: a blade this flat has two surfaces that are alike
+to within the noise on the comparison, and their order is then arbitrary rather
+than wrong. Falling back to the angular ordering makes it arbitrary <em>and
+stable</em>, which is what a design being iterated needs — a shape that swapped
+its two thickness distributions between iterations would be a different blade
+each time, not a converging one.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.blade.to_xrrt">
+<span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">to_xrrt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xrt</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.to_xrrt" title="Link to this definition">¶</a></dt>
+<dd><p>Return <cite>xrt</cite> with its angle turned into a distance.</p>
+<p><cite>evaluate_section</cite> reports angular position as <cite>theta</cite>, in radians, which
+<cite>arc_length</cite> cannot make a distance out of on its own; multiplying by
+radius turns the third row into <cite>r * theta</cite>, a physical length like the
+other two, so a curve reported this way measures true arc length rather
+than something angle dominates near the axis and distance dominates far
+from it.</p>
+</dd></dl>
+
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.blade.SectionDesign">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">SectionDesign</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">camber</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#turbigen.camber.CamberDesign" title="turbigen.camber.CamberDesign"><span class="pre">CamberDesign</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thickness</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><span class="pre">ThicknessDesign</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.SectionDesign" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">SectionDesign</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">camber</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#turbigen.camber.CamberDesign" title="turbigen.camber.CamberDesign"><span class="pre">CamberDesign</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thickness</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><span class="pre">ThicknessDesign</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fac_tangential</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.7</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.SectionDesign" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
 <p>One spanwise section of a blade.</p>
 <p>The <a class="reference internal" href="#"><span class="doc">Blade shapes</span></a> page covers how the sections stack into a shape.</p>
@@ -382,6 +472,71 @@ surface length used by the count rules.</p>
 <dt class="sig sig-object py" id="turbigen.blade.SectionDesign.thickness">
 <span class="sig-name descname"><span class="pre">thickness</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><span class="pre">ThicknessDesign</span></a></span><a class="headerlink" href="#turbigen.blade.SectionDesign.thickness" title="Link to this definition">¶</a></dt>
 <dd><p>Thickness distribution, normalised by meridional chord.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.SectionDesign.fac_tangential">
+<span class="sig-name descname"><span class="pre">fac_tangential</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.7</span></span><a class="headerlink" href="#turbigen.blade.SectionDesign.fac_tangential" title="Link to this definition">¶</a></dt>
+<dd><p>Fraction of the pressure surface’s thickness applied circumferentially
+at mid-chord [–].</p>
+<p><strong>Why a surface is not simply offset perpendicular to the camber line.</strong> A
+perpendicular offset returns the camber’s curvature amplified by
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">t</span> <span class="pre">kappa)</span></code> on the concave side, so a thick section on a tightly
+curved camber over-curves that surface long before the offset actually
+folds at <code class="docutils literal notranslate"><span class="pre">t</span> <span class="pre">kappa</span> <span class="pre">=</span> <span class="pre">1</span></code>: a spike in surface curvature, and a kink in the
+Mach distribution over it. Rotating part of the offset toward the
+circumferential direction takes the amplification away, since an offset
+with no meridional component cannot fold at all.</p>
+<p><strong>The pressure surface only.</strong> The amplification is a concave-side effect:
+on the convex side the same offset <em>divides</em> the camber curvature by
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">+</span> <span class="pre">t</span> <span class="pre">kappa</span></code>, so there is nothing there to take out. Rotating that side
+as well buys nothing and costs something, because the rotation carries a
+term in its own gradient — see below — which on the convex side arrives
+with nothing to cancel it. Measured on a turbine section, blending both
+sides raises the suction surface’s total variation of curvature by half
+again at <code class="docutils literal notranslate"><span class="pre">fac_tangential</span> <span class="pre">=</span> <span class="pre">1</span></code> and leaves the pressure surface exactly
+where blending one side put it.</p>
+<p><strong>Weighted to the middle, which is where the problem is.</strong> The
+circumferential fraction is <code class="docutils literal notranslate"><span class="pre">fac_tangential</span> <span class="pre">*</span> <span class="pre">(4</span> <span class="pre">m</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m))^1.2</span></code>, a bump
+that peaks at mid-chord — so this number is read there — and whose
+value and slope vanish at both ends. That is what keeps the two ends
+close to what they were: the nose is a circle of
+<a class="reference internal" href="#turbigen.thickness.ClarkThickness.R_LE" title="turbigen.thickness.ClarkThickness.R_LE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">R_LE</span></code></a> to within a per cent and
+the trailing edge stands perpendicular to the camber line exactly, so a
+wedge angle and a trailing edge thickness still mean what they say. Clark
+(2019) blends the other way round, from normal at the leading edge to
+tangential at the trailing edge, which on a staggered blade cuts the
+trailing edge off at constant axial position.</p>
+<p><strong>Why that exponent and not a squarer bump.</strong> What the offset actually
+sees is the turning rate of its own direction, <code class="docutils literal notranslate"><span class="pre">(1</span> <span class="pre">-</span> <span class="pre">w)</span> <span class="pre">chi'</span> <span class="pre">-</span> <span class="pre">w'</span> <span class="pre">chi</span></code>,
+of which the second term is nobody’s intention: it is largest where the
+weight’s slope and the camber angle are both large, which is the shoulders
+of the bump, and it puts back as a curvature reversal a good part of what
+the first term takes out. Since the weight runs from zero up to
+<code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code> and back, its total variation is fixed and only its
+slope can be spread out. A softer exponent spreads it further, and the
+total variation of pressure surface curvature falls with it — 19.1 at
+the square this replaces, 15.5 at 1.5, 13.0 at 1.2, 11.8 at 1.05, against
+74.0 for the plain perpendicular offset and 11.4 for the suction surface,
+which nothing rotates and which is as smooth as a surface on this section
+gets. A flat-topped weight does the opposite, steepening the shoulders and
+undoing the whole thing.</p>
+<p><strong>And what stops it going softer still.</strong> Below an exponent of two the
+weight’s <em>second</em> derivative is unbounded at both ends, so the nose is no
+longer exactly the circle it asks for: measured against the perpendicular
+offset, the fitted leading edge radius grows by 0.02 per cent at an
+exponent of two, 0.17 at 1.5, 0.65 at 1.2 and 1.3 at 1.05. The curvature
+itself still converges — it is its gradient that does not — so this is
+a small and local price rather than a different nose, and 1.2 is where
+paying it stops being worth what it buys.</p>
+<p><strong>Where the weight peaks is not a lever.</strong> Skewing the bump forward, so
+that it peaks nearer the leading edge where the camber curvature does,
+buys nothing: holding the leading edge exponent fixed and sliding the peak
+from mid-chord to 0.42 moves the total variation by under two per cent,
+and sliding it further forward, or aft at all, makes it worse. Only the
+exponent matters, and it matters through the two shoulders equally.</p>
+<p>Zero is the plain perpendicular offset, and one applies the pressure
+surface’s thickness circumferentially at mid-chord.</p>
 </dd></dl>
 
 </dd></dl>
@@ -503,6 +658,13 @@ to this power. The default is a free vortex.</p>
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">Circulation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">Co</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Circulation" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.blade.BladeCount" title="turbigen.blade.BladeCount"><code class="xref py py-class docutils literal notranslate"><span class="pre">BladeCount</span></code></a></p>
 <p>Set the number of blades using a circulation coefficient.</p>
+<p>The circulation coefficient is the blade circulation over an ideal one
+that carries the exit velocity along the whole suction surface and
+stagnated flow along the pressure surface, Coull and Hodson (2013) eqn.
+(21). A typical value is 0.7; the loss correlations it was fitted against
+begin to extrapolate above about 0.8.</p>
+<p>Coull and Hodson write it for an axial row. What is evaluated here is the
+generalisation to a changing radius, Kaufmann (2020) eqn. (F.6).</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="turbigen.blade.Circulation.type">
 <span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'Co'</span></span><a class="headerlink" href="#turbigen.blade.Circulation.type" title="Link to this definition">¶</a></dt>
@@ -563,7 +725,7 @@ separates above about 0.6.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.blade.Blade">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">Blade</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus" title="turbigen.annulus.RowAnnulus"><span class="pre">RowAnnulus</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cambers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thicknesses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_offset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">Blade</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus" title="turbigen.annulus.RowAnnulus"><span class="pre">RowAnnulus</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">fac_tangential</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean_line_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">vortex_exponent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cambers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thicknesses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_offset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>The shape of one blade.</p>
 <p>Frozen, like every other result: it is what the design produced against a
@@ -581,9 +743,37 @@ mean line, and nothing downstream has any business changing it.</p>
 </dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="turbigen.blade.Blade.tanchi">
-<span class="sig-name descname"><span class="pre">tanchi</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.tanchi" title="Link to this definition">¶</a></dt>
-<dd><p>Tangent of the metal angles, shape (n_section, 2).</p>
+<dt class="sig sig-object py" id="turbigen.blade.Blade.dchi">
+<span class="sig-name descname"><span class="pre">dchi</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.dchi" title="Link to this definition">¶</a></dt>
+<dd><p>Recamber of each section off the local flow angle, shape (n_section, 2) [deg].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.fac_tangential">
+<span class="sig-name descname"><span class="pre">fac_tangential</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.fac_tangential" title="Link to this definition">¶</a></dt>
+<dd><p>Circumferential fraction of each section’s pressure surface offset,
+shape (n_section,) [–].</p>
+<p>Carried per section and interpolated where a section is asked for, as
+<a class="reference internal" href="#turbigen.blade.Blade.dchi" title="turbigen.blade.Blade.dchi"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dchi</span></code></a> is, so a blade can be shaped one way at the hub and another at
+the casing. See <a class="reference internal" href="#turbigen.blade.SectionDesign.fac_tangential" title="turbigen.blade.SectionDesign.fac_tangential"><code class="xref py py-attr docutils literal notranslate"><span class="pre">SectionDesign.fac_tangential</span></code></a> for what the number
+means.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.mean_line_row">
+<span class="sig-name descname"><span class="pre">mean_line_row</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.mean_line_row" title="Link to this definition">¶</a></dt>
+<dd><p>Inlet and outlet stations of this row, shape (2,).</p>
+<p>Held so that the metal angle can be resolved wherever the blade is asked
+for one. A metal angle is a function of the design and the mean line
+together, and the flow angle half of that sum varies over the span — on a
+rotor by tens of degrees — so it cannot be reduced to a per-section
+number without losing the variation between the sections and beyond them.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.vortex_exponent">
+<span class="sig-name descname"><span class="pre">vortex_exponent</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.vortex_exponent" title="Link to this definition">¶</a></dt>
+<dd><p>Spanwise swirl distribution the flow angle is evaluated with [–].</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -620,12 +810,54 @@ mean line, and nothing downstream has any business changing it.</p>
 <dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_chi">
 <span class="sig-name descname"><span class="pre">evaluate_chi</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_chi" title="Link to this definition">¶</a></dt>
 <dd><p>Return the metal angles at the leading and trailing edges [deg].</p>
+<p>The recamber the sections declare, applied to the flow angle <em>here</em>:
+the vortex distribution is evaluated at <cite>spf</cite> rather than at the
+sections, so a blade defined by one section still turns with the span
+it stands in.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_fac_tangential">
+<span class="sig-name descname"><span class="pre">evaluate_fac_tangential</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_fac_tangential" title="Link to this definition">¶</a></dt>
+<dd><p>Return the circumferential offset fraction at span fraction <cite>spf</cite> [–].</p>
+<p>Interpolated between the sections and extrapolated beyond the end ones,
+as <a class="reference internal" href="#turbigen.blade.Blade.evaluate_chi" title="turbigen.blade.Blade.evaluate_chi"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a> interpolates the recamber it is written beside.
+See <a class="reference internal" href="#turbigen.blade.SectionDesign.fac_tangential" title="turbigen.blade.SectionDesign.fac_tangential"><code class="xref py py-attr docutils literal notranslate"><span class="pre">SectionDesign.fac_tangential</span></code></a> for what it does.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_camber">
+<span class="sig-name descname"><span class="pre">evaluate_camber</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nchord</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_camber" title="Link to this definition">¶</a></dt>
+<dd><p>Return coordinates of the camber line at <cite>spf</cite>.</p>
+<p>The curve the surfaces are hung off, not a curve fitted back out of
+them: it is shorter than the aerofoil, because the thickness
+overhangs it at both ends, and it is only the mean of the two
+surfaces while they carry the same thickness as each other. Taking
+the mean is therefore an approximation that a thickness free to
+differ side to side would make a worse one; asking the blade is
+exact either way.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>spf</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Span fraction to take the camber line at.</p></li>
+<li><p><strong>nchord</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of chordwise points, if <cite>m</cite> is not given.</p></li>
+<li><p><strong>m</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Normalised chordwise positions along the camber line, as
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> takes.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>xrt</strong> – Axial, radial and angular coordinates of the camber line.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (3, n)</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_section">
 <span class="sig-name descname"><span class="pre">evaluate_section</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nchord</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_section" title="Link to this definition">¶</a></dt>
-<dd><p>Return coordinates of the upper and lower surfaces at <cite>spf</cite>.</p>
+<dd><p>Return coordinates of the two surfaces at <cite>spf</cite>, suction first.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -635,8 +867,11 @@ mean line, and nothing downstream has any business changing it.</p>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>xrt_upper, xrt_lower</strong> – Axial, radial and angular coordinates of each surface. The upper
-surface is at the higher angular coordinate.</p>
+<dd class="field-even"><p><strong>xrt_suction, xrt_pressure</strong> – Axial, radial and angular coordinates of each surface. Suction
+first, as every pair in this module is — see the module
+docstring, and <code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code> for how that is decided.
+Which of them carries the higher angular coordinate is a question
+for whoever needs it, answered by looking at the third row.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>ndarray, <a class="reference internal" href="#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (3, n)</p>
@@ -647,13 +882,47 @@ surface is at the higher angular coordinate.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_surface_length">
 <span class="sig-name descname"><span class="pre">evaluate_surface_length</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_surface_length" title="Link to this definition">¶</a></dt>
-<dd><p>Return the length of the longer of the two surfaces at <cite>spf</cite> [m].</p>
+<dd><p>Return the length of each surface at <cite>spf</cite>, suction first [m], shape (2,).</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_chord">
 <span class="sig-name descname"><span class="pre">evaluate_chord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_chord" title="Link to this definition">¶</a></dt>
 <dd><p>Return the meridional length of the camber line at <cite>spf</cite> [m].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.evaluate_arc_length">
+<span class="sig-name descname"><span class="pre">evaluate_arc_length</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nchord</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade.evaluate_arc_length" title="Link to this definition">¶</a></dt>
+<dd><p>Return arc length along each surface, as a function of <cite>m</cite>, at <cite>spf</cite>.</p>
+<p>Zero at the leading edge, where the two surfaces meet, and suction
+first as everything in this module is. The suction surface is the
+longer of the two — it is the convex side of the camber, which wraps
+a larger radius than the concave one for the same turning and so
+sweeps a longer path — but that is a consequence of the ordering
+rather than what sets it; see <code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code>, which reads
+the camber angles because the assignment is needed before either
+surface exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>spf</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Span fraction to evaluate at.</p></li>
+<li><p><strong>m</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Normalised chordwise positions to evaluate at, as
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> takes. Defaults to <cite>nchord</cite> clustered
+points, dense enough that inverting the curve back from a
+measured arc length lands within microns of the true <cite>m</cite>.</p></li>
+<li><p><strong>nchord</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Chordwise points, if <cite>m</cite> is not given.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>m</strong> (<em>ndarray, shape (n,)</em>) – The chordwise positions evaluated at.</p></li>
+<li><p><strong>s</strong> (<em>ndarray, shape (2, n)</em>) – Cumulative arc length along each surface to every one of them,
+suction first [m].</p></li>
+</ul>
+</p>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -698,6 +967,10 @@ evaluated. The end angles are not design variables but a result — the local
 flow angle plus the recamber asked for by a
 <a class="reference internal" href="#turbigen.blade.SectionDesign" title="turbigen.blade.SectionDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SectionDesign</span></code></a> — so the split here is the same one made
 everywhere else, one level down.</p>
+<p>A shape states one thing: the camber line slope, between the end tangents it is
+handed. Everything else about a shape is a statement about <em>which function of
+the camber angle</em> runs smoothly along the chord, and the built-in shapes do not
+agree on that, which is why the slope itself is the protocol:</p>
 <p><a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a> (<code class="docutils literal notranslate"><span class="pre">quadratic</span></code>) is the built-in shape: the camber line slope
 varies quadratically along the chord, with <a class="reference internal" href="#turbigen.camber.Quadratic.aft_loading" title="turbigen.camber.Quadratic.aft_loading"><code class="xref py py-attr docutils literal notranslate"><span class="pre">aft_loading</span></code></a>
 shifting the turning towards the trailing edge.</p>
@@ -706,20 +979,34 @@ angle-tangent ramp plus <a class="reference internal" href="#turbigen.camber.Ber
 coefficients that perturb it. The endpoint coefficients are pinned at zero so
 the ends stay put, and all-zero coefficients recover <a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a> with
 zero aft loading.</p>
+<p><a class="reference internal" href="#turbigen.camber.ClarkCamber" title="turbigen.camber.ClarkCamber"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkCamber</span></code></a> (<code class="docutils literal notranslate"><span class="pre">clark</span></code>) is the shape after <span class="bibtex-citation" id="id2">[<a class="reference internal" href="references.html#id3" title="A Step Towards an Intelligent Aerodynamic Design Process, volume Volume 2C: Turbomachinery of Turbo Expo: Power for Land, Sea, and Air, 2019. V02CT41A033. doi:10.1115/GT2019-91637.">Clark, 2019</a>]</span>, the
+companion of the thickness distribution of the same name: the end tangents
+faded along the chord by a common power, whose <a class="reference internal" href="#turbigen.camber.ClarkCamber.exponent" title="turbigen.camber.ClarkCamber.exponent"><code class="xref py py-attr docutils literal notranslate"><span class="pre">exponent</span></code></a>
+is the one parameter. An exponent of two is <a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a> with no aft
+loading; above that the chord flattens and the turning moves towards the more
+turned end. The stagger it lands on is a <em>result</em>, which
+<a class="reference internal" href="#turbigen.camber.ClarkCamber.stagger" title="turbigen.camber.ClarkCamber.stagger"><code class="xref py py-meth docutils literal notranslate"><span class="pre">stagger()</span></code></a> reports.</p>
+<p><a class="reference internal" href="#turbigen.camber.CircularArc" title="turbigen.camber.CircularArc"><code class="xref py py-class docutils literal notranslate"><span class="pre">CircularArc</span></code></a> (<code class="docutils literal notranslate"><span class="pre">circular_arc</span></code>) is the shape with no parameters at all:
+constant curvature, which the end angles alone fix. Both shapes above
+distribute <code class="docutils literal notranslate"><span class="pre">tan</span> <span class="pre">chi</span></code> along the chord, and so normalise into a curve that is
+the same whatever the end angles are; an arc distributes <code class="docutils literal notranslate"><span class="pre">sin</span> <span class="pre">chi</span></code>, and does
+not. That is the whole reason a shape is asked for a slope between two known
+tangents rather than for a normalised camber it could state on its own.</p>
 </section>
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.camber.CamberDesign">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.camber.</span></span><span class="sig-name descname"><span class="pre">CamberDesign</span></span><a class="headerlink" href="#turbigen.camber.CamberDesign" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
 <p>Base for camber line shapes.</p>
-<p>A shape knows nothing of the blade angles: it interpolates between them.
-The <a class="reference internal" href="#"><span class="doc">Blade shapes</span></a> page covers where the angles come from.</p>
+<p>The <a class="reference internal" href="#"><span class="doc">Blade shapes</span></a> page covers where the end angles come from.</p>
 <dl class="py method">
-<dt class="sig sig-object py" id="turbigen.camber.CamberDesign.chi_hat">
-<span class="sig-name descname"><span class="pre">chi_hat</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.CamberDesign.chi_hat" title="Link to this definition">¶</a></dt>
-<dd><p>Return normalised camber at normalised meridional distance <cite>m</cite>.</p>
-<p>Zero at the leading edge and one at the trailing edge, so that the
-camber angle is recovered by interpolating the end angles with it.</p>
+<dt class="sig sig-object py" id="turbigen.camber.CamberDesign.dydm">
+<span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.CamberDesign.dydm" title="Link to this definition">¶</a></dt>
+<dd><p>Return camber line slope at normalised meridional distance <cite>m</cite>.</p>
+<p>Running between <cite>tanchi_LE</cite> at the leading edge and <cite>tanchi_TE</cite> at the
+trailing edge, which a shape is handed rather than choosing: they are
+the mean line’s business, and only the path between them is the
+shape’s.</p>
 </dd></dl>
 
 </dd></dl>
@@ -744,18 +1031,20 @@ aft, negative values forward.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="turbigen.camber.Quadratic.chi_hat">
-<span class="sig-name descname"><span class="pre">chi_hat</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Quadratic.chi_hat" title="Link to this definition">¶</a></dt>
-<dd><p>Return normalised camber at normalised meridional distance <cite>m</cite>.</p>
-<p>Zero at the leading edge and one at the trailing edge, so that the
-camber angle is recovered by interpolating the end angles with it.</p>
+<dt class="sig sig-object py" id="turbigen.camber.Quadratic.dydm">
+<span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Quadratic.dydm" title="Link to this definition">¶</a></dt>
+<dd><p>Return camber line slope at normalised meridional distance <cite>m</cite>.</p>
+<p>Running between <cite>tanchi_LE</cite> at the leading edge and <cite>tanchi_TE</cite> at the
+trailing edge, which a shape is handed rather than choosing: they are
+the mean line’s business, and only the path between them is the
+shape’s.</p>
 </dd></dl>
 
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.camber.Bernstein">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.camber.</span></span><span class="sig-name descname"><span class="pre">Bernstein</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coeff</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">()</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Bernstein" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.camber.</span></span><span class="sig-name descname"><span class="pre">Bernstein</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coeff</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upsample</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Bernstein" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.camber.CamberDesign" title="turbigen.camber.CamberDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">CamberDesign</span></code></a></p>
 <p>Bernstein-polynomial perturbation of a quadratic camber line.</p>
 <dl class="py attribute">
@@ -775,16 +1064,160 @@ camber angle is recovered by interpolating the end angles with it.</p>
 <span class="sig-name descname"><span class="pre">coeff</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">()</span></span><a class="headerlink" href="#turbigen.camber.Bernstein.coeff" title="Link to this definition">¶</a></dt>
 <dd><p>Interior Bernstein coefficients, local changes about a linear ramp [–].</p>
 <p>The two endpoint coefficients are fixed at zero so the camber line ends
-stay put; supply the <a class="reference internal" href="#turbigen.camber.Bernstein.order" title="turbigen.camber.Bernstein.order"><code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code></a> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> interior values here. Fewer than
-that are zero-padded, and all-zero recovers a quadratic camber line.</p>
+stay put; supply all <a class="reference internal" href="#turbigen.camber.Bernstein.order" title="turbigen.camber.Bernstein.order"><code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code></a> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> interior values here, or none
+at all to recover a quadratic camber line. A shorter, non-empty <cite>coeff</cite>
+is only accepted with <a class="reference internal" href="#turbigen.camber.Bernstein.upsample" title="turbigen.camber.Bernstein.upsample"><code class="xref py py-attr docutils literal notranslate"><span class="pre">upsample</span></code></a> set, since padding it with zeros
+would silently change the shape rather than leave it alone.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.camber.Bernstein.upsample">
+<span class="sig-name descname"><span class="pre">upsample</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></span><a class="headerlink" href="#turbigen.camber.Bernstein.upsample" title="Link to this definition">¶</a></dt>
+<dd><p>Reinterpret a short <a class="reference internal" href="#turbigen.camber.Bernstein.coeff" title="turbigen.camber.Bernstein.coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code></a> as a lower-order curve, exactly.</p>
+<p>A <cite>coeff</cite> shorter than <a class="reference internal" href="#turbigen.camber.Bernstein.order" title="turbigen.camber.Bernstein.order"><code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code></a> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> is read, once at
+construction, as the interior coefficients of a <em>lower-order</em> Bernstein
+curve, which is then raised to <a class="reference internal" href="#turbigen.camber.Bernstein.order" title="turbigen.camber.Bernstein.order"><code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code></a> by Bezier degree elevation
+— an exact identity, not a fit — and <a class="reference internal" href="#turbigen.camber.Bernstein.coeff" title="turbigen.camber.Bernstein.coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code></a> is replaced by the
+elevated, full-length array. The camber line is unchanged by this and the
+extra coefficients are then free to perturb it further. Sampling the
+low-order curve and solving a matrix problem to match points would only
+approximate this, and get worse-conditioned as the order grows; degree
+elevation gets the same result exactly and in closed form, so use that
+instead.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="turbigen.camber.Bernstein.chi_hat">
-<span class="sig-name descname"><span class="pre">chi_hat</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Bernstein.chi_hat" title="Link to this definition">¶</a></dt>
-<dd><p>Return normalised camber at normalised meridional distance <cite>m</cite>.</p>
-<p>Zero at the leading edge and one at the trailing edge, so that the
-camber angle is recovered by interpolating the end angles with it.</p>
+<dt class="sig sig-object py" id="turbigen.camber.Bernstein.dydm">
+<span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.Bernstein.dydm" title="Link to this definition">¶</a></dt>
+<dd><p>Return camber line slope at normalised meridional distance <cite>m</cite>.</p>
+<p>Running between <cite>tanchi_LE</cite> at the leading edge and <cite>tanchi_TE</cite> at the
+trailing edge, which a shape is handed rather than choosing: they are
+the mean line’s business, and only the path between them is the
+shape’s.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.camber.CircularArc">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.camber.</span></span><span class="sig-name descname"><span class="pre">CircularArc</span></span><a class="headerlink" href="#turbigen.camber.CircularArc" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.camber.CamberDesign" title="turbigen.camber.CamberDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">CamberDesign</span></code></a></p>
+<p>Camber line of constant curvature between the end angles.</p>
+<p>The shape with nothing to state: the end angles fix the arc, so there is
+no parameter here and nothing for an iterator to move. Constant curvature
+means the camber angle turns uniformly with arc length, or
+<code class="docutils literal notranslate"><span class="pre">sin</span> <span class="pre">chi</span> <span class="pre">=</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)</span> <span class="pre">sin</span> <span class="pre">chi_LE</span> <span class="pre">+</span> <span class="pre">m</span> <span class="pre">sin</span> <span class="pre">chi_TE</span></code> against meridional
+distance — closed form, so the arc costs no more to evaluate than the
+polynomial shapes do.</p>
+<p>The curvature is constant in the unwrapped meridional-tangential plane the
+other shapes are written in, before
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> projects onto the annulus.
+On a constant-radius annulus that is a true circle in <code class="docutils literal notranslate"><span class="pre">(m,</span> <span class="pre">r</span> <span class="pre">theta)</span></code>;
+where the radius changes it is not, which is the same approximation every
+shape here already makes.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.camber.CircularArc.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'circular_arc'</span></span><a class="headerlink" href="#turbigen.camber.CircularArc.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.camber.CircularArc.dydm">
+<span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.CircularArc.dydm" title="Link to this definition">¶</a></dt>
+<dd><p>Return camber line slope at normalised meridional distance <cite>m</cite>.</p>
+<p>Running between <cite>tanchi_LE</cite> at the leading edge and <cite>tanchi_TE</cite> at the
+trailing edge, which a shape is handed rather than choosing: they are
+the mean line’s business, and only the path between them is the
+shape’s.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.camber.ClarkCamber">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.camber.</span></span><span class="sig-name descname"><span class="pre">ClarkCamber</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">exponent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.ClarkCamber" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.camber.CamberDesign" title="turbigen.camber.CamberDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">CamberDesign</span></code></a></p>
+<p>Power-law camber line after <span class="bibtex-citation" id="id3">[<a class="reference internal" href="references.html#id3" title="A Step Towards an Intelligent Aerodynamic Design Process, volume Volume 2C: Turbomachinery of Turbo Expo: Power for Land, Sea, and Air, 2019. V02CT41A033. doi:10.1115/GT2019-91637.">Clark, 2019</a>]</span>.</p>
+<p>The camber line of the paper whose thickness distribution is
+<a class="reference internal" href="#turbigen.thickness.ClarkThickness" title="turbigen.thickness.ClarkThickness"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a>, written in the slope the
+protocol here asks for. Clark states the camber itself,</p>
+<p><code class="docutils literal notranslate"><span class="pre">zeta</span> <span class="pre">=</span> <span class="pre">a</span> <span class="pre">m^n</span> <span class="pre">+</span> <span class="pre">b</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^n</span></code>, with <code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">tanchi_TE</span> <span class="pre">/</span> <span class="pre">n</span></code> and
+<code class="docutils literal notranslate"><span class="pre">b</span> <span class="pre">=</span> <span class="pre">-tanchi_LE</span> <span class="pre">/</span> <span class="pre">n</span></code>,</p>
+<p>whose slope is <code class="docutils literal notranslate"><span class="pre">tanchi_TE</span> <span class="pre">m^(n-1)</span> <span class="pre">+</span> <span class="pre">tanchi_LE</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^(n-1)</span></code> — the two
+end tangents, each faded out along the chord by the same power. The ends
+are then exact for any <a class="reference internal" href="#turbigen.camber.ClarkCamber.exponent" title="turbigen.camber.ClarkCamber.exponent"><code class="xref py py-attr docutils literal notranslate"><span class="pre">exponent</span></code></a> above one, and the rise of the
+line is <code class="docutils literal notranslate"><span class="pre">(tanchi_LE</span> <span class="pre">+</span> <span class="pre">tanchi_TE)</span> <span class="pre">/</span> <span class="pre">n</span></code>, so that the stagger angle falls
+out of the exponent rather than the other way about.</p>
+<p><strong>Clark asks for the stagger and solves for the exponent; this asks for
+the exponent.</strong> Both say the same curve, and stagger is the more physical
+of the two — a designer has a view on it, and it is what the paper’s
+optimiser and its network actually output. But the staggers a camber line
+can reach are an open interval its end angles fix, and taking the stagger
+as the parameter would put those angles into the meaning of the parameter:
+the same configured number would be a different curve at hub and at
+casing, a shape could refuse angles it is handed, a
+<code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> moving <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> could walk it into
+that refusal, and there would be no value to default to. The exponent has
+none of that, and it is the parameter the other shapes here are written
+like: a normalised curve, the same whatever the ends are. Ask
+<a class="reference internal" href="#turbigen.camber.ClarkCamber.stagger" title="turbigen.camber.ClarkCamber.stagger"><code class="xref py py-meth docutils literal notranslate"><span class="pre">stagger()</span></code></a> for the angle it lands on.</p>
+<p>An exponent of two gives <code class="docutils literal notranslate"><span class="pre">tanchi_LE</span> <span class="pre">+</span> <span class="pre">m</span> <span class="pre">(tanchi_TE</span> <span class="pre">-</span> <span class="pre">tanchi_LE)</span></code>, exactly
+<a class="reference internal" href="#turbigen.camber.Quadratic" title="turbigen.camber.Quadratic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code></a> with zero aft loading, at the stagger of the mean of the
+end tangents that <a class="reference internal" href="#turbigen.blade.DiffusionFactor" title="turbigen.blade.DiffusionFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">DiffusionFactor</span></code></a> already assumes
+when it resolves a true chord. The converged designs of the paper sit
+between about 1.9 and 3.2, read off its Fig. 11.</p>
+<p><strong>The exponent flattens the middle rather than shifting the loading aft.</strong>
+Both faded tangents carry the same factor <code class="docutils literal notranslate"><span class="pre">0.5^(n-1)</span></code> at mid-chord, so
+raising the exponent drives the camber angle there towards axial and packs
+the turning into the two ends. On a turbine that reads as aft loading, but
+only because the leading edge is the end already near axial: between metal
+angles of 20 and -70 degrees, 78% of the turning is done by mid-chord at an
+exponent of two and 41% of it at four. Turn a section the other way about,
+so the leading edge is the more turned end, and the same change front-loads
+it; on a section symmetric about axial it changes no fore-and-aft balance
+at all, only how tightly the turning bunches in the middle.</p>
+<p><strong>Above two, end tangents of the same sign give an inflected camber line.</strong>
+The slope has an interior stationary point for any <code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">2</span></code>, and where the
+ends turn the same way that point lies outside both of them — the camber
+angle turns past its exit angle and comes back, an S in the annulus. A
+section that turns through axial has a monotonic slope at any exponent,
+which is every section in the paper; compressors it claims only as an
+extension.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.camber.ClarkCamber.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'clark'</span></span><a class="headerlink" href="#turbigen.camber.ClarkCamber.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.camber.ClarkCamber.exponent">
+<span class="sig-name descname"><span class="pre">exponent</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">2.0</span></span><a class="headerlink" href="#turbigen.camber.ClarkCamber.exponent" title="Link to this definition">¶</a></dt>
+<dd><p>Power the end tangents are faded along the chord by [–].</p>
+<p>Strictly greater than one, or the camber line does not reach the tangents
+it is placed between: the fading factors <code class="docutils literal notranslate"><span class="pre">m^(n-1)</span></code> and <code class="docutils literal notranslate"><span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^(n-1)</span></code>
+only vanish at the far end for a positive power. Two is the quadratic
+camber line.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.camber.ClarkCamber.stagger">
+<span class="sig-name descname"><span class="pre">stagger</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.ClarkCamber.stagger" title="Link to this definition">¶</a></dt>
+<dd><p>Return the stagger angle between these end tangents [deg].</p>
+<p>The rise of the camber line over its chord, which is what
+<span class="bibtex-citation" id="id4">[<a class="reference internal" href="references.html#id3" title="A Step Towards an Intelligent Aerodynamic Design Process, volume Volume 2C: Turbomachinery of Turbo Expo: Power for Land, Sea, and Air, 2019. V02CT41A033. doi:10.1115/GT2019-91637.">Clark, 2019</a>]</span> states and solves the exponent from. Here it is the
+other way round and this is a result, so it is a method taking the end
+angles rather than a field: a shape is not handed them until it is
+evaluated.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.camber.ClarkCamber.dydm">
+<span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanchi_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.ClarkCamber.dydm" title="Link to this definition">¶</a></dt>
+<dd><p>Return camber line slope at normalised meridional distance <cite>m</cite>.</p>
+<p>Running between <cite>tanchi_LE</cite> at the leading edge and <cite>tanchi_TE</cite> at the
+trailing edge, which a shape is handed rather than choosing: they are
+the mean line’s business, and only the path between them is the
+shape’s.</p>
 </dd></dl>
 
 </dd></dl>
@@ -815,12 +1248,6 @@ a config file. Frozen for the same reason every result is.</p>
 <dd><p>Tangent of the metal angle at the trailing edge.</p>
 </dd></dl>
 
-<dl class="py property">
-<dt class="sig sig-object py" id="turbigen.camber.CamberLine.Dtanchi">
-<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Dtanchi</span></span><a class="headerlink" href="#turbigen.camber.CamberLine.Dtanchi" title="Link to this definition">¶</a></dt>
-<dd><p>Change in the tangent of the metal angle, leading to trailing [–].</p>
-</dd></dl>
-
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.camber.CamberLine.dydm">
 <span class="sig-name descname"><span class="pre">dydm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.camber.CamberLine.dydm" title="Link to this definition">¶</a></dt>
@@ -843,7 +1270,12 @@ there is no reference length to choose: a design is evaluable as soon as it
 exists, rather than only once a chord is known.</p>
 <p><a class="reference internal" href="#turbigen.thickness.Taylor" title="turbigen.thickness.Taylor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Taylor</span></code></a> (<code class="docutils literal notranslate"><span class="pre">taylor</span></code>) is the built-in distribution: two cubic splines in
 shape space meeting at the point of maximum thickness, after
-<span class="bibtex-citation" id="id2">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
+<span class="bibtex-citation" id="id5">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">Clark</span></code> (<code class="docutils literal notranslate"><span class="pre">clark</span></code>) is the two-sided alternative, after Clark (2019): a
+Bernstein polynomial in shape space per surface, so the aerofoil need not be
+symmetric about its camber line. A distribution answers with a half-thickness
+for each surface, suction first, and one that says nothing about sides gives
+the same number twice.</p>
 </section>
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.thickness.ThicknessDesign">
@@ -855,6 +1287,28 @@ shape space meeting at the point of maximum thickness, after
 <dt class="sig sig-object py" id="turbigen.thickness.ThicknessDesign.thick">
 <span class="sig-name descname"><span class="pre">thick</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ThicknessDesign.thick" title="Link to this definition">¶</a></dt>
 <dd><p>Return half-thickness at normalised meridional distance <cite>m</cite>.</p>
+<p>For a distribution that is the same both sides of the camber line. A
+distribution that is not implements <a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick_both" title="turbigen.thickness.ThicknessDesign.thick_both"><code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code></a> instead, and
+has no one number to answer with here.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ThicknessDesign.thick_both">
+<span class="sig-name descname"><span class="pre">thick_both</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ThicknessDesign.thick_both" title="Link to this definition">¶</a></dt>
+<dd><p>Return the half-thickness of each surface, suction first.</p>
+<p>The order <a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> returns the
+surfaces in, so a two-sided distribution and the section it produces
+index the same way with no permutation between them.</p>
+<p><strong>A distribution cannot check this about itself.</strong> Which side of a
+camber line is the suction one is a property of the camber, and a
+thickness has none — so “suction first” is a promise the <em>blade</em>
+keeps when it hangs these two numbers off its camber line (see
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code>), and a claim about
+intent when it is written in a config file. Evaluated on its own, a
+distribution can only say that its first answer goes on whichever
+surface a blade would call suction.</p>
+<p>The same number twice unless a distribution says otherwise, so a
+symmetric one need only write <a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick" title="turbigen.thickness.ThicknessDesign.thick"><code class="xref py py-meth docutils literal notranslate"><span class="pre">thick()</span></code></a>.</p>
 </dd></dl>
 
 </dd></dl>
@@ -863,7 +1317,7 @@ shape space meeting at the point of maximum thickness, after
 <dt class="sig sig-object py" id="turbigen.thickness.Taylor">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.thickness.</span></span><span class="sig-name descname"><span class="pre">Taylor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">R_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_max</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_tmax</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_max</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanwedge</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Taylor" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a></p>
-<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id3">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
+<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id6">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
 <p>The splines meet at the point of maximum thickness, where the value, slope
 and curvature are all continuous.</p>
 <dl class="py attribute">
@@ -947,6 +1401,191 @@ itself is always a candidate. The comparison is therefore always
 <dd><p>Return half-thickness at normalised meridional distance <cite>m</cite>.</p>
 <p>The trailing edge thickness is specified as the total due to both
 sides, so half of it is returned at the trailing edge.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.thickness.</span></span><span class="sig-name descname"><span class="pre">ClarkThickness</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">R_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">coeff</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">((),</span> <span class="pre">())</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanwedge</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ClarkThickness" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a></p>
+<p>A Bernstein polynomial in shape space per surface, after Clark (2019).</p>
+<p>Where <a class="reference internal" href="#turbigen.thickness.Taylor" title="turbigen.thickness.Taylor"><code class="xref py py-class docutils literal notranslate"><span class="pre">Taylor</span></code></a> describes one thickness reflected in the camber
+line, this describes each surface separately, which is what lets a
+section be shaped to a loading distribution rather than to a thickness
+parameter. The camber line stays where it was put: only the two surfaces
+move.</p>
+<p>Two things are shared rather than written per surface. The leading edge
+radius, so that the nose is one curvature rather than two meeting at a
+point — Clark’s own reason, and the one sharing that cannot be undone.
+And the trailing edge thickness, split evenly, so a blunt trailing edge
+stays centred on the camber line however the surfaces arrive at it.</p>
+<p>And the wedge angle, so that the two surfaces depart symmetrically about
+the camber line and the camber’s exit angle is the section’s — see
+<a class="reference internal" href="#turbigen.thickness.ClarkThickness.tanwedge" title="turbigen.thickness.ClarkThickness.tanwedge"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tanwedge</span></code></a> for why that sharing is worth a degree of freedom.</p>
+<p>What is left is the interior of each surface, and only the interior: each
+is the straight line in shape space between the two shared endpoints plus
+a Bernstein perturbation pinned at zero at both ends. So the leading edge
+radius and the wedge angle are exactly what they say however the
+coefficients move, and all-zero coefficients give a section symmetric
+about the camber line.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.14)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'clark'</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.R_LE">
+<span class="sig-name descname"><span class="pre">R_LE</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.R_LE" title="Link to this definition">¶</a></dt>
+<dd><p>Leading edge radius, normalised by meridional chord [–]. Shared by
+both surfaces, so that the nose is a single curvature.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.coeff">
+<span class="sig-name descname"><span class="pre">coeff</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">((),</span> <span class="pre">())</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.coeff" title="Link to this definition">¶</a></dt>
+<dd><p>Interior Bernstein coefficients in shape space, one row per surface
+[–].</p>
+<p>The suction surface first, which is the order
+<a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> returns the surfaces in and
+the order <a class="reference internal" href="#turbigen.thickness.ClarkThickness.thick_both" title="turbigen.thickness.ClarkThickness.thick_both"><code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code></a> answers in — so a row here and the surface
+it shapes line up by index, with nothing in between to get backwards.</p>
+<p>Which side that is comes from the camber line, not from here: see
+<a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick_both" title="turbigen.thickness.ThicknessDesign.thick_both"><code class="xref py py-meth docutils literal notranslate"><span class="pre">ThicknessDesign.thick_both()</span></code></a> for why a thickness distribution cannot
+check its own row ordering, and
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code> for where it is decided.</p>
+<p>The two rows are the same length, and that length sets the order of the
+curve — <cite>order - 1</cite> interior coefficients, the two endpoint ones being
+the leading edge radius and the wedge angle rather than free. Empty rows
+are the straight line in shape space between them, and a section
+symmetric about its camber line.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.tanwedge">
+<span class="sig-name descname"><span class="pre">tanwedge</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.tanwedge" title="Link to this definition">¶</a></dt>
+<dd><p>Tangent of the trailing edge wedge angle [–].</p>
+<p>One number, shared by both surfaces, so the two depart symmetrically about
+the camber line.</p>
+<p><strong>Why this is shared when the interior is not.</strong> A shape-space endpoint
+moves the thickness as <code class="docutils literal notranslate"><span class="pre">m^1.5</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)</span></code>, peaking at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">0.6</span></code>, so a
+wedge angle per surface would be real authority over the rear of each —
+the one place <code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkProfile</span></code> would otherwise have
+none, since a shared knob reads the two surfaces only through their mean
+and a pair equally wrong in opposite directions reads as converged.</p>
+<p>It was written that way, and the cost was not worth it. The trailing edge
+<em>point</em> does not move — half-thickness at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">1</span></code> is <code class="docutils literal notranslate"><span class="pre">t_TE</span> <span class="pre">/</span> <span class="pre">2</span></code> on
+each surface whatever the wedge does, that being the linear ramp in
+<code class="xref py py-func docutils literal notranslate"><span class="pre">thickness_from_tau()</span></code> rather than anything the
+shape space curve reaches. What moved was the direction the aerofoil left
+in: with two wedges the bisector of the surfaces rotates away from the
+camber line by of order twenty-five degrees per unit of difference between
+them, which makes the thickness a second claim on the exit angle. Nothing
+bounded that asymmetry, and <code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> reads the
+rotation as an exit flow angle error and pulls <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> back against
+it. The two then chase each other: a design loop measured the pair walking
+to a difference of 0.13 — some three degrees of exit angle — over six
+iterations with <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> running to eleven degrees behind it, and no
+sign of either settling.</p>
+<p>So the exit angle belongs to the camber line alone, and the rear of each
+surface is the interior coefficients’ to answer for. Reaching as far aft
+as a split wedge did takes a much higher order — the rearmost interior
+control point sits at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">0.64</span></code> at order 4 against the endpoint’s
+<code class="docutils literal notranslate"><span class="pre">0.82</span></code> — which is the price of it, paid where it can be seen.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.t_TE">
+<span class="sig-name descname"><span class="pre">t_TE</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.t_TE" title="Link to this definition">¶</a></dt>
+<dd><p>Trailing edge thickness, the total due to both sides [–].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.order">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">order</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.order" title="Link to this definition">¶</a></dt>
+<dd><p>Degree of the shape-space curve on each surface [–].</p>
+<p>One more than the number of interior coefficients, the two endpoint
+ones being the leading edge radius and the wedge angle. Read off
+<a class="reference internal" href="#turbigen.thickness.ClarkThickness.coeff" title="turbigen.thickness.ClarkThickness.coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code></a> rather than declared, so there is no second place for it
+to be written down and disagree.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.m_ctl">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">m_ctl</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.m_ctl" title="Link to this definition">¶</a></dt>
+<dd><p>Return where each control point moves this section most, shape (order+1,).</p>
+<p>One array, not one per surface: it is a property of the basis, and both
+rows carry the same number of coefficients by construction. See
+<code class="xref py py-func docutils literal notranslate"><span class="pre">turbigen.shapespace.control_m()</span></code> for why these sit strictly inside
+the ends.</p>
+<p>Public because an iterator shaping this distribution against a loading
+distribution has to sample the achieved curve at the points its knobs
+actually act on, and a sampler guessing at its own positions would be
+reading somewhere no coefficient answers for.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.tau_coeff">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">tau_coeff</span></span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.tau_coeff" title="Link to this definition">¶</a></dt>
+<dd><p>Return the full shape-space coefficients of each surface, shape (2, order+1).</p>
+<p><a class="reference internal" href="#turbigen.thickness.ClarkThickness.coeff" title="turbigen.thickness.ClarkThickness.coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code></a> holds only the interior <em>perturbation</em>, on a straight line
+between two endpoints the physics fixes. A straight line is exactly
+representable in the Bernstein basis, though, so the whole curve is one
+Bernstein polynomial whose coefficients are</p>
+<div class="math notranslate nohighlight">
+\[c_k = \tau_{LE} + (\tau_{TE} - \tau_{LE}) k / n + p_k\]</div>
+<p>with <cite>p_0</cite> and <cite>p_n</cite> zero. That makes <code class="docutils literal notranslate"><span class="pre">c[0]</span></code> exactly
+<code class="xref py py-func docutils literal notranslate"><span class="pre">tau_LE()</span></code> of the leading edge radius and
+<code class="docutils literal notranslate"><span class="pre">c[-1]</span></code> exactly <code class="xref py py-func docutils literal notranslate"><span class="pre">tau_TE()</span></code> of the trailing
+edge — the two ends are not special cases of the curve, they <em>are</em> its
+first and last coefficients.</p>
+<p>Why anything wants this: in these coordinates every coefficient does the
+same kind of thing, which is to raise <cite>tau</cite> and thicken the surface
+locally. A knob per coefficient therefore has one sensitivity sign
+rather than one for the interior and something else for the ends, and a
+positive <cite>R_LE</cite> comes for free since it is <cite>c[0]**2 / 2</cite>.</p>
+<p><strong>The two rows share both end entries.</strong> The first is the one leading
+edge radius and the last the one wedge angle, each returned duplicated
+rather than split out so that a row lines up index for index with
+<a class="reference internal" href="#turbigen.thickness.ClarkThickness.m_ctl" title="turbigen.thickness.ClarkThickness.m_ctl"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_ctl</span></code></a>; <a class="reference internal" href="#turbigen.thickness.ClarkThickness.with_tau_coeff" title="turbigen.thickness.ClarkThickness.with_tau_coeff"><code class="xref py py-meth docutils literal notranslate"><span class="pre">with_tau_coeff()</span></code></a> checks that a caller writing them
+back has kept both pairs equal.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.with_tau_coeff">
+<span class="sig-name descname"><span class="pre">with_tau_coeff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">c</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.with_tau_coeff" title="Link to this definition">¶</a></dt>
+<dd><p>Return this thickness rebuilt from full shape-space coefficients.</p>
+<p>The inverse of <a class="reference internal" href="#turbigen.thickness.ClarkThickness.tau_coeff" title="turbigen.thickness.ClarkThickness.tau_coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tau_coeff</span></code></a>, and the only supported way to write
+through it. <strong>Not because the arithmetic is hard, but because it does
+not decompose</strong>: moving <cite>c[0]</cite> moves the straight line under the whole
+curve, so every interior perturbation has to be recomputed to leave its
+own coefficient where the caller put it. Setting <cite>R_LE</cite> and then the
+interior coefficients one at a time — the obvious thing for a caller
+holding the fields — silently drags the interior along behind the
+nose.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>c</strong> (<em>array_like</em><em>, </em><a class="reference internal" href="#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><em>2</em><em>, </em><em>order + 1</em><em>)</em>) – Full shape-space coefficients of each surface, suction first. The
+two rows must agree at both ends, those being the one radius the
+nose has and the one angle the surfaces leave at.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.tau">
+<span class="sig-name descname"><span class="pre">tau</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.tau" title="Link to this definition">¶</a></dt>
+<dd><p>Return shape space of each surface at meridional distance <cite>m</cite>.</p>
+<p>Suction first, as <a class="reference internal" href="#turbigen.thickness.ClarkThickness.thick_both" title="turbigen.thickness.ClarkThickness.thick_both"><code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code></a> returns them.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.thick_both">
+<span class="sig-name descname"><span class="pre">thick_both</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.thick_both" title="Link to this definition">¶</a></dt>
+<dd><p>Return the half-thickness of each surface, suction first.</p>
+<p>The trailing edge thickness is the total due to both sides, so half of
+it is left on each surface at the trailing edge.</p>
 </dd></dl>
 
 </dd></dl>

@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Input file format &#8212; turbigen 3.0.1.dev24+g11478bbd7 documentation</title>
+    <title>Input file format &#8212; turbigen 3.0.1.dev84+g1e92d9922 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f747c255"></script>
+    <script src="_static/documentation_options.js?v=f5d19708"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -34,7 +34,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev24+g11478bbd7</p>
+<p class="blurb">Version 3.0.1.dev84+g1e92d9922</p>
 
 
 
@@ -295,6 +295,9 @@ show up at the earliest opportunity.</p>
 <span class="w">      </span><span class="nt">variables</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Ys</span><span class="p p-Indicator">]</span>
 <span class="w">      </span><span class="nt">clip</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.01</span>
 <span class="w">      </span><span class="nt">tolerance</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span>
+<span class="w">    </span><span class="c1"># To shape the suction surface Mach distribution as well, see</span>
+<span class="w">    </span><span class="c1"># turbine_cascade_loading.yaml: a `loading` iterator needs a `bernstein`</span>
+<span class="w">    </span><span class="c1"># camber line to move, which the quadratic one above does not provide.</span>
 
 <span class="nt">solver</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ember</span>
@@ -309,6 +312,7 @@ show up at the earliest opportunity.</p>
 <span class="w">  </span><span class="nt">dampin</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25.0</span>
 <span class="w">  </span><span class="nt">gain_filt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">  </span><span class="nt">delta_filt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
+<span class="w">  </span><span class="nt">expon_mgrid</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
 </pre></div>
 </div>
 </section>
@@ -432,12 +436,12 @@ the command that writes a batch, and stripped from the configs it emits: a
 member is one design, not a design of experiments.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-post-process"><span class="std std-ref">post_process:</span></a></p></td>
-<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">annulus</span></code>, <code class="docutils literal notranslate"><span class="pre">contour</span></code>, <code class="docutils literal notranslate"><span class="pre">convergence</span></code>, <code class="docutils literal notranslate"><span class="pre">sections</span></code>, <code class="docutils literal notranslate"><span class="pre">surface</span></code>, <code class="docutils literal notranslate"><span class="pre">triangle</span></code></p></td>
+<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">annulus</span></code>, <code class="docutils literal notranslate"><span class="pre">camber</span></code>, <code class="docutils literal notranslate"><span class="pre">contour</span></code>, <code class="docutils literal notranslate"><span class="pre">convergence</span></code>, <code class="docutils literal notranslate"><span class="pre">sections</span></code>, <code class="docutils literal notranslate"><span class="pre">spanwise</span></code>, <code class="docutils literal notranslate"><span class="pre">surface</span></code>, <code class="docutils literal notranslate"><span class="pre">triangle</span></code></p></td>
 <td><p>Post-processors to run. Nothing is added implicitly: what the config
 asks for is what runs.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#config-metrics"><span class="std std-ref">metrics:</span></a></p></td>
-<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">surface_dissipation</span></code></p></td>
+<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">diffusion_factor</span></code>, <code class="docutils literal notranslate"><span class="pre">surface_dissipation</span></code></p></td>
 <td><p>Quantities to measure from the solved field and record under
 <code class="docutils literal notranslate"><span class="pre">result:</span> <span class="pre">metrics:</span></code>. Nothing is measured unless the config asks for it.</p></td>
 </tr>
@@ -616,6 +620,14 @@ touching the fit [–].</p></td>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">To1:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">300.0</span></code></p></td>
 <td><p>Inlet stagnation temperature [K].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Ma1_max:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>Largest acceptable stage inlet Mach number [–].</p>
+<p>The inlet Mach number is an outcome of the design rather than something
+asked for, so this is the limit it is checked against once the stage has
+converged, not a target solved for.</p>
+</td>
 </tr>
 </tbody>
 </table>
@@ -844,21 +856,84 @@ to this power. The default is a free vortex.</p></td>
 <td><p>Recamber of the trailing edge from the local flow angle [deg].</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#config-blades-sections-camber"><span class="std std-ref">camber:</span></a></p></td>
-<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">bernstein</span></code>, <code class="docutils literal notranslate"><span class="pre">quadratic</span></code></p></td>
+<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">bernstein</span></code>, <code class="docutils literal notranslate"><span class="pre">circular_arc</span></code>, <code class="docutils literal notranslate"><span class="pre">clark</span></code>, <code class="docutils literal notranslate"><span class="pre">quadratic</span></code></p></td>
 <td><p>Shape of the camber line between the end angles.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-blades-sections-thickness"><span class="std std-ref">thickness:</span></a></p></td>
-<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">taylor</span></code></p></td>
+<td><p>mapping; one of <code class="docutils literal notranslate"><span class="pre">clark</span></code>, <code class="docutils literal notranslate"><span class="pre">taylor</span></code></p></td>
 <td><p>Thickness distribution, normalised by meridional chord.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fac_tangential:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.7</span></code></p></td>
+<td><p>Fraction of the pressure surface’s thickness applied circumferentially
+at mid-chord [–].</p>
+<p><strong>Why a surface is not simply offset perpendicular to the camber line.</strong> A
+perpendicular offset returns the camber’s curvature amplified by
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">t</span> <span class="pre">kappa)</span></code> on the concave side, so a thick section on a tightly
+curved camber over-curves that surface long before the offset actually
+folds at <code class="docutils literal notranslate"><span class="pre">t</span> <span class="pre">kappa</span> <span class="pre">=</span> <span class="pre">1</span></code>: a spike in surface curvature, and a kink in the
+Mach distribution over it. Rotating part of the offset toward the
+circumferential direction takes the amplification away, since an offset
+with no meridional component cannot fold at all.</p>
+<p><strong>The pressure surface only.</strong> The amplification is a concave-side effect:
+on the convex side the same offset <em>divides</em> the camber curvature by
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">+</span> <span class="pre">t</span> <span class="pre">kappa</span></code>, so there is nothing there to take out. Rotating that side
+as well buys nothing and costs something, because the rotation carries a
+term in its own gradient — see below — which on the convex side arrives
+with nothing to cancel it. Measured on a turbine section, blending both
+sides raises the suction surface’s total variation of curvature by half
+again at <code class="docutils literal notranslate"><span class="pre">fac_tangential</span> <span class="pre">=</span> <span class="pre">1</span></code> and leaves the pressure surface exactly
+where blending one side put it.</p>
+<p><strong>Weighted to the middle, which is where the problem is.</strong> The
+circumferential fraction is <code class="docutils literal notranslate"><span class="pre">fac_tangential</span> <span class="pre">*</span> <span class="pre">(4</span> <span class="pre">m</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m))^1.2</span></code>, a bump
+that peaks at mid-chord — so this number is read there — and whose
+value and slope vanish at both ends. That is what keeps the two ends
+close to what they were: the nose is a circle of
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.R_LE" title="turbigen.thickness.ClarkThickness.R_LE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">R_LE</span></code></a> to within a per cent and
+the trailing edge stands perpendicular to the camber line exactly, so a
+wedge angle and a trailing edge thickness still mean what they say. Clark
+(2019) blends the other way round, from normal at the leading edge to
+tangential at the trailing edge, which on a staggered blade cuts the
+trailing edge off at constant axial position.</p>
+<p><strong>Why that exponent and not a squarer bump.</strong> What the offset actually
+sees is the turning rate of its own direction, <code class="docutils literal notranslate"><span class="pre">(1</span> <span class="pre">-</span> <span class="pre">w)</span> <span class="pre">chi'</span> <span class="pre">-</span> <span class="pre">w'</span> <span class="pre">chi</span></code>,
+of which the second term is nobody’s intention: it is largest where the
+weight’s slope and the camber angle are both large, which is the shoulders
+of the bump, and it puts back as a curvature reversal a good part of what
+the first term takes out. Since the weight runs from zero up to
+<code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code> and back, its total variation is fixed and only its
+slope can be spread out. A softer exponent spreads it further, and the
+total variation of pressure surface curvature falls with it — 19.1 at
+the square this replaces, 15.5 at 1.5, 13.0 at 1.2, 11.8 at 1.05, against
+74.0 for the plain perpendicular offset and 11.4 for the suction surface,
+which nothing rotates and which is as smooth as a surface on this section
+gets. A flat-topped weight does the opposite, steepening the shoulders and
+undoing the whole thing.</p>
+<p><strong>And what stops it going softer still.</strong> Below an exponent of two the
+weight’s <em>second</em> derivative is unbounded at both ends, so the nose is no
+longer exactly the circle it asks for: measured against the perpendicular
+offset, the fitted leading edge radius grows by 0.02 per cent at an
+exponent of two, 0.17 at 1.5, 0.65 at 1.2 and 1.3 at 1.05. The curvature
+itself still converges — it is its gradient that does not — so this is
+a small and local price rather than a different nose, and 1.2 is where
+paying it stops being worth what it buys.</p>
+<p><strong>Where the weight peaks is not a lever.</strong> Skewing the bump forward, so
+that it peaks nearer the leading edge where the camber curvature does,
+buys nothing: holding the leading edge exponent fixed and sliding the peak
+from mid-chord to 0.42 moves the total variation by under two per cent,
+and sliding it further forward, or aft at all, makes it worse. Only the
+exponent matters, and it matters through the two shoulders equally.</p>
+<p>Zero is the plain perpendicular offset, and one applies the pressure
+surface’s thickness circumferentially at mid-chord.</p>
+</td>
 </tr>
 </tbody>
 </table>
 <section id="camber">
 <span id="config-blades-sections-camber"></span><h5>camber:<a class="headerlink" href="#camber" title="Link to this heading">¶</a></h5>
 <p>Base for camber line shapes.</p>
-<p>A shape knows nothing of the blade angles: it interpolates between them.
-The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers where the angles come from.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-camber-bernstein"><span class="std std-ref">bernstein</span></a>, <a class="reference internal" href="#config-blades-sections-camber-quadratic"><span class="std std-ref">quadratic</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p>The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers where the end angles come from.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-camber-bernstein"><span class="std std-ref">bernstein</span></a>, <a class="reference internal" href="#config-blades-sections-camber-circular-arc"><span class="std std-ref">circular_arc</span></a>, <a class="reference internal" href="#config-blades-sections-camber-clark"><span class="std std-ref">clark</span></a>, <a class="reference internal" href="#config-blades-sections-camber-quadratic"><span class="std std-ref">quadratic</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-bernstein">
 <span id="config-blades-sections-camber-bernstein"></span><h6>type: bernstein<a class="headerlink" href="#type-bernstein" title="Link to this heading">¶</a></h6>
 <p>Bernstein-polynomial perturbation of a quadratic camber line.</p>
@@ -883,8 +958,115 @@ The <a class="reference internal" href="blade.html"><span class="doc">Blade shap
 <td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
 <td><p>Interior Bernstein coefficients, local changes about a linear ramp [–].</p>
 <p>The two endpoint coefficients are fixed at zero so the camber line ends
-stay put; supply the <code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> interior values here. Fewer than
-that are zero-padded, and all-zero recovers a quadratic camber line.</p>
+stay put; supply all <code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> interior values here, or none
+at all to recover a quadratic camber line. A shorter, non-empty <cite>coeff</cite>
+is only accepted with <code class="xref py py-attr docutils literal notranslate"><span class="pre">upsample</span></code> set, since padding it with zeros
+would silently change the shape rather than leave it alone.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">upsample:</span></code></p></td>
+<td><p>true or false, default <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>Reinterpret a short <code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code> as a lower-order curve, exactly.</p>
+<p>A <cite>coeff</cite> shorter than <code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code> <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">1</span></code> is read, once at
+construction, as the interior coefficients of a <em>lower-order</em> Bernstein
+curve, which is then raised to <code class="xref py py-attr docutils literal notranslate"><span class="pre">order</span></code> by Bezier degree elevation
+— an exact identity, not a fit — and <code class="xref py py-attr docutils literal notranslate"><span class="pre">coeff</span></code> is replaced by the
+elevated, full-length array. The camber line is unchanged by this and the
+extra coefficients are then free to perturb it further. Sampling the
+low-order curve and solving a matrix problem to match points would only
+approximate this, and get worse-conditioned as the order grows; degree
+elevation gets the same result exactly and in closed form, so use that
+instead.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="type-circular-arc">
+<span id="config-blades-sections-camber-circular-arc"></span><h6>type: circular_arc<a class="headerlink" href="#type-circular-arc" title="Link to this heading">¶</a></h6>
+<p>Camber line of constant curvature between the end angles.</p>
+<p>The shape with nothing to state: the end angles fix the arc, so there is
+no parameter here and nothing for an iterator to move. Constant curvature
+means the camber angle turns uniformly with arc length, or
+<code class="docutils literal notranslate"><span class="pre">sin</span> <span class="pre">chi</span> <span class="pre">=</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)</span> <span class="pre">sin</span> <span class="pre">chi_LE</span> <span class="pre">+</span> <span class="pre">m</span> <span class="pre">sin</span> <span class="pre">chi_TE</span></code> against meridional
+distance — closed form, so the arc costs no more to evaluate than the
+polynomial shapes do.</p>
+<p>The curvature is constant in the unwrapped meridional-tangential plane the
+other shapes are written in, before
+<a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> projects onto the annulus.
+On a constant-radius annulus that is a true circle in <code class="docutils literal notranslate"><span class="pre">(m,</span> <span class="pre">r</span> <span class="pre">theta)</span></code>;
+where the radius changes it is not, which is the same approximation every
+shape here already makes.</p>
+<p>This mapping takes no keys.</p>
+</section>
+<section id="type-clark">
+<span id="config-blades-sections-camber-clark"></span><h6>type: clark<a class="headerlink" href="#type-clark" title="Link to this heading">¶</a></h6>
+<p>Power-law camber line after <span class="bibtex-citation" id="id1">[<a class="reference internal" href="references.html#id3" title="A Step Towards an Intelligent Aerodynamic Design Process, volume Volume 2C: Turbomachinery of Turbo Expo: Power for Land, Sea, and Air, 2019. V02CT41A033. doi:10.1115/GT2019-91637.">Clark, 2019</a>]</span>.</p>
+<p>The camber line of the paper whose thickness distribution is
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness" title="turbigen.thickness.ClarkThickness"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a>, written in the slope the
+protocol here asks for. Clark states the camber itself,</p>
+<p><code class="docutils literal notranslate"><span class="pre">zeta</span> <span class="pre">=</span> <span class="pre">a</span> <span class="pre">m^n</span> <span class="pre">+</span> <span class="pre">b</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^n</span></code>, with <code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">tanchi_TE</span> <span class="pre">/</span> <span class="pre">n</span></code> and
+<code class="docutils literal notranslate"><span class="pre">b</span> <span class="pre">=</span> <span class="pre">-tanchi_LE</span> <span class="pre">/</span> <span class="pre">n</span></code>,</p>
+<p>whose slope is <code class="docutils literal notranslate"><span class="pre">tanchi_TE</span> <span class="pre">m^(n-1)</span> <span class="pre">+</span> <span class="pre">tanchi_LE</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^(n-1)</span></code> — the two
+end tangents, each faded out along the chord by the same power. The ends
+are then exact for any <code class="xref py py-attr docutils literal notranslate"><span class="pre">exponent</span></code> above one, and the rise of the
+line is <code class="docutils literal notranslate"><span class="pre">(tanchi_LE</span> <span class="pre">+</span> <span class="pre">tanchi_TE)</span> <span class="pre">/</span> <span class="pre">n</span></code>, so that the stagger angle falls
+out of the exponent rather than the other way about.</p>
+<p><strong>Clark asks for the stagger and solves for the exponent; this asks for
+the exponent.</strong> Both say the same curve, and stagger is the more physical
+of the two — a designer has a view on it, and it is what the paper’s
+optimiser and its network actually output. But the staggers a camber line
+can reach are an open interval its end angles fix, and taking the stagger
+as the parameter would put those angles into the meaning of the parameter:
+the same configured number would be a different curve at hub and at
+casing, a shape could refuse angles it is handed, a
+<code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> moving <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> could walk it into
+that refusal, and there would be no value to default to. The exponent has
+none of that, and it is the parameter the other shapes here are written
+like: a normalised curve, the same whatever the ends are. Ask
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">stagger()</span></code> for the angle it lands on.</p>
+<p>An exponent of two gives <code class="docutils literal notranslate"><span class="pre">tanchi_LE</span> <span class="pre">+</span> <span class="pre">m</span> <span class="pre">(tanchi_TE</span> <span class="pre">-</span> <span class="pre">tanchi_LE)</span></code>, exactly
+<code class="xref py py-class docutils literal notranslate"><span class="pre">Quadratic</span></code> with zero aft loading, at the stagger of the mean of the
+end tangents that <a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor" title="turbigen.blade.DiffusionFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">DiffusionFactor</span></code></a> already assumes
+when it resolves a true chord. The converged designs of the paper sit
+between about 1.9 and 3.2, read off its Fig. 11.</p>
+<p><strong>The exponent flattens the middle rather than shifting the loading aft.</strong>
+Both faded tangents carry the same factor <code class="docutils literal notranslate"><span class="pre">0.5^(n-1)</span></code> at mid-chord, so
+raising the exponent drives the camber angle there towards axial and packs
+the turning into the two ends. On a turbine that reads as aft loading, but
+only because the leading edge is the end already near axial: between metal
+angles of 20 and -70 degrees, 78% of the turning is done by mid-chord at an
+exponent of two and 41% of it at four. Turn a section the other way about,
+so the leading edge is the more turned end, and the same change front-loads
+it; on a section symmetric about axial it changes no fore-and-aft balance
+at all, only how tightly the turning bunches in the middle.</p>
+<p><strong>Above two, end tangents of the same sign give an inflected camber line.</strong>
+The slope has an interior stationary point for any <code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">2</span></code>, and where the
+ends turn the same way that point lies outside both of them — the camber
+angle turns past its exit angle and comes back, an S in the annulus. A
+section that turns through axial has a monotonic slope at any exponent,
+which is every section in the paper; compressors it claims only as an
+extension.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">exponent:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
+<td><p>Power the end tangents are faded along the chord by [–].</p>
+<p>Strictly greater than one, or the camber line does not reach the tangents
+it is placed between: the fading factors <code class="docutils literal notranslate"><span class="pre">m^(n-1)</span></code> and <code class="docutils literal notranslate"><span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)^(n-1)</span></code>
+only vanish at the far end for a positive power. Two is the quadratic
+camber line.</p>
 </td>
 </tr>
 </tbody>
@@ -921,10 +1103,108 @@ aft, negative values forward.</p>
 <span id="config-blades-sections-thickness"></span><h5>thickness:<a class="headerlink" href="#thickness" title="Link to this heading">¶</a></h5>
 <p>Base for thickness distributions, normalised by meridional chord.</p>
 <p>The <a class="reference internal" href="blade.html"><span class="doc">Blade shapes</span></a> page covers how a distribution is placed on a blade.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-thickness-taylor"><span class="std std-ref">taylor</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-blades-sections-thickness-clark"><span class="std std-ref">clark</span></a>, <a class="reference internal" href="#config-blades-sections-thickness-taylor"><span class="std std-ref">taylor</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<section id="config-blades-sections-thickness-clark">
+<span id="id2"></span><h6>type: clark<a class="headerlink" href="#config-blades-sections-thickness-clark" title="Link to this heading">¶</a></h6>
+<p>A Bernstein polynomial in shape space per surface, after Clark (2019).</p>
+<p>Where <code class="xref py py-class docutils literal notranslate"><span class="pre">Taylor</span></code> describes one thickness reflected in the camber
+line, this describes each surface separately, which is what lets a
+section be shaped to a loading distribution rather than to a thickness
+parameter. The camber line stays where it was put: only the two surfaces
+move.</p>
+<p>Two things are shared rather than written per surface. The leading edge
+radius, so that the nose is one curvature rather than two meeting at a
+point — Clark’s own reason, and the one sharing that cannot be undone.
+And the trailing edge thickness, split evenly, so a blunt trailing edge
+stays centred on the camber line however the surfaces arrive at it.</p>
+<p>And the wedge angle, so that the two surfaces depart symmetrically about
+the camber line and the camber’s exit angle is the section’s — see
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">tanwedge</span></code> for why that sharing is worth a degree of freedom.</p>
+<p>What is left is the interior of each surface, and only the interior: each
+is the straight line in shape space between the two shared endpoints plus
+a Bernstein perturbation pinned at zero at both ends. So the leading edge
+radius and the wedge angle are exactly what they say however the
+coefficients move, and all-zero coefficients give a section symmetric
+about the camber line.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">R_LE:</span></code></p></td>
+<td><p>float</p></td>
+<td><p>Leading edge radius, normalised by meridional chord [–]. Shared by
+both surfaces, so that the nose is a single curvature.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">coeff:</span></code></p></td>
+<td><p>list of lists of floats, default <code class="docutils literal notranslate"><span class="pre">[[],</span> <span class="pre">[]]</span></code></p></td>
+<td><p>Interior Bernstein coefficients in shape space, one row per surface
+[–].</p>
+<p>The suction surface first, which is the order
+<a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> returns the surfaces in and
+the order <code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code> answers in — so a row here and the surface
+it shapes line up by index, with nothing in between to get backwards.</p>
+<p>Which side that is comes from the camber line, not from here: see
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">ThicknessDesign.thick_both()</span></code> for why a thickness distribution cannot
+check its own row ordering, and
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">_suction_is_upper</span></code> for where it is decided.</p>
+<p>The two rows are the same length, and that length sets the order of the
+curve — <cite>order - 1</cite> interior coefficients, the two endpoint ones being
+the leading edge radius and the wedge angle rather than free. Empty rows
+are the straight line in shape space between them, and a section
+symmetric about its camber line.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tanwedge:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
+<td><p>Tangent of the trailing edge wedge angle [–].</p>
+<p>One number, shared by both surfaces, so the two depart symmetrically about
+the camber line.</p>
+<p><strong>Why this is shared when the interior is not.</strong> A shape-space endpoint
+moves the thickness as <code class="docutils literal notranslate"><span class="pre">m^1.5</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">m)</span></code>, peaking at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">0.6</span></code>, so a
+wedge angle per surface would be real authority over the rear of each —
+the one place <code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkProfile</span></code> would otherwise have
+none, since a shared knob reads the two surfaces only through their mean
+and a pair equally wrong in opposite directions reads as converged.</p>
+<p>It was written that way, and the cost was not worth it. The trailing edge
+<em>point</em> does not move — half-thickness at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">1</span></code> is <code class="docutils literal notranslate"><span class="pre">t_TE</span> <span class="pre">/</span> <span class="pre">2</span></code> on
+each surface whatever the wedge does, that being the linear ramp in
+<code class="xref py py-func docutils literal notranslate"><span class="pre">thickness_from_tau()</span></code> rather than anything the
+shape space curve reaches. What moved was the direction the aerofoil left
+in: with two wedges the bisector of the surfaces rotates away from the
+camber line by of order twenty-five degrees per unit of difference between
+them, which makes the thickness a second claim on the exit angle. Nothing
+bounded that asymmetry, and <code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> reads the
+rotation as an exit flow angle error and pulls <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> back against
+it. The two then chase each other: a design loop measured the pair walking
+to a difference of 0.13 — some three degrees of exit angle — over six
+iterations with <code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code> running to eleven degrees behind it, and no
+sign of either settling.</p>
+<p>So the exit angle belongs to the camber line alone, and the rear of each
+surface is the interior coefficients’ to answer for. Reaching as far aft
+as a split wedge did takes a much higher order — the rearmost interior
+control point sits at <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">0.64</span></code> at order 4 against the endpoint’s
+<code class="docutils literal notranslate"><span class="pre">0.82</span></code> — which is the price of it, paid where it can be seen.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">t_TE:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
+<td><p>Trailing edge thickness, the total due to both sides [–].</p></td>
+</tr>
+</tbody>
+</table>
+</section>
 <section id="type-taylor">
 <span id="config-blades-sections-thickness-taylor"></span><h6>type: taylor<a class="headerlink" href="#type-taylor" title="Link to this heading">¶</a></h6>
-<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id1">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
+<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id3">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
 <p>The splines meet at the point of maximum thickness, where the value, slope
 and curvature are all continuous.</p>
 <table class="config-keys docutils align-default">
@@ -978,6 +1258,13 @@ finished <code class="xref py py-class docutils literal notranslate"><span class
 <section id="type-co">
 <span id="config-blades-count-co"></span><h5>type: Co<a class="headerlink" href="#type-co" title="Link to this heading">¶</a></h5>
 <p>Set the number of blades using a circulation coefficient.</p>
+<p>The circulation coefficient is the blade circulation over an ideal one
+that carries the exit velocity along the whole suction surface and
+stagnated flow along the pressure surface, Coull and Hodson (2013) eqn.
+(21). A typical value is 0.7; the loss correlations it was fitted against
+begin to extrapolate above about 0.8.</p>
+<p>Coull and Hodson write it for an axial row. What is evaluated here is the
+generalisation to a changing radius, Kaufmann (2020) eqn. (F.6).</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -1088,42 +1375,70 @@ size [–].</p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
 <td><p>Aspect ratio in blade-to-blade plane of cells at outlet boundary.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AR_passage:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AR_mix:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
+<td><p>Aspect ratio in blade-to-blade plane of cells at a mixing plane.</p>
+<p>The row-to-row interface, as against the true machine inlet and outlet
+that <code class="xref py py-attr docutils literal notranslate"><span class="pre">AR_stream</span></code> governs. Same default, so a mesh is unchanged until
+this is lowered — which tightens the streamwise cells feeding a mixing
+plane without refining the real boundaries. A coarse mixing-plane cell is
+where a restart from a neighbouring design tends to come apart: a small
+design change can drop a multigrid block out of the wake there, and the
+field resampled onto the coarser grid then blows up.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AR_passage:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
 <td><p>Nominal aspect ratio in blade-to-blade plane of mid-passage cells.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AR_merid:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AR_merid:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
 <td><p>Aspect ratio of mid-chord cells in meridional plane.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ER_span:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ER_span:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.2</span></code></p></td>
 <td><p>Expansion ratio of spanwise grid away from hub and casing.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dm_LE:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dm_LE:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.001</span></code></p></td>
 <td><p>Streamwise grid spacing at LE, normalised by meridional chord.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ni_TE:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ni_TE:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">9</span></code></p></td>
 <td><p>Number of streamwise points across trailing edge.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dm_TE:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dm_TE:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
 <td><p>Normalised meridional length over which to cluster the TE points, 0. for
 the true actual TE.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dspf_mid:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dspf_mid:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.03</span></code></p></td>
 <td><p>Spanwise grid spacing at midspan, as a fraction of span.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ER_pitch:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ER_pitch:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.2</span></code></p></td>
 <td><p>Expansion ratio away from aerofoil surfaces.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nk_min:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nk_min:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">37</span></code></p></td>
 <td><p>Minimum number of pitchwise grid points per row.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">njtip_min:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">5</span></code></p></td>
+<td><p>Minimum number of spanwise grid points across the open tip gap.</p>
+<p>Five rather than nine, because nine is not always affordable: the count
+sets a spacing, and a wide passage stretches the pitchwise direction
+around it while the radial spacing stays at a tenth of a millimetre. On a
+stage of pitch-to-chord 1.14 that gave cells up to 37:1 across the
+clearance, and a march that failed in the tip flow at step 30 – where the
+same design at five ran four design iterations without trouble.</p>
+<p>A minimum, not a target: where the wall spacing is already finer than the
+clearance divided by this, the clustering puts in more. The total spanwise
+count stays a multigrid one either way; see
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">spanwise_grid()</span></code>, where the main passage makes up whatever the gap
+leaves.</p>
+</td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nchord_relax:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
@@ -1145,16 +1460,54 @@ Only affects the downstream side of the final row.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AR_cusp:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
-<td><p>Length of the trailing edge cusp, as a multiple of TE thickness.</p></td>
+<td><p>Length of the trailing edge cusp, as a multiple of TE thickness.</p>
+<p>Being a multiple of that thickness, this needs a blunt trailing edge to be
+a multiple of: a blade closing to a point is refused by
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">_check_trailing_edges()</span></code> rather than meshed into crossed surfaces.</p>
+</td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ni_cusp:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
 <td><p>Number of streamwise points along the trailing edge cusp.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gap_contraction:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nk_tip:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Number of points across the blade thickness in a gridded tip block.</p>
+<p>Zero pinches the blade to nothing over the clearance, which is what this
+mesher has always done: the two sides of the section are brought together
+and the collapsed faces made periodic, so the flow crosses where the blade
+used to be. Non-zero gives the clearance a block of its own, filling the
+blade-shaped prism between the tip and the casing, and the blade keeps the
+thickness it was designed with all the way up.</p>
+<p>The prism closes to a line at the leading edge and at the trailing edge or
+cusp tip, so the block is degenerate at both ends of <cite>i</cite>. Those faces carry
+no flux, having no area, and are marked as such rather than left to look
+like walls; see <code class="xref py py-meth docutils literal notranslate"><span class="pre">_tip_block()</span></code>.</p>
+<p>A count, not a flag, because the thickness has to be resolved: nine is the
+least a multigrid level can halve twice, and <cite>gap_contraction</cite> and
+<cite>pinch_ramp</cite> mean nothing once this is set.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gap_contraction:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.6</span></code></p></td>
 <td><p>Fraction of the tip gap over which the blade is pinched to zero
-thickness.</p></td>
+thickness.</p>
+<p>Ignored when <code class="xref py py-attr docutils literal notranslate"><span class="pre">nk_tip</span></code> grids the clearance instead of pinching it.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pinch_ramp:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
+<td><p>Span over which the blade thins into the tip gap, as a multiple of the
+gap.</p>
+<p>Ignored when <code class="xref py py-attr docutils literal notranslate"><span class="pre">nk_tip</span></code> grids the clearance instead of pinching it.</p>
+<p>The blade is at full thickness <cite>pinch_ramp</cite> gap-heights below the casing
+and reaches zero at the top of the pinch, so this sets how abruptly it
+ends. Too steep and the blade stops in what is nearly a step: the flow over
+the last solid layer cannot follow it, and the tip can drive the solver
+non-physical there. What matters is the spanwise distance the collapse
+takes, not the thickness of the last solid layer, so a wider ramp is the
+remedy rather than a blunter tip.</p>
+</td>
 </tr>
 </tbody>
 </table>
@@ -1163,14 +1516,19 @@ thickness.</p></td>
 <section id="solver">
 <span id="config-solver"></span><h3>solver:<a class="headerlink" href="#solver" title="Link to this heading">¶</a></h3>
 <p>Base for flow solvers.</p>
-<p>Deliberately fieldless. Everything a solver needs is its own, and a
-convergence verdict belongs to the history a run produces rather than to
-the settings that produced it.</p>
+<p>One field, and it is deliberately the only one. Everything else a solver
+needs is its own, and a convergence verdict belongs to the history a run
+produces rather than to the settings that produced it.</p>
+<p>A solver is also expected to carry <code class="docutils literal notranslate"><span class="pre">soft()</span></code>, returning a copy of itself
+detuned for a robust start. Not declared here, because the one solver there
+is inherits a working one from <a class="reference external" href="https://ember-cfd.org/0.4.2/api/solver.html#ember.solver.Solver" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ember.solver.Solver</span></code></a> and a stub would
+only shadow what it already has; a family member without one fails at the
+call site, naming the method it lacks.</p>
 <p class="config-choices">Takes one of <a class="reference internal" href="#config-solver-ember"><span class="std std-ref">ember</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-ember">
 <span id="config-solver-ember"></span><h4>type: ember<a class="headerlink" href="#type-ember" title="Link to this heading">¶</a></h4>
 <p>The ember explicit time-marching solver.</p>
-<p>Every field and <code class="docutils literal notranslate"><span class="pre">run</span></code> itself come from <a class="reference external" href="https://ember-cfd.org/0.4.0/api/solver.html#ember.solver.Solver" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ember.solver.Solver</span></code></a>, so
+<p>Every field and <code class="docutils literal notranslate"><span class="pre">run</span></code> itself come from <a class="reference external" href="https://ember-cfd.org/0.4.2/api/solver.html#ember.solver.Solver" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ember.solver.Solver</span></code></a>, so
 the settings this accepts are whatever ember accepts, always, and
 <code class="xref py py-meth docutils literal notranslate"><span class="pre">Solver.options()</span></code> lists them.</p>
 <p>Five defaults are restated below. ember tunes its own for large machine
@@ -1219,19 +1577,23 @@ A config that knows its case can raise any of them.</p>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.002</span></code></p></td>
 <td><p>Second-order smoothing factor.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">inviscid:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">adaptive_smoothing:</span></code></p></td>
+<td><p>true or false, default <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>Drive the second-order smoothing with a JST shock sensor.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">inviscid:</span></code></p></td>
 <td><p>true or false, default <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p>Skip viscous terms in the sources evaluation.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fac_visc:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fac_visc:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
 <td><p>Multiplier on the turbulent-diffusion timestep radius; &gt;1 tightens the
 viscous limit to recover the inviscid stable CFL.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sf_resid:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sf_resid:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Implicit residual smoothing factor. Applied to the fine residual by
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/grid.html#ember.grid.Grid.update_residual" title="(in ember v0.4.0)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">update_residual()</span></code></a> (<code class="docutils literal notranslate"><span class="pre">sf</span></code>) and, on both integrators,
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/grid.html#ember.grid.Grid.update_residual" title="(in ember v0.4.2)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">update_residual()</span></code></a> (<code class="docutils literal notranslate"><span class="pre">sf</span></code>) and, on both integrators,
 to the coarse block-restricted residual of the multigrid correction
 (<code class="xref py py-func docutils literal notranslate"><span class="pre">advance_rk_stage_mg()</span></code>’s <code class="docutils literal notranslate"><span class="pre">sf_irs</span></code> for RK, <code class="xref py py-func docutils literal notranslate"><span class="pre">scree_step()</span></code>’s
 <code class="docutils literal notranslate"><span class="pre">sf_irs</span></code> for scree). The coarse smoothing needs <code class="docutils literal notranslate"><span class="pre">n_levels</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> to have
@@ -1239,73 +1601,89 @@ any effect.</p>
 <p>turbigen changes this default; ember’s own is <code class="docutils literal notranslate"><span class="pre">1.0</span></code>.</p>
 </td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gain_filt:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain_filt:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Selective frequency damping gain.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">delta_filt:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">delta_filt:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
 <td><p>Selective frequency damping filter width (higher is smoother).</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">n_stage:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">n_stage:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
 <td><p>Number of time integration stages per step. 0 for scree, &gt;=1 for RK.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">n_levels:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">n_levels:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
 <td><p>Number of coarse multigrid levels; 0 disables multigrid. Honored by
 both integrators (<code class="xref py py-func docutils literal notranslate"><span class="pre">scree_step()</span></code> and <code class="xref py py-func docutils literal notranslate"><span class="pre">rk_step()</span></code>).</p>
 <p>turbigen changes this default; ember’s own is <code class="docutils literal notranslate"><span class="pre">3</span></code>.</p>
 </td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fac_mgrid:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fac_mgrid:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Scaling factor on multigrid corrections. Honored by both integrators
 (<code class="xref py py-func docutils literal notranslate"><span class="pre">scree_step()</span></code> and <code class="xref py py-func docutils literal notranslate"><span class="pre">rk_step()</span></code>).</p>
 <p>turbigen changes this default; ember’s own is <code class="docutils literal notranslate"><span class="pre">0.2</span></code>.</p>
 </td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">expon_mgrid:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">expon_mgrid:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.414</span></code></p></td>
 <td><p>Base of the per-level multigrid decay, <code class="docutils literal notranslate"><span class="pre">coef_l</span> <span class="pre">~</span> <span class="pre">expon_mgrid**-(l-1)</span></code>.
 Honored by both integrators (<code class="xref py py-func docutils literal notranslate"><span class="pre">scree_step()</span></code> and <code class="xref py py-func docutils literal notranslate"><span class="pre">rk_step()</span></code>).</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dampin:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">dampin:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Negative-feedback change limiter (multall’s <code class="docutils literal notranslate"><span class="pre">DAMP</span></code>); 0 disables it.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rf_inlet:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rf_inlet:</span></code></p></td>
 <td><p>float or <code class="docutils literal notranslate"><span class="pre">null</span></code>, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
 <td><p>Characteristic under-relaxation
-(<a class="reference external" href="https://ember-cfd.org/0.4.0/api/patch.html#ember.patch.NonReflectingPatch.sigma" title="(in ember v0.4.0)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">sigma</span></code></a>) on every
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/patch.html#ember.patch.InletPatch" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">InletPatch</span></code></a>. Imposed on every such patch at the start
+(<a class="reference external" href="https://ember-cfd.org/0.4.2/api/patch.html#ember.patch.NonReflectingPatch.sigma" title="(in ember v0.4.2)"><code class="xref py py-attr docutils literal notranslate"><span class="pre">sigma</span></code></a>) on every
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/patch.html#ember.patch.InletPatch" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">InletPatch</span></code></a>. Imposed on every such patch at the start
 of the run, so the default overrides a value the patches carried in; pass
 None to leave whatever they already hold.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rf_outlet:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rf_outlet:</span></code></p></td>
 <td><p>float or <code class="docutils literal notranslate"><span class="pre">null</span></code>, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
-<td><p>As <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_inlet</span></code>, for every <a class="reference external" href="https://ember-cfd.org/0.4.0/api/patch.html#ember.patch.OutletPatch" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">OutletPatch</span></code></a>. This
+<td><p>As <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_inlet</span></code>, for every <a class="reference external" href="https://ember-cfd.org/0.4.2/api/patch.html#ember.patch.OutletPatch" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">OutletPatch</span></code></a>. This
 is the characteristic relaxation only; the spanwise radial-equilibrium
 profile has its own, set via <code class="docutils literal notranslate"><span class="pre">set_adjustment(rf=...)</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rf_mix:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rf_mix:</span></code></p></td>
 <td><p>float or <code class="docutils literal notranslate"><span class="pre">null</span></code>, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
-<td><p>As <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_inlet</span></code>, for every <a class="reference external" href="https://ember-cfd.org/0.4.0/api/patch.html#ember.patch.MixingPatch" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingPatch</span></code></a>. This
+<td><p>As <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_inlet</span></code>, for every <a class="reference external" href="https://ember-cfd.org/0.4.2/api/patch.html#ember.patch.MixingPatch" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingPatch</span></code></a>. This
 is each side’s own characteristic relaxation; <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_exchange</span></code> is the
 separate factor on the cross-plane exchange between them.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rf_exchange:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rf_exchange:</span></code></p></td>
 <td><p>float or <code class="docutils literal notranslate"><span class="pre">null</span></code>, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
 <td><p>Relaxation of the cross-plane mismatch on every
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/patch.html#ember.patch.MixingPatch" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingPatch</span></code></a>. Read from the patches by
-<a class="reference external" href="https://ember-cfd.org/0.4.0/api/communicators.html#ember.mixing_communicator.MixingCommunicator" title="(in ember v0.4.0)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingCommunicator</span></code></a> at each exchange.
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/patch.html#ember.patch.MixingPatch" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingPatch</span></code></a>. Read from the patches by
+<a class="reference external" href="https://ember-cfd.org/0.4.2/api/communicators.html#ember.mixing_communicator.MixingCommunicator" title="(in ember v0.4.2)"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixingCommunicator</span></code></a> at each exchange.
 As <code class="xref py py-attr docutils literal notranslate"><span class="pre">rf_inlet</span></code>, the default is imposed and None leaves each plane’s own
 value alone.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mix_reflective:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">mix_reflective:</span></code></p></td>
 <td><p>true or false, or <code class="docutils literal notranslate"><span class="pre">null</span></code>, default <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 <td><p>Run every mixing plane as a reflective one, imposing the mixed-out
 state directly instead of the characteristic exchange.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">n_step_soft:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Steps of a detuned march to run before the real one; 0 for none [–].</p>
+<p>Buys robustness where the guess is poor, by marching <code class="docutils literal notranslate"><span class="pre">soft()</span></code> – the same
+problem on the same grid, with settings that survive a start the production
+ones cannot – and leaving the field it reaches for the real march to
+continue from. Nothing else of it is kept.</p>
+<p>Runs once per invocation: the <cite>run</cite> verb, or the first iteration of an
+<cite>iterate</cite>, whatever guess or restart field the grid is carrying. Later
+iterations and the points of a <cite>chic</cite> sweep start from a solution already,
+which is what this exists to stand in for.</p>
+<p>The steps are not free, so this is off unless asked for. <code class="docutils literal notranslate"><span class="pre">soft()</span></code> names
+its own count and this replaces it, because how long to spend on a robust
+start is a property of the case rather than of the solver.</p>
+</td>
 </tr>
 </tbody>
 </table>
@@ -1517,7 +1895,7 @@ are mappings for the same reason; this makes the three alike.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><a class="reference internal" href="#config-iterate-correct"><span class="std std-ref">correct:</span></a></p></td>
-<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">Re_surf</span></code>, <code class="docutils literal notranslate"><span class="pre">deviation</span></code>, <code class="docutils literal notranslate"><span class="pre">diffusion_factor</span></code>, <code class="docutils literal notranslate"><span class="pre">incidence</span></code>, <code class="docutils literal notranslate"><span class="pre">mean_line</span></code>, <code class="docutils literal notranslate"><span class="pre">repeat</span></code></p></td>
+<td><p>list of mappings, default <code class="docutils literal notranslate"><span class="pre">[]</span></code>; each one of <code class="docutils literal notranslate"><span class="pre">Re_surf</span></code>, <code class="docutils literal notranslate"><span class="pre">clark_profile</span></code>, <code class="docutils literal notranslate"><span class="pre">deviation</span></code>, <code class="docutils literal notranslate"><span class="pre">incidence</span></code>, <code class="docutils literal notranslate"><span class="pre">loading</span></code>, <code class="docutils literal notranslate"><span class="pre">loading_profile</span></code>, <code class="docutils literal notranslate"><span class="pre">mean_line</span></code>, <code class="docutils literal notranslate"><span class="pre">peak_Ma</span></code>, <code class="docutils literal notranslate"><span class="pre">repeat</span></code></p></td>
 <td><p>The mismatches to correct, one iterator each.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_iter:</span></code></p></td>
@@ -1536,7 +1914,7 @@ it was run under, which is why it is a key at all rather than a flag.</p>
 <p>Base for design iterators.</p>
 <p>A member declares the knobs it owns, measures the error those knobs should
 null, and leaves every decision about how far to move to <code class="xref py py-func docutils literal notranslate"><span class="pre">step()</span></code>.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-iterate-correct-re-surf"><span class="std std-ref">Re_surf</span></a>, <a class="reference internal" href="#config-iterate-correct-deviation"><span class="std std-ref">deviation</span></a>, <a class="reference internal" href="#config-iterate-correct-diffusion-factor"><span class="std std-ref">diffusion_factor</span></a>, <a class="reference internal" href="#config-iterate-correct-incidence"><span class="std std-ref">incidence</span></a>, <a class="reference internal" href="#config-iterate-correct-mean-line"><span class="std std-ref">mean_line</span></a>, <a class="reference internal" href="#config-iterate-correct-repeat"><span class="std std-ref">repeat</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-iterate-correct-re-surf"><span class="std std-ref">Re_surf</span></a>, <a class="reference internal" href="#config-iterate-correct-clark-profile"><span class="std std-ref">clark_profile</span></a>, <a class="reference internal" href="#config-iterate-correct-deviation"><span class="std std-ref">deviation</span></a>, <a class="reference internal" href="#config-iterate-correct-incidence"><span class="std std-ref">incidence</span></a>, <a class="reference internal" href="#config-iterate-correct-loading"><span class="std std-ref">loading</span></a>, <a class="reference internal" href="#config-iterate-correct-loading-profile"><span class="std std-ref">loading_profile</span></a>, <a class="reference internal" href="#config-iterate-correct-mean-line"><span class="std std-ref">mean_line</span></a>, <a class="reference internal" href="#config-iterate-correct-peak-ma"><span class="std std-ref">peak_Ma</span></a>, <a class="reference internal" href="#config-iterate-correct-repeat"><span class="std std-ref">repeat</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-re-surf">
 <span id="config-iterate-correct-re-surf"></span><h5>type: Re_surf<a class="headerlink" href="#type-re-surf" title="Link to this heading">¶</a></h5>
 <p>Set the viscosity to reach a surface Reynolds number.</p>
@@ -1608,6 +1986,241 @@ default, which is what the abandoned implementation indexed.</p>
 </tbody>
 </table>
 </section>
+<section id="type-clark-profile">
+<span id="config-iterate-correct-clark-profile"></span><h5>type: clark_profile<a class="headerlink" href="#type-clark-profile" title="Link to this heading">¶</a></h5>
+<p>Shape a two-sided thickness to a Clark loading distribution.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">LoadingProfile</span></code> drives a <em>camber</em> line against a two-line target
+read off the suction surface. This drives a
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness" title="turbigen.thickness.ClarkThickness"><code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a> against
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.clark</span></code>, on both surfaces at once, with the camber line held
+where the design put it. Where that one asks what turning gives a loading,
+this asks what thickness does, on the turning already chosen.</p>
+<p><strong>The knobs are shape-space coefficients, not the perturbations a config
+holds.</strong> A <cite>ClarkThickness</cite> stores a leading edge radius, a wedge angle and
+an interior perturbation on the straight line between them; written as one
+Bernstein curve, those are its first coefficient, its last, and the ones
+between — see
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tau_coeff" title="turbigen.thickness.ClarkThickness.tau_coeff"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tau_coeff</span></code></a>. Working in that space
+is what makes this tractable: every knob does the same kind of thing, which
+is to thicken its own surface locally and accelerate the flow over it, so
+<strong>one declared gain covers all of them, sign included</strong>, where a radius and
+a perturbation would each have needed a prior of their own. A positive
+leading edge radius comes free with it, being a square.</p>
+<p><strong>Each knob is read where it acts</strong>, at
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.m_ctl" title="turbigen.thickness.ClarkThickness.m_ctl"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_ctl</span></code></a>, mapped through each
+surface’s own arc length to a surface fraction — the two surfaces are not
+the same length, so one <cite>m</cite> is not one <cite>z</cite>.</p>
+<p><strong>A shared end is one knob against two residuals, and the mean is what it
+can answer for.</strong> One nose radius serves both surfaces and one wedge angle
+serves both, so each end’s error is the <em>mean</em> of the two surfaces’
+residuals there — the least-squares move for a single knob, being the <cite>x</cite>
+that minimises <cite>(r_s - x)^2 + (r_p - x)^2</cite>. Reading one surface alone
+instead would move both to suit it, making the other worse by as much, and
+would report converged with an unbounded error on the surface nobody read.</p>
+<p>In that mean the level cancels exactly, so a shared end answers only for
+the common mode there and can neither be driven by the blade count nor
+fight it. What it costs is a null: an end where the two surfaces are
+equally wrong in opposite directions reads as converged, because that is
+the part one knob cannot reach. Both ends now carry that blind spot, and
+the interior is where per-surface authority lives — see
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tanwedge" title="turbigen.thickness.ClarkThickness.tanwedge"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tanwedge</span></code></a> for why the trailing
+edge gave it up.</p>
+<p><strong>Knobs and signals are born together</strong>, which is what leaves the loop
+determined however the order changes: the knobs are read at
+<a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.m_ctl" title="turbigen.thickness.ClarkThickness.m_ctl"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_ctl</span></code></a>, which is a property of
+the order alone, so a coefficient and the point it is measured at arrive
+and depart as a pair. Sharing an end removes a knob and collapses two
+residuals into one at the same stroke.</p>
+<p><strong>The level belongs to the blade count</strong>, as it does for every loading
+iterator: a thickness redistributes circulation and cannot create it, so
+the loop is <cite>Co</cite>’s to answer for and what is left of the residuals is the
+shape’s. See <code class="xref py py-class docutils literal notranslate"><span class="pre">PeakMach</span></code> for why it cannot simply be ignored.</p>
+<p><strong>And the level is a circulation, measured as one.</strong> Not a reduction of
+the samples above: those are unevenly spaced, leave about a third of each
+surface unvisited at the two ends, and move when the curve <cite>order</cite>
+changes, so a mean of them would make the measured circulation of an
+unchanged flow depend on how the thickness happens to be parameterised.
+<code class="xref py py-class docutils literal notranslate"><span class="pre">ClarkMeasurement</span></code> integrates the whole cut
+instead, weights each surface by its own length, and normalises the way
+<a class="reference internal" href="blade.html#turbigen.blade.Circulation" title="turbigen.blade.Circulation"><code class="xref py py-class docutils literal notranslate"><span class="pre">Circulation</span></code></a> does — so the error is
+<cite>Co</cite> achieved less <cite>Co</cite> asked for, in the units of the knob it drives, and
+the two are directly comparable rather than merely proportional.</p>
+<p><strong>Measured from the geometric leading edge, not the stagnation point</strong>, so
+that a target stays still while the thickness under it moves. That leaves
+an <cite>incidence</cite> member shaping the same nose as this does, which is why the
+two are learned in one Jacobian block rather than kept apart — see
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">blocks()</span></code>. Held apart they read each other’s work as noise: measured
+on a five-corner sweep, <cite>dchi_LE</cite> was the only knob whose response the
+stepper reported flat, on every run it appeared in, while sitting on its
+clip every pass.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
+<td><p>value, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>How much of the error to subtract from each shape knob.</p>
+<p><strong>One number covers every shape knob</strong>, which is the whole reason the knobs
+are shape-space coefficients: a thicker surface is a faster one wherever
+the thickening happens, so nose, interior and wedge all share a sign.</p>
+<p><strong>Positive</strong>, unlike <code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingProfile.gain</span></code>, and the sign is a
+statement about what a coefficient <em>is</em> rather than a guess. A gain is the
+reciprocal of an assumed slope, the step being <cite>u -= gain * e</cite>; here the
+slope is positive, since raising a coefficient thickens the surface,
+accelerates the flow over it and lifts the <cite>fac</cite> the error is measured in.
+A surface running faster than its target is therefore one to thin. The
+<em>size</em> is still a guess, improved by the Broyden update inside a run
+rather than written back into the design.</p>
+<p><code class="xref py py-attr docutils literal notranslate"><span class="pre">gain_Co</span></code> carries the level beside it, as
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingProfile.gain_Co</span></code> does — though for a different reason: the
+two agree on sign here, and what keeps them apart is that a circulation
+coefficient and a shape-space coefficient are not the same quantity. See
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">gains()</span></code>.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Largest change in one shape-space coefficient per iteration [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
+<td><p>Converged when every shape residual is within this [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Index of the blade row to shape.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Span fraction to measure the distribution at [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Ma_peak:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.2</span></code></p></td>
+<td><p>Target peak Mach number over the trailing edge value [–].</p>
+<p>What <code class="xref py py-attr docutils literal notranslate"><span class="pre">PeakMach.fac_peak</span></code> states, under the name <code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.clark</span></code>
+gives it, and one more than the diffusion factor
+<code class="xref py py-class docutils literal notranslate"><span class="pre">turbigen.metric.DiffusionFactor</span></code> records.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">z_peak:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.55</span></code></p></td>
+<td><p>Target surface fraction of the suction peak [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Ma_LE:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.8</span></code></p></td>
+<td><p>Height of the target’s leading edge acceleration [–].</p>
+<p>The value Clark’s ramp line takes at its reference station, which is what
+sets how hard the suction surface accelerates out of the nose. Not a Mach
+number the curve is required to reach at that station: see <cite>Z_LE</cite> in
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.clark</span></code> for why the two are not the same thing.</p>
+<p>Carries the <cite>Ma_2 / Ma_1</cite> factor, written the way
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">turbigen.loading.Loading.fac_front</span></code> and
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingProfile.fac_front</span></code> are, so the same number means the same
+style of leading edge across rows of differing duty. Divided back out once,
+on the way into <code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.clark</span></code>, which works in plain <cite>Ma / Ma_TE</cite>
+throughout — a curve whose pieces are built from differences between its
+own parameters cannot carry two normalisations at once.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Ma_PS:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.6</span></code></p></td>
+<td><p>Target pressure-surface Mach number on the pre-acceleration plateau [–].</p>
+<p>Carries the <cite>Ma_2 / Max_1</cite> factor — the exit Mach number over the inlet
+<em>axial</em> one, both relative — and is divided by it on the way into
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.clark</span></code>. Not the <cite>Ma_2 / Ma_1</cite> <code class="xref py py-attr docutils literal notranslate"><span class="pre">Ma_LE</span></code> carries, though
+the two agree wherever the flow enters a row nearly axially.</p>
+<p><strong>Why the plateau is referred to a different velocity from the ramp.</strong> What
+this states is how far the pressure surface may be allowed to fall before
+the passage accelerates it again, which is a claim about diffusion through
+the passage; what is there to diffuse is what passes through it, and that
+is the axial component. <code class="xref py py-attr docutils literal notranslate"><span class="pre">Ma_LE</span></code> is a statement about how hard the
+flow is turned around the nose, which the blade meets at whatever angle it
+arrives, magnitude and all. Referring both to the magnitude makes the
+plateau demand rise with inlet swirl for no aerodynamic reason: at fifty
+degrees of relative inlet angle the two differ by half as much again, and a
+row asked for a plateau it cannot reach shows up as a loading residual that
+no thickness coefficient can move.</p>
+<p><code class="xref py py-attr docutils literal notranslate"><span class="pre">Ma_peak</span></code> keeps its plain <cite>Ma / Ma_TE</cite>, being a statement about the
+trailing edge value rather than about the inlet.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gain_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>How much of the level error to subtract from <cite>Co</cite>, as a prior [–].</p>
+<p><strong>One, because the error is in the units of the knob.</strong> The level is a
+circulation coefficient too high or too low, and <cite>Co</cite> is the circulation
+coefficient, so moving it by the whole error is the Newton step under a
+slope of one — which is what a coefficient measured against itself
+should have. That the blade does not land exactly there is loss,
+deviation and the uniform acoustic speed
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">Co</span></code> assumes; a few per cent on a
+step, not a different order of magnitude.</p>
+<p>Positive, for the reason <code class="xref py py-attr docutils literal notranslate"><span class="pre">PeakMach.gain</span></code> is. <strong>Read only while
+:attr:`gain` is a scalar</strong>, exactly as <code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingProfile.gain_Co</span></code> is.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">clip_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Largest change in the circulation coefficient per iteration [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
+<td><p>Converged when the circulation is within this of the target’s [–].</p>
+<p>A <cite>Co</cite> of order 0.7, so this is a per cent or so of it.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance_tau_LE:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Converged when the leading-edge shape residual is within this [–].</p>
+<p>Declared apart from <code class="xref py py-attr docutils literal notranslate"><span class="pre">tolerance</span></code>, and looser by default, because the
+nose is the knob most often left short of its target: a loading that wants
+a sharper leading edge than <code class="xref py py-attr docutils literal notranslate"><span class="pre">R_LE_lim</span></code> allows holds <code class="docutils literal notranslate"><span class="pre">tau_LE</span></code>
+against that bound every pass, with a residual no step can clear. One shape
+tolerance wider than the rest keeps a clamped nose from stalling a design
+the other knobs have converged, without slackening them.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">R_LE_lim:</span></code></p></td>
+<td><p>list of two floats, default <code class="docutils literal notranslate"><span class="pre">[0.02,</span> <span class="pre">0.12]</span></code></p></td>
+<td><p>Bounds on the leading edge radius, normalised by chord [–].</p>
+<p><strong>A bound on where the knob arrives, which no clip provides.</strong> <cite>clip</cite>
+limits one step and not a run of them, so a nose can be thickened by a
+hundredth every pass and be six times its original size ten passes later
+without any single step being refused. Measured on a stage whose loading
+target the nose could not meet: <cite>R_LE</cite> climbed from 0.016 to 0.097 over
+nine passes, monotonically, and the two iterations that followed diverged
+in the CFD — a nose radius of a tenth of a chord is a cylinder rather
+than a leading edge.</p>
+<p><strong>Clamped, not refused.</strong> The closed-section guard above returns the
+config untouched, which is right for a section that cannot be meshed at
+all; here it would freeze ten other knobs because one reached a limit.
+Clamping lets the rest move and leaves this one against its bound with its
+error still in the table, which is where a knob that cannot get what it
+wants should be visible.</p>
+<p>That costs the step its Newton direction for the pass, as any per-knob
+truncation does — see <code class="xref py py-func docutils literal notranslate"><span class="pre">_bounded()</span></code>. Accepted because a bound reached
+is already an abnormal pass: the alternative, scaling the whole block to
+respect it, would let one saturated nose shorten every other knob’s step.</p>
+<p>The loop is not made to converge by this. A radius that walks one way
+without turning is a target the nose cannot reach, and the nose is where
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">_flat_error()</span></code> is blind by construction — a shared end reports only
+the mean of the two surfaces. What the bound buys is a design that stays
+meshable and says so, rather than one that runs away and announces it as a
+divergence two iterations later.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
 <section id="type-deviation">
 <span id="config-iterate-correct-deviation"></span><h5>type: deviation<a class="headerlink" href="#type-deviation" title="Link to this heading">¶</a></h5>
 <p>Match the exit flow angle to the design by moving the trailing edge.</p>
@@ -1628,20 +2241,38 @@ measures the shortfall exactly rather than correlating it.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
 <td><p>How much of the error to subtract from the unknown.</p>
 <p>Carries the sign of the local sensitivity as well as its size: the step is
 always <code class="docutils literal notranslate"><span class="pre">u</span> <span class="pre">-=</span> <span class="pre">gain</span> <span class="pre">*</span> <span class="pre">e</span></code>, so an iterator whose error <em>falls</em> as its knob
 rises declares a negative gain. Reciprocal of an assumed slope, so it is
 the crudest possible Newton step.</p>
+<p>An input only. A run measures the real slopes and they live in the
+Jacobian, which <code class="xref py py-func docutils literal notranslate"><span class="pre">_jacobian()</span></code> rebuilds from the history on every call;
+nothing writes one back into a design. A gain written into a config would
+be read against whatever knobs the <em>next</em> design has, and a sequence
+measured on one blade means nothing on another — see <code class="xref py py-meth docutils literal notranslate"><span class="pre">_gain_each()</span></code>,
+which refuses the mismatch it can see and cannot see the rest.</p>
+<p><strong>One number or one per knob.</strong> A scalar is a single declared prior, spread
+over every knob the iterator owns; a sequence carries them separately, in
+the order <code class="xref py py-meth docutils literal notranslate"><span class="pre">unknowns()</span></code> returns. A design is declared with the scalar,
+because a prior is a statement about a <em>kind</em> of knob and the count is
+rarely known while writing a file; a run measures a slope for each knob and
+writes back the sequence, because those are genuinely different numbers.
+Reducing them to one would blend, say, the sensitivity of a recamber at
+hub and casing, or of a camber coefficient at the front of a blade with one
+at the back — measurements of different constants, not repeats of one.</p>
 </td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
-<td><p>Largest change in one iteration, in the units of the unknown.</p>
-<p>Zero for no limit. A clip is what keeps a bad early step — taken on a
-field that has not settled — from throwing the design somewhere it cannot
-be meshed.</p>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>Largest recamber in one iteration [deg].</p>
+<p>One degree, not two: this knob shares a Jacobian block with the leading
+edge and the thickness, and a learned block that has picked up a bad
+sensitivity — most often from a nose held against its <code class="docutils literal notranslate"><span class="pre">R_LE_lim</span></code> bound
+— discharges it as a single large recamber that moves the blade count
+and throws the solution off. A tighter clip bounds that excursion to
+something the next iteration can walk back.</p>
 </td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
@@ -1651,75 +2282,18 @@ be meshed.</p>
 </tbody>
 </table>
 </section>
-<section id="type-diffusion-factor">
-<span id="config-iterate-correct-diffusion-factor"></span><h5>type: diffusion_factor<a class="headerlink" href="#type-diffusion-factor" title="Link to this heading">¶</a></h5>
-<p>Set the blade count to reach a target diffusion factor.</p>
-<p>Moves the circulation coefficient of a
-<a class="reference internal" href="blade.html#turbigen.blade.Circulation" title="turbigen.blade.Circulation"><code class="xref py py-class docutils literal notranslate"><span class="pre">Circulation</span></code></a> count rule, which rounds it to an
-integer number of blades — so the achieved diffusion factor lands within
-about one blade of the target rather than exactly on it. This shares its
-name with <a class="reference internal" href="blade.html#turbigen.blade.DiffusionFactor" title="turbigen.blade.DiffusionFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">turbigen.blade.DiffusionFactor</span></code></a>, the mean-line count
-rule; that one sets a blade count once from a correlation, this one drives
-the count from the CFD it produced.</p>
-<table class="config-keys docutils align-default">
-<colgroup>
-<col style="width: 18.0%" />
-<col style="width: 24.0%" />
-<col style="width: 58.0%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>Key</p></th>
-<th class="head"><p>Value</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
-<td><p>Circulation-coefficient change per unit diffusion-factor error [–].</p>
-<p>Positive: a larger coefficient gives a larger pitch, fewer blades, more
-loading and a higher diffusion factor. Only the first step and its sign
-come from here; the Broyden update refines the slope afterwards, so a value
-that slightly undershoots is safer than one that overshoots into the
-integer-count staircase.</p>
-</td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></td>
-<td><p>Largest change in the circulation coefficient in one iteration [–].</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
-<td><p>Converged inside this absolute error on the diffusion factor [–].</p>
-<p>The blade count is an integer, so the achieved diffusion factor moves in
-steps that this must clear: a row with few blades may need a looser value.</p>
-</td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">target:</span></code></p></td>
-<td><p>float</p></td>
-<td><p>Isentropic-Mach diffusion factor to design for [–].</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
-<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
-<td><p>Index of the blade row whose diffusion factor meets the target [–].</p>
-<p>One row at a time: list the iterator again with a different <code class="docutils literal notranslate"><span class="pre">i_row</span></code> to
-place another row.</p>
-</td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
-<td><p>Span fraction to measure the diffusion factor at [–].</p></td>
-</tr>
-</tbody>
-</table>
-</section>
 <section id="type-incidence">
 <span id="config-iterate-correct-incidence"></span><h5>type: incidence<a class="headerlink" href="#type-incidence" title="Link to this heading">¶</a></h5>
 <p>Set the leading edge to meet the flow at a chosen incidence.</p>
-<p>Measured on the three-dimensional field at each section’s own span fraction
-rather than from the mixed-out mean line, because incidence is a local
-property of the leading edge and the whole point of moving it is that the
-mean line does not see what the tip and the hub are doing.</p>
+<p>Measured from the stagnation point on the blade itself, at each section’s
+own span fraction, rather than from the mixed-out mean line: incidence is a
+local property of the leading edge, and the whole point of moving one is
+that the mean line does not see what the tip and the hub are doing.</p>
+<p>On the blade rather than on a plane ahead of it, because where the flow
+attaches is the thing being controlled. A flow angle read upstream — what
+this class used to do — answers a slightly different question at every
+distance it is read from, and the distance was a setting nobody had grounds
+to choose.</p>
 <p>One knob per section, not the row mean <code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> uses: a blade
 with N sections has N independent leading-edge angles, and each should meet
 the flow it actually sees. Collapsing them to a mean nulls the incidence at
@@ -1738,16 +2312,31 @@ one span and leaves the rest with whatever the starting distribution gave.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">-0.1</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">-0.05</span></code></p></td>
 <td><p>How much of the error to subtract from the unknown.</p>
 <p>Carries the sign of the local sensitivity as well as its size: the step is
 always <code class="docutils literal notranslate"><span class="pre">u</span> <span class="pre">-=</span> <span class="pre">gain</span> <span class="pre">*</span> <span class="pre">e</span></code>, so an iterator whose error <em>falls</em> as its knob
 rises declares a negative gain. Reciprocal of an assumed slope, so it is
 the crudest possible Newton step.</p>
+<p>An input only. A run measures the real slopes and they live in the
+Jacobian, which <code class="xref py py-func docutils literal notranslate"><span class="pre">_jacobian()</span></code> rebuilds from the history on every call;
+nothing writes one back into a design. A gain written into a config would
+be read against whatever knobs the <em>next</em> design has, and a sequence
+measured on one blade means nothing on another — see <code class="xref py py-meth docutils literal notranslate"><span class="pre">_gain_each()</span></code>,
+which refuses the mismatch it can see and cannot see the rest.</p>
+<p><strong>One number or one per knob.</strong> A scalar is a single declared prior, spread
+over every knob the iterator owns; a sequence carries them separately, in
+the order <code class="xref py py-meth docutils literal notranslate"><span class="pre">unknowns()</span></code> returns. A design is declared with the scalar,
+because a prior is a statement about a <em>kind</em> of knob and the count is
+rarely known while writing a file; a run measures a slope for each knob and
+writes back the sequence, because those are genuinely different numbers.
+Reducing them to one would blend, say, the sensitivity of a recamber at
+hub and casing, or of a camber coefficient at the front of a blade with one
+at the back — measurements of different constants, not repeats of one.</p>
 </td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">2.0</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
 <td><p>Largest change in one iteration, in the units of the unknown.</p>
 <p>Zero for no limit. A clip is what keeps a bad early step — taken on a
 field that has not settled — from throwing the design somewhere it cannot
@@ -1755,16 +2344,272 @@ be meshed.</p>
 </td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
-<td><p>Permissible error on local incidence [deg].</p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">5.0</span></code></p></td>
+<td><p>Permissible error on local incidence [deg].</p>
+<p>Loose next to a deviation, because it is measured on the nose: how far the
+surface turns across the cell the flow stagnated in bounds how accurate a
+discrete solution can be about it, and on a mesh that resolves a blade well
+that is still a few degrees. <cite>_report_resolution</cite> says when a case is
+asking for more than its own mesh can answer.</p>
+</td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">target:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
 <td><p>Incidence to aim for [deg].</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">upstream:</span></code></p></td>
+</tbody>
+</table>
+</section>
+<section id="type-loading">
+<span id="config-iterate-correct-loading"></span><h5>type: loading<a class="headerlink" href="#type-loading" title="Link to this heading">¶</a></h5>
+<p>Shape the leading-edge acceleration by moving the camber line.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">Deviation</span></code> and <code class="xref py py-class docutils literal notranslate"><span class="pre">Incidence</span></code> correct the <em>ends</em> of a blade
+against the flow. This corrects one point in between: how hard the
+leading edge accelerates by <cite>zeta_front</cite>, which is what a designer chooses
+when they pick an aerodynamic style, and which Clark (2019) shows is a
+useful number to hold rather than let the mean-line design produce
+whatever it produces.</p>
+<p>The knob is the single interior coefficient of a
+<a class="reference internal" href="blade.html#turbigen.camber.Bernstein" title="turbigen.camber.Bernstein"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bernstein</span></code></a> camber line — see <code class="xref py py-data docutils literal notranslate"><span class="pre">N_COEFF</span></code>.
+Its endpoint counterparts are pinned at zero, so the metal angles do not
+move and this iterator cannot fight the two that own them.</p>
+<p>Read straight off the suction surface at <cite>zeta_front</cite> rather than off a
+fit, so this needs no peak to exist and asks nothing of where one sits or
+how high it stands. <cite>PeakMach</cite> sits beside it and owns the level; between
+the two, neither where the peak is nor how it is reached is a target —
+only the front acceleration and the overall diffusion are.</p>
+<p>One row per iterator, like <code class="xref py py-class docutils literal notranslate"><span class="pre">SurfaceReynolds</span></code>: a stator and a rotor
+want different loading, so two rows means two entries.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">-0.5</span></code></p></td>
+<td><p>How much of the error to subtract.</p>
+<p><strong>A starting direction, not a calibration.</strong> Measured on two different
+cascades, the sign of the response came out opposite — a first blade
+gave <code class="docutils literal notranslate"><span class="pre">d(fac_front)/dc</span> <span class="pre">=</span> <span class="pre">-0.80</span></code> while the blade in
+<cite>examples/turbine_cascade_loading.yaml</cite> gave <code class="docutils literal notranslate"><span class="pre">+0.15</span></code> for the
+corresponding coefficient. Which way the one Bernstein bump moves the
+front value is evidently a property of the blade rather than of the
+parametrisation, so there is no scalar here that is right in general, and
+one confident enough to matter would be wrong half the time.</p>
+<p>Small, accordingly. Two things follow from that and both are wanted: a
+first step taken on a wrong sign costs one iteration rather than an
+excursion, and the step it asks for sits <em>inside</em> <code class="xref py py-attr docutils literal notranslate"><span class="pre">clip</span></code>.</p>
+<p>The Broyden update is what actually steers this iterator. It only has to
+avoid getting in its way.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></td>
+<td><p>Largest change in the coefficient per iteration [–].</p>
+<p>Measured against how far it actually travels. On the cascade in
+<cite>examples/turbine_cascade_loading.yaml</cite> it converged at about -0.23 from a
+start of zero, and at a clip of 0.05 the step saturated for five
+iterations running — which is not merely slow: a step saturated at the
+clip keeps only the <em>sign</em> of what the Jacobian asked for.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
-<td><p>Where to read the flow angle, as a fraction of the gap ahead of the row.</p></td>
+<td><p>Converged when the front Mach number is within this [–].</p>
+<p>Around 1.9 on the cascade measured here, so this is a few per cent of what
+it measures.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Index of the blade row to shape.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fac_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.8</span></code></p></td>
+<td><p>Target leading-edge Mach number, normalised by duty [–].</p>
+<p><code class="docutils literal notranslate"><span class="pre">Ma(zeta_front)</span> <span class="pre">/</span> <span class="pre">Ma_TE</span> <span class="pre">*</span> <span class="pre">Ma_2</span> <span class="pre">/</span> <span class="pre">Ma_1</span></code>, which is Clark (2019) parameter
+3. Referred to the trailing edge rather than to the peak because <cite>Ma_TE</cite> is
+a mean-line quantity, fixed by the duty, where the peak is a fitted one
+that moves with the loading — and the <code class="docutils literal notranslate"><span class="pre">Ma_2</span> <span class="pre">/</span> <span class="pre">Ma_1</span></code> factor is what
+makes the same number mean the same style of leading edge across rows of
+different duty, which is the whole reason the parameter is written this
+way.</p>
+<p>Typically greater than one on a turbine, the surface being faster at a
+tenth of its length than the mean line is at exit.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.2</span></code></p></td>
+<td><p>Front anchor, and where the Mach number is read off [–].</p>
+<p>It is the boundary between what the leading edge decides and what the
+camber line does, so it says <em>where to measure</em> rather than what to want
+— and below it the distribution belongs to <code class="xref py py-class docutils literal notranslate"><span class="pre">Incidence</span></code> and the
+thickness, neither of which this moves.</p>
+<p>A fifth rather than a tenth, because a point that close to the nose still
+sits inside the sharp acceleration round it, which is not the camber
+line’s to answer for.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">PeakMach</span></code> carries the same setting for its own fitted window, and
+the two should agree so that a design’s front and peak describe the same
+curve.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Span fraction to measure the distribution at [–].</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="type-loading-profile">
+<span id="config-iterate-correct-loading-profile"></span><h5>type: loading_profile<a class="headerlink" href="#type-loading-profile" title="Link to this heading">¶</a></h5>
+<p>Shape a whole suction-surface Mach distribution against a two-line template.</p>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">LoadingDistribution</span></code> moves one point on the curve with one
+coefficient. This moves several at once: a higher-order
+<a class="reference internal" href="blade.html#turbigen.camber.Bernstein" title="turbigen.camber.Bernstein"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bernstein</span></code></a> camber line gives <cite>order - 1</cite> interior
+coefficients, each with a characteristic position <code class="docutils literal notranslate"><span class="pre">m</span> <span class="pre">=</span> <span class="pre">(j</span> <span class="pre">+</span> <span class="pre">1)</span> <span class="pre">/</span> <span class="pre">order</span></code>
+on the camber line, and each is driven toward a target built from
+<cite>zeta_front</cite>/<cite>fac_front</cite> and <cite>zeta_peak</cite>/<cite>fac_peak</cite> – two anchors and a
+straight line each side of the peak, read off wherever that coefficient’s
+<cite>m</cite> actually lands on the <em>measured</em> surface, not at some fixed fraction
+of it, because the two are not the same fraction of the way along the
+chord. See <a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_arc_length" title="turbigen.blade.Blade.evaluate_arc_length"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_arc_length()</span></code></a>.</p>
+<p><strong>This owns the level itself, rather than wanting a `PeakMach` beside
+it.</strong> A camber line still cannot create circulation, only redistribute
+it – see <code class="xref py py-class docutils literal notranslate"><span class="pre">PeakMach</span></code> – so the level is not free to be ignored
+here either. But with the whole curve sampled rather than one point,
+the level does not need a second iterator and a second fitted number to
+find it: it is the <em>mean</em> of every sampled point’s error against the
+target, and what is left after subtracting that mean out of each one is
+the shape residual, blind to the level by construction. The mean drives
+<cite>Co</cite>, exactly as <code class="xref py py-class docutils literal notranslate"><span class="pre">PeakMach</span></code> would; the residuals drive the camber
+coefficients. One iterator, one internally consistent target curve, and
+nothing that two separately-configured iterators could disagree about.</p>
+<p>That needs two <em>priors</em>, not one: the level rises with <cite>Co</cite> while the shape
+residuals fall with the camber coefficients, the same disagreement that
+made <cite>PeakMach</cite> a member of its own rather than a third knob on
+<cite>LoadingDistribution</cite>. A single declared number cannot carry both signs, so
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">gain_Co</span></code> is written beside <code class="xref py py-attr docutils literal notranslate"><span class="pre">gain</span></code> — see <code class="xref py py-meth docutils literal notranslate"><span class="pre">gains()</span></code>.</p>
+<p><strong>`fac_peak` here means what `PeakMach.fac_peak` means:</strong> plain
+<cite>Ma_peak / Ma_TE</cite>, one more than the diffusion factor
+<cite>turbigen.metric.DiffusionFactor</cite> records, carrying no <cite>Ma_2 / Ma_1</cite>
+factor. <cite>fac_front</cite> does carry one, because Clark’s parameter 3 is
+specifically a statement about the <em>front</em>, so the two anchors are written
+in different units and reconciled in one place — see
+<code class="xref py py-func docutils literal notranslate"><span class="pre">_target_fac()</span></code>. The alternative, one consistent unit across both
+anchors, made the same physical peak read as two different numbers
+depending on which iterator asked for it, which is exactly what lets a
+report contradict the design it describes.</p>
+<p>Only points measured beyond <cite>zeta_front</cite> are driven, exactly as
+<cite>LoadingDistribution</cite> only drives one: below it the distribution belongs
+to <cite>Incidence</cite> and the thickness. A coefficient whose <cite>m</cite> maps inside
+that window is reported with an error of exactly zero rather than
+omitted, so it never moves but also never blocks convergence forever —
+<cite>converged</cite> treats a knob no iterator ever measured as proof of nothing,
+which a coefficient excluded on purpose is not. Still worth noticing
+before choosing an <cite>order</cite> high enough to pack one in there: a knob held
+this way carries whatever value it started with, unexamined, for the rest
+of the run.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
+<td><p>value, default <code class="docutils literal notranslate"><span class="pre">-0.5</span></code></p></td>
+<td><p>How much of the error to subtract from each knob.</p>
+<p>A starting direction, not a calibration — see
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingDistribution.gain</span></code>, which the same caveat applies to.</p>
+<p><strong>As a scalar this describes the camber coefficients only</strong>, with
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">gain_Co</span></code> carrying the level beside it; the two disagree on sign, so
+one number cannot be both. As a sequence it carries every knob, <cite>Co</cite> first
+and then one per coefficient, for a design that wants to state each
+separately. See <code class="xref py py-meth docutils literal notranslate"><span class="pre">unknowns()</span></code> for why <cite>Co</cite> leads.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></td>
+<td><p>Largest change in one camber coefficient per iteration [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Converged when every driven point’s shape residual is within this [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Index of the blade row to shape.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Span fraction to measure the distribution at [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">order:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">3</span></code></p></td>
+<td><p>Bernstein order of the camber line; <cite>order - 1</cite> interior coefficients,
+one knob apiece.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.2</span></code></p></td>
+<td><p>Front anchor, and the start of the driven window [–].</p>
+<p>Below it the distribution belongs to the leading edge, not the camber
+line – see <code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingDistribution.zeta_front</span></code>, which this means the
+same way.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fac_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.8</span></code></p></td>
+<td><p>Target leading-edge Mach number, normalised by duty [–].</p>
+<p>Written the same way <code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingDistribution.fac_front</span></code> is — see
+there for what the <cite>Ma_2 / Ma_1</cite> factor is for.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_peak:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Target surface fraction of the peak [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fac_peak:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.2</span></code></p></td>
+<td><p>Target peak Mach number over the trailing edge value [–].</p>
+<p><cite>Ma_peak / Ma_TE</cite>, exactly as <code class="xref py py-attr docutils literal notranslate"><span class="pre">PeakMach.fac_peak</span></code> states it, and one
+more than the diffusion factor. <strong>Carries no `Ma_2 / Ma_1` factor, unlike
+:attr:`fac_front`</strong> — see the class docstring.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.5</span></code></p></td>
+<td><p>How much of the level error to subtract from <cite>Co</cite>, as a prior [–].</p>
+<p>Positive, for the reason <code class="xref py py-attr docutils literal notranslate"><span class="pre">PeakMach.gain</span></code> is: the level rises with
+the circulation coefficient, and that sign is a calibration rather than a
+guess. That is the whole reason this is written apart from <code class="xref py py-attr docutils literal notranslate"><span class="pre">gain</span></code>
+rather than being its first element: a scalar prior cannot carry two signs,
+and the level’s is known.</p>
+<p><strong>Read only while :attr:`gain` is a scalar.</strong> Declared as a sequence,
+<cite>gain</cite> carries every knob including this one, and what is written here no
+longer reaches the loop.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Largest change in the circulation coefficient per iteration [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance_Co:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.02</span></code></p></td>
+<td><p>Converged when the mean level error is within this [–].</p></td>
 </tr>
 </tbody>
 </table>
@@ -1796,14 +2641,37 @@ was assumed.</p>
 always <code class="docutils literal notranslate"><span class="pre">u</span> <span class="pre">-=</span> <span class="pre">gain</span> <span class="pre">*</span> <span class="pre">e</span></code>, so an iterator whose error <em>falls</em> as its knob
 rises declares a negative gain. Reciprocal of an assumed slope, so it is
 the crudest possible Newton step.</p>
+<p>An input only. A run measures the real slopes and they live in the
+Jacobian, which <code class="xref py py-func docutils literal notranslate"><span class="pre">_jacobian()</span></code> rebuilds from the history on every call;
+nothing writes one back into a design. A gain written into a config would
+be read against whatever knobs the <em>next</em> design has, and a sequence
+measured on one blade means nothing on another — see <code class="xref py py-meth docutils literal notranslate"><span class="pre">_gain_each()</span></code>,
+which refuses the mismatch it can see and cannot see the rest.</p>
+<p><strong>One number or one per knob.</strong> A scalar is a single declared prior, spread
+over every knob the iterator owns; a sequence carries them separately, in
+the order <code class="xref py py-meth docutils literal notranslate"><span class="pre">unknowns()</span></code> returns. A design is declared with the scalar,
+because a prior is a statement about a <em>kind</em> of knob and the count is
+rarely known while writing a file; a run measures a slope for each knob and
+writes back the sequence, because those are genuinely different numbers.
+Reducing them to one would blend, say, the sensitivity of a recamber at
+hub and casing, or of a camber coefficient at the front of a blade with one
+at the back — measurements of different constants, not repeats of one.</p>
 </td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
-<td><p>Largest change in one iteration, in the units of the unknown.</p>
-<p>Zero for no limit. A clip is what keeps a bad early step — taken on a
-field that has not settled — from throwing the design somewhere it cannot
-be meshed.</p>
+<td><p>Largest change in one iteration, as a fraction of the nominal value.</p>
+<p>Relative for the reason <code class="xref py py-attr docutils literal notranslate"><span class="pre">tolerance</span></code> is, and to the same nominal:
+design variables have no common scale, so an absolute number would mean
+something different for every one of them. Written absolutely — which is
+what <code class="xref py py-attr docutils literal notranslate"><span class="pre">Iterator.clip</span></code> means everywhere else, the other iterators
+moving angles in degrees and coefficients that are already dimensionless
+— a single <code class="docutils literal notranslate"><span class="pre">clip:</span> <span class="pre">0.01</span></code> beside a two-row <code class="docutils literal notranslate"><span class="pre">Ys</span></code> of <code class="docutils literal notranslate"><span class="pre">[0.030,</span> <span class="pre">0.076]</span></code>
+permits a third of the first and an eighth of the second, while the
+tolerance a line above it means one per cent of each. Two conventions, two
+adjacent numbers, and a loss coefficient free to walk a third of its value
+per pass.</p>
+<p>Zero for no limit, as it is on the base class.</p>
 </td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
@@ -1814,6 +2682,104 @@ be meshed.</p>
 <td><p>list of text, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
 <td><p>Names of the design variables to relax, as the mean-line design spells
 them.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="type-peak-ma">
+<span id="config-iterate-correct-peak-ma"></span><h5>type: peak_Ma<a class="headerlink" href="#type-peak-ma" title="Link to this heading">¶</a></h5>
+<p>Set the level of the loading by moving the blade count.</p>
+<p>The companion to <code class="xref py py-class docutils literal notranslate"><span class="pre">LoadingDistribution</span></code>, which shapes a distribution
+but cannot say how high it stands. At a fixed duty the area enclosed by the
+isentropic Mach loop is the blade circulation, which the pitch sets and a
+camber line only redistributes — so the level belongs to the blade count,
+and this is the iterator that owns it.</p>
+<p><strong>Its own member rather than a third knob on the other one, because a gain
+is per-iterator.</strong> <code class="xref py py-attr docutils literal notranslate"><span class="pre">Iterator.gain</span></code> carries the sign of a knob’s
+sensitivity as well as its size, and one scalar cannot carry two signs: the
+peak rises with the circulation coefficient while the shape targets fall
+with the camber coefficients. Folded together, a single negative gain drove
+this knob the wrong way at every iteration — <cite>Co</cite> walked from 0.70 to
+0.57 while the peak it was meant to raise fell with it. Split, each member
+declares the sign it has.</p>
+<p>Moving blade count is what kept <cite>DiffusionFactor</cite> from being ported, on the
+grounds that it changes the mesh. It does: the mesher sizes the grid from
+the pitch, so <cite>Co</cite> of 0.70 and 0.75 meshed at 225 and 209 streamwise nodes
+on the example cascade. That puts a floor under <code class="xref py py-attr docutils literal notranslate"><span class="pre">tolerance</span></code>, since
+remeshing moves the measurement a little for reasons that are
+discretisation rather than flow, but it does not prevent the loop — every
+iteration remeshes anyway, and restarts interpolate in index space. The
+integer blade count is the smaller worry it looks: one blade is 0.36 per
+cent of <cite>Co</cite> on that cascade, far finer than any step taken, though it
+scales as <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">n_blade</span></code> and would bite on a row with forty.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.5</span></code></p></td>
+<td><p>How much of the error to subtract [–].</p>
+<p><strong>Positive, and measured rather than guessed.</strong> The peak rises with the
+circulation coefficient — more circulation per blade is a bigger loop —
+at a slope of +0.50 across a sweep of <cite>Co</cite> from 0.6 to 0.8, +0.58 within a
+single run, and +0.58 again from replaying that run’s Jacobian. A Newton
+step on the diagonal would be about +1.7, and this sits a little under it
+so that it undershoots rather than overshoots.</p>
+<p>Unlike <code class="xref py py-attr docutils literal notranslate"><span class="pre">LoadingDistribution.gain</span></code>, which is a weak prior because the
+camber sensitivities changed sign between two cascades, this is a
+calibration: the sign follows from what a circulation coefficient <em>is</em>, and
+all three measurements agree on the size.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.05</span></code></p></td>
+<td><p>Largest change in the circulation coefficient per iteration [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerance:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.02</span></code></p></td>
+<td><p>Converged when the peak Mach ratio is within this [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">i_row:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Index of the blade row whose loading level is set.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fac_peak:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.2</span></code></p></td>
+<td><p>Target peak Mach number over the trailing edge value [–].</p>
+<p>One more than the diffusion factor
+<code class="xref py py-class docutils literal notranslate"><span class="pre">turbigen.metric.DiffusionFactor</span></code> records, so a target here is a
+statement about diffusion in the units a designer already reads.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.5</span></code></p></td>
+<td><p>Span fraction to measure the distribution at [–].</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.2</span></code></p></td>
+<td><p>Front anchor of the window fitted [–].</p>
+<p>The peak is read from a fit rather than from a maximum of the data, so it
+depends on the window fitted. Must match the
+<code class="xref py py-class docutils literal notranslate"><span class="pre">LoadingDistribution</span></code> alongside, or the two describe different
+curves.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_TE:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.98</span></code></p></td>
+<td><p>Far end of the window fitted [–].</p>
+<p><cite>LoadingDistribution</cite> reads its own target straight off the surface
+rather than from a fit, so it carries no matching setting of its own; only
+<cite>zeta_front</cite> needs to agree between the two.</p>
+</td>
 </tr>
 </tbody>
 </table>
@@ -1861,7 +2827,12 @@ zero, and a fourth column would be noise.</p>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">gain:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
-<td><p>One copies the exit profile outright; less under-relaxes it.</p></td>
+<td><p>One copies the exit profile outright; less under-relaxes it.</p>
+<p>Relaxation only: the loop stops where the error is null, and <cite>gain</cite> scales
+the path to that point rather than moving it. What fraction of the exit
+profile the converged inlet actually carries is
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">transfer_To</span></code> and nothing else.</p>
+</td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
@@ -1886,22 +2857,39 @@ be meshed.</p>
 the machine. The package this replaces reads at the same distance.</p>
 </td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">atol_head:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">transfer_To:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
+<td><p>Fraction of the exit stagnation temperature profile fed back upstream.</p>
+<p>One is a strictly repeating stage: whatever temperature redistribution
+leaves, arrives. That is the right statement for pressure and for angle,
+which the blade row re-establishes, and it overstates the temperature
+profile, which mixes out between stages instead — a hot streak that
+survives one stage intact survives every stage, and the loop compounds it.</p>
+<p>Below one the converged inlet carries that fraction of the exit profile,
+because the error is measured against the damped exit rather than the raw
+one. It is a claim about how much interstage mixing there is, so it belongs
+here as a number somebody chooses rather than as a relaxation that would
+slow the loop down and land in the same place anyway.</p>
+<p>Only the temperature is damped. Pressure and angle keep their full
+feedback, so the default is exactly the loop as it was.</p>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">atol_head:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.01</span></code></p></td>
 <td><p>Converged when <code class="docutils literal notranslate"><span class="pre">DPo</span></code> and <code class="docutils literal notranslate"><span class="pre">DTo</span></code> are within this [–].</p>
 <p>In fractions of dynamic head and of dynamic temperature, which is what
 those columns are measured in.</p>
 </td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">atol_angle:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">atol_angle:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></td>
 <td><p>Converged when <code class="docutils literal notranslate"><span class="pre">DAlpha</span></code> is within this [deg].</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip_head:</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">clip_head:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.2</span></code></p></td>
 <td><p>Most <code class="docutils literal notranslate"><span class="pre">DPo</span></code> and <code class="docutils literal notranslate"><span class="pre">DTo</span></code> may move in one iteration [–].</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">clip_angle:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">clip_angle:</span></code></p></td>
 <td><p>float, default <code class="docutils literal notranslate"><span class="pre">5.0</span></code></p></td>
 <td><p>Most <code class="docutils literal notranslate"><span class="pre">DAlpha</span></code> may move in one iteration [deg].</p></td>
 </tr>
@@ -2055,7 +3043,7 @@ the same every time.</p>
 <section id="post-process">
 <span id="config-post-process"></span><h3>post_process:<a class="headerlink" href="#post-process" title="Link to this heading">¶</a></h3>
 <p>Base for post-processors.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-post-process-annulus"><span class="std std-ref">annulus</span></a>, <a class="reference internal" href="#config-post-process-contour"><span class="std std-ref">contour</span></a>, <a class="reference internal" href="#config-post-process-convergence"><span class="std std-ref">convergence</span></a>, <a class="reference internal" href="#config-post-process-sections"><span class="std std-ref">sections</span></a>, <a class="reference internal" href="#config-post-process-surface"><span class="std std-ref">surface</span></a>, <a class="reference internal" href="#config-post-process-triangle"><span class="std std-ref">triangle</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-post-process-annulus"><span class="std std-ref">annulus</span></a>, <a class="reference internal" href="#config-post-process-camber"><span class="std std-ref">camber</span></a>, <a class="reference internal" href="#config-post-process-contour"><span class="std std-ref">contour</span></a>, <a class="reference internal" href="#config-post-process-convergence"><span class="std std-ref">convergence</span></a>, <a class="reference internal" href="#config-post-process-sections"><span class="std std-ref">sections</span></a>, <a class="reference internal" href="#config-post-process-spanwise"><span class="std std-ref">spanwise</span></a>, <a class="reference internal" href="#config-post-process-surface"><span class="std std-ref">surface</span></a>, <a class="reference internal" href="#config-post-process-triangle"><span class="std std-ref">triangle</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
 <section id="type-annulus">
 <span id="config-post-process-annulus"></span><h4>type: annulus<a class="headerlink" href="#type-annulus" title="Link to this heading">¶</a></h4>
 <p>Meridional view of the annulus.</p>
@@ -2083,6 +3071,43 @@ the same every time.</p>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">show_blades:</span></code></p></td>
 <td><p>true or false, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 <td><p>Outline each blade row with its leading and trailing edges and diagonals.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="type-camber">
+<span id="config-post-process-camber"></span><h4>type: camber<a class="headerlink" href="#type-camber" title="Link to this heading">¶</a></h4>
+<p>Metal angle along the camber line of each row.</p>
+<p>The design-side companion to <code class="xref py py-class docutils literal notranslate"><span class="pre">SurfacePlot</span></code>: that draws what the
+flow did with a blade, this draws the blade. Where a <cite>loading_profile</cite>
+iterator is shaping the row, the points it reads are marked, exactly as
+the surface plot marks them — a camber coefficient is moved in <cite>m</cite> and
+measured in <cite>zeta</cite>, and seeing the knobs on the curve they actually move
+is what makes a saturated or a flat one recognisable.</p>
+<p>The angle itself, in degrees, rather than a shape normalised between the
+ends. Not every camber design has such a normalised form — a
+<a class="reference internal" href="blade.html#turbigen.camber.CircularArc" title="turbigen.camber.CircularArc"><code class="xref py py-class docutils literal notranslate"><span class="pre">CircularArc</span></code></a> is fixed by the end angles and says
+nothing without them — and the one curve every shape can be drawn as is
+the angle it actually lands on. It reads directly against the metal angles
+the mean line set, and a section with no turning draws as the flat line it
+is rather than as nothing at all. The thickness wrapped around it is a
+plot of its own.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
+<td><p>Span fractions to draw. Empty for the designed sections.</p></td>
 </tr>
 </tbody>
 </table>
@@ -2130,13 +3155,6 @@ not rescale the whole plot; 0 disables the trim.</p></td>
 <td><p>text, default <code class="docutils literal notranslate"><span class="pre">'viridis'</span></code></p></td>
 <td><p>Colour map to fill with.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">margin:</span></code></p></td>
-<td><p>float, default <code class="docutils literal notranslate"><span class="pre">1.0</span></code></p></td>
-<td><p>How far to look either side of a row, as a fraction of its meridional
-length (leading to trailing edge) – so the default frames roughly one
-chord of approach and wake either side. Raise it for a highly staggered
-row, whose true chord runs well past its meridional extent.</p></td>
-</tr>
 </tbody>
 </table>
 </section>
@@ -2164,6 +3182,40 @@ row, whose true chord runs well past its meridional extent.</p></td>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
 <td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
 <td><p>Span fractions to draw. Empty for the designed sections.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="type-spanwise">
+<span id="config-post-process-spanwise"></span><h4>type: spanwise<a class="headerlink" href="#type-spanwise" title="Link to this heading">¶</a></h4>
+<p>Pitch-averaged flow quantity against span fraction, at a cut plane.</p>
+<p>Where a row loses, rather than how much: the mixed-out mean line reduces a
+station to one number and a blade-to-blade contour shows one span fraction
+at a time, so neither can say that the loss sits in a corner or at the tip.</p>
+<p>Everything is referred to <cite>result.actual</cite>, the mixed-out mean line the grid
+achieved, so the datum and the field being averaged are the same flow. A
+result that has not been mixed out yields no figures.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">m_cut:</span></code></p></td>
+<td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
+<td><p>Normalised meridional positions to cut and pitch-average at.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">variable:</span></code></p></td>
+<td><p>text, default <code class="docutils literal notranslate"><span class="pre">'Ys'</span></code></p></td>
+<td><p>Quantity to plot: <code class="docutils literal notranslate"><span class="pre">Ys</span></code>, <code class="docutils literal notranslate"><span class="pre">CP</span></code>, <code class="docutils literal notranslate"><span class="pre">CPo</span></code>, <code class="docutils literal notranslate"><span class="pre">Cho</span></code>, <code class="docutils literal notranslate"><span class="pre">Vm</span></code>, <code class="docutils literal notranslate"><span class="pre">Vt</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Alpha</span></code> or <code class="docutils literal notranslate"><span class="pre">Alpha_rel</span></code>.</p></td>
 </tr>
 </tbody>
 </table>
@@ -2212,7 +3264,69 @@ the two, tip to tip, and is only drawn where the row rotates.</p>
 <section id="metrics">
 <span id="config-metrics"></span><h3>metrics:<a class="headerlink" href="#metrics" title="Link to this heading">¶</a></h3>
 <p>Base for quantities measured from a solved field.</p>
-<p class="config-choices">Takes one of <a class="reference internal" href="#config-metrics-surface-dissipation"><span class="std std-ref">surface_dissipation</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<p class="config-choices">Takes one of <a class="reference internal" href="#config-metrics-diffusion-factor"><span class="std std-ref">diffusion_factor</span></a>, <a class="reference internal" href="#config-metrics-surface-dissipation"><span class="std std-ref">surface_dissipation</span></a> as its <code class="docutils literal notranslate"><span class="pre">type:</span></code>.</p>
+<section id="type-diffusion-factor">
+<span id="config-metrics-diffusion-factor"></span><h4>type: diffusion_factor<a class="headerlink" href="#type-diffusion-factor" title="Link to this heading">¶</a></h4>
+<p>Peak-to-exit diffusion over the blade surfaces of each row.</p>
+<p>The isentropic surface Mach number is a distribution, and the amount it
+falls from its peak back to the trailing edge is what the boundary layer on
+the late suction surface has to survive,</p>
+<div class="math notranslate nohighlight">
+\[\mathit{DF} = \frac{\mathit{Ma}_{s,\mathrm{max}}}{\mathit{Ma}_{s,\mathrm{TE}}} - 1\]</div>
+<p>where the trailing-edge value is the mean of the two sides of the cut, the
+surface being wrapped from one of them round to the other. Where the peak
+sits is reported with it: the same diffusion late on the surface is harder
+on the boundary layer than early, so the factor alone does not say what
+the blade is doing.</p>
+<p>The isentropic Mach number is referred to the entropy entering <em>that row</em>,
+the same reference <code class="xref py py-class docutils literal notranslate"><span class="pre">SurfacePlot</span></code> draws it against, so
+what this measures is the number that plot shows.</p>
+<p>Every number here comes from <code class="xref py py-func docutils literal notranslate"><span class="pre">turbigen.loading.measure()</span></code>, which is
+also what <code class="xref py py-class docutils literal notranslate"><span class="pre">LoadingDistribution</span></code> and
+<code class="xref py py-class docutils literal notranslate"><span class="pre">PeakMach</span></code> correct against. That sharing is the
+point: a metric and an iterator that disagreed about where the peak was
+would let a design be driven onto a target the report then contradicts.</p>
+<p>The peak is fitted rather than taken as a maximum of the data — two
+straight lines meeting at a breakpoint, so it uses every point in the
+window and slides where an argmax steps between nodes. That makes <cite>DF</cite>
+a little different from a peak read straight off the curve, by around
+three per cent on the case it was checked against, and much steadier on the
+flat-topped distributions that are a design style rather than a pathology.</p>
+<table class="config-keys docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 24.0%" />
+<col style="width: 58.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Value</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spf:</span></code></p></td>
+<td><p>list of floats, default <code class="docutils literal notranslate"><span class="pre">[0.5]</span></code></p></td>
+<td><p>Span fractions to measure the surface distribution at [–].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">offset:</span></code></p></td>
+<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
+<td><p>Cells away from the wall to take the distribution at.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_front:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.2</span></code></p></td>
+<td><p>Front anchor of the window fitted [–].</p>
+<p>Matches the default the iterators carry, so a config that shapes a blade
+and a config that only measures one describe the same curve.</p>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">zeta_TE:</span></code></p></td>
+<td><p>float, default <code class="docutils literal notranslate"><span class="pre">0.98</span></code></p></td>
+<td><p>Far end of the window fitted [–].</p></td>
+</tr>
+</tbody>
+</table>
+</section>
 <section id="type-surface-dissipation">
 <span id="config-metrics-surface-dissipation"></span><h4>type: surface_dissipation<a class="headerlink" href="#type-surface-dissipation" title="Link to this heading">¶</a></h4>
 <p>Denton’s velocity-cubed estimate of boundary layer loss.</p>
@@ -2346,7 +3460,10 @@ this environment; name it when a compute node needs a different path.</p></td>
 a small Debian package, in place of the flock’d text file, PID file, SIGHUP
 cancel-all and systemd unit that the package this replaces hand-rolls to
 the same end. Watch it with <code class="docutils literal notranslate"><span class="pre">tsp</span> <span class="pre">-l</span></code>, read a job with <code class="docutils literal notranslate"><span class="pre">tsp</span> <span class="pre">-c</span> <span class="pre">ID</span></code>, stop
-the rest with <code class="docutils literal notranslate"><span class="pre">tsp</span> <span class="pre">-C</span></code>.</p>
+the rest with <code class="docutils literal notranslate"><span class="pre">tsp</span> <span class="pre">-C</span></code>, and set how many run at once with <code class="docutils literal notranslate"><span class="pre">tsp</span> <span class="pre">-S</span></code>.
+That last one belongs to the user: task-spooler keeps one server per user,
+shared with everything else they have queued, so submitting a batch here
+never touches it.</p>
 <table class="config-keys docutils align-default">
 <colgroup>
 <col style="width: 18.0%" />
@@ -2366,12 +3483,7 @@ the rest with <code class="docutils literal notranslate"><span class="pre">tsp</
 running now, which is right whenever the queue shares this filesystem and
 this environment; name it when a compute node needs a different path.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">slots:</span></code></p></td>
-<td><p>integer, default <code class="docutils literal notranslate"><span class="pre">4</span></code></p></td>
-<td><p>Jobs to run at once. Set on the queue itself, so it outlives this
-submission and applies to whatever is already waiting.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cpus:</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">cpus:</span></code></p></td>
 <td><p>integer, default <code class="docutils literal notranslate"><span class="pre">0</span></code></p></td>
 <td><p>Slots one job occupies, for work that wants more than one core. Zero
 leaves it at task-spooler’s own default of one.</p></td>
