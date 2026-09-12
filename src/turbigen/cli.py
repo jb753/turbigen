@@ -850,7 +850,16 @@ def _design_one(args, config_path):
     # promise: the resolved config is used and discarded.
     config = iterate.resolve(config)
 
-    run_log.info(config.design().to_string())
+    machine = config.design()
+    run_log.info(machine.to_string())
+
+    # The same table `run` prints last, off the same `backward()` -- but with
+    # no CFD to mix out, there is no actual to set beside the nominal, so it
+    # comes back one column narrower. See `design_variable_string`.
+    try:
+        run_log.info(design_variable_string(config, Result(machine=machine)))
+    except Exception as err:
+        logger.warning(f"Could not print design variables: {err}")
 
     return 0
 
@@ -2070,22 +2079,34 @@ def _design_variable_rows(config, result):
     variables = {field.name for field in dataclasses.fields(config.mean_line)}
 
     nominal = config.mean_line.backward(result.nominal)
-    actual = config.mean_line.backward(result.actual)
+
+    # `design` builds a result with no CFD behind it at all, so there is no
+    # actual to invert -- every row is nominal-only, not "neither can be
+    # compared" (that verdict is for a field a run's actual declines to
+    # invert, not for a run that never had one).
+    has_actual = result.actual is not None
+    actual = config.mean_line.backward(result.actual) if has_actual else {}
 
     for name, value in nominal.items():
         # A design may declare a variable as not invertible, and it may return
         # one the other call did not; neither is an error, and neither can be
         # compared.
-        if value is None or actual.get(name) is None:
+        if value is None or (has_actual and actual.get(name) is None):
             continue
 
-        was, now = np.atleast_1d(value), np.atleast_1d(actual[name])
-        if was.shape != now.shape:
+        was = np.atleast_1d(value)
+        now = np.atleast_1d(actual[name]) if has_actual else None
+        if now is not None and was.shape != now.shape:
             continue
 
-        for i, (one, other) in enumerate(zip(was, now)):
+        for i in range(was.size):
             label = name if was.size == 1 else f"{name}[{i}]"
-            yield label, float(one), float(other), name in variables
+            yield (
+                label,
+                float(was[i]),
+                float(now[i]) if now is not None else None,
+                name in variables,
+            )
 
 
 def design_variable_string(config, result):
@@ -2104,9 +2125,14 @@ def design_variable_string(config, result):
         return "Design variables: nothing that backward() returns can be compared."
 
     width = max(len(name) for name, _, _, _ in rows)
-    header = (
-        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
-    )
+
+    # `design` never has a CFD actual to set against the nominal, so it gets
+    # the narrower table this degrades to: a value, not a comparison.
+    has_actual = result.actual is not None
+    if has_actual:
+        header = f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
+    else:
+        header = f"{'name':<{width}}  {'nominal':>10}"
     lines = ["Design variables:", header, "-" * len(header)]
 
     # Set variables first, then what was read off the answer, with a rule
@@ -2120,6 +2146,10 @@ def design_variable_string(config, result):
             lines.append("-" * len(header))
 
         for name, was, now, _ in block:
+            if not has_actual:
+                lines.append(f"{name:<{width}}  {was:10.4g}")
+                continue
+
             error = was - now
             # A nominal of zero has nothing to be relative to. Recamber and
             # swirl angles are routinely zero by design, so this is the common
