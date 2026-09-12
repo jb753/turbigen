@@ -1,0 +1,170 @@
+---
+annulus:
+  cx_gap:
+  - 0.1
+  - 0.06
+  - 0.15
+  cx_row:
+  - 0.1
+  - 0.1
+  merge_weight: 1.0
+  type: fixed_axial_chord
+batch:
+  bounds:
+    mean_line.phi2:
+    - 0.4
+    - 1.2
+    mean_line.psi:
+    - 1.0
+    - 2.4
+blades:
+- count:
+    Co: 0.6275413169457633
+    type: Co
+  sections:
+  - camber: &id001
+      exponent: 2.5
+      type: clark
+    dchi_LE: -3.8269251283198993
+    dchi_TE: -0.36185117890377577
+    spf: 0.5
+    thickness:
+      R_LE: 0.020000000000000004
+      coeff:
+      - - -0.03679473475318085
+        - 0.14485841590938942
+        - 0.07292693685618945
+      - - 0.06440834086596414
+        - 0.16069426096328732
+        - 0.1122384748985415
+      t_TE: 0.025
+      tanwedge: 0.14469594138730743
+      type: clark
+  vortex_exponent: -0.6
+- count:
+    Co: 0.6263112503945939
+    type: Co
+  sections:
+  - camber: *id001
+    dchi_LE: 3.8777820403154704
+    dchi_TE: -1.2395593518273058
+    spf: 0.5
+    thickness:
+      R_LE: 0.03763877737470755
+      coeff:
+      - - -0.017438976808496015
+        - 0.20246843960902583
+        - 0.05645950041445408
+      - - 0.04952840348847726
+        - 0.1887757254978732
+        - 0.1546161179521579
+      t_TE: 0.025
+      tanwedge: 0.17665319612349722
+      type: clark
+  tip_chord: 0.02
+  vortex_exponent: -0.6
+database:
+  path: ../../batch_*/[0-9]*/output.yaml
+  power: 2.0
+fluid:
+  cp: 1100.0
+  gamma: 1.33
+  mu: 0.000495
+  type: perfect
+iterate:
+  correct:
+  - clip: 1.0
+    tolerance: 0.5
+    type: deviation
+  - clip: 0.5
+    gain: -0.05
+    tolerance: 8.0
+    type: incidence
+  - clip: 0.2
+    tolerance: 0.02
+    type: mean_line
+    variables:
+    - Ys
+  - Ma_LE: 1.6
+    Ma_PS: 1.0
+    Ma_peak: 1.3
+    clip: 0.05
+    clip_Co: 0.02
+    gain: 0.25
+    gain_Co: 0.5
+    i_row: 0
+    spf: 0.5
+    tolerance: 0.02
+    tolerance_Co: 0.01
+    type: clark_profile
+    z_peak: 0.55
+  - Ma_LE: 1.6
+    Ma_PS: 1.0
+    Ma_peak: 1.3
+    clip: 0.05
+    clip_Co: 0.02
+    gain: 0.25
+    gain_Co: 0.5
+    i_row: 1
+    spf: 0.5
+    tolerance: 0.02
+    tolerance_Co: 0.01
+    type: clark_profile
+    z_peak: 0.55
+  max_iter: 20
+job:
+  type: tsp
+mean_line:
+  Ma1_max: 0.7
+  Ma2: 0.7
+  Po1: 1600000.0
+  To1: 1600.0
+  Ys:
+  - 0.024719217185920572
+  - 0.058301036391058006
+  fac_Ma3_rel: 1.0
+  mdot: 1900.0
+  phi2: 0.8
+  psi: 1.6
+  r_rms: 2.0
+  type: axial_turbine
+  zeta:
+  - 1.0
+  - 1.0
+mesh:
+  AR_cusp: 2.0
+  AR_mix: 1.0
+  dm_TE: 0.0
+  ni_cusp: 5
+  njtip_min: 5
+  pinch_ramp: 1.0
+  type: h
+  yplus: 30.0
+metrics:
+- Cd: 0.002
+  type: surface_dissipation
+- spf:
+  - 0.5
+  type: diffusion_factor
+solver:
+  cfl: 4
+  dampin: 25.0
+  n_step_soft: 400
+  delta_filt: 0.1
+  expon_mgrid: 2
+  fac_mgrid: 0.2
+  gain_filt: 1
+  n_levels: 3
+  n_stage: 4
+  n_step: 800
+  n_step_avg: 400
+  n_step_log: 100
+  rf_inlet: 0.05
+  rf_mix: 0.05
+  rf_outlet: 0.05
+  sf_resid: 1.0
+  # sf2: 0.5
+  # sf4: 0.005
+  # adaptive_smoothing: true
+  type: ember
+...

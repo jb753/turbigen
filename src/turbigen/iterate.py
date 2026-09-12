@@ -2402,7 +2402,7 @@ class ClarkProfile(Iterator):
     the other knobs have converged, without slackening them.
     """
 
-    R_LE_lim: tuple[float, float] = (0.02, 0.1)
+    R_LE_lim: tuple[float, float] = (0.02, 0.12)
     """Bounds on the leading edge radius, normalised by chord [--].
 
     **A bound on where the knob arrives, which no clip provides.** `clip`
