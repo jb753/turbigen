@@ -1,10 +1,11 @@
 """Tests for fluid configuration classes."""
 
-import pytest
-import numpy as np
 import dataclasses
-import turbigen_ref.fluid
+
 import ember.fluid
+import numpy as np
+import pytest
+import turbigen_ref.fluid
 
 
 def test_perfect_fluid_config_instantiation():

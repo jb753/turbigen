@@ -21,9 +21,9 @@ Test cases:
 
 import numpy as np
 import pytest
-
 from test_blade import build
 from test_mesh import MESH
+
 from turbigen import guess
 
 
@@ -129,7 +129,7 @@ def test_swirl_varies_across_the_span(machine, grid):
 def test_a_grid_without_a_fluid_is_refused(machine):
     """The guess reads the grid's equation of state, so the mesher must have
     set one first. It does, but the dependency is worth stating."""
-    import ember.grid  # noqa: PLC0415
+    import ember.grid
 
     bare = ember.grid.Grid([ember.block.Block(shape=(3, 3, 3))])
 

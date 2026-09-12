@@ -17,7 +17,7 @@ Test cases:
 - test_edge_velocity_is_the_speed_relative_to_the_wall: the reconstruction
 - test_a_stationary_casing_is_measured_in_the_absolute_frame: and its frame
 - test_nothing_to_measure_returns_nothing: the Metric contract
-- test_keys_and_shape: (2, n_row), endwalls then blades
+- test_keys_and_shape: (3, n_row), endwalls, blades, then blade tips
 - test_entropy_rate_is_linear_in_the_coefficient: and area is not
 - test_endwall_area_counts_every_passage: the Nb scaling, exactly
 - test_the_clip_removes_exactly_the_ducts: against the geometry, not the code
@@ -31,10 +31,10 @@ import dataclasses
 import numpy as np
 import pytest
 import yaml
-
 from test_blade import build
 from test_cli import RUN_CASE
 from test_mesh import MESH, TIP
+
 from turbigen import Config, Result, SurfaceDissipation, case, cli, metric, mixout, util
 
 TIP_ROW = 1
@@ -155,7 +155,7 @@ def test_keys_and_shape(gapped):
 
     assert set(values) == {"Sdot_surf", "A_surf", "Vcu_surf"}
     for name, value in values.items():
-        assert np.shape(value) == (2, result.grid.n_row), name
+        assert np.shape(value) == (3, result.grid.n_row), name
         assert np.all(np.isfinite(value)), name
 
 

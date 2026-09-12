@@ -10,9 +10,9 @@ contributed by each side.
 
 """
 
-import numpy as np
-
 from abc import ABC, abstractmethod
+
+import numpy as np
 
 
 def _monocubic(R_LE, m_tmax, t_max, t_TE, wedge):

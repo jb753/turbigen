@@ -1,16 +1,17 @@
 import logging
+import os
+import re
+import signal
+import subprocess
+import sys
 from dataclasses import dataclass, fields
-from timeit import default_timer as timer
 from glob import glob
+from pathlib import Path
+from timeit import default_timer as timer
+
 import ember.ts3
 from ember.convergence_history import ConvergenceHistory
 from turbigen_ref.exceptions import ConvergenceError
-import subprocess
-import os
-from pathlib import Path
-import signal
-import sys
-import re
 from turbigen_ref.solvers.base import BaseSolver
 
 logger = logging.getLogger("turbigen")

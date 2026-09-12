@@ -213,7 +213,7 @@ def test_report_of_a_mean_line_design_is_not_an_error(case):
     written = case.parent / cli.OUTPUT_NAME
     assert written.is_file()
 
-    from turbigen import case as case_io  # noqa: PLC0415
+    from turbigen import case as case_io
 
     _, result = case_io.read(written, design=False)
     assert result is None
@@ -373,7 +373,7 @@ def test_written_config_re_runs_from_its_output_directory(tmp_path, clean_regist
     assert cli.main(["design", str(case)]) == 0
 
     # As a run would leave it: the resolved config, in the case's directory.
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     archived = directory / "archived.yaml"
     Config.from_file(case).to_file(archived)
@@ -482,7 +482,7 @@ def test_a_run_never_overwrites_its_input(run_case):
 
 def test_run_writes_a_config_that_reads_back(run_case):
     """The archived config is the run, defaults and all."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["run", str(run_case)])
 
@@ -490,6 +490,142 @@ def test_run_writes_a_config_that_reads_back(run_case):
     assert written.exists()
     assert (run_case.parent / cli.LOG_NAME).exists()
     assert Config.from_file(written) == Config.from_file(run_case)
+
+
+#
+# A soft start: `solver.n_step_soft` steps of `soft()` -- the same problem on
+# the same grid, detuned -- before the march that counts, on the first solve of
+# an invocation and no other.
+#
+
+
+@pytest.fixture
+def marches(monkeypatch):
+    """Every solver configuration that marched, in the order they did.
+
+    The whole of what a soft start has to be tested against is *which* settings
+    ran and how many times, which nothing on disk records: the point of the
+    feature is that the soft pass leaves no trace but the field it improved.
+    """
+    from turbigen.solver import Ember
+
+    seen = []
+    real = Ember.solve
+
+    def spy(self, grid):
+        seen.append(self)
+        return real(self, grid)
+
+    monkeypatch.setattr(Ember, "solve", spy)
+    return seen
+
+
+def test_a_run_does_not_soft_start_unless_asked(run_case, marches):
+    """Off at its default, and the steps are not spent."""
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert len(marches) == 1
+    assert marches[0].n_step == 10
+
+
+def test_a_soft_start_marches_twice_the_real_settings_last(run_case, marches, capsys):
+    """The detuned pass first, then the config's own settings from its field."""
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 0
+
+    soft, production = marches
+
+    assert soft.n_step == 5
+    assert production.n_step == 10
+
+    # Detuned, not merely shorter: the second march is the config as written.
+    assert soft.dampin != production.dampin
+    assert production.dampin == 0.0
+    assert production.sf2 == 0.002
+
+    # And a soft pass that cost time says so, rather than doubling the march
+    # with nothing in the log to explain it.
+    assert "Soft start: 5 steps" in capsys.readouterr().err
+
+
+def test_a_soft_start_leaves_nothing_behind_but_the_field(run_case, marches):
+    """Its history is not the run's, and its settings are not the run's either.
+
+    The answer a run records has to describe the march that produced it. A soft
+    pass is a starting guess reached expensively, so what it converged to is of
+    no interest to anything downstream -- `database` above all, which fits
+    against `solver:` as written.
+    """
+    from turbigen import case
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 0
+
+    config, result = case.read(run_case.parent / cli.OUTPUT_NAME, design=False)
+
+    assert config.solver.n_step_soft == 5
+    assert config.solver.n_step == 10
+    assert result.converged
+
+    # One record per log step of the march that counts, and none of the other.
+    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    assert history.i_log + 1 == 1
+
+
+def test_a_restarted_run_still_soft_starts(run_case, marches):
+    """A field is not proof that this design has been marched.
+
+    It may be a neighbour's, or this design's own from before the geometry
+    moved. Both are exactly what a robust pass is for, so `--restart` is no
+    reason to skip one -- unlike a loop's own previous iteration, which is.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+    marches.clear()
+
+    code = cli.main(
+        ["run", str(run_case), "--restart", "-f", "-s", "solver.n_step_soft=5"]
+    )
+
+    assert code == 0
+    assert [march.n_step for march in marches] == [5, 10]
+
+
+def test_a_diverged_soft_start_stops_before_the_real_march(
+    run_case, marches, monkeypatch
+):
+    """Marching production settings from NaNs is CFD that cannot reach an answer.
+
+    So the soft pass's history stands as the run's own: the verb reports a
+    failed solve, and what goes to disk is the field it failed in, which is the
+    only record of what happened here.
+    """
+
+    real_soft_start = cli.soft_start
+
+    def diverging(solver, grid):
+        # The real pass, reported as having blown up. A genuine divergence
+        # would leave NaNs that the mix-out and the report would then be tested
+        # against, which is a different test from this one.
+        history = real_soft_start(solver, grid)
+        history.diverged = True
+        return history
+
+    monkeypatch.setattr(cli, "soft_start", diverging)
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 2
+
+    # The soft pass marched; nothing followed it.
+    assert [march.n_step for march in marches] == [5]
+
+    # And its evidence is on disk, as any failed march's is.
+    assert (run_case.parent / cli.RESTART_NAME).is_file()
+    assert (run_case.parent / cli.HISTORY_NAME).is_file()
+    assert (run_case.parent / cli.GRID_NAME).is_file()
+
+
+def test_a_negative_soft_step_count_is_a_message(run_case, capsys):
+    """Not an ember error about an averaging window, several frames down."""
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=-5"]) == 1
+
+    assert "n_step_soft must be >= 0" in capsys.readouterr().err
 
 
 # The march is driven unstable on purpose, so ember's warning that the outlet
@@ -522,6 +658,78 @@ def test_run_reports_a_failed_solve_in_its_exit_code(run_case):
     assert (run_case.parent / cli.OUTPUT_NAME).exists()
 
 
+def test_a_raising_measurement_still_leaves_the_field_and_the_log(
+    run_case, monkeypatch
+):
+    """The CFD is paid for before anything is measured off it.
+
+    A measurement that raises used to take the whole run down before the field
+    was written, leaving a directory holding the config it tried and a log that
+    stopped mid-march saying nothing --- the one case where the field and the
+    transcript are what someone needs.
+    """
+    from turbigen import iterate
+
+    def refuse(config, result, strict=True):
+        raise iterate.MeasurementError("nothing could be measured, on purpose")
+
+    monkeypatch.setattr(cli.iterate, "errors", refuse)
+
+    assert cli.main(["run", str(run_case)]) == 1
+
+    directory = run_case.parent
+    assert (directory / cli.RESTART_NAME).exists()
+    assert (directory / cli.HISTORY_NAME).exists()
+
+    # And the log beside them says why it stopped, rather than ending mid-march.
+    log = (directory / cli.LOG_NAME).read_text()
+    assert "nothing could be measured, on purpose" in log
+    assert "MeasurementError" in log
+
+
+def test_a_raising_measurement_leaves_the_whole_grid(run_case, monkeypatch):
+    """The flow field alone cannot be read back without a mesh to hang it on.
+
+    `restart.npz` holds primitives and a stamp, on the reasoning that the
+    config beside it rebuilds the mesh --- which holds only while the mesher is
+    the code that wrote it. A failure being chased across a change to that code
+    is exactly the one that cannot be rebuilt, so the grid itself goes down
+    beside the field.
+    """
+    import ember.grid
+
+    def refuse(config, result, strict=True):
+        raise iterate.MeasurementError("nothing could be measured, on purpose")
+
+    monkeypatch.setattr(cli.iterate, "errors", refuse)
+
+    assert cli.main(["run", str(run_case)]) == 1
+
+    path = run_case.parent / cli.GRID_NAME
+    assert path.is_file()
+
+    # Read back through ember's own reader, carrying the geometry the field
+    # does not: coordinates, and the patches that say which face an
+    # index-space divergence report is pointing at.
+    grid = ember.grid.Grid.read_emb(str(path))
+    assert len(grid) == 1
+    assert grid[0].x.shape == grid[0].P.shape
+    assert grid[0].patches
+
+
+def test_a_run_that_measures_leaves_no_grid(run_case):
+    """Only failures pay for it: it is tens of megabytes, written per march.
+
+    An iteration writes one of these every pass, so a grid beside every run
+    would cost more than the field does and describe geometry the config
+    already determines.
+    """
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert (run_case.parent / cli.RESTART_NAME).is_file()
+    assert not (run_case.parent / cli.GRID_NAME).exists()
+
+
 def test_run_without_a_solver_section_is_a_message(run_case, capsys):
     text = run_case.read_text()
     trimmed = "\n".join(
@@ -541,7 +749,7 @@ def test_run_writes_its_answer_beside_the_config(run_case):
     comparing what was achieved against what was asked for needs no second
     artefact and no repeat of the CFD.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["run", str(run_case)]) == 0
 
@@ -587,7 +795,7 @@ def test_report_records_the_answer_a_stamped_field_holds(run_case):
     can only mean the report measured it again: preserving what was already
     there would leave nothing to find.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -606,7 +814,7 @@ def test_report_records_the_answer_a_stamped_field_holds(run_case):
 
 def test_report_without_a_field_records_no_answer(run_case):
     """The config is worth writing on its own; an answer is not invented."""
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["report", str(run_case)]) == 0
 
@@ -625,9 +833,9 @@ def test_report_does_not_drop_an_answer_it_cannot_reproduce(run_case):
     does -- but has no way to say which design it solves, so the recorded
     answer stays where it is.
     """
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -680,7 +888,6 @@ def test_output_may_be_run_on_when_o_writes_elsewhere(run_case, tmp_path):
     read and the one that will be written are different files. Nothing is
     lost, so nothing is refused.
     """
-    from turbigen import batch  # noqa: PLC0415
 
     assert cli.main(["run", str(run_case)]) == 0
     written = run_case.parent / cli.OUTPUT_NAME
@@ -729,7 +936,7 @@ def test_refusing_an_orphan_output_suggests_adopting_it(tmp_path, capsys):
 
 def test_out_dir_runs_the_case_somewhere_new(run_case, tmp_path):
     """The workdir holds the config and everything the run wrote."""
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     workdir = tmp_path / "runs" / "v2"
 
@@ -749,7 +956,7 @@ def test_out_dir_copies_the_document_not_the_resolved_config(run_case, tmp_path)
     the difference between the two is the difference between an input and an
     answer.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     directory = run_case.parent
     fluid, _, rest = RUN_CASE.partition("mean_line:")
@@ -795,7 +1002,7 @@ def test_out_dir_keeps_a_plugin_reachable(tmp_path, clean_registry):
 
     # It got far enough to need a mesh, which means the design resolved: a
     # missing plugin fails earlier, on the unknown type.
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     assert (workdir / batch.INPUT_NAME).is_file()
 
@@ -854,7 +1061,7 @@ def test_out_dir_will_not_replace_a_config_it_did_not_write(run_case, tmp_path, 
     an unrun batch member, or something being drafted -- used to be replaced
     without a word.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     workdir = tmp_path / "notes"
     workdir.mkdir()
@@ -933,7 +1140,7 @@ def test_a_failed_run_keeps_its_workdir(run_case, tmp_path):
     # No mesh section, so the run fails after the workdir has been made.
     assert cli.main(["run", str(run_case), "-o", pattern, "-s", "mesh=null"]) == 1
 
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     failed = tmp_path / "runs" / "v0000"
     assert (failed / batch.INPUT_NAME).is_file()
@@ -979,6 +1186,39 @@ def test_numbering_ignores_what_is_not_numbered(tmp_path):
     (tmp_path / "v0001.txt").write_text("")
 
     assert cli.next_numbered_dir(tmp_path, "v") == tmp_path / "v0001"
+
+
+def test_a_claimed_number_is_not_offered_twice(tmp_path):
+    """Two runs launched together must not land in one directory.
+
+    Scanning says what is free and creating says it is taken; asking without
+    taking hands the same answer to everyone who asks before the first of them
+    writes anything. Threaded here because the claim is a filesystem operation
+    and the interleaving is what is under test, not the arithmetic.
+    """
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        claimed = list(
+            pool.map(lambda _: cli.resolve_workdir(tmp_path / "v%"), range(16))
+        )
+
+    assert len(set(claimed)) == len(claimed)
+    assert all(path.is_dir() for path in claimed)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        f"v{i:0{cli.DIGITS}d}" for i in range(16)
+    ]
+
+
+def test_a_path_without_a_placeholder_is_not_created(tmp_path):
+    """Only a number needs claiming; a named directory is nobody else's to take.
+
+    So resolving one stays the pure answer it always was, and the directory
+    appears where it always did --- when the config is copied into it.
+    """
+    resolved = cli.resolve_workdir(tmp_path / "exactly_here")
+
+    assert not resolved.exists()
 
 
 def test_a_path_without_a_placeholder_is_taken_as_typed(tmp_path):
@@ -1078,12 +1318,15 @@ def test_a_reported_case_is_not_a_run_one(run_case):
 #
 
 
-ITERATE_CASE = RUN_CASE + """
+ITERATE_CASE = (
+    RUN_CASE
+    + """
 iterate:
   correct:
     - type: deviation
     - type: incidence
 """
+)
 
 
 @pytest.fixture
@@ -1098,7 +1341,7 @@ def iterate_case(tmp_path):
 def test_every_run_records_what_the_iterators_measured(iterate_case):
     """Iterating or not: these are observations of the flow, and only a solved
     grid holds them."""
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["run", str(iterate_case)]) == 0
 
@@ -1108,14 +1351,58 @@ def test_every_run_records_what_the_iterators_measured(iterate_case):
     assert all(isinstance(value, float) for value in result.error.values())
 
 
+def test_a_report_hands_the_chain_the_whole_trajectory(tmp_path, monkeypatch):
+    """The dispatch that lets the loop be drawn without a `Result` carrying it.
+
+    An ordinary `Post` draws one design and is handed the last pair; a
+    `PostChain` draws the sequence and is handed all of it. Both come off the
+    same trajectory, so nothing has to be read back off disk and nothing about
+    other designs rides on a `Result`.
+    """
+    from turbigen import post
+
+    seen = {}
+
+    class _Chained(post.PostChain):
+        def report(self, trajectory):
+            seen["chain"] = list(trajectory)
+            return []
+
+    class _One(post.Post):
+        type = "_test_one"
+
+        def report(self, config, result):
+            seen["post"] = (config, result)
+            return []
+
+    monkeypatch.setattr(post, "STANDARD_CHAIN", (_Chained(),))
+    monkeypatch.setattr(post, "STANDARD", (_One(),))
+
+    import yaml
+
+    from turbigen.config import Config
+    from turbigen.result import Result
+
+    config = Config.from_dict(yaml.safe_load(CASE))
+    # Distinguishable, so that "the last pair" is a claim about which one and
+    # not merely about the shape of it.
+    trajectory = [(config, Result(error={"k": float(i)})) for i in range(3)]
+
+    cli.write_report(trajectory, tmp_path)
+
+    assert seen["chain"] == trajectory
+    assert seen["post"][1] is trajectory[-1][1]
+
+
 METRIC_CASE = RUN_CASE + "\nmetrics:\n  - type: _test_grid_stats\n"
 
 
 def test_a_run_records_what_its_metrics_measured(tmp_path):
     """A configured metric lands under `result: metrics:`, and a re-plot
     reproduces it from the field left behind."""
-    from turbigen import case  # noqa: PLC0415
-    import test_metric  # noqa: F401, PLC0415 - registers the _test_grid_stats metric
+    import test_metric  # noqa: F401 - registers the _test_grid_stats metric
+
+    from turbigen import case
 
     path = tmp_path / "cascade" / "input.yaml"
     path.parent.mkdir()
@@ -1135,13 +1422,17 @@ def test_a_run_records_what_its_metrics_measured(tmp_path):
 
 SETTLED_CASE = ITERATE_CASE.replace(
     "    - type: deviation\n", "    - type: deviation\n      tolerance: 20.0\n"
-).replace(
-    "    - type: incidence\n", "    - type: incidence\n      tolerance: 20.0\n"
-)
-"""Tolerances loose enough that one pass settles the design.
+).replace("    - type: incidence\n", "")
+"""One iterator, at a tolerance loose enough that a single pass settles it.
 
 Absurd on purpose: what these check is what a settled run leaves behind, and
 paying for a genuine convergence would be minutes of CFD to learn nothing more.
+
+Incidence is dropped rather than loosened, because it is measured as a swept
+angle around the nose and this mesh does not resolve one --- five nodes to a
+leading edge radius, which is some twenty degrees of nose to a cell. No
+tolerance makes that meaningful, and these tests are about a settled run's
+directory rather than about what settled it.
 """
 
 
@@ -1171,6 +1462,31 @@ def test_an_unsettled_design_keeps_every_iteration_whole(iterate_case):
 
     assert not (out / cli.OUTPUT_NAME).exists()
     assert not (out / cli.RESTART_NAME).exists()
+
+
+def test_only_the_first_iteration_soft_starts(iterate_case, marches):
+    """Once per invocation, not once per iteration.
+
+    Every pass after the first begins from the field the last one reached,
+    which is a solution to very nearly this design -- the guess a soft start
+    exists to manufacture. Paying for one again each time would be most of a
+    second march, every iteration, for a field that is already there.
+    """
+    code = cli.main(
+        [
+            "iterate",
+            str(iterate_case),
+            "-s",
+            "iterate.max_iter=2",
+            "-s",
+            "solver.n_step_soft=5",
+        ]
+    )
+
+    assert code == 2  # Two iterations is not enough to settle this design.
+
+    # Iteration 0 marches twice, iteration 1 once.
+    assert [march.n_step for march in marches] == [5, 10, 10]
 
 
 def test_a_settled_design_leaves_a_run_directory(settled_case):
@@ -1205,7 +1521,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     and three passes of real CFD would take minutes to produce files whose
     contents do not matter.
     """
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     names = (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.HISTORY_NAME, "post.pdf")
     for i_iter in range(3):
@@ -1233,7 +1549,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
 
 
 def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     iter_dir = tmp_path / "iter_0000"
     iter_dir.mkdir()
@@ -1256,7 +1572,7 @@ def test_iterate_leaves_every_iteration_runnable(iterate_case):
     the only record of what `iter_0001` solved would be the config half of its
     own `output.yaml` -- which is not a file turbigen will read back.
     """
-    from turbigen import batch, case  # noqa: PLC0415
+    from turbigen import batch, case
 
     out = iterate_case.parent
 
@@ -1282,7 +1598,7 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
 
     cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
 
-    from turbigen import batch  # noqa: PLC0415
+    from turbigen import batch
 
     iter_dir = out / "iter_0001"
     (iter_dir / "post.pdf").unlink()
@@ -1292,13 +1608,44 @@ def test_reporting_one_iteration_uses_the_field_beside_it(iterate_case):
     assert (iter_dir / "post.pdf").is_file()
 
 
+@pytest.mark.filterwarnings("ignore::ember.nonreflecting.UnsupportedMeanStateWarning")
+@pytest.mark.filterwarnings("ignore:invalid value")
+@pytest.mark.filterwarnings("ignore:divide by zero")
+@pytest.mark.filterwarnings("ignore:overflow encountered")
+def test_a_diverged_iteration_stops_the_loop_rather_than_crashing_it(
+    iterate_case, capsys
+):
+    """A march that blew up is an answer about the design, not a broken tool.
+
+    The loop has always known what to do with one -- stop, and keep the design
+    that produced it -- but could not get there: measuring the iterators is
+    strict, and a field of NaNs has no mixed-out mean line to read an exit
+    angle off, so the `MeasurementError` came out of the solve as a traceback
+    and took the whole invocation with it, exit 1 and no answer written.
+    """
+    code = cli.main(["iterate", str(iterate_case), "-s", "solver.cfl=50.0"])
+
+    # A failed solve, not a failed program.
+    assert code == 2
+
+    printed = capsys.readouterr().err
+    assert "diverged, so there is nothing to correct towards" in printed
+    assert "Traceback" not in printed
+
+    # And the iteration that diverged is on disk to be looked at, field,
+    # history, whole grid and all.
+    iter_dir = iterate_case.parent / "iter_0000"
+    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, cli.GRID_NAME):
+        assert (iter_dir / name).is_file(), name
+
+
 def test_iterate_puts_its_answer_where_a_run_would_have(settled_case):
     """`output.yaml` means what this run achieved, whichever verb produced it.
 
     A real file rather than the link this used to be, so a script reading a
     result, a database glob and a `--restart` all see one answer in one place.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     assert cli.main(["iterate", str(settled_case), "-s", "iterate.max_iter=3"]) == 0
 
@@ -1316,10 +1663,23 @@ def test_iterate_moves_the_design_and_records_why(iterate_case):
     Together those are one sample of "this design gave that mismatch", which is
     what any later fit over an archive of runs would be built from.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = iterate_case.parent
-    cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"])
+    # Unclipped, so the step is the rule and nothing else. This mesh reads a
+    # large incidence --- its leading edge carries some twenty degrees of nose
+    # to a cell --- and the default two degree clip would bound the step before
+    # the rule got to set it.
+    cli.main(
+        [
+            "iterate",
+            str(iterate_case),
+            "-s",
+            "iterate.max_iter=2",
+            "-s",
+            "iterate.correct.1.clip=0",
+        ]
+    )
 
     first, first_result = case.read(out / "iter_0000" / cli.OUTPUT_NAME, design=False)
     second, _ = case.read(out / "iter_0001" / cli.OUTPUT_NAME, design=False)
@@ -1346,7 +1706,7 @@ def test_iterate_starts_from_the_database(iterate_case, tmp_path):
     prediction before the first run, none of which needs a march to prove. One
     sample, so every query sits on top of it and the answer is exact.
     """
-    from turbigen import Config, Result, case  # noqa: PLC0415
+    from turbigen import Config, Result, case
 
     archived = Config.from_file(iterate_case)
     archived = iterate.Deviation().with_unknowns(archived, {"dchi_TE[0]": 7.5})
@@ -1425,7 +1785,7 @@ def test_batch_prints_the_batch_directory(batch_case, capsys):
 
 
 def test_batch_members_are_runnable_designs(batch_case):
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["batch", str(batch_case), "-n", "2"])
 
@@ -1454,7 +1814,7 @@ def test_batch_continue_carries_on_into_a_new_batch(batch_case):
 
 def test_batch_continue_is_the_tail_of_one_batch(tmp_path):
     """Two batches of two hold what one batch of four would have."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     def datum(name):
         directory = tmp_path / name
@@ -1499,11 +1859,14 @@ def test_batch_takes_one_datum(batch_case, capsys):
 #
 
 
-GRID_CASE = CASE + """
+GRID_CASE = (
+    CASE
+    + """
 batch:
   values:
     mean_line.psi: [1.4, 1.6, 1.8]
 """
+)
 
 
 @pytest.fixture
@@ -1526,7 +1889,7 @@ def test_a_grid_writes_one_member_per_point(grid_case):
 
 def test_a_grid_member_carries_its_own_point(grid_case):
     """The value is in the file, so the study is not only in shell history."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     cli.main(["batch", str(grid_case)])
 
@@ -1611,7 +1974,7 @@ def test_reporting_in_place_keeps_the_recorded_answer(run_case):
     between a field that solves this design and one that is merely a good guess
     at it, which is what the stamp is for.
     """
-    from turbigen import case  # noqa: PLC0415
+    from turbigen import case
 
     out = run_case.parent
     assert cli.main(["run", str(run_case)]) == 0
@@ -1682,7 +2045,7 @@ def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch
     a config asks for them -- so with the two the other way round, a plot that
     fell over would throw away a march that had already been paid for.
     """
-    from turbigen import SectionsPlot  # noqa: PLC0415
+    from turbigen import SectionsPlot
 
     def boom(self, config, result):
         raise RuntimeError("plot exploded")
@@ -1720,7 +2083,7 @@ TURBINE = {
 
 def _table(nominal_config, actual_config=None):
     """Format a table comparing one design against another's mean line."""
-    from turbigen import Config, Result  # noqa: PLC0415
+    from turbigen import Config, Result
 
     config = Config.from_dict(nominal_config)
     machine = config.design()
@@ -1891,7 +2254,7 @@ def test_an_include_key_does_not_reach_the_config(split_case):
     """Popped during resolution, so the strict unknown-key check needs no
     exception for it and a written config carries no pointer to a file that
     may since have changed."""
-    from turbigen import Config  # noqa: PLC0415
+    from turbigen import Config
 
     config = Config.from_file(split_case)
 
@@ -2006,7 +2369,7 @@ def test_chic_leaves_every_point_runnable(chic_case):
     The sweep moved it, and the datum describes the whole characteristic rather
     than any one station on it, so each directory records what it solved.
     """
-    from turbigen import batch, case  # noqa: PLC0415
+    from turbigen import batch, case
 
     out = chic_case.parent
 

@@ -27,10 +27,13 @@ import hashlib
 import json
 import logging
 
-import numpy as np
 import ember.block_util
+import numpy as np
 
 logger = logging.getLogger("turbigen")
+
+RESTART_NAME = "restart.npz"
+"""What a run calls the flow field it leaves behind, and `--restart` looks for."""
 
 STATE = ember.block_util.STATE
 """What is stored per block: ember's own transfer variables, all dimensional.

@@ -2,8 +2,9 @@ import logging
 
 """Write coordinates to an stl file."""
 
-import numpy as np
 import os
+
+import numpy as np
 import stl
 
 logger = logging.getLogger("turbigen")
@@ -121,7 +122,7 @@ def post(grid, machine, meanline, _, postdir):
     """
 
     # Extract coordinates
-    sections, annulus, zcst, Nb, tip, splitters = machine.get_coords()
+    sections, annulus, _zcst, _Nb, tip, splitters = machine.get_coords()
 
     # Write annulus lines
     hub, cas = annulus

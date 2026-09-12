@@ -142,6 +142,8 @@ class Scalars(Node):
     flag: bool = False
     name: str = ""
     xs: tuple[float, ...] = ()
+    either: float | tuple[float, ...] = 0.0
+    """One setting or one per knob, as an iterator gain is."""
 
 
 @pytest.mark.parametrize(
@@ -411,3 +413,37 @@ def test_set_by_path_builds_what_a_path_implies():
     node.set_by_path(data, "mean_line.Ys[1]", 0.06)
 
     assert data == {"mean_line": {"Ys": [None, 0.06]}}
+
+
+#
+# ONE SETTING OR ONE PER KNOB
+#
+
+
+def test_a_scalar_or_sequence_field_takes_a_scalar():
+    """Written as one number, it is one number -- and converted like any float."""
+    assert Scalars.from_dict({"either": "1.5"}).either == 1.5
+
+
+def test_a_scalar_or_sequence_field_takes_a_sequence():
+    """Written as a list, every element is converted the same way."""
+    value = Scalars.from_dict({"either": [1, "2.5", 3.0]}).either
+
+    assert value == (1.0, 2.5, 3.0)
+    assert all(isinstance(item, float) for item in value)
+
+
+def test_a_scalar_or_sequence_field_refuses_what_neither_member_allows():
+    """Dispatching on the value is not the same as accepting any value."""
+    with pytest.raises(ValueError, match="either"):
+        Scalars.from_dict({"either": "not a number"})
+
+    with pytest.raises(ValueError, match=r"either\[1\]"):
+        Scalars.from_dict({"either": [1.0, "not a number"]})
+
+
+def test_a_scalar_or_sequence_field_round_trips_both_ways():
+    """A sequence comes back a sequence and a scalar a scalar."""
+    for written in (1.5, [1.0, 2.0]):
+        node = Scalars.from_dict({"either": written})
+        assert Scalars.from_dict(node.to_dict()) == node

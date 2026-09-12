@@ -2,23 +2,24 @@ import logging
 
 """Functions to write, run, and read for the Turbostream 3 solver."""
 
-import numpy as np
-from timeit import default_timer as timer
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from time import sleep
+from timeit import default_timer as timer
+
+import h5py
+import numpy as np
+import turbigen_ref.flowfield
 import turbigen_ref.grid
 import turbigen_ref.solvers.ts3
-import h5py
-import sys
-import shutil
-import os
-import subprocess
-from scipy.spatial import KDTree
-from time import sleep
 import turbigen_ref.util
-import turbigen_ref.flowfield
-import json
-import re
+from scipy.spatial import KDTree
 from turbigen_ref.solvers.base import BaseSolver, ConvergenceHistory
 
 logger = logging.getLogger("turbigen")
@@ -247,7 +248,7 @@ class ts4(BaseSolver):
         # Raise error if averaging not OK
         nstep = v["nstep"]
         istep_avg_start = v["istep_avg_start"] = v["nstep"] - self.nstep_avg
-        if istep_avg_start >= nstep and nstep > 0:
+        if istep_avg_start >= nstep > 0:
             raise Exception(f"istep_avg_start={istep_avg_start} is > nstep={nstep}")
 
         if v["cfl_ramp"]:
@@ -886,7 +887,7 @@ def read_probe_flow(fname, state):
     # Read the unstructured data from TS4 hdf5
     with h5py.File(fname, "r") as f:
         # Get a sorted list of time steps
-        steps = [int(i) for i in f["x"].keys()]
+        steps = [int(i) for i in f["x"]]
         steps.sort()
 
         # Function to pull out data for each property

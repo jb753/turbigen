@@ -7,11 +7,10 @@ annulus geometry built on the added Am data key, nodal Omega, and the overall
 performance properties.
 """
 
-import numpy as np
-import pytest
-
 import ember.block
 import ember.fluid
+import numpy as np
+import pytest
 import turbigen_ref.meanline_new
 
 

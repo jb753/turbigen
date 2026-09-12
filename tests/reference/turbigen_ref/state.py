@@ -1,8 +1,9 @@
 """New attempt at a unified encapsulation of a flow field."""
 
-import numpy as np
 from abc import ABC, abstractmethod
 from typing import cast
+
+import numpy as np
 
 
 class dependent_property:
@@ -72,7 +73,6 @@ class StructuredData:
     def __post_init__(self):
         """Post-initialisation function to be called after all variables are set."""
         # Default no-op
-        pass
 
     def _allocate_variable(self, name):
         """Add a variable to the data array.
@@ -435,7 +435,7 @@ class StructuredData:
             raise ValueError(f"Invalid order '{self._order}'.")
 
         out = out.view()
-        if not np.shape(out) == ():
+        if np.shape(out) != ():
             out.flags.writeable = False
 
         return out
@@ -623,7 +623,6 @@ class BaseFluid(StructuredData, ABC):
     @abstractmethod
     def cp(self):
         """Specific heat at constant pressure [J/kg/K]."""
-        pass
 
     @property
     @abstractmethod
@@ -635,25 +634,21 @@ class BaseFluid(StructuredData, ABC):
     @abstractmethod
     def a(self):
         """Acoustic speed [m/s]."""
-        pass
 
     @property
     @abstractmethod
     def P(self):
         """Pressure [Pa]."""
-        pass
 
     @property
     @abstractmethod
     def T(self):
         """Temperature [K]."""
-        pass
 
     @property
     @abstractmethod
     def s(self):
         """Specific entropy [J/kg/K]."""
-        pass
 
     #
     # Transport properties
@@ -823,13 +818,11 @@ class BaseFluid(StructuredData, ABC):
     @abstractmethod
     def gamma(self):
         """Ratio of specific heats [--]."""
-        pass
 
     @property
     @abstractmethod
     def rgas(self):
         """Specific gas constant [J/kg/K]."""
-        pass
 
     @dependent_property
     def e(self):
@@ -846,7 +839,6 @@ class BaseFluid(StructuredData, ABC):
         """Specific enthalpy [J/kg]."""
         return self.u + self.P / self.rho
 
-    #
 
     # Derived composite
     #

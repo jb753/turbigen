@@ -8,8 +8,9 @@ To make a new camber line, subclass the BaseCamber and implement:
 
 """
 
-import numpy as np
 from abc import ABC, abstractmethod
+
+import numpy as np
 
 
 def _fit_quartic_camber(slope_le, slope_te, kappa):

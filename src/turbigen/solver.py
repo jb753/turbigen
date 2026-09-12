@@ -35,9 +35,33 @@ logger = logging.getLogger("turbigen")
 class Solver(Node):
     """Base for flow solvers.
 
-    Deliberately fieldless. Everything a solver needs is its own, and a
-    convergence verdict belongs to the history a run produces rather than to
-    the settings that produced it.
+    One field, and it is deliberately the only one. Everything else a solver
+    needs is its own, and a convergence verdict belongs to the history a run
+    produces rather than to the settings that produced it.
+
+    A solver is also expected to carry ``soft()``, returning a copy of itself
+    detuned for a robust start. Not declared here, because the one solver there
+    is inherits a working one from :class:`ember.solver.Solver` and a stub would
+    only shadow what it already has; a family member without one fails at the
+    call site, naming the method it lacks.
+    """
+
+    n_step_soft: int = 0
+    """Steps of a detuned march to run before the real one; 0 for none [--].
+
+    Buys robustness where the guess is poor, by marching ``soft()`` -- the same
+    problem on the same grid, with settings that survive a start the production
+    ones cannot -- and leaving the field it reaches for the real march to
+    continue from. Nothing else of it is kept.
+
+    Runs once per invocation: the `run` verb, or the first iteration of an
+    `iterate`, whatever guess or restart field the grid is carrying. Later
+    iterations and the points of a `chic` sweep start from a solution already,
+    which is what this exists to stand in for.
+
+    The steps are not free, so this is off unless asked for. ``soft()`` names
+    its own count and this replaces it, because how long to spend on a robust
+    start is a property of the case rather than of the solver.
     """
 
     def solve(self, grid):

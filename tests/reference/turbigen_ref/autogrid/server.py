@@ -1,7 +1,7 @@
 """Start the AutoGrid server shell script with args."""
 
-import os
 import argparse
+import os
 import subprocess
 
 

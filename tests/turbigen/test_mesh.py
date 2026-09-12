@@ -7,16 +7,17 @@ wall distance on the way out. The package this replaces leaves all of that to
 the caller, so these check the framework as well as the mesh.
 """
 
+import itertools
 import sys
 
+import ember.patch
 import numpy as np
 import pytest
-
-import ember.patch
 import turbigen_ref.annulus
 import turbigen_ref.geometry
 import turbigen_ref.hmesh
-from test_blade import ANNULUS, blade, build, old_blade
+from test_blade import ANNULUS, blade, build
+
 from turbigen import H, Mesher, WallSpacing
 
 MESH = {
@@ -24,6 +25,12 @@ MESH = {
     "dm_TE": 0.05,
     "resolution_factor": 0.5,
     "dspf_mid": 0.1,
+    # Stated rather than defaulted, because the reference mesher hard-codes
+    # nine and takes no argument for it: comparing against it means asking
+    # both for the same number. Our own default is lower, so what the golden
+    # test pins is the algorithm rather than the choice of default -- which is
+    # the right division, the default being ours to move and the algorithm not.
+    "njtip_min": 9,
 }
 """A deliberately coarse mesh, so that the tests run in about a second each."""
 
@@ -39,6 +46,30 @@ def machine():
 @pytest.fixture(scope="module")
 def grid(machine):
     return build(mesh=MESH).mesh.mesh(machine)
+
+
+class AsOldBlade:
+    """One of this package's blades, under the names the old mesher calls.
+
+    The old mesher reads a blade through `evaluate_section` and `get_chi` and
+    nothing else, and both mean here what they meant there.
+    """
+
+    def __init__(self, blade):
+        self.blade = blade
+
+    def evaluate_section(self, spf, nchord=10000, m=None):
+        # The old mesher wants the higher-angle surface first, which is what
+        # this package's `evaluate_section` used to promise and no longer does
+        # -- it orders by surface now, and `hmesh` reorders for the same
+        # reason this does.
+        upper, lower = self.blade.evaluate_section(spf, nchord=nchord, m=m)
+        if upper[2].mean() < lower[2].mean():
+            upper, lower = lower, upper
+        return upper, lower
+
+    def get_chi(self, spf):
+        return self.blade.evaluate_chi(spf)
 
 
 def old_grid(machine, mesh, spacing):
@@ -58,10 +89,13 @@ def old_grid(machine, mesh, spacing):
         merge_weight=0.0,
     )
 
-    blades = [
-        [old_blade(machine, 0, dchi_LE=-8.0)],
-        [old_blade(machine, 1, dchi_LE=2.0)],
-    ]
+    # The old mesher is driven by *this* package's blades, through the two
+    # methods it asks of one. The blade the old package would have built is a
+    # fifth of a degree away at the endwalls, since it interpolates resolved
+    # metal angles where this evaluates the vortex distribution wherever it is
+    # asked --- a difference in the blade, which `test_blade` pins on its own,
+    # and one that would otherwise leak into a comparison of meshers.
+    blades = [[AsOldBlade(row.blade)] for row in machine.rows]
     mac = turbigen_ref.geometry.Machine(
         annulus,
         blades,
@@ -70,7 +104,12 @@ def old_grid(machine, mesh, spacing):
         None,
     )
 
-    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k != "type"})
+    # `type` names the mesher rather than configuring it, and `njtip_min` is a
+    # setting the reference does not have -- it hard-codes nine, which is what
+    # the fixture states so that both sides are asked for the same thing. A
+    # key this mesher never took cannot be part of what the comparison pins.
+    unknown = {"type", "njtip_min"}
+    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k not in unknown})
     reference = mesher.make_grid(
         None, mac, spacing.hub, spacing.casing, spacing.surface
     )
@@ -109,7 +148,7 @@ def test_surface_reynolds_number_matches_its_definition(machine):
     for i_row, row in enumerate(machine.rows):
         station = machine.mean_line.get_characteristic_station(i_row)
         expected = (
-            row.blade.evaluate_surface_length(0.5)
+            row.blade.evaluate_surface_length(0.5)[0]
             * station.rho
             * station.V_rel
             / station.mu
@@ -155,7 +194,9 @@ def test_mesh_finishes_the_grid_the_mesher_returns(machine, grid):
     """
     # The longest row chord at mid-span, off the annulus. Not the mean line,
     # which carries no length of its own.
-    assert grid[0].L_ref == pytest.approx(machine.annulus.evaluate_chords(0.5)[1::2].max())
+    assert grid[0].L_ref == pytest.approx(
+        machine.annulus.evaluate_chords(0.5)[1::2].max()
+    )
     assert np.isfinite(grid[0].wdist).all()
     assert (grid[0].wdist >= 0.0).all()
 
@@ -230,7 +271,7 @@ def test_every_cell_has_positive_volume(grid):
 
 
 def test_mixing_planes_have_matching_coordinates(grid):
-    for upstream, downstream in zip(grid[:-1], grid[1:]):
+    for upstream, downstream in itertools.pairwise(grid):
         np.testing.assert_allclose(
             upstream.xrt[-1, :, 0, :2],
             downstream.xrt[0, :, 0, :2],
@@ -371,6 +412,78 @@ def test_mesh_defaults_are_written_out():
 def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
     with pytest.raises(ValueError, match="ni_cusp requires"):
         H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
+
+
+def _stream_ends(grid):
+    """Return (inlet cell, exit cell) streamwise spacing of each block, midspan."""
+    ends = []
+    for block in grid:
+        m = np.hypot(
+            np.diff(block.x[:, block.shape[1] // 2, block.shape[2] // 2]),
+            np.diff(block.r[:, block.shape[1] // 2, block.shape[2] // 2]),
+        )
+        ends.append((m[0], m[-1]))
+    return ends
+
+
+def test_ar_mix_defaults_to_ar_stream():
+    """No behaviour change until it is lowered."""
+    assert H().AR_mix == H().AR_stream
+
+    machine = build(mesh=MESH).design()
+    same = build(mesh={**MESH, "AR_mix": H().AR_stream}).mesh.mesh(machine)
+    base = build(mesh=MESH).mesh.mesh(machine)
+
+    for a, b in zip(same, base):
+        assert a.shape == b.shape
+
+
+def test_ar_mix_tightens_the_mixing_plane_and_not_the_true_boundaries():
+    machine = build(mesh=MESH).design()
+    wide = build(mesh=MESH).mesh.mesh(machine)  # AR_mix == AR_stream
+    tight = build(mesh={**MESH, "AR_mix": 1.0}).mesh.mesh(machine)
+
+    (in0_w, ex0_w), (in1_w, ex1_w) = _stream_ends(wide)
+    (in0_t, ex0_t), (in1_t, ex1_t) = _stream_ends(tight)
+
+    # Row 0 exit and row 1 inlet are the mixing plane: finer with AR_mix = 1.
+    assert ex0_t < 0.9 * ex0_w
+    assert in1_t < 0.9 * in1_w
+    # Row 0 inlet is the true machine inlet, row 1 exit the true outlet: untouched.
+    assert in0_t == pytest.approx(in0_w, rel=0.02)
+    assert ex1_t == pytest.approx(ex1_w, rel=0.02)
+
+
+def _knife_edged(blade):
+    """Return `blade` with every section closed to a point at the trailing edge."""
+    for section in blade["sections"]:
+        section["thickness"] = {**section["thickness"], "t_TE": 0.0}
+    return blade
+
+
+def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
+    """A knife edge has no width for `AR_cusp` to be a multiple of.
+
+    Left to run, the sides cross and an assertion on the pitchwise ordering of
+    the block coordinates fails several steps later, naming nothing a designer
+    wrote. Measured off the section rather than read off a thickness parameter,
+    so a distribution that closes to a point without saying so is caught too.
+    """
+    config = build(
+        blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=CUSP
+    )
+    machine = config.design()
+
+    with pytest.raises(ValueError, match="cusp is built on the width"):
+        config.mesh.mesh(machine)
+
+
+def test_a_square_trailing_edge_does_not_need_one():
+    """The check is the cusp's, so `AR_cusp = 0` meshes a knife edge as before."""
+    config = build(
+        blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=MESH
+    )
+    config.mesh.mesh(config.design())
 
 
 def test_wall_spacing_is_not_a_config_node():

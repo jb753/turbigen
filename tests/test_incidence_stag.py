@@ -6,7 +6,6 @@ import ember.fluid
 import ember.grid
 import ember.util
 import numpy as np
-
 from turbigen_ref.util_post import get_i_stag, get_zeta, get_zeta_stag
 
 

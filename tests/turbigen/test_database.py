@@ -29,13 +29,18 @@ Test cases:
 - test_an_unreadable_file_is_skipped: one bad file does not stop a run
 - test_declared_variables_override_the_deduction: the escape hatch
 - test_a_warm_start_is_a_new_config: frozen, and the original is untouched
+- test_nearest_field_returns_the_closest_runs_restart: one field, not a blend
+- test_nearest_field_needs_a_restart_beside_the_sample: skips to the next
+- test_nearest_field_takes_a_run_with_no_mixed_out_mean_line: not needed
+- test_nearest_field_is_none_without_samples: the graceful refusal
+- test_warm_start_reuses_preloaded_samples: one glob-and-parse for both
 """
 
 import dataclasses
 
 import pytest
-
 from test_blade import build
+
 from turbigen import Config, Database, Result, case, database, iterate
 
 ITERATORS = (iterate.Deviation(), iterate.Incidence())
@@ -299,3 +304,91 @@ def test_an_unreadable_file_is_skipped(runs, caplog):
 
     assert len(samples) == len(SPREAD)
     assert "did not read as a case" in caplog.text
+
+
+#
+# THE FIELD SEED
+#
+
+
+def solved(directory, config, actual=True, field=True):
+    """Write a finished run with a mixed-out mean line and, beside it, a field.
+
+    The mean line is the design's own, where a real one would be mixed out of
+    the CFD. `nearest_field` does not read it at all -- what the field is gets
+    measured where it lands -- so it is here only to make the sample realistic,
+    and `actual=False` exercises the run that never got one.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    machine = config.design()
+    result = Result(
+        converged=True,
+        error={name: 0.0 for name in iterate.unknowns(config)},
+        actual=machine.mean_line if actual else None,
+    )
+    case.write(directory / "config.yaml", config, result)
+    if field:
+        (directory / "restart.npz").write_bytes(b"")  # nearest_field only stats it
+    return directory
+
+
+@pytest.fixture
+def solved_runs(tmp_path):
+    """`SPREAD`, but each run also has an `actual` mean line and a `restart.npz`."""
+    for i_run, (psi, dchi_TE) in enumerate(SPREAD):
+        solved(tmp_path / "runs" / f"{i_run:03d}", make(psi, dchi_TE))
+    return tmp_path
+
+
+def test_nearest_field_returns_the_closest_runs_restart(solved_runs):
+    config = query(1.61)
+    samples = config.database.load_samples(config, solved_runs)
+
+    path = database.nearest_field(config, samples)
+
+    assert path == (solved_runs / "runs" / "001" / "restart.npz").resolve()
+
+
+def test_nearest_field_needs_a_restart_beside_the_sample(tmp_path):
+    """The nearest run has no field, so the next-nearest one is taken."""
+    solved(tmp_path / "runs" / "000", make(1.6, 6.0), field=False)
+    solved(tmp_path / "runs" / "001", make(1.9, 7.0), field=True)
+
+    config = query(1.65)
+    samples = config.database.load_samples(config, tmp_path)
+
+    path = database.nearest_field(config, samples)
+    assert path == (tmp_path / "runs" / "001" / "restart.npz").resolve()
+
+
+def test_nearest_field_takes_a_run_with_no_mixed_out_mean_line(tmp_path):
+    """A field is worth starting from whether or not its run was reduced.
+
+    The seed measures what the field is once it is on the target grid, so the
+    sample's own mean line is not needed and is not asked for. A run that
+    marched but could not be mixed out still left a field behind.
+    """
+    solved(tmp_path / "runs" / "000", make(1.6, 6.0), actual=False)
+
+    config = query(1.6)
+    samples = config.database.load_samples(config, tmp_path)
+
+    assert (
+        database.nearest_field(config, samples)
+        == (tmp_path / "runs" / "000" / "restart.npz").resolve()
+    )
+
+
+def test_nearest_field_is_none_without_samples(tmp_path):
+    assert database.nearest_field(query(1.5), []) is None
+
+
+def test_warm_start_reuses_preloaded_samples(solved_runs):
+    """Passing the rows in gives the same blend as letting it load them."""
+    config = query(1.55)
+    rows = config.database.load_samples(config, solved_runs)
+
+    loaded = database.warm_start(config, solved_runs)
+    passed = database.warm_start(config, solved_runs, samples=rows)
+
+    assert recamber(passed) == pytest.approx(recamber(loaded))

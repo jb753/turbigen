@@ -1,12 +1,13 @@
 """Objects for constructing blades and annulus line geometries."""
 
 import numpy as np
-from scipy.optimize import minimize
 import scipy.interpolate
 from scipy.linalg import norm
-from turbigen_ref import util
-import turbigen_ref.thickness
+from scipy.optimize import minimize
+
 import turbigen_ref.camber
+import turbigen_ref.thickness
+from turbigen_ref import util
 
 
 class LinearLine:
@@ -561,10 +562,10 @@ class Blade:
         return np.concatenate((qthick, qcam, mlim, toff))
 
     def get_bound(self, isect=None):
-        Nspf, Nthick = self.thick.shape
+        Nspf, _Nthick = self.thick.shape
         if isect is not None:
             Nspf = 1
-        _, Ncam = self.camber.shape
+        _, _Ncam = self.camber.shape
         bound_thick = np.tile(self._Thick.qbound, (Nspf, 1))
         bound_cam = np.tile(self._Cam.qbound, (Nspf, 1))
         bound_mlim = np.tile(((-0.0, 0.0), (1.0, 1.0)), (Nspf, 1))
@@ -798,7 +799,7 @@ class Blade:
         return np.maximum(Lu, Ll)
 
     def get_camber_line(self, spf):
-        cam, thick = self._get_cam_thick(spf)
+        _cam, _thick = self._get_cam_thick(spf)
         m = util.cluster_cosine(500)
 
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
@@ -810,7 +811,7 @@ class Blade:
         """Get the centre of the leading edge."""
 
         # Make a meridional grid vector for just the le
-        cam, thick = self._get_cam_thick(spf)
+        _cam, thick = self._get_cam_thick(spf)
         Rle = thick.R_LE / fac_Rle
         m = util.cluster_cosine(500)
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
@@ -824,7 +825,7 @@ class Blade:
         """Get the nose of the aerofoil leading edge."""
 
         # Make a meridional grid vector for just the le
-        cam, thick = self._get_cam_thick(spf)
+        _cam, _thick = self._get_cam_thick(spf)
         m = util.cluster_cosine(500)
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)
         xrtcam = np.mean(xrtul, axis=0)

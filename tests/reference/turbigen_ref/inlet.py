@@ -1,6 +1,7 @@
 """Classes for initialising an inlet state."""
 
 import dataclasses
+
 import numpy as np
 
 

@@ -2,17 +2,20 @@ import logging
 
 """Generic post-processor class."""
 
-from abc import ABC, abstractmethod
 import dataclasses
-import numpy as np
-from turbigen_ref import util
-import turbigen_ref.util_post
-import turbigen_ref.base
-import turbigen_ref.average
+import itertools
 import warnings
-import matplotlib.pyplot as plt
-import ember.cut
+from abc import ABC, abstractmethod
+
 import ember.convergence_history
+import ember.cut
+import matplotlib.pyplot as plt
+import numpy as np
+
+import turbigen_ref.average
+import turbigen_ref.base
+import turbigen_ref.util_post
+from turbigen_ref import util
 
 logger = logging.getLogger("turbigen")
 
@@ -161,7 +164,7 @@ class Metadata(BasePost):
         ax.axis("off")
         left = 0.05
         ax.set_title("Metadata:")
-        ax.text(left, 0.95, f"work_dir={str(config.work_dir)}")
+        ax.text(left, 0.95, f"work_dir={config.work_dir!s}")
         pdf.savefig()
         plt.close()
 
@@ -260,7 +263,7 @@ class SurfaceDistribution(BasePost):
     variable: str = "Mas"
     """Which variable to plot."""
 
-    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    spf: dict = dataclasses.field(default_factory=dict)
     """Mapping of row index to span fraction(s) to plot."""
 
     offset: int = 0
@@ -489,7 +492,7 @@ class Annulus(BasePost):
         """Plot an x-r view of the annulus."""
 
         # Setup figure
-        fig, ax = plt.subplots(layout="constrained")
+        _fig, ax = plt.subplots(layout="constrained")
         ax.axis("off")
         ax.axis("equal")
         ax.grid("off")
@@ -572,7 +575,7 @@ class StreamtubeLoss(BasePost):
             xtol = np.ptp(cut.r) * 1e-4
             assert np.ptp(cut.x) < xtol
 
-            _, nj, nk = cut.shape
+            _, _nj, _nk = cut.shape
 
             # Pitchwise-integrate mass flow to kg/s per unit span
             mdot_pitch = np.trapz(cut.Nb * cut.rhoVx * cut.r, cut.t).squeeze()
@@ -607,7 +610,7 @@ class StreamtubeLoss(BasePost):
             jbreak_round = np.insert(jbreak_round, 0, 0)
             jbreak_round = np.append(jbreak_round, cut.nj - 1)
             Sdot_tube.append([])
-            for j0, j1 in zip(jbreak_round[:-1], jbreak_round[1:]):
+            for j0, j1 in itertools.pairwise(jbreak_round):
                 # Get current streamtube
                 tube = cut[:, j0 : j1 + 1, :]
 
@@ -648,7 +651,7 @@ class StreamtubeLoss(BasePost):
 
 @dataclasses.dataclass
 class Sections(BasePost):
-    spf: dict = dataclasses.field(default_factory=lambda: ({}))
+    spf: dict = dataclasses.field(default_factory=dict)
     """Mapping of row index to span fraction(s) to plot."""
 
     def post(self, config, pdf):
@@ -670,7 +673,6 @@ class Sections(BasePost):
 
             # Loop over span fractions
             for ispf, spf in enumerate(spfrow):
-                #
                 xrt_ul = np.stack(config.blades[irow][0].evaluate_section(spf))
                 xrrt_ul = xrt_ul.copy()
                 xrrt_ul[:, 2] *= xrrt_ul[:, 1]  # Convert to r,rt

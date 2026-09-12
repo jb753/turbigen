@@ -48,7 +48,7 @@ class Machine:
         is the usual sign that a quantity belongs to the thing it is measured
         from rather than to its first consumer.
         """
-        ell = np.array([row.blade.evaluate_surface_length(0.5) for row in self.rows])
+        ell = np.array([row.blade.evaluate_surface_length(0.5)[0] for row in self.rows])
         stations = [
             self.mean_line.get_characteristic_station(i) for i in range(len(self.rows))
         ]
@@ -64,6 +64,7 @@ class Machine:
             ("N_blade", n_blade, "d"),
             ("Gap/m", np.array([row.tip_gap for row in self.rows]), ".4f"),
             ("s/cm", 2.0 * np.pi * r_ref / n_blade / chord, ".3f"),
+            ("Re_s/1e5", self.Re_surf() / 1e5, ".2f"),
         ]
         return turbigen.util.format_table(
             "Blades:", len(self.rows), properties, paired=False

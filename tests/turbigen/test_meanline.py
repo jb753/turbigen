@@ -21,8 +21,8 @@ Test cases:
 
 import numpy as np
 import pytest
-
 from test_blade import build
+
 from turbigen import MeanLine, PerfectFluid
 
 FLUID = PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5)

@@ -598,6 +598,19 @@ singular and the step large, and the clip reduces that to the old behaviour
 rather than a wild excursion. There is no line search, because a rejected step
 would cost a whole CFD solve.
 
+The clip **scales** the step rather than clipping each knob separately. The
+difference only shows when more than one knob is over its limit, and then it is
+the difference between a shorter step and a different one: clipping each
+component projects the step onto a corner of the box, keeping the sign pattern
+of the direction and none of its shape. That cycles. Two runs of a two-knob
+`loading` iterator sat in a period-2 orbit doing exactly this — alternating
+steps of `+(0.1, -0.1)` and `-(0.1, +0.1)`, each overshoot provoking the
+opposite corner, the design returning to where it had been two iterations
+before — and Broyden could not escape it, every move being collinear with the
+last. Scaling keeps the direction; the binding knob still moves exactly its
+clip, and the others move less than they asked for, which is what going the
+right way costs.
+
 `gain` carries the sign of the local sensitivity as well as its size: it is
 negative for `incidence`, whose error falls as its knob rises. Both signs are
 checked against CFD rather than assumed.
@@ -626,10 +639,77 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 | `deviation` | mean `dchi_TE` of each row | achieved exit `Alpha_rel` minus design |
 | `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
 | `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
+| `loading` | two interior Bernstein camber coefficients of one row | where the suction peak sits and the duty-normalised leading-edge Mach number, minus what was asked for |
+| `peak_Ma` | the circulation coefficient of one row | peak Mach number over the trailing edge value, minus what was asked for |
 
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise
 profile.
+
+### Shaping the loading, and why two knobs
+
+`deviation` and `incidence` correct the *ends* of a blade. `loading` corrects
+one point in between — how hard the leading edge accelerates by `zeta_front` —
+by moving the single interior coefficient of a `bernstein` camber line, whose
+endpoint coefficients are pinned so the metal angles stay put and this cannot
+fight the two that own them.
+
+One knob, and the number is physics rather than convenience: a camber line with
+pinned ends needs one interior degree of freedom to move one point on the
+curve, and no more. Where the peak of the resulting distribution sits and how
+high it stands are not targets — the first is left to fall out of the shape,
+and the second belongs to a companion iterator.
+
+That companion is `peak_Ma`, since how high the peak stands cannot be left to
+the camber either. At a fixed duty the area enclosed by the isentropic Mach
+loop is the blade circulation, which the pitch sets; a camber line with pinned
+ends redistributes that area along the chord without changing it, so the level
+is the blade count's to set.
+
+**Two members, not one, because a gain carries one sign.** `gain` states the
+sign of a knob's sensitivity as well as its size, and these knobs disagree: the
+peak rises with the circulation coefficient where the front value falls with
+the camber coefficient. Folded into a single iterator, one scalar gain drove
+the count the wrong way at every iteration — `Co` walked from 0.70 to 0.57
+while the peak it was meant to raise fell with it. Split into `loading` and
+`peak_Ma`, each declares the sign it has, and the stepper merges them into one
+table so nothing about the coupling is lost. They are configured together and
+are of little use apart.
+
+`loading`'s one target is `fac_front`, which is
+`Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1` — Clark's third parameter, referred to
+the trailing edge because that is a mean-line quantity fixed by the duty, and
+carrying the `Ma_2 / Ma_1` factor so the same number means the same style of
+leading edge across rows of different duty. It is read straight off the surface
+distribution at `zeta_front`, needing no peak to exist, so it is finite even on
+a blade that accelerates all the way to its trailing edge. `peak_Ma`'s target
+is `fac_peak = Ma_peak / Ma_TE`, which is one more than the diffusion factor
+`metrics: diffusion_factor` records — the same measurement, through
+`turbigen.loading`, so a report cannot contradict what a design was iterated
+onto. That metric also records `zeta_peak` and `fac_peak`, which come from a
+fit and are NaN on a blade with no interior peak to place; `Mas_max` and
+`zeta_max` come from a maximum of the data and exist for every blade, and `DF`
+is built from the maximum, so every blade still gets one.
+
+Moving blade count is what stopped `DiffusionFactor` being ported, because it
+changes the mesh. It still does — the mesher sizes the grid from the pitch, so
+`Co` 0.70 and 0.75 mesh at 225 and 209 streamwise nodes on the example
+cascade — which puts a floor on `peak_Ma`'s tolerance but does not prevent the
+loop, since every iteration remeshes and restarts by index-space interpolation
+anyway. The integer blade count is the smaller worry it looks: on that cascade
+one blade is 0.36% of `Co`, far finer than any step taken, though it scales as
+`1/N_blade` and would matter on a row with forty.
+
+`zeta_front` sits a fifth of the way along the surface by default rather than a
+tenth: a point that close to the nose still sits inside the sharp acceleration
+round it, which is not the camber line's to answer for. `peak_Ma` carries the
+same setting for the window its own fit uses, and the two should agree so that
+a design's front and peak describe the same curve.
+
+The measurement is the surface distribution `post: surface` draws, through the
+same functions, so what is iterated to is what the report shows — and the
+report overlays the target on it, its apex read off the achieved distribution
+since `loading` states no target for where it sits.
 
 ### Starting from designs already run
 

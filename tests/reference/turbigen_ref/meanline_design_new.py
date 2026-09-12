@@ -10,9 +10,9 @@ from machine inlet to machine outlet. That view shares storage with `ml`, so
 writes through it land in the mean line being designed.
 """
 
+import ember.set_iterative
 import numpy as np
 
-import ember.set_iterative
 from turbigen_ref.designer import Designer
 from turbigen_ref.plugins import register_designer
 

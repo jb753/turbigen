@@ -183,8 +183,8 @@ mean line design, to give optimal numerical conditioning for a CFD solve.
 
 import logging
 
-import numpy as np
 import ember.block
+import numpy as np
 
 import turbigen.util
 

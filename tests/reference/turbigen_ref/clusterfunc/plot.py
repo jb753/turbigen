@@ -1,11 +1,11 @@
+import clusterfunc.util
 import matplotlib.pyplot as plt
 import numpy as np
-import clusterfunc.util
 
 
 def plot(x):
     n = np.linspace(0, len(x) - 1, len(x))
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     ax.plot(n, x, "k-x")
     ax.plot(np.zeros_like(x), x, "k-x")
     ax.set_xlim(n[0] - 1, n[-1])
@@ -18,7 +18,7 @@ def plot(x):
 def plot_ER(x):
     ER = clusterfunc.util.ER(x)
     n = np.linspace(0, len(ER) - 1, len(ER))
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     ax.plot(n, ER, "k-x")
     # ax.plot(np.zeros_like(x), x, 'k-x')
     ax.set_xlim(n[0] - 1, n[-1])

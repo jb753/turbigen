@@ -44,12 +44,12 @@ import sys
 from pathlib import Path
 from timeit import default_timer as timer
 
+import ember.convergence_history
+import ember.yaml_util
 import numpy as np
 import yaml
 
 import turbigen
-import ember.convergence_history
-import ember.yaml_util
 from turbigen import (
     batch,
     bconds,
@@ -66,6 +66,7 @@ from turbigen import (
     plugins,
     post,
     restart,
+    warm_field,
 )
 from turbigen.config import Config
 from turbigen.result import Result
@@ -109,8 +110,20 @@ beside it, so without the refusal it would write over its own input.
 LOG_NAME = "log_turbigen.txt"
 """What a run calls its transcript, beside everything else it wrote."""
 
-RESTART_NAME = "restart.npz"
-"""What a run calls the flow field it leaves behind, and `--restart` looks for."""
+RESTART_NAME = restart.RESTART_NAME
+"""Re-exported from :mod:`turbigen.restart`, where the name now lives so that
+:func:`turbigen.database.nearest_field` can find a neighbour's field without
+importing the CLI."""
+
+GRID_NAME = "grid.emb"
+"""What a run calls the whole grid, written only when something went wrong.
+
+Written by ember's own `write_emb`, gzipped, rather than by a pickle of our
+own: a `Grid` carries weakrefs --- a patch back to its block, the connectivity
+manager to its grid --- so a plain `pickle.dumps` refuses it, and a reducer
+written here to dodge them would be ours to keep in step with a class that is
+not. `Grid.read_emb` brings it back.
+"""
 
 HISTORY_NAME = "conv.cnv"
 """What a run calls its convergence history, written beside the flow field.
@@ -159,6 +172,15 @@ PLACEHOLDER = "%"
 One spelling, not two. The package this replaces accepted `%` and `*` for
 overlapping jobs, and which of them numbered a run was a thing to remember
 rather than to work out.
+"""
+
+NUMBERING_ATTEMPTS = 64
+"""Times to re-ask for a free number before giving up.
+
+Each loss means another process claimed the number first, so this bounds how
+many runs can be launched into one directory at the same instant rather than
+how hard anything retries. Far above any real fan-out, and finite so that a
+directory nothing can be created in fails rather than spinning.
 """
 
 DIGITS = 4
@@ -244,6 +266,16 @@ def resolve_workdir(workdir):
     thing in the directory at that moment, and deleting it to keep the
     numbering tidy would throw away the evidence for the sake of the filing.
     A number is cheap; the log of the run that did not work is not.
+
+    **The directory is created here, and that is what makes the number safe to
+    hold.** Scanning says what is free and creating says it is taken; between
+    the two, another process asking the same question gets the same answer.
+    Two runs launched together would land on one directory and interleave
+    their iterations into it, silently where their configs happened to match.
+    So the number is claimed by making the directory exclusively --- an atomic
+    operation --- and a loser simply asks again and takes the next one. Which
+    means a caller wanting the config checked before anything appears on disk
+    has to check it before calling this; see :func:`each`.
     """
     text = str(workdir)
     if PLACEHOLDER not in text:
@@ -265,7 +297,22 @@ def resolve_workdir(workdir):
 
     head, _, tail = path.name.partition(PLACEHOLDER)
 
-    return next_numbered_dir(path.parent, head, tail)
+    for _ in range(NUMBERING_ATTEMPTS):
+        candidate = next_numbered_dir(path.parent, head, tail)
+        try:
+            candidate.mkdir(parents=True)
+        except FileExistsError:
+            # Somebody claimed it between the scan and here. Ask again: the
+            # scan reads the highest that exists, so the next answer is past
+            # whatever they took.
+            continue
+        return candidate
+
+    raise ValueError(
+        f"Could not claim a numbered directory under {path.parent} after "
+        f"{NUMBERING_ATTEMPTS} attempts. Something else is making them as "
+        f"fast as they can be asked for."
+    )
 
 
 _HANDLER_TAG = "_turbigen_handler"
@@ -311,7 +358,18 @@ def setup_logging(verbose):
         if isinstance(handler, logging.FileHandler):
             handler.close()
 
-    _add_handler(logging.StreamHandler(sys.stderr))
+    # Ember's log messages use Greek symbols (eps, psi, zeta) for its
+    # coefficients; a console whose encoding cannot represent them --- cp1252,
+    # the Windows default for a redirected stream --- would otherwise crash
+    # `emit` with a UnicodeEncodeError. backslashreplace degrades to `\uXXXX`
+    # instead, which is always encodable, rather than losing the log line.
+    stream = sys.stderr
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
+    _add_handler(logging.StreamHandler(stream))
 
 
 def load_document(config_path, args):
@@ -544,8 +602,11 @@ def _copy_into_workdir(args, config_path, workdir):
     """
     data = load_document(config_path, args)
 
-    # Validated before a directory is made, so a config with a typo in it fails
-    # where it was typed rather than leaving an empty workdir behind.
+    # Validated before anything is written into the directory. `each` has
+    # already checked this document when a `%` was resolved -- which it must,
+    # the claim creating the directory -- but a `-o` naming a path outright
+    # arrives here unchecked, and either way a config that will not build has
+    # no business being copied anywhere.
     Config.from_dict(data)
 
     copied = workdir / batch.INPUT_NAME
@@ -624,6 +685,15 @@ def each(args, one):
     # sees the directory that was chosen, the same way `logging_into` records
     # where a verb wrote.
     if getattr(args, "workdir", None) is not None:
+        # Before the workdir is resolved, because resolving a `%` now *makes*
+        # the directory in order to claim its number -- so a config with a typo
+        # in it has to fail here, or it would leave an empty numbered directory
+        # behind and consume a number to say nothing. `_copy_into_workdir`
+        # validates again on the document it actually writes; this is the same
+        # check moved early, not a second opinion.
+        for path in paths:
+            Config.from_dict(load_document(path, args))
+
         args.workdir = str(resolve_workdir(args.workdir))
 
         # A bare `--restart` means the field beside the config you named, and
@@ -785,7 +855,7 @@ def _design_one(args, config_path):
     return 0
 
 
-def prepare(config, restart_path=None):
+def prepare(config, restart_path=None, warm=None):
     """Return the resolved config, the machine, and a grid ready to solve.
 
     Shared by every verb that needs a grid, so there is one definition of
@@ -825,10 +895,15 @@ def prepare(config, restart_path=None):
     guess.apply(grid, machine)
 
     # A stored field supersedes the meridional guess. Applied after it rather
-    # than instead of it, so that a block the restart cannot fill is still
-    # left with something sane in it.
+    # than instead of it, so that a block the field cannot fill is still left
+    # with something sane in it. An explicit or chained `restart_path` wins; a
+    # `warm` seed (a database neighbour's field, perturbed onto this design's
+    # mean line) is the fallback for the first solve of a loop when nothing has
+    # been chained yet.
     if restart_path is not None:
         restart.apply(grid, restart_path)
+    elif warm is not None:
+        warm.apply(grid, machine)
 
     return config, machine, grid
 
@@ -935,7 +1010,7 @@ def _report_one(args, config_path):
 
         result = answer or Result(machine=machine, grid=grid, history=history)
 
-        write_report(config, result, out_dir, svg=args.svg)
+        write_report([(config, result)], out_dir, svg=args.svg)
         _write_report_output(config, answer, out_dir)
 
     return 0
@@ -1001,7 +1076,12 @@ def reconstruct(config, machine, grid, history, field):
         history=history,
     )
 
-    result = dataclasses.replace(result, error=iterate.errors(config, result))
+    # Tolerant, because this is describing a stored field rather than steering
+    # a design off it: a march that diverged has nothing to measure and is
+    # exactly the run whose report someone needs to read.
+    result = dataclasses.replace(
+        result, error=iterate.errors(config, result, strict=False)
+    )
     return dataclasses.replace(result, metrics=metric.measure(config, result))
 
 
@@ -1072,20 +1152,145 @@ def write_input(config, out_dir):
     return path
 
 
-def solve(config, out_dir, restart_path=None, svg=False):
+def save_grid(path, grid):
+    """Write the whole grid to `path`, for a run that is not going to finish.
+
+    Never allowed to be the thing that ends a run: this is called on paths that
+    are already failing, and a diagnostic that raises on its way out would
+    replace the error someone needs to read with one about writing a file.
+
+    Catching the exception is not enough for that, because writing a grid moves
+    it. `Grid.write_emb` detaches every patch before pickling and re-attaches
+    them afterwards, so a write that fails partway can leave a perfectly good
+    grid with patches that no longer know their block --- and the next thing to
+    read a surface off it dies on that instead, far from here and looking like
+    a fault of its own. So the grid is put back before the warning goes out,
+    and the run carries on with what it was given.
+    """
+    try:
+        grid.write_emb(str(path), compress=True)
+        logger.info(f"Wrote the grid to {path}")
+    except Exception as err:
+        logger.warning(f"Could not write the grid to {path}: {err}")
+        _reattach_patches(grid)
+
+
+def _reattach_patches(grid):
+    """Re-establish every patch's link to its block, quietly.
+
+    What :meth:`ember.grid.Grid.write_emb` does on its way out, done again for
+    a write that did not get that far. Quiet because it is already the second
+    thing to go wrong: the first is on its way to the log, and this one has
+    nothing to add that the grid being unreadable will not say later.
+    """
+    try:
+        for block in grid:
+            for patch in block.patches:
+                patch.attach_to_block(block)
+    except Exception as err:
+        logger.debug(f"Could not re-attach the grid's patches: {err}")
+
+
+def soft_start(solver, grid):
+    """March `grid` with a detuned copy of `solver`, and return what it did.
+
+    Nothing of it is kept. The grid is marched in place, so the production
+    march that follows simply continues from the field this leaves, and the
+    history comes back only so the caller can see whether it survived.
+
+    The step count is the config's, replacing the one `soft()` names: how long
+    to spend on a robust start depends on the case and the guess it is starting
+    from, which the solver has no way to know.
+    """
+    if solver.n_step_soft < 0:
+        raise ValueError(
+            f"solver.n_step_soft must be >= 0, got {solver.n_step_soft}. It is "
+            "a number of steps to march, and 0 is how a soft start is declined."
+        )
+
+    soft = dataclasses.replace(solver.soft(), n_step=solver.n_step_soft)
+
+    run_log.info(f"Soft start: {solver.n_step_soft} steps")
+    history = soft.solve(grid)
+    run_log.info(convergence_string(history, solver.converged(history)))
+
+    return history
+
+
+def solve(
+    config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None, soft=False
+):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
     The whole of a run, so that `iterate` composes runs rather than writing a
     second copy of one -- which is how `turbigen.main` came to hold the same
     pipeline three times over, two of them unreachable and already drifted.
+
+    `trajectory` is what the design loop has been through so far, if anything,
+    which the report draws the loop's own convergence from. Passed in rather
+    than reachable from here, because a run knows nothing of the loop that may
+    be repeating it -- and passed *through* rather than kept, because the pair
+    this call is about does not exist until the solve is over.
+
+    `warm` is a :class:`turbigen.warm_field.Seed` for the first solve of a loop,
+    used only when nothing has been chained into `restart_path` yet.
+
+    `soft` says this is the first solve of the invocation, which is the one
+    entitled to a soft start if the config asked for one. Passed in rather than
+    inferred from `restart_path`, because a restarted run is still a first
+    solve: the field it was handed may be a neighbour's, or its own from before
+    a change to the design, and both are exactly what a robust pass is for.
+    What disqualifies a solve is having a loop's previous iteration behind it,
+    which only the caller knows.
     """
-    config, machine, grid = prepare(config, restart_path)
+    config, machine, grid = prepare(config, restart_path, warm=warm)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
 
-    history = config.solver.solve(grid)
+    history = None
+    if soft and config.solver.n_step_soft:
+        history = soft_start(config.solver, grid)
+
+        # A soft pass that blew up leaves a field of NaNs, and marching the
+        # production settings from those is CFD paid for and certain to reach
+        # no answer. Its history stands as the run's own, so everything below
+        # writes the failure and the field it failed in, which is the only
+        # record there is of what happened here.
+        if config.solver.converged(history):
+            history = None
+
+    if history is None:
+        history = config.solver.solve(grid)
+
     converged = config.solver.converged(history)
+
+    # Written whatever happened, and written first --- before the mix-out, the
+    # measurements and the tables, every one of which can raise. A march that
+    # did not converge is the one most likely to be picked up and continued, so
+    # withholding its field would be exactly backwards; and nothing downstream
+    # may be able to discard a solution the CFD has already been paid for. The
+    # field is also the whole of what a failure needs to be diagnosed from: the
+    # mesh is not written because `input.yaml` beside it rebuilds one, and the
+    # two together are what `prepare` reads back.
+    restart_path = out_dir / RESTART_NAME
+    restart.save(restart_path, grid, config)
+    run_log.info(f"Wrote the flow field to {restart_path}")
+
+    # Beside the field, and for the same reason: it is what a re-plot needs to
+    # draw the convergence page, and it costs a few kilobytes.
+    save_history(out_dir / HISTORY_NAME, history)
+
+    # A march that fell over is the one nobody can rebuild their way back to.
+    # `restart.npz` holds the flow and nothing else, on the reasoning that
+    # `input.yaml` beside it rebuilds the mesh -- which is true only while the
+    # mesher is the code that wrote it, and a failure worth keeping is often
+    # one being chased across a change to that code. It is also the case that
+    # needs the geometry most: a divergence reports where it happened in index
+    # space, and turning `i[144:144]` into a trailing edge takes coordinates.
+    # So the whole grid goes down, coordinates, patches and all.
+    if getattr(history, "diverged", False):
+        save_grid(out_dir / GRID_NAME, grid)
 
     # Reduce the solution to a mean line. A diverged grid has nothing to mix
     # out, and even a converged one can refuse, so this must not cost the run
@@ -1109,11 +1314,34 @@ def solve(config, out_dir, restart_path=None, svg=False):
     # Measured whether or not anything is iterating: the exit angle a row
     # achieved and the incidence its leading edge saw are observations of the
     # flow, and they can only be taken while the grid is in memory.
-    result = dataclasses.replace(result, error=iterate.errors(config, result))
+    #
+    # A measurement that refuses is the other half of the case the divergence
+    # flag covers above, and the harder one: the march converged, so nothing
+    # says the geometry is suspect, and yet a leading edge had no stagnation
+    # point to find or a section had no surface to cut. That is a question
+    # about the grid, asked of a grid about to go out of scope. Written once,
+    # whichever of these raises, and the error goes on to be raised.
+    #
+    # Strict only when the march reached an answer, because that is the only
+    # time an unmeasurable knob means something is wrong. A diverged march
+    # measures nothing by construction -- there is no mixed-out mean line to
+    # read an exit angle off a field of NaNs -- and raising about it here
+    # aborted the whole loop with a traceback, from inside the call
+    # `iterate.converge` makes, before it could reach its own divergence check
+    # and stop with the design that produced it. Describing the failure is what
+    # is wanted; steering on it is what is refused.
+    try:
+        result = dataclasses.replace(
+            result, error=iterate.errors(config, result, strict=converged)
+        )
 
-    # Anything the config asked to measure from the field, for the same reason
-    # and against the same deadline.
-    result = dataclasses.replace(result, metrics=metric.measure(config, result))
+        # Anything the config asked to measure from the field, for the same
+        # reason and against the same deadline.
+        result = dataclasses.replace(result, metrics=metric.measure(config, result))
+    except Exception:
+        if not (out_dir / GRID_NAME).is_file():
+            save_grid(out_dir / GRID_NAME, grid)
+        raise
 
     # Where a throttled exit turned out to sit, for the same reason and with
     # the same deadline: the pressure the controller chose is on the patch, and
@@ -1140,20 +1368,7 @@ def solve(config, out_dir, restart_path=None, svg=False):
         except Exception as err:
             logger.warning(f"Could not compare the design against its solution: {err}")
 
-    # Written whatever happened, and written first. A march that did not
-    # converge is the one most likely to be picked up and continued, so
-    # withholding its field would be exactly backwards -- and a post-processor
-    # that raises must not be able to discard a solution the CFD has already
-    # been paid for.
-    restart_path = out_dir / RESTART_NAME
-    restart.save(restart_path, grid, config)
-    run_log.info(f"Wrote the flow field to {restart_path}")
-
-    # Beside the field, and for the same reason: it is what a re-plot needs to
-    # draw the convergence page, and it costs a few kilobytes.
-    save_history(out_dir / HISTORY_NAME, history)
-
-    _write_output(config, result, out_dir, svg=svg)
+    _write_output(config, result, out_dir, svg=svg, trajectory=trajectory)
 
     return result
 
@@ -1174,7 +1389,11 @@ def _run_one(args, config_path):
             )
 
         result = solve(
-            config, out_dir, resolve_restart(args, config_path), svg=args.svg
+            config,
+            out_dir,
+            resolve_restart(args, config_path),
+            svg=args.svg,
+            soft=True,
         )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
@@ -1329,6 +1548,80 @@ def _chic_one(args, config_path):
     return 0 if any(point.converged for point in points) else 2
 
 
+@dataclasses.dataclass
+class _Chain:
+    """Solve one iteration per call, chaining the field and keeping the record.
+
+    What `iterate.converge` calls, satisfying the ``(config, i_iter)`` contract
+    it asks for while carrying the two things that have to survive between
+    calls. A closure did this and carried `previous` by `nonlocal`; a second
+    piece of hidden state in a nested function is where that stops being
+    reasonable.
+
+    **It owns the trajectory because it is the only thing that sees it.**
+    `converge` holds a history of its own for the Jacobian and cannot reach
+    the report, which is drawn inside `solve`; this sits between the two, so
+    the record can go down to the report without `converge` learning anything
+    about directories. That is why nothing was added to `Result` and nothing
+    was read back off disk.
+
+    The grid and the march history are dropped from what is kept. A stripped
+    `Result` is a few hundred numbers where a grid is tens of megabytes, which
+    is the difference between keeping every pass and keeping none.
+    """
+
+    out_dir: Path
+    """Where the numbered iteration directories go."""
+
+    previous: Path | None = None
+    """The field the next call starts from, advanced as each one finishes."""
+
+    warm: object | None = None
+    """A :class:`turbigen.warm_field.Seed` for the first solve, when there is a
+    database neighbour to start from. Used only while `previous` is None."""
+
+    trajectory: list = dataclasses.field(default_factory=list)
+    """Every ``(config, result)`` pair so far, oldest first."""
+
+    def __call__(self, config_now, i_iter):
+        iter_dir = self.out_dir / f"iter_{i_iter:04d}"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # Where this iteration's knobs stood, which the next one moves: the
+        # sequence is reproducible from the datum, but no single member of it
+        # is.
+        write_input(config_now, iter_dir)
+
+        # Chained: each iteration starts from the field the last one reached,
+        # which is most of the saving. Index-space interpolation covers the
+        # mesh moving with the design. The first pass has no chained field, so
+        # it takes the warm seed instead when there is one.
+        warm = self.warm if self.previous is None else None
+
+        # And the first pass is the one a soft start is for, whatever field it
+        # begins from: nothing of this design has been marched yet. `previous`
+        # cannot answer that -- a loop handed a restart has one from the
+        # outset -- but the trajectory can, being empty until a call returns.
+        first = not self.trajectory
+
+        result = solve(
+            config_now,
+            iter_dir,
+            self.previous,
+            trajectory=self.trajectory,
+            warm=warm,
+            soft=first,
+        )
+        self.previous = iter_dir / RESTART_NAME
+
+        self.trajectory.append(
+            (config_now, dataclasses.replace(result, grid=None, history=None))
+        )
+
+        return result
+
+
 def converge_design(config, out_dir, previous=None):
     """Iterate `config` to convergence, keeping every iteration under `out_dir`.
 
@@ -1337,9 +1630,13 @@ def converge_design(config, out_dir, previous=None):
     repeatedly. Written out twice, the two would drift, which is what happened
     to `turbigen.main`.
 
-    A config with no `iterate:` section still gets its design point solved
-    once, because the sweep that follows needs a field to start from and an
-    answer to be a departure from.
+    A config with nothing to correct still gets its design point solved once,
+    because the sweep that follows needs a field to start from and an answer to
+    be a departure from. That branch is `chic`'s alone: `iterate` refuses an
+    empty `correct:` list before it ever gets here, so the one pass is not a
+    degenerate iteration but the whole of what a fixed geometry needs before it
+    can be swept. It runs through the same `_Chain` as any other iteration,
+    which is what keeps one definition of where an iteration writes.
 
     Returns
     -------
@@ -1352,49 +1649,51 @@ def converge_design(config, out_dir, previous=None):
         The flow field it reached, for whatever runs next.
 
     """
-    if not config.iterate.correct:
-        design_dir = out_dir / "iter_0000"
-        design_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Design point in {design_dir}")
+    # The database is globbed and parsed once, here: the geometry blend in
+    # `warm_start` and the field seed in `nearest_field` both want the same
+    # finished runs, and reading a directory of result files is the cost.
+    samples = (
+        config.database.load_samples(config, out_dir, exclude=(out_dir,))
+        if config.database is not None
+        else None
+    )
 
-        write_input(config, design_dir)
-
-        result = solve(config, design_dir, previous)
-        field = promote_final(out_dir, design_dir, result.converged)
-
-        return _with_achieved(config, result), result, result.converged, field
+    def seed(cfg):
+        """A neighbour's field, perturbed onto this design, or None."""
+        if previous is not None or not samples:
+            return None
+        field = database.nearest_field(cfg, samples)
+        return warm_field.Seed(field) if field is not None else None
 
     # Iteration -1: where the knobs start. Anchored on the config file's own
     # directory, because a config is often run from somewhere else, and
     # excluding that same directory because it is where this run's own
     # iterations will land -- one directory being one run, nothing else of
     # anyone's is in there to lose.
-    config = database.warm_start(config, out_dir, exclude=(out_dir,))
+    #
+    # Guarded on there being knobs at all rather than on `correct:`, which is
+    # the test `warm_start` itself makes of what it was handed: a design point
+    # with nothing to correct has nothing to start warm, and reaching in to be
+    # told so would warn about a config that is perfectly in order.
+    if iterate.unknowns(config):
+        config = database.warm_start(
+            config, out_dir, exclude=(out_dir,), samples=samples
+        )
 
-    def run(config_now, i_iter):
-        """Solve one iteration into a directory of its own."""
-        nonlocal previous
+    # Built after the warm start, never before: the seed is the nearest
+    # neighbour to this design, and the warm start is what moves the design.
+    runner = _Chain(out_dir=out_dir, previous=previous, warm=seed(config))
 
-        iter_dir = out_dir / f"iter_{i_iter:04d}"
-        iter_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+    if config.iterate.correct:
+        config, result, converged = iterate.converge(
+            config, runner, config.iterate.max_iter
+        )
+    else:
+        # Nothing to correct, so the loop is one pass of it.
+        result = runner(config, 0)
+        converged = result.converged
 
-        # Where this iteration's knobs stood, which the next one moves: the
-        # sequence is reproducible from the datum, but no single member of it
-        # is.
-        write_input(config_now, iter_dir)
-
-        # Chained: each iteration starts from the field the last one reached,
-        # which is most of the saving. Index-space interpolation covers the
-        # mesh moving with the design.
-        result = solve(config_now, iter_dir, previous)
-        previous = iter_dir / RESTART_NAME
-
-        return result
-
-    config, result, converged = iterate.converge(config, run, config.iterate.max_iter)
-
-    field = promote_final(out_dir, previous.parent, converged)
+    field = promote_final(out_dir, runner.previous.parent, converged)
 
     return _with_achieved(config, result), result, converged, field
 
@@ -1437,6 +1736,7 @@ def cmd_batch(args):
     # leave an empty batch behind and burn a number on its way out.
     config.batch.check(config)
     _check_grid_options(args, config.batch)
+    _check_edges_options(args, config.batch)
 
     # Scanned before the new batch directory exists, so it cannot count itself.
     # A batch is never written into, only beside, so nothing can be lost.
@@ -1450,7 +1750,7 @@ def cmd_batch(args):
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in batch.generate(config, args.number, start):
+    for index, member in batch.generate(config, args.number, start, args.edges):
         member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
@@ -1493,6 +1793,41 @@ def _check_grid_options(args, spec):
         raise ValueError(
             "A batch: section with values: is already the whole grid, so there "
             "is nothing to --continue. Widen values: and write another batch."
+        )
+
+
+def _check_edges_options(args, spec):
+    """Refuse ``--edges`` where it does not apply, before a number is burned.
+
+    Like :func:`_check_grid_options`, and for the same reason: the surface of
+    the box is a closed set drawn from `bounds:` alone, so it has no `-n` to
+    size it and no tail to `--continue`, and there is nothing for it to walk
+    when the section names its points with `values:`.
+    """
+    if args.edges is None:
+        return
+
+    if spec.is_grid():
+        raise ValueError(
+            "--edges walks the surface of a bounds: box; this batch: section "
+            "names its points with values:. Give bounds: instead."
+        )
+
+    if args.number is not None:
+        raise ValueError(
+            "--edges sizes the batch from the box surface, so there is no -n "
+            "to choose as well."
+        )
+
+    if args.carry_on:
+        raise ValueError(
+            "--edges is the whole surface of the box, a closed set, so there "
+            "is nothing to --continue."
+        )
+
+    if args.edges < 2:
+        raise ValueError(
+            f"--edges is {args.edges}; it takes at least 2, the two ends of each bound."
         )
 
 
@@ -1642,12 +1977,25 @@ def logging_into(args, config_path):
     # where it is most use: a long run scrolls its first line out of sight.
     args.out_dir = out_dir
 
-    handler = logging.FileHandler(out_dir / LOG_NAME)
+    # Explicit encoding rather than the platform default (cp1252 on Windows):
+    # this file is turbigen's own artifact, read back by a text editor, not by
+    # whatever console produced it, so it should always be UTF-8.
+    handler = logging.FileHandler(out_dir / LOG_NAME, encoding="utf-8")
     _add_handler(handler)
     logger.info(f"Output directory: {out_dir}")
 
     try:
         yield out_dir
+    except Exception:
+        # Logged here rather than left to `main`, which does log it but only
+        # after this handler has been taken away in the `finally` below --- so
+        # the traceback would reach the console and never the file sitting in
+        # the workdir beside the run that failed. A directory whose log stops
+        # mid-iteration saying nothing is the one case where the transcript was
+        # most wanted, and re-raising leaves the exit status to `main` as
+        # before.
+        logger.exception("The run failed, and stopped here")
+        raise
     finally:
         for name in LOGGER_NAMES:
             logging.getLogger(name).removeHandler(handler)
@@ -1664,12 +2012,12 @@ def _open_batch(args, datum_dir):
     out_dir = next_batch_dir(datum_dir)
     out_dir.mkdir(parents=True)
     args.out_dir = out_dir
-    _add_handler(logging.FileHandler(out_dir / LOG_NAME))
+    _add_handler(logging.FileHandler(out_dir / LOG_NAME, encoding="utf-8"))
     logger.info(f"Output directory: {out_dir}")
     return out_dir
 
 
-def _write_output(config, result, out_dir, svg=False):
+def _write_output(config, result, out_dir, svg=False, trajectory=()):
     """Write what a run achieved, and draw it.
 
     Only the verbs that solve call this, and that is what makes it safe:
@@ -1683,7 +2031,7 @@ def _write_output(config, result, out_dir, svg=False):
     case.write(config_path, config, result)
     run_log.info(f"Wrote resolved configuration to {config_path}")
 
-    write_report(config, result, out_dir, svg=svg)
+    write_report([*trajectory, (config, result)], out_dir, svg=svg)
 
 
 def grid_string(grid):
@@ -1800,8 +2148,16 @@ def processors(config):
     return standard + list(config.post_process)
 
 
-def write_report(config, result, out_dir, svg=False):
+def write_report(trajectory, out_dir, svg=False):
     """Run the post-processors and collect their figures into one PDF.
+
+    `trajectory` is the sequence of ``(config, result)`` pairs the run has been
+    through, oldest first and never empty. A :class:`~turbigen.post.Post` draws
+    one design and is handed the last of them; a
+    :class:`~turbigen.post.PostChain` draws the sequence and is handed all of
+    them. Passing the sequence rather than a pair is what lets the loop be
+    drawn without a `Result` carrying anything about designs other than its
+    own.
 
     Nothing is produced without an output directory, so the figures are only
     made when there is somewhere to put them. With one, a report is always
@@ -1816,7 +2172,7 @@ def write_report(config, result, out_dir, svg=False):
     """
     # Imported here so that the CLI does not pay for matplotlib until there is
     # something to plot.
-    import matplotlib  # noqa: PLC0415
+    import matplotlib
 
     # Only claim the backend if nothing has chosen one yet. pyplot in sys.modules
     # means a caller -- a notebook driving main(), say -- is already plotting,
@@ -1824,8 +2180,10 @@ def write_report(config, result, out_dir, svg=False):
     if "matplotlib.pyplot" not in sys.modules:
         matplotlib.use("Agg")
 
-    import matplotlib.pyplot as plt  # noqa: PLC0415
-    from matplotlib.backends.backend_pdf import PdfPages  # noqa: PLC0415
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    config, result = trajectory[-1]
 
     path = out_dir / "post.pdf"
     n_page = 0
@@ -1842,6 +2200,21 @@ def write_report(config, result, out_dir, svg=False):
                     figure.savefig(
                         out_dir / f"post_{i_processor:02d}_{processor.type}"
                         f"_{i_figure}.svg"
+                    )
+                plt.close(figure)
+                n_page += 1
+
+        # After the per-design pages, and named apart from them: a chain plot
+        # is not in `processors`, so numbering its figures alongside would let
+        # adding one rename the images of the plots before it.
+        for i_processor, processor in enumerate(post.STANDARD_CHAIN):
+            logger.debug(f"Running chain post-processor {processor}")
+            for i_figure, figure in enumerate(processor.report(trajectory)):
+                pdf.savefig(figure)
+                if svg:
+                    name = type(processor).__name__.lower()
+                    figure.savefig(
+                        out_dir / f"chain_{i_processor:02d}_{name}_{i_figure}.svg"
                     )
                 plt.close(figure)
                 n_page += 1
@@ -2025,6 +2398,17 @@ def _make_parser():
             f"how many designs to draw from bounds: (default "
             f"{batch.DEFAULT_NUMBER}; Sobol' balance holds at powers of two). "
             "Not for values:, whose count is the product of what it names"
+        ),
+    )
+    batch_.add_argument(
+        "--edges",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "instead of drawing from bounds:, run the surface of the box: the "
+            "N-level grid over it, keeping only points with a coordinate at a "
+            "bound. bounds: only, and not with -n or --continue"
         ),
     )
     _add_queue_argument(batch_)

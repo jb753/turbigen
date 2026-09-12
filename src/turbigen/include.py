@@ -31,9 +31,8 @@ includes is a hierarchy, and is the whole reason the merge is a level deep.
 import logging
 from pathlib import Path
 
-import yaml
-
 import ember.yaml_util
+import yaml
 
 logger = logging.getLogger("turbigen")
 

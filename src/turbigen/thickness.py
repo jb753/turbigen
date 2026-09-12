@@ -12,13 +12,21 @@ exists, rather than only once a chord is known.
 :class:`Taylor` (``taylor``) is the built-in distribution: two cubic splines in
 shape space meeting at the point of maximum thickness, after
 :cite:`Taylor2016`.
+
+:class:`Clark` (``clark``) is the two-sided alternative, after Clark (2019): a
+Bernstein polynomial in shape space per surface, so the aerofoil need not be
+symmetric about its camber line. A distribution answers with a half-thickness
+for each surface, suction first, and one that says nothing about sides gives
+the same number twice.
 """
 
+import dataclasses
 import logging
 from typing import ClassVar
 
 import numpy as np
 
+from turbigen import shapespace
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
@@ -30,12 +38,6 @@ _ROOT_TOL = 1e-9
 """Largest imaginary part for a root to count as real."""
 
 
-def _validate_domain(m):
-    """Check that a normalised meridional coordinate lies in [0, 1]."""
-    if np.any(np.asarray(m) < 0.0) or np.any(np.asarray(m) > 1.0):
-        raise ValueError("Meridional distance m must be in the range [0, 1].")
-
-
 class ThicknessDesign(Node):
     """Base for thickness distributions, normalised by meridional chord.
 
@@ -43,8 +45,35 @@ class ThicknessDesign(Node):
     """
 
     def thick(self, m):
-        """Return half-thickness at normalised meridional distance `m`."""
+        """Return half-thickness at normalised meridional distance `m`.
+
+        For a distribution that is the same both sides of the camber line. A
+        distribution that is not implements :meth:`thick_both` instead, and
+        has no one number to answer with here.
+        """
         raise NotImplementedError(f"{type(self).__name__} must implement thick(m)")
+
+    def thick_both(self, m):
+        """Return the half-thickness of each surface, suction first.
+
+        The order :meth:`~turbigen.blade.Blade.evaluate_section` returns the
+        surfaces in, so a two-sided distribution and the section it produces
+        index the same way with no permutation between them.
+
+        **A distribution cannot check this about itself.** Which side of a
+        camber line is the suction one is a property of the camber, and a
+        thickness has none --- so "suction first" is a promise the *blade*
+        keeps when it hangs these two numbers off its camber line (see
+        :attr:`~turbigen.blade.Blade._suction_is_upper`), and a claim about
+        intent when it is written in a config file. Evaluated on its own, a
+        distribution can only say that its first answer goes on whichever
+        surface a blade would call suction.
+
+        The same number twice unless a distribution says otherwise, so a
+        symmetric one need only write :meth:`thick`.
+        """
+        t = self.thick(m)
+        return t, t
 
 
 class Taylor(ThicknessDesign):
@@ -81,7 +110,7 @@ class Taylor(ThicknessDesign):
         t_TE = self.t_TE
 
         # Control points in shape space
-        s_LE = np.sqrt(2.0 * self.R_LE)
+        s_LE = shapespace.tau_LE(self.R_LE)
         s_max = (self.t_max - m_tmax * t_TE / 2.0) / np.sqrt(m_tmax) / (1.0 - m_tmax)
         ds_max = (
             (
@@ -91,7 +120,7 @@ class Taylor(ThicknessDesign):
             / np.sqrt(m_tmax)
             / (1.0 - m_tmax)
         )
-        s_TE = t_TE + self.tanwedge
+        s_TE = shapespace.tau_TE(t_TE, self.tanwedge)
 
         x1 = m_tmax
         x2 = m_tmax**2.0
@@ -188,15 +217,284 @@ class Taylor(ThicknessDesign):
         The trailing edge thickness is specified as the total due to both
         sides, so half of it is returned at the trailing edge.
         """
-        _validate_domain(m)
+        shapespace.validate_domain(m)
 
         m_array = np.asarray(m, dtype=float)
-        t = np.sqrt(m_array) * (1.0 - m_array) * self.tau(m_array) + (
-            m_array * self.t_TE / 2.0
-        )
+        t = shapespace.thickness_from_tau(m_array, self.tau(m_array), self.t_TE)
 
         # No bound check here. Whether the distribution stays under its own
         # t_max is a property of the parameters, not of the points asked for,
         # so `__post_init__` settles it once -- and settles it for the whole
         # domain, where checking here could only ever cover the samples given.
         return float(t.item()) if np.isscalar(m) else t
+
+
+class ClarkThickness(ThicknessDesign):
+    """A Bernstein polynomial in shape space per surface, after Clark (2019).
+
+    Where :class:`Taylor` describes one thickness reflected in the camber
+    line, this describes each surface separately, which is what lets a
+    section be shaped to a loading distribution rather than to a thickness
+    parameter. The camber line stays where it was put: only the two surfaces
+    move.
+
+    Two things are shared rather than written per surface. The leading edge
+    radius, so that the nose is one curvature rather than two meeting at a
+    point --- Clark's own reason, and the one sharing that cannot be undone.
+    And the trailing edge thickness, split evenly, so a blunt trailing edge
+    stays centred on the camber line however the surfaces arrive at it.
+
+    And the wedge angle, so that the two surfaces depart symmetrically about
+    the camber line and the camber's exit angle is the section's --- see
+    :attr:`tanwedge` for why that sharing is worth a degree of freedom.
+
+    What is left is the interior of each surface, and only the interior: each
+    is the straight line in shape space between the two shared endpoints plus
+    a Bernstein perturbation pinned at zero at both ends. So the leading edge
+    radius and the wedge angle are exactly what they say however the
+    coefficients move, and all-zero coefficients give a section symmetric
+    about the camber line.
+    """
+
+    type: ClassVar[str] = "clark"
+
+    R_LE: float
+    """Leading edge radius, normalised by meridional chord [--]. Shared by
+    both surfaces, so that the nose is a single curvature."""
+
+    coeff: tuple[tuple[float, ...], ...] = ((), ())
+    """Interior Bernstein coefficients in shape space, one row per surface
+    [--].
+
+    The suction surface first, which is the order
+    :meth:`~turbigen.blade.Blade.evaluate_section` returns the surfaces in and
+    the order :meth:`thick_both` answers in --- so a row here and the surface
+    it shapes line up by index, with nothing in between to get backwards.
+
+    Which side that is comes from the camber line, not from here: see
+    :meth:`ThicknessDesign.thick_both` for why a thickness distribution cannot
+    check its own row ordering, and
+    :attr:`~turbigen.blade.Blade._suction_is_upper` for where it is decided.
+
+    The two rows are the same length, and that length sets the order of the
+    curve --- `order - 1` interior coefficients, the two endpoint ones being
+    the leading edge radius and the wedge angle rather than free. Empty rows
+    are the straight line in shape space between them, and a section
+    symmetric about its camber line.
+    """
+
+    tanwedge: float = 0.0
+    """Tangent of the trailing edge wedge angle [--].
+
+    One number, shared by both surfaces, so the two depart symmetrically about
+    the camber line.
+
+    **Why this is shared when the interior is not.** A shape-space endpoint
+    moves the thickness as ``m^1.5 (1 - m)``, peaking at ``m = 0.6``, so a
+    wedge angle per surface would be real authority over the rear of each ---
+    the one place :class:`~turbigen.iterate.ClarkProfile` would otherwise have
+    none, since a shared knob reads the two surfaces only through their mean
+    and a pair equally wrong in opposite directions reads as converged.
+
+    It was written that way, and the cost was not worth it. The trailing edge
+    *point* does not move --- half-thickness at ``m = 1`` is ``t_TE / 2`` on
+    each surface whatever the wedge does, that being the linear ramp in
+    :func:`~turbigen.shapespace.thickness_from_tau` rather than anything the
+    shape space curve reaches. What moved was the direction the aerofoil left
+    in: with two wedges the bisector of the surfaces rotates away from the
+    camber line by of order twenty-five degrees per unit of difference between
+    them, which makes the thickness a second claim on the exit angle. Nothing
+    bounded that asymmetry, and :class:`~turbigen.iterate.Deviation` reads the
+    rotation as an exit flow angle error and pulls ``dchi_TE`` back against
+    it. The two then chase each other: a design loop measured the pair walking
+    to a difference of 0.13 --- some three degrees of exit angle --- over six
+    iterations with ``dchi_TE`` running to eleven degrees behind it, and no
+    sign of either settling.
+
+    So the exit angle belongs to the camber line alone, and the rear of each
+    surface is the interior coefficients' to answer for. Reaching as far aft
+    as a split wedge did takes a much higher order --- the rearmost interior
+    control point sits at ``m = 0.64`` at order 4 against the endpoint's
+    ``0.82`` --- which is the price of it, paid where it can be seen.
+    """
+
+    t_TE: float = 0.0
+    """Trailing edge thickness, the total due to both sides [--]."""
+
+    def __post_init__(self):
+        if len(self.coeff) != 2:
+            raise ValueError(
+                f"A two-sided thickness takes one row of coefficients per "
+                f"surface, so two rows, got {len(self.coeff)}."
+            )
+
+        widths = [len(row) for row in self.coeff]
+        if widths[0] != widths[1]:
+            raise ValueError(
+                f"Both surfaces must carry the same number of coefficients, "
+                f"which is what sets the order of the curve, got {widths}."
+            )
+
+        if self.R_LE <= 0.0:
+            raise ValueError(
+                f"A leading edge radius must be positive, got R_LE={self.R_LE}."
+            )
+
+    @property
+    def order(self):
+        """Degree of the shape-space curve on each surface [--].
+
+        One more than the number of interior coefficients, the two endpoint
+        ones being the leading edge radius and the wedge angle. Read off
+        :attr:`coeff` rather than declared, so there is no second place for it
+        to be written down and disagree.
+        """
+        return len(self.coeff[0]) + 1
+
+    @property
+    def m_ctl(self):
+        """Return where each control point moves this section most, shape (order+1,).
+
+        One array, not one per surface: it is a property of the basis, and both
+        rows carry the same number of coefficients by construction. See
+        :func:`turbigen.shapespace.control_m` for why these sit strictly inside
+        the ends.
+
+        Public because an iterator shaping this distribution against a loading
+        distribution has to sample the achieved curve at the points its knobs
+        actually act on, and a sampler guessing at its own positions would be
+        reading somewhere no coefficient answers for.
+        """
+        return shapespace.control_m(self.order)
+
+    @property
+    def tau_coeff(self):
+        """Return the full shape-space coefficients of each surface, shape (2, order+1).
+
+        :attr:`coeff` holds only the interior *perturbation*, on a straight line
+        between two endpoints the physics fixes. A straight line is exactly
+        representable in the Bernstein basis, though, so the whole curve is one
+        Bernstein polynomial whose coefficients are
+
+        .. math::
+            c_k = \\tau_{LE} + (\\tau_{TE} - \\tau_{LE}) k / n + p_k
+
+        with `p_0` and `p_n` zero. That makes ``c[0]`` exactly
+        :func:`~turbigen.shapespace.tau_LE` of the leading edge radius and
+        ``c[-1]`` exactly :func:`~turbigen.shapespace.tau_TE` of the trailing
+        edge --- the two ends are not special cases of the curve, they *are* its
+        first and last coefficients.
+
+        Why anything wants this: in these coordinates every coefficient does the
+        same kind of thing, which is to raise `tau` and thicken the surface
+        locally. A knob per coefficient therefore has one sensitivity sign
+        rather than one for the interior and something else for the ends, and a
+        positive `R_LE` comes for free since it is `c[0]**2 / 2`.
+
+        **The two rows share both end entries.** The first is the one leading
+        edge radius and the last the one wedge angle, each returned duplicated
+        rather than split out so that a row lines up index for index with
+        :attr:`m_ctl`; :meth:`with_tau_coeff` checks that a caller writing them
+        back has kept both pairs equal.
+        """
+        n = self.order
+        tau_LE = shapespace.tau_LE(self.R_LE)
+        tau_TE = shapespace.tau_TE(self.t_TE, self.tanwedge)
+        k = np.arange(n + 1) / n
+        line = tau_LE + (tau_TE - tau_LE) * k
+
+        return np.array([[0.0, *row, 0.0] for row in self.coeff]) + line
+
+    def with_tau_coeff(self, c):
+        """Return this thickness rebuilt from full shape-space coefficients.
+
+        The inverse of :attr:`tau_coeff`, and the only supported way to write
+        through it. **Not because the arithmetic is hard, but because it does
+        not decompose**: moving `c[0]` moves the straight line under the whole
+        curve, so every interior perturbation has to be recomputed to leave its
+        own coefficient where the caller put it. Setting `R_LE` and then the
+        interior coefficients one at a time --- the obvious thing for a caller
+        holding the fields --- silently drags the interior along behind the
+        nose.
+
+        Parameters
+        ----------
+        c : array_like, shape (2, order + 1)
+            Full shape-space coefficients of each surface, suction first. The
+            two rows must agree at both ends, those being the one radius the
+            nose has and the one angle the surfaces leave at.
+
+        """
+        c = np.asarray(c, dtype=float)
+        if c.shape != (2, self.order + 1):
+            raise ValueError(
+                f"An order {self.order} two-sided thickness takes coefficients "
+                f"of shape {(2, self.order + 1)}, got {c.shape}."
+            )
+
+        # Not defaulted to row zero: the surfaces sharing one nose and one
+        # wedge is the whole of what those two numbers mean here, and a caller
+        # who has broken either is asking for a section this class cannot
+        # represent rather than one it should quietly round off.
+        for end, name in ((0, "leading"), (-1, "trailing")):
+            if c[0][end] != c[1][end]:
+                raise ValueError(
+                    f"Both surfaces share one {name} edge, so their "
+                    f"coefficients there must be equal, got {c[0][end]} and "
+                    f"{c[1][end]}."
+                )
+
+        tau_LE, tau_TE = c[0][0], c[0][-1]
+        k = np.arange(self.order + 1) / self.order
+        line = tau_LE + (tau_TE - tau_LE) * k
+
+        # Back to plain floats in plain tuples, which is what a Node holds and
+        # what a config file has to be able to carry: `dataclasses.replace`
+        # writes whatever it is handed, and numpy scalars survive as far as
+        # `to_dict` and the YAML it is written to.
+        return dataclasses.replace(
+            self,
+            R_LE=float(shapespace.R_LE_from_tau(tau_LE)),
+            tanwedge=float(shapespace.tanwedge_from_tau(tau_TE, self.t_TE)),
+            coeff=tuple(tuple(float(v) for v in row[1:-1]) for row in (c - line)),
+        )
+
+    def tau(self, m):
+        """Return shape space of each surface at meridional distance `m`.
+
+        Suction first, as :meth:`thick_both` returns them.
+        """
+        m = np.asarray(m, dtype=float)
+
+        # The straight line between the two endpoints the physics fixes. It is
+        # added to the evaluated perturbation rather than to its coefficients,
+        # which is what keeps the coefficients purely the perturbation --- see
+        # `turbigen.shapespace`.
+        tau_LE = shapespace.tau_LE(self.R_LE)
+
+        # One line for both surfaces: they leave the same nose and arrive at
+        # the same wedge, so all that separates them is the perturbation.
+        line = tau_LE + (shapespace.tau_TE(self.t_TE, self.tanwedge) - tau_LE) * m
+
+        return tuple(
+            line + shapespace.evaluate_bernstein((0.0, *row, 0.0), m)
+            for row in self.coeff
+        )
+
+    def thick_both(self, m):
+        """Return the half-thickness of each surface, suction first.
+
+        The trailing edge thickness is the total due to both sides, so half of
+        it is left on each surface at the trailing edge.
+        """
+        shapespace.validate_domain(m)
+
+        m_array = np.asarray(m, dtype=float)
+        t = tuple(
+            shapespace.thickness_from_tau(m_array, tau, self.t_TE)
+            for tau in self.tau(m_array)
+        )
+
+        if np.isscalar(m):
+            return tuple(float(side.item()) for side in t)
+        return t

@@ -6,16 +6,18 @@ In general, we run AutoGrid on a remote machine, because it is not installed on
 HPC. Meshing is done by feeding a Python 2 script into AutoGrid, which reads a
 configuration JSON file with parameters."""
 
-import os
-import sys
-import subprocess
 import glob
 import json
+import os
 import shutil
-import numpy as np
-import turbigen_ref.ssh
+import subprocess
+import sys
 from tempfile import mkdtemp
 from time import sleep
+
+import numpy as np
+
+import turbigen_ref.ssh
 import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
@@ -92,8 +94,8 @@ def _write_geomturbo(
             # +ve gaps are tip
             if (gap_now > 0.0).all():
                 writeln("NI_BEGIN NITipGap")
-                writeln("WIDTH_AT_LEADING_EDGE %f" % gap_now[0])
-                writeln("WIDTH_AT_TRAILING_EDGE %f" % gap_now[1])
+                writeln(f"WIDTH_AT_LEADING_EDGE {gap_now[0]:f}")
+                writeln(f"WIDTH_AT_TRAILING_EDGE {gap_now[1]:f}")
                 writeln("NI_END NITipGap")
             # -ve gaps are hub
             else:
@@ -106,12 +108,12 @@ def _write_geomturbo(
         writeln("TYPE GEOMTURBO")
         writeln("GEOMETRY_MODIFIED 0")
         writeln("GEOMETRY TURBO VERSION 5")
-        writeln("blade_expansion_factor_hub %f" % 0.1)
-        writeln("blade_expansion_factor_shroud %f" % 0.1)
+        writeln(f"blade_expansion_factor_hub {0.1:f}")
+        writeln(f"blade_expansion_factor_shroud {0.1:f}")
         writeln("intersection_npts %d" % 10)
         writeln("intersection_control %d" % 1)
         writeln("data_reduction %d" % 0)
-        writeln("data_reduction_spacing_tolerance %f" % 1e-6)
+        writeln(f"data_reduction_spacing_tolerance {1e-6:f}")
         # Not sure what this hardcoded line does... sorry.
         writeln(
             "control_points_distribution "
@@ -134,7 +136,7 @@ def _write_geomturbo(
                 writeln("ZRTH")
             writeln(str(ni_ss[k]))
             for j in range(ni_ss[k]):
-                writeln("%1.11f\t%1.11f\t%1.11f" % tuple(ss_now[k][j, :]))
+                writeln("{:1.11f}\t{:1.11f}\t{:1.11f}".format(*tuple(ss_now[k][j, :])))
 
         writeln("pressure")
         writeln("SECTIONAL")
@@ -147,7 +149,7 @@ def _write_geomturbo(
                 writeln("ZRTH")
             writeln(str(ni_ps[k]))
             for j in range(ni_ps[k]):
-                writeln("%1.11f\t%1.11f\t%1.11f" % tuple(ps_now[k][j, :]))
+                writeln("{:1.11f}\t{:1.11f}\t{:1.11f}".format(*tuple(ps_now[k][j, :])))
         writeln("NI_END nibladegeometry")
 
         # choose a leading and trailing edge treatment
@@ -200,7 +202,7 @@ def _write_geomturbo(
 
     # Write all the points in x,r
     for i in range(ni_h):
-        writeln("%1.11f\t%1.11f" % tuple(h[i, :]))
+        writeln("{:1.11f}\t{:1.11f}".format(*tuple(h[i, :])))
 
     writeln("NI_END zrcurve")
     writeln("NI_END basic_curve")
@@ -219,7 +221,7 @@ def _write_geomturbo(
 
     # Write all the points in x,r
     for i in range(ni_c):
-        writeln("%1.11f\t%1.11f" % tuple(c[i, :]))
+        writeln("{:1.11f}\t{:1.11f}".format(*tuple(c[i, :])))
 
     writeln("NI_END zrcurve")
     writeln("NI_END basic_curve")
@@ -252,7 +254,7 @@ def _write_geomturbo(
             writeln("ZR polyline")
             writeln("%d" % n_pts)
             for i_pts in range(n_pts):
-                writeln("%f %f" % tuple(zcst[irow][i]))
+                writeln("{:f} {:f}".format(*tuple(zcst[irow][i])))
             writeln("NI_END zrcurve")
             writeln("NI_END geometry")
             writeln("NI_END NIRSInterface")
@@ -265,8 +267,8 @@ def _write_geomturbo(
         writeln("NI_BEGIN nirow")
         writeln("  NAME r%d" % (i + 1))
         writeln("  TYPE normal")
-        writeln("  PERIODICITY %f" % nb[i])
-        writeln("  ROTATION_SPEED %f" % rpm[i])
+        writeln(f"  PERIODICITY {nb[i]:f}")
+        writeln(f"  ROTATION_SPEED {rpm[i]:f}")
 
         # No non-axisymetric surfaces
         hdr = [
@@ -300,42 +302,31 @@ def _write_geomturbo(
 
 def _add_via(s, via):
     """Add a jump host to a command."""
-    env_str = " ".join(["%s=%s" % (v, os.environ[v]) for v in SSH_ENV_VARS])
-    return "ssh -q %s '%s %s'" % (via, env_str, s)
+    env_str = " ".join([f"{v}={os.environ[v]}" for v in SSH_ENV_VARS])
+    return f"ssh -q {via} '{env_str} {s}'"
 
 
 def _scp_to_remote(to_path, from_path, remote, via=None):
     """Copy a file from local machine to remote machine."""
-    cmd_str = "scp -q %s %s:%s" % (
-        os.path.abspath(from_path),
-        remote,
-        to_path,
-    )
+    cmd_str = f"scp -q {os.path.abspath(from_path)} {remote}:{to_path}"
     if via:
         cmd_str = _add_via(cmd_str, via)
     if os.WEXITSTATUS(os.system(cmd_str)):
-        raise Exception("Could not scp to remote, command %s" % cmd_str)
+        raise Exception(f"Could not scp to remote, command {cmd_str}")
 
 
 def _scp_from_remote(to_path, from_path, remote, via=None):
     """Copy a file back from remote machine to local machine."""
-    cmd_str = "scp -q %s:%s %s" % (
-        remote,
-        from_path,
-        os.path.abspath(to_path),
-    )
+    cmd_str = f"scp -q {remote}:{from_path} {os.path.abspath(to_path)}"
     if via:
         cmd_str = _add_via(cmd_str, via)
     if os.WEXITSTATUS(os.system(cmd_str)):
-        raise Exception("Could not scp from remote, command %s" % cmd_str)
+        raise Exception(f"Could not scp from remote, command {cmd_str}")
 
 
 def _execute_on_remote(cmd, remote, via, ntry=3):
     """Run a shell command on remote and return the output."""
-    cmd_str = 'ssh -o BatchMode=yes -q %s "%s"' % (
-        remote,
-        cmd,
-    )
+    cmd_str = f'ssh -o BatchMode=yes -q {remote} "{cmd}"'
     if via:
         cmd_str = _add_via(cmd_str, via)
     logger.debug(f"_execute_on_remote: {cmd_str}")
@@ -407,7 +398,7 @@ def _run_remote(
         f"Adding job to queue file {ssh_conn.remote_host}:{queuefile} and waiting... "
     )
     script_path = os.path.join(tmpdir, SH_SCRIPT)
-    ssh_conn.run_remote("bash %s %s" % (script_path, queuefile), timeout=1800)
+    ssh_conn.run_remote(f"bash {script_path} {queuefile}", timeout=1800)
 
     # Copy mesh back
     sleep(0.5)
@@ -463,7 +454,7 @@ def make_mesh(output_stem, section, annulus, zcst, nblade, tip, split, Omega, co
 
     """
 
-    output_dir, output_basename = os.path.split(output_stem)
+    output_dir, _output_basename = os.path.split(output_stem)
 
     # Format the geometry ready for writing to geomTurbo
     ps = [s[0] for s in section]

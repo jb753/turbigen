@@ -1,11 +1,12 @@
 import logging
-import subprocess
-import pickle
 import os
+import pickle
+import subprocess
 import tempfile
 from dataclasses import dataclass
-from turbigen_ref.solvers.base import BaseSolver
 from pathlib import Path
+
+from turbigen_ref.solvers.base import BaseSolver
 
 logger = logging.getLogger("turbigen")
 

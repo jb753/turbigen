@@ -119,7 +119,7 @@ def at(config, DP_adjust):
     where each point *is*, so that a member's archived config reads as an
     operating point and not as an offset from one.
     """
-    from turbigen.bconds import OperatingPoint  # noqa: PLC0415 - avoids a cycle
+    from turbigen.bconds import OperatingPoint
 
     point = config.operating_point or OperatingPoint()
 

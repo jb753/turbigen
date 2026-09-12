@@ -2,12 +2,13 @@ import logging
 
 """Classes for submitting jobs to a queue."""
 
-import numpy as np
-import sys
-import subprocess
-from abc import ABC, abstractmethod
 import dataclasses
+import subprocess
+import sys
+from abc import ABC, abstractmethod
 from pathlib import Path
+
+import numpy as np
 
 SBATCH_FILE = "submit.sh"
 SBATCH_ARRAY = "submit_array.sh"
@@ -148,8 +149,7 @@ turbigen --no-job {fname}
             ["sbatch", sbatch_path.name],
             text=True,
             cwd=sbatch_path.parent,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         # Check for errors

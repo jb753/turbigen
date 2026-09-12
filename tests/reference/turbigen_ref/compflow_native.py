@@ -144,7 +144,7 @@ def from_Ma(var, Ma_in, ga_in, validate=False):
 
     # Throw an error if we don't recognise the requested variable
     else:
-        raise ValueError("Invalid quantity requested: {}.".format(var))
+        raise ValueError(f"Invalid quantity requested: {var}.")
 
 
 # Quantity derivatives as explict functions of Ma
@@ -236,7 +236,7 @@ def derivative_from_Ma(var, Ma_in, ga_in, validate=False):
 
     # Throw an error if we don't recognise the requested variable
     else:
-        raise ValueError("Invalid quantity requested: {}.".format(var))
+        raise ValueError(f"Invalid quantity requested: {var}.")
 
 
 # Generate closure functions

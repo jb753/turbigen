@@ -6,10 +6,9 @@ endpoints, ``ml.inlet`` and ``ml.outlet``, which are the first and last
 stations in streamwise order regardless of how many rows lie between them.
 """
 
+import ember.fluid
 import numpy as np
 import pytest
-
-import ember.fluid
 import turbigen_ref.meanline_new
 
 GAMMA = 1.4

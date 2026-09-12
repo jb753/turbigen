@@ -41,9 +41,12 @@ level:
      - a mean-line row, a :class:`~turbigen.annulus.RowAnnulus`
      - :class:`Row` --- a :class:`Blade`, ``n_blade``, ``tip_gap``
 
-:class:`~turbigen.camber.Quadratic` and :class:`~turbigen.camber.Bernstein` are
-the built-in camber shapes and :class:`~turbigen.thickness.Taylor` the built-in
-thickness distribution; all are documented in the sections below.
+:class:`~turbigen.camber.Quadratic`, :class:`~turbigen.camber.Bernstein`,
+:class:`~turbigen.camber.ClarkCamber` and
+:class:`~turbigen.camber.CircularArc` are the built-in camber shapes. :class:`~turbigen.thickness.Taylor` is the built-in
+thickness distribution and :class:`~turbigen.thickness.ClarkThickness` the
+two-sided alternative, which gives each surface its own thickness about the
+same camber line. All are documented in the sections below.
 
 The number of blades comes from a :class:`BladeCount` rule on the design:
 
@@ -68,12 +71,13 @@ Design process
 a row :class:`BladeDesign` and, once the mean line and annulus are built, passes
 them :meth:`~BladeDesign.design` which:
 
-#. Calculates leading and trailing edge metal angles for each section as the local
-   relative flow angle plus the recambers :attr:`~SectionDesign.dchi_LE` and
-   :attr:`~SectionDesign.dchi_TE`. The flow angle is read from the mean-line row,
-   with the swirl varied radially using the
-   :attr:`~BladeDesign.vortex_exponent` onto the section span fraction;
-#. Camber and thickness designs, the metal angles, the stacking
+#. Collects the recambers :attr:`~SectionDesign.dchi_LE` and
+   :attr:`~SectionDesign.dchi_TE` of each section, together with the mean-line
+   row and the :attr:`~BladeDesign.vortex_exponent` the local flow angle they
+   are measured off is evaluated with. The two are added when a metal angle is
+   asked for rather than here, so a blade defined by one section still varies
+   over the span with the vortex distribution;
+#. Camber and thickness designs, the recambers, the stacking
    position and the blade rotation are collected across all sections into a
    :class:`Blade` for each row;
 #. The :class:`BladeCount` rule reads the finished :class:`Blade` to fix the
@@ -86,15 +90,42 @@ Evaluating a blade
 
 A :class:`Blade` is addressed by span fraction, and every geometric quantity is
 read off it with an ``evaluate_`` method that interpolates the section designs
-field by field, extrapolating beyond the end sections.
+field by field, extrapolating beyond the end sections. The metal angles are the
+exception: only the recamber is interpolated, and the flow angle it is added to
+is evaluated at the span fraction asked for.
 :meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
-of the two surfaces; :meth:`~Blade.evaluate_chi` the leading and trailing metal
+of the two surfaces and :meth:`~Blade.evaluate_camber` those of the camber line
+they are hung off; :meth:`~Blade.evaluate_chi` the leading and trailing metal
 angles; and :meth:`~Blade.evaluate_chord` and
-:meth:`~Blade.evaluate_surface_length` the meridional chord and the longer
-surface length used by the count rules.
+:meth:`~Blade.evaluate_surface_length` the meridional chord and the surface
+lengths the count rules read.
+
+**A surface is not simply the camber line offset perpendicular to itself.** A
+perpendicular offset hands back the camber's own curvature amplified by
+``1 / (1 - t kappa)`` on the concave side, so a thick section on a tightly
+curved camber line over-curves that surface --- a spike in surface curvature,
+and a kink in the Mach distribution over it --- well before the offset folds at
+``t kappa = 1``. So the pressure surface's offset direction, and only that
+one's, is rotated toward the circumferential direction over mid-chord, by a
+fraction :attr:`~SectionDesign.fac_tangential` peaking there and vanishing at
+both ends, which takes the amplification out of the middle while leaving the
+trailing edge exactly and the nose radius within a per cent of what they were.
+
+**Every pair of surfaces is ordered suction first**, and this is the only place
+that is said: :meth:`~Blade.evaluate_section`,
+:meth:`~Blade.evaluate_arc_length`, :meth:`~Blade.evaluate_surface_length` and
+:meth:`~turbigen.thickness.ThicknessDesign.thick_both` all index the same way,
+so a thickness coefficient and the surface it shapes line up without a
+permutation anywhere between them. Which side that is comes from the camber
+alone --- the suction surface is the convex one, so it is the upper surface when
+the metal angle falls from leading to trailing edge --- and is decided once per
+blade rather than per span fraction; see :attr:`~Blade._suction_is_upper`. The
+angular ordering still exists and the mesher wants it, but it is a fact a
+consumer reads off `theta` itself rather than one this module promises.
 """
 
 import dataclasses
+import functools
 import logging
 from typing import ClassVar
 
@@ -103,6 +134,7 @@ import numpy as np
 import turbigen.util
 from turbigen.annulus import RowAnnulus
 from turbigen.camber import CamberDesign, CamberLine
+from turbigen.meanline import MeanLine
 from turbigen.node import Node
 from turbigen.thickness import ThicknessDesign
 
@@ -136,6 +168,49 @@ def _Alpha_rel(mean_line_row, spf, vortex_exponent):
     return np.degrees(np.arctan(Vt_rel / ml.Vm))
 
 
+def _is_sequence(value):
+    """Whether a design parameter is several numbers rather than one."""
+    return isinstance(value, (tuple, list, np.ndarray))
+
+
+FLAT_TURNING = 1.0
+"""Turning below which a blade has no suction side to speak of [deg].
+
+The suction surface is read off the sign of the turning, which says nothing at
+all when there is no turning: a blade this flat has two surfaces that are alike
+to within the noise on the comparison, and their order is then arbitrary rather
+than wrong. Falling back to the angular ordering makes it arbitrary *and
+stable*, which is what a design being iterated needs --- a shape that swapped
+its two thickness distributions between iterations would be a different blade
+each time, not a converging one.
+"""
+
+
+def to_xrrt(xrt):
+    """Return `xrt` with its angle turned into a distance.
+
+    `evaluate_section` reports angular position as `theta`, in radians, which
+    `arc_length` cannot make a distance out of on its own; multiplying by
+    radius turns the third row into `r * theta`, a physical length like the
+    other two, so a curve reported this way measures true arc length rather
+    than something angle dominates near the axis and distance dominates far
+    from it.
+    """
+    return np.stack((*xrt[:2], xrt[1] * xrt[2]))
+
+
+def _nested(values):
+    """Return an array as nested tuples, however many dimensions it has.
+
+    What puts an interpolated parameter back into the shape its field was
+    declared with. Tuples rather than arrays, because a :class:`Node` holds
+    its sequences as tuples so that it stays hashable.
+    """
+    if values.ndim == 0:
+        return float(values)
+    return tuple(_nested(value) for value in values)
+
+
 def _interpolate(nodes, spf_sections, spf):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
@@ -154,11 +229,53 @@ def _interpolate(nodes, spf_sections, spf):
     if len(nodes) == 1 or not names:
         return nodes[0]
 
-    values = np.array([[getattr(node, name) for name in names] for node in nodes])
+    # A parameter is not always one number: a Bernstein camber line carries a
+    # tuple of coefficients and a two-sided thickness one row of them per
+    # surface, so each section is flattened to one row and the shapes are put
+    # back afterwards. Sections whose parameters are different shapes describe
+    # different designs and cannot be blended, which is the same objection as
+    # blending a quadratic into a quartic.
+    rows = [
+        [np.atleast_1d(np.asarray(getattr(node, name), dtype=float)) for name in names]
+        for node in nodes
+    ]
+    shapes = [part.shape for part in rows[0]]
+    for row in rows:
+        if [part.shape for part in row] != shapes:
+            raise ValueError(
+                f"Every section must carry the same shape of parameters to "
+                f"interpolate between, and a {cls.__name__} section has "
+                f"{[part.shape for part in row]} against {shapes}."
+            )
+    widths = [int(np.prod(shape)) for shape in shapes]
+
+    # A parameter every section agrees on is carried over untouched rather than
+    # interpolated onto itself. Same number either way, but it keeps whatever
+    # type the field was declared with -- a Bernstein order is an integer, and
+    # a float in its place is not a valid one.
+    values = np.array([np.concatenate([part.ravel() for part in row]) for row in rows])
     interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
+    interpolated = np.asarray(interpolated).reshape(-1)
+
+    moved = {}
+    for name, shape, width, start in zip(
+        names, shapes, widths, np.cumsum([0, *widths])
+    ):
+        original = getattr(nodes[0], name)
+        # `array_equal` rather than `==`, which on an array field would give an
+        # array of answers and no way to reduce it.
+        if all(np.array_equal(getattr(node, name), original) for node in nodes):
+            moved[name] = original
+            continue
+
+        chunk = interpolated[start : start + width]
+        if width > 1 or _is_sequence(original):
+            moved[name] = type(original)(_nested(chunk.reshape(shape)))
+        else:
+            moved[name] = chunk[0]
 
     try:
-        return cls(**dict(zip(names, interpolated.reshape(-1))))
+        return cls(**moved)
     except ValueError as err:
         # Interpolating between two valid sections can land on an invalid one,
         # since nothing constrains the path between them. Say where, or the
@@ -189,6 +306,85 @@ class SectionDesign(Node):
 
     thickness: ThicknessDesign
     """Thickness distribution, normalised by meridional chord."""
+
+    fac_tangential: float = 0.7
+    """Fraction of the pressure surface's thickness applied circumferentially
+    at mid-chord [--].
+
+    **Why a surface is not simply offset perpendicular to the camber line.** A
+    perpendicular offset returns the camber's curvature amplified by
+    ``1 / (1 - t kappa)`` on the concave side, so a thick section on a tightly
+    curved camber over-curves that surface long before the offset actually
+    folds at ``t kappa = 1``: a spike in surface curvature, and a kink in the
+    Mach distribution over it. Rotating part of the offset toward the
+    circumferential direction takes the amplification away, since an offset
+    with no meridional component cannot fold at all.
+
+    **The pressure surface only.** The amplification is a concave-side effect:
+    on the convex side the same offset *divides* the camber curvature by
+    ``1 + t kappa``, so there is nothing there to take out. Rotating that side
+    as well buys nothing and costs something, because the rotation carries a
+    term in its own gradient --- see below --- which on the convex side arrives
+    with nothing to cancel it. Measured on a turbine section, blending both
+    sides raises the suction surface's total variation of curvature by half
+    again at ``fac_tangential = 1`` and leaves the pressure surface exactly
+    where blending one side put it.
+
+    **Weighted to the middle, which is where the problem is.** The
+    circumferential fraction is ``fac_tangential * (4 m (1 - m))^1.2``, a bump
+    that peaks at mid-chord --- so this number is read there --- and whose
+    value and slope vanish at both ends. That is what keeps the two ends
+    close to what they were: the nose is a circle of
+    :attr:`~turbigen.thickness.ClarkThickness.R_LE` to within a per cent and
+    the trailing edge stands perpendicular to the camber line exactly, so a
+    wedge angle and a trailing edge thickness still mean what they say. Clark
+    (2019) blends the other way round, from normal at the leading edge to
+    tangential at the trailing edge, which on a staggered blade cuts the
+    trailing edge off at constant axial position.
+
+    **Why that exponent and not a squarer bump.** What the offset actually
+    sees is the turning rate of its own direction, ``(1 - w) chi' - w' chi``,
+    of which the second term is nobody's intention: it is largest where the
+    weight's slope and the camber angle are both large, which is the shoulders
+    of the bump, and it puts back as a curvature reversal a good part of what
+    the first term takes out. Since the weight runs from zero up to
+    ``fac_tangential`` and back, its total variation is fixed and only its
+    slope can be spread out. A softer exponent spreads it further, and the
+    total variation of pressure surface curvature falls with it --- 19.1 at
+    the square this replaces, 15.5 at 1.5, 13.0 at 1.2, 11.8 at 1.05, against
+    74.0 for the plain perpendicular offset and 11.4 for the suction surface,
+    which nothing rotates and which is as smooth as a surface on this section
+    gets. A flat-topped weight does the opposite, steepening the shoulders and
+    undoing the whole thing.
+
+    **And what stops it going softer still.** Below an exponent of two the
+    weight's *second* derivative is unbounded at both ends, so the nose is no
+    longer exactly the circle it asks for: measured against the perpendicular
+    offset, the fitted leading edge radius grows by 0.02 per cent at an
+    exponent of two, 0.17 at 1.5, 0.65 at 1.2 and 1.3 at 1.05. The curvature
+    itself still converges --- it is its gradient that does not --- so this is
+    a small and local price rather than a different nose, and 1.2 is where
+    paying it stops being worth what it buys.
+
+    **Where the weight peaks is not a lever.** Skewing the bump forward, so
+    that it peaks nearer the leading edge where the camber curvature does,
+    buys nothing: holding the leading edge exponent fixed and sliding the peak
+    from mid-chord to 0.42 moves the total variation by under two per cent,
+    and sliding it further forward, or aft at all, makes it worse. Only the
+    exponent matters, and it matters through the two shoulders equally.
+
+    Zero is the plain perpendicular offset, and one applies the pressure
+    surface's thickness circumferentially at mid-chord.
+    """
+
+    def __post_init__(self):
+        if not 0.0 <= self.fac_tangential <= 1.0:
+            raise ValueError(
+                f"A thickness is applied somewhere between perpendicular to "
+                f"the camber line and circumferentially, so fac_tangential "
+                f"must satisfy 0 <= fac_tangential <= 1, got "
+                f"{self.fac_tangential}."
+            )
 
 
 class BladeCount(Node):
@@ -286,18 +482,13 @@ class BladeDesign(Node):
         """
         spf = np.array([section.spf for section in self.sections])
 
-        # Recamber onto the local flow angles. This happens once, here: a metal
-        # angle is a function of the design and the mean line together, so it
-        # is a property of the result and never of the design.
+        # The recambers are carried as they were configured, not resolved into
+        # metal angles here: the flow angle they are measured from varies over
+        # the span, and a blade defined by one section would freeze it at that
+        # section's own span if the sum were taken now.
         dchi = np.array(
             [(section.dchi_LE, section.dchi_TE) for section in self.sections]
         )
-        chi = _Alpha_rel(mean_line_row, spf, self.vortex_exponent) + dchi
-        if np.any(np.abs(chi) > 90.0):
-            raise ValueError(f"Cannot set a blade angle over 90 degrees, chi={chi}.")
-        if np.any(np.abs(chi) > 80.0):
-            logger.warning(f"WARNING: high blade angles may hinder meshing, chi={chi}")
-        tanchi = turbigen.util.tand(chi)
 
         # Tip clearance in metres. Whichever reference length was used, the
         # other terms are zero, which __post_init__ has already ensured.
@@ -309,12 +500,26 @@ class BladeDesign(Node):
         blade = Blade(
             row_annulus=row_annulus,
             spf=spf,
-            tanchi=tanchi,
+            dchi=dchi,
+            fac_tangential=np.array(
+                [section.fac_tangential for section in self.sections]
+            ),
+            mean_line_row=mean_line_row,
+            vortex_exponent=self.vortex_exponent,
             cambers=tuple(section.camber for section in self.sections),
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
             theta_offset=self.theta_offset,
         )
+
+        # Read at the endwalls, which is where the vortex distribution is most
+        # extreme and so where an unbuildable angle appears first. A blade with
+        # sections short of the endwalls has none of its own there, so this is
+        # a statement about what will be meshed rather than about what was
+        # written in the config file.
+        chi = np.array([blade.evaluate_chi(0.0), blade.evaluate_chi(1.0)])
+        if np.any(np.abs(chi) > 80.0):
+            logger.warning(f"WARNING: high blade angles may hinder meshing, chi={chi}")
 
         # The shape is complete before anything is counted, which is what lets
         # the count be read off it rather than written onto it. A circulation
@@ -341,7 +546,17 @@ class FixedCount(BladeCount):
 
 
 class Circulation(BladeCount):
-    """Set the number of blades using a circulation coefficient."""
+    """Set the number of blades using a circulation coefficient.
+
+    The circulation coefficient is the blade circulation over an ideal one
+    that carries the exit velocity along the whole suction surface and
+    stagnated flow along the pressure surface, Coull and Hodson (2013) eqn.
+    (21). A typical value is 0.7; the loss correlations it was fitted against
+    begin to extrapolate above about 0.8.
+
+    Coull and Hodson write it for an axial row. What is evaluated here is the
+    generalisation to a changing radius, Kaufmann (2020) eqn. (F.6).
+    """
 
     type: ClassVar[str] = "Co"
 
@@ -362,7 +577,10 @@ class Circulation(BladeCount):
         cosAlpha_rel = turbigen.util.cosd(ml.Alpha_rel)
 
         # Circulation from the change in angular momentum, split into the part
-        # due to a change in radius and the part due to a change in swirl
+        # due to a change in radius and the part due to a change in swirl. For
+        # an irrotational inlet flow the two together are the circulation bound
+        # to the blade, the centrifugal term being the relative eddy that a
+        # changing radius sweeps out; on an axial row it drops out entirely.
         centrifugal = (1.0 - RR**2.0) * (tanAlpha[0] - tanAlpha_rel[0])
         tangential = tanAlpha_rel[0] - RR * VmR * tanAlpha_rel[1]
 
@@ -372,11 +590,15 @@ class Circulation(BladeCount):
         total_out = cosAlpha_rel[1] / VmR * (centrifugal + tangential)
         total = total_in if A_flow[1] / A_flow[0] > 1.0 else total_out
 
-        # Pitch that delivers the requested circulation coefficient
-        pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)
+        # Pitch that delivers the requested circulation coefficient, written
+        # against the suction surface: it is the one the boundary layer the
+        # coefficient is about actually runs along.
+        pitch = np.abs(self.Co / total) * blade.evaluate_surface_length(self.spf)[0]
 
-        r_ref = np.mean(ml.r)
-        return int(np.round(2.0 * np.pi * r_ref / pitch).item())
+        # The coefficient is written in the inlet pitch, so it is the inlet
+        # radius that turns a pitch into a count; the count being the same all
+        # the way through then fixes the pitch at every other radius.
+        return int(np.round(2.0 * np.pi * ml.r[0] / pitch).item())
 
 
 class DiffusionFactor(BladeCount):
@@ -429,8 +651,31 @@ class Blade:
     spf: np.ndarray = dataclasses.field(repr=False)
     """Span fraction of each section, shape (n_section,)."""
 
-    tanchi: np.ndarray = dataclasses.field(repr=False)
-    """Tangent of the metal angles, shape (n_section, 2)."""
+    dchi: np.ndarray = dataclasses.field(repr=False)
+    """Recamber of each section off the local flow angle, shape (n_section, 2) [deg]."""
+
+    fac_tangential: np.ndarray = dataclasses.field(repr=False)
+    """Circumferential fraction of each section's pressure surface offset,
+    shape (n_section,) [--].
+
+    Carried per section and interpolated where a section is asked for, as
+    :attr:`dchi` is, so a blade can be shaped one way at the hub and another at
+    the casing. See :attr:`SectionDesign.fac_tangential` for what the number
+    means.
+    """
+
+    mean_line_row: MeanLine = dataclasses.field(repr=False)
+    """Inlet and outlet stations of this row, shape (2,).
+
+    Held so that the metal angle can be resolved wherever the blade is asked
+    for one. A metal angle is a function of the design and the mean line
+    together, and the flow angle half of that sum varies over the span --- on a
+    rotor by tens of degrees --- so it cannot be reduced to a per-section
+    number without losing the variation between the sections and beyond them.
+    """
+
+    vortex_exponent: float = dataclasses.field(repr=False)
+    """Spanwise swirl distribution the flow angle is evaluated with [--]."""
 
     cambers: tuple = dataclasses.field(repr=False)
     """Camber shape of each section."""
@@ -458,22 +703,208 @@ class Blade:
         camber = _interpolate(self.cambers, self.spf, spf)
         thickness = _interpolate(self.thicknesses, self.spf, spf)
 
+        return CamberLine(
+            camber, *turbigen.util.tand(self.evaluate_chi(spf))
+        ), thickness
+
+    def evaluate_chi(self, spf):
+        """Return the metal angles at the leading and trailing edges [deg].
+
+        The recamber the sections declare, applied to the flow angle *here*:
+        the vortex distribution is evaluated at `spf` rather than at the
+        sections, so a blade defined by one section still turns with the span
+        it stands in.
+        """
         if self.n_section == 1:
-            tanchi = self.tanchi[0]
+            dchi = self.dchi[0]
         else:
-            tanchi = turbigen.util.interp1d_linear_extrap(self.spf, self.tanchi)(
+            dchi = turbigen.util.interp1d_linear_extrap(self.spf, self.dchi)(
                 spf
             ).reshape(-1)
 
-        return CamberLine(camber, *tanchi), thickness
+        chi = _Alpha_rel(self.mean_line_row, [spf], self.vortex_exponent)[0] + dchi
 
-    def evaluate_chi(self, spf):
-        """Return the metal angles at the leading and trailing edges [deg]."""
-        camber, _ = self._get_cam_thick(spf)
-        return camber.chi((0.0, 1.0))
+        # Checked here rather than at design time, because here is where a span
+        # fraction is named: the sections do not bound the angles any more, and
+        # a blade is meshed and cut at spans no section was written at.
+        if np.any(np.abs(chi) > 90.0):
+            raise ValueError(
+                f"Cannot set a blade angle over 90 degrees, chi={chi} at spf={spf}."
+            )
+
+        return chi
+
+    def evaluate_fac_tangential(self, spf):
+        """Return the circumferential offset fraction at span fraction `spf` [--].
+
+        Interpolated between the sections and extrapolated beyond the end ones,
+        as :meth:`evaluate_chi` interpolates the recamber it is written beside.
+        See :attr:`SectionDesign.fac_tangential` for what it does.
+        """
+        if self.n_section == 1:
+            return float(self.fac_tangential[0])
+
+        return float(
+            turbigen.util.interp1d_linear_extrap(self.spf, self.fac_tangential)(spf)
+        )
+
+    @functools.cached_property
+    def _suction_is_upper(self):
+        """Whether the higher-angle surface is the suction one.
+
+        The suction surface is the convex side of the camber line --- it wraps
+        a larger radius than the concave side for the same turning, and so
+        sweeps a longer path --- and a camber line whose metal angle *falls*
+        from leading to trailing edge is convex on the upper side. Read off the
+        angles rather than by comparing the two surface lengths, because the
+        assignment is needed in :meth:`_section_layout` *before* either surface
+        exists: it is what tells the thickness distribution's two answers which
+        side of the camber line to sit on. Checked against the length
+        comparison on both rows of the example machine, which turn opposite
+        ways, at three span fractions apiece; the two agree everywhere.
+
+        Decided once for the whole blade rather than at each span fraction,
+        from mid-span. The metal angles vary over the span, so a lightly loaded
+        blade with enough twist could have the sign differ between its hub and
+        its tip, and a per-section answer would then put the same thickness
+        coefficient on physically opposite surfaces at different heights. That
+        is a mis-shaped blade rather than a mis-read measurement, which is a
+        much worse thing to be uncertain about than the one span the answer is
+        taken from.
+
+        Cached because it is read for every section of every evaluation, and
+        safe to cache because a blade is frozen --- see
+        `RowAnnulus._xr_stations`, which caches for the same reason and by the
+        same mechanism.
+        """
+        chi_LE, chi_TE = self.evaluate_chi(0.5)
+        if abs(chi_TE - chi_LE) < FLAT_TURNING:
+            return True
+        return chi_TE < chi_LE
+
+    def _section_layout(self, spf, m):
+        """Return the camber line at `spf`, and what hangs the surfaces off it.
+
+        The one place the camber line is built, so :meth:`evaluate_camber` and
+        :meth:`evaluate_section` cannot answer with different curves, and the
+        one place a surface is put on a side of it, so nothing downstream has
+        to know which side that was.
+
+        Stops just short of a section: what it returns is the camber line and
+        each surface's displacement from it, still in the normalised frame.
+        Lifting those displacements onto the surfaces' own radii is
+        :meth:`evaluate_section`'s job and the only thing it adds.
+
+        Returns
+        -------
+        xrt : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of the camber line.
+        m_LTE : ndarray, shape (2, n)
+            Normalised meridional position of each surface, on the
+            leading-to-trailing edge scale of the aerofoil. Suction first.
+        Dy : ndarray, shape (2, n)
+            Thickness offset of each surface from the camber line,
+            normalised by meridional chord. Suction first, and normal to the
+            camber line on that surface only --- see
+            :attr:`SectionDesign.fac_tangential` for what rotates the other.
+        chord : float
+            Meridional length of the camber line [m].
+
+        """
+        camber, thickness = self._get_cam_thick(spf)
+
+        dydm = camber.dydm(m)
+        chi = np.arctan(dydm)
+
+        # Each surface carries its own thickness, the same number twice unless
+        # the distribution says otherwise, so the two are offset independently
+        # rather than one being the other reflected in the camber line.
+        t_s, t_p = thickness.thick_both(m)
+
+        # Offsets for the thickness. The camber tangent is (cos chi, sin chi),
+        # so its normal is (-sin chi, cos chi), which points to the
+        # higher-angle side; `sgn` turns it round to point at the suction
+        # surface instead. That one sign is the whole of the suction-first
+        # convention -- there is no pair to reorder, only a direction to
+        # choose, and it is chosen once per blade.
+        #
+        # The pressure surface's offset is that normal rotated toward the
+        # circumferential direction by `w chi`, which is the same as offsetting
+        # perpendicular to a camber line of angle `(1 - w) chi`. A unit
+        # direction at every station, so the offset distance is `t` whatever
+        # `w` does, and the plain perpendicular offset exactly where `w` is
+        # zero -- which is both ends. The suction surface is never rotated: it
+        # is the convex side, where the offset shortens the camber curvature
+        # rather than amplifying it. See `SectionDesign.fac_tangential` for why
+        # the middle of the other side is rotated at all.
+        w = self.evaluate_fac_tangential(spf) * (4.0 * m * (1.0 - m)) ** 1.2
+        chi_p = (1.0 - w) * chi
+
+        sgn = 1.0 if self._suction_is_upper else -1.0
+        Dm_s = -sgn * t_s * np.sin(chi)
+        Dm_p = sgn * t_p * np.sin(chi_p)
+        Dy_s = sgn * t_s * np.cos(chi)
+        Dy_p = -sgn * t_p * np.cos(chi_p)
+
+        ms = m + Dm_s
+        mp = m + Dm_p
+
+        # The surfaces overhang the camber line at the ends, so rescale onto
+        # the row so that the aerofoil, not its camber line, spans leading to
+        # trailing edge.
+        mcam_LE = np.min((ms.min(), mp.min()))
+        mcam_TE = np.max((ms.max(), mp.max()))
+        mcam_ptp = mcam_TE - mcam_LE
+        m_LTE = np.stack(((ms - mcam_LE) / mcam_ptp, (mp - mcam_LE) / mcam_ptp))
+        mcam = (m - mcam_LE) / mcam_ptp
+        chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
+
+        # Meridional coordinates of the camber line
+        xr = self.row_annulus.evaluate_xr(mcam, spf)
+
+        # Project the camber angle onto the annulus
+        theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
+
+        # Stack the sections, then rotate the whole blade
+        theta -= np.interp(self.m_stack, mcam, theta)
+        theta += self.theta_offset
+
+        return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), chord
+
+    def evaluate_camber(self, spf, nchord=10000, m=None):
+        """Return coordinates of the camber line at `spf`.
+
+        The curve the surfaces are hung off, not a curve fitted back out of
+        them: it is shorter than the aerofoil, because the thickness
+        overhangs it at both ends, and it is only the mean of the two
+        surfaces while they carry the same thickness as each other. Taking
+        the mean is therefore an approximation that a thickness free to
+        differ side to side would make a worse one; asking the blade is
+        exact either way.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to take the camber line at.
+        nchord : int
+            Number of chordwise points, if `m` is not given.
+        m : array_like, optional
+            Normalised chordwise positions along the camber line, as
+            :meth:`evaluate_section` takes.
+
+        Returns
+        -------
+        xrt : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of the camber line.
+
+        """
+        if m is None:
+            m = turbigen.util.cluster_cosine(nchord)
+
+        return self._section_layout(spf, m)[0]
 
     def evaluate_section(self, spf, nchord=10000, m=None):
-        """Return coordinates of the upper and lower surfaces at `spf`.
+        """Return coordinates of the two surfaces at `spf`, suction first.
 
         Parameters
         ----------
@@ -486,74 +917,88 @@ class Blade:
 
         Returns
         -------
-        xrt_upper, xrt_lower : ndarray, shape (3, n)
-            Axial, radial and angular coordinates of each surface. The upper
-            surface is at the higher angular coordinate.
+        xrt_suction, xrt_pressure : ndarray, shape (3, n)
+            Axial, radial and angular coordinates of each surface. Suction
+            first, as every pair in this module is --- see the module
+            docstring, and :attr:`_suction_is_upper` for how that is decided.
+            Which of them carries the higher angular coordinate is a question
+            for whoever needs it, answered by looking at the third row.
 
         """
-        camber, thickness = self._get_cam_thick(spf)
-
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
 
-        dydm = camber.dydm(m)
-        chi = np.arctan(dydm)
-        tau = thickness.thick(m)
+        xrt, m_LTE, Dy, chord = self._section_layout(spf, m)
+        xr, theta = xrt[:2], xrt[2]
 
-        # Offsets for thickness perpendicular to the camber line
-        Dm = -tau * np.sin(chi)
-        Dy = tau * np.cos(chi)
+        surfaces = []
+        for m_surf, Dy_surf in zip(m_LTE, Dy):
+            # Meridional coordinates of this surface
+            xr_surf = self.row_annulus.evaluate_xr(m_surf, spf)
 
-        mu = m + Dm
-        ml = m - Dm
+            # Angular offset to it, at the mean radius between the camber line
+            # and the surface
+            dt = Dy_surf * chord / xr[1]
+            drt = dt * 0.5 * (xr[1] + xr_surf[1])
 
-        # The surfaces overhang the camber line at the ends, so rescale onto
-        # the row so that the aerofoil, not its camber line, spans leading to
-        # trailing edge.
-        mcam_LE = np.min((mu.min(), ml.min()))
-        mcam_TE = np.max((mu.max(), ml.max()))
-        mcam_ptp = mcam_TE - mcam_LE
-        mu_LTE = (mu - mcam_LE) / mcam_ptp
-        ml_LTE = (ml - mcam_LE) / mcam_ptp
-        mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
+            surfaces.append(
+                np.stack((*xr_surf, (theta * xr_surf[1] + drt) / xr_surf[1]))
+            )
 
-        # Meridional coordinates of the upper, lower and camber lines
-        xru = self.row_annulus.evaluate_xr(mu_LTE, spf)
-        xrl = self.row_annulus.evaluate_xr(ml_LTE, spf)
-        xr = self.row_annulus.evaluate_xr(mcam, spf)
-
-        # Project the camber angle onto the annulus
-        theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
-
-        # Stack the sections, then rotate the whole blade
-        theta -= np.interp(self.m_stack, mcam, theta)
-        theta += self.theta_offset
-
-        # Angular offsets to the surfaces, at the mean radius between the
-        # camber line and each surface
-        dtu = Dy * chord / xr[1]
-        drtu = dtu * 0.5 * (xr[1] + xru[1])
-        drtl = -dtu * 0.5 * (xr[1] + xrl[1])
-
-        xrtu = np.stack((*xru, (theta * xru[1] + drtu) / xru[1]))
-        xrtl = np.stack((*xrl, (theta * xrl[1] + drtl) / xrl[1]))
-
-        return xrtu, xrtl
+        return tuple(surfaces)
 
     def evaluate_surface_length(self, spf):
-        """Return the length of the longer of the two surfaces at `spf` [m]."""
-        xrtu, xrtl = self.evaluate_section(spf)
-        lengths = [
-            turbigen.util.arc_length(np.stack((*xrt[:2], xrt[1] * xrt[2])))
-            for xrt in (xrtu, xrtl)
-        ]
-        return np.maximum(*lengths)
+        """Return the length of each surface at `spf`, suction first [m], shape (2,)."""
+        return self.evaluate_arc_length(spf)[1][:, -1]
 
     def evaluate_chord(self, spf):
         """Return the meridional length of the camber line at `spf` [m]."""
         xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
         return turbigen.util.arc_length(xr)
+
+    def evaluate_arc_length(self, spf, m=None, nchord=10000):
+        """Return arc length along each surface, as a function of `m`, at `spf`.
+
+        Zero at the leading edge, where the two surfaces meet, and suction
+        first as everything in this module is. The suction surface is the
+        longer of the two --- it is the convex side of the camber, which wraps
+        a larger radius than the concave one for the same turning and so
+        sweeps a longer path --- but that is a consequence of the ordering
+        rather than what sets it; see :attr:`_suction_is_upper`, which reads
+        the camber angles because the assignment is needed before either
+        surface exists.
+
+        Parameters
+        ----------
+        spf : float
+            Span fraction to evaluate at.
+        m : array_like, optional
+            Normalised chordwise positions to evaluate at, as
+            :meth:`evaluate_section` takes. Defaults to `nchord` clustered
+            points, dense enough that inverting the curve back from a
+            measured arc length lands within microns of the true `m`.
+        nchord : int
+            Chordwise points, if `m` is not given.
+
+        Returns
+        -------
+        m : ndarray, shape (n,)
+            The chordwise positions evaluated at.
+        s : ndarray, shape (2, n)
+            Cumulative arc length along each surface to every one of them,
+            suction first [m].
+
+        """
+        if m is None:
+            m = turbigen.util.cluster_cosine(nchord)
+
+        s = np.stack(
+            [
+                turbigen.util.cum_arc_length(to_xrrt(xrt))
+                for xrt in self.evaluate_section(spf, m=m)
+            ]
+        )
+        return m, s
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

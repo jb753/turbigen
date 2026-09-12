@@ -14,12 +14,12 @@ cuts below, is not, for the same reason the mesher dropped its seven.
 
 import logging
 
+import ember.block_util
+import ember.cut
+import ember.patch
 import numpy as np
 import scipy.interpolate
 from scipy.integrate import cumulative_trapezoid
-
-import ember.block_util
-import ember.patch
 
 logger = logging.getLogger("turbigen")
 
@@ -41,6 +41,11 @@ def tand(x):
 def cosd(x):
     """Return the cosine of an angle in degrees."""
     return np.cos(np.radians(x))
+
+
+def sind(x):
+    """Return the sine of an angle in degrees."""
+    return np.sin(np.radians(x))
 
 
 #
@@ -124,14 +129,27 @@ def resample(x, f, mult=None):
     if np.isclose(f, 1.0):
         return x
 
-    xnorm = (x - x[0]) / np.ptp(x)
-    npts = len(x)
-    npts_new = np.round((npts - 1) * f).astype(int) + 1
+    npts_new = np.round((len(x) - 1) * f).astype(int) + 1
     if mult:
         npts_new = int(mult * np.ceil((npts_new - 1) / mult)) + 1
 
-    inorm = np.linspace(0.0, 1.0, npts)
-    inorm_new = np.linspace(0.0, 1.0, npts_new)
+    return resample_to(x, npts_new)
+
+
+def resample_to(x, npts):
+    """Return `x` with exactly `npts` points, keeping its relative spacing.
+
+    What :func:`resample` does once it has decided on a count, and what a
+    caller wants when the count is decided elsewhere --- a mesh direction
+    assembled from two pieces, where one has to make up whatever the other
+    leaves before the total can be halved by a multigrid level.
+    """
+    if npts == len(x):
+        return x
+
+    xnorm = (x - x[0]) / np.ptp(x)
+    inorm = np.linspace(0.0, 1.0, len(x))
+    inorm_new = np.linspace(0.0, 1.0, npts)
     xnew = np.interp(inorm_new, inorm, xnorm) * np.ptp(x) + x[0]
 
     assert np.allclose(xnew[(0, -1),], x[(0, -1),])
@@ -319,6 +337,17 @@ def get_i_stag(block, xrt_LE=None):
         makes the answer robust on a blade whose two sides are of very
         different length.
 
+    Returns
+    -------
+    i_stag : ndarray of int, shape (nj,)
+        Streamwise index of the stagnation point on each j-line.
+    found : ndarray of bool, shape (nj,)
+        Whether that index is a pressure maximum inside the search window, as
+        opposed to the best guess made when there was none. A guess is good
+        enough to normalise a surface distance by, and not good enough to
+        measure an incidence from, so the two answers are told apart here
+        rather than left for each caller to decide it got a real one.
+
     """
     if block.ndim != 2:
         raise ValueError(
@@ -347,8 +376,24 @@ def get_i_stag(block, xrt_LE=None):
     else:
         z_nose = np.zeros((nj,))
 
-    half_window = 0.05
+    # How far either side of the nose to look, in normalised arc length, where
+    # the whole section perimeter spans two. The stagnation point sweeps round
+    # the nose with incidence, and a window that cuts into that sweep does not
+    # merely lose the answer: the pressure near a stagnation point is flat, so
+    # a truncated window keeps the flank of the plateau and reports its ripples
+    # as the peak. Measured on a stator at three degrees of incidence, the
+    # maxima spanned 0.13 in `z` within 0.09 per cent of each other in
+    # pressure, and windows of 0.08 and 0.10 selected flanks that read as -29
+    # and -17 degrees against the +4 the plateau's own peak gives.
+    #
+    # So it is set wide enough to hold the whole plateau and let the highest
+    # pressure in it decide, rather than tight enough to be sure of excluding
+    # the far side of the blade. The far side is far: on the same section its
+    # nearest maximum sat at 0.27 and the other row's at 0.87, against the
+    # 0.15 here.
+    half_window = 0.15
     i_stag = np.full((nj,), 0, dtype=int)
+    found = np.full((nj,), False)
 
     for j in range(nj):
         z_centre = z_nose[j]
@@ -360,6 +405,7 @@ def get_i_stag(block, xrt_LE=None):
 
         if len(crossings):
             i_stag[j] = crossings[np.argmax(P[crossings, j])]
+            found[j] = True
         elif xrt_LE is not None:
             # No maximum in the window: take the highest pressure in it rather
             # than the highest anywhere, which on an asymmetric blade would
@@ -369,7 +415,143 @@ def get_i_stag(block, xrt_LE=None):
         else:
             i_stag[j] = np.argmax(P[:, j])
 
-    return i_stag
+    return i_stag, found
+
+
+def get_zeta_stag(block, i_stag):
+    """Return the arc length of the stagnation point on each j-line.
+
+    The index :func:`get_i_stag` returns, refined to somewhere between nodes by
+    fitting a parabola through the rotary pressure at ``i - 1``, ``i`` and
+    ``i + 1`` against arc length and taking its vertex.
+
+    Worth the three lines because the integer index is a step function of the
+    flow: a leading edge that moves by less than a cell returns the same node,
+    and an incidence measured from it does not change at all until it jumps by
+    a whole cell. Differencing that gives a slope of either zero or nonsense,
+    which is exactly what a secant update cannot be fed.
+
+    Parameters
+    ----------
+    block : ember.block.Block
+        The two-dimensional cut `i_stag` was found on.
+    i_stag : array_like of int, shape (nj,)
+        Streamwise index of the stagnation point on each j-line.
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        Arc length of the stagnation point, in the units of :func:`get_zeta`.
+
+    """
+    P = block.P_rot
+    zeta = get_zeta(block)
+    ni, nj = block.shape[:2]
+
+    # Clamped so that the neighbours either side exist, which costs the sub-cell
+    # correction on a stagnation point sitting on the very end of the cut --- a
+    # blade whose flow attaches at the trailing edge has larger problems.
+    i = np.clip(np.asarray(i_stag), 1, ni - 2)
+    j = np.arange(nj)
+
+    z0, z1, z2 = zeta[i - 1, j], zeta[i, j], zeta[i + 1, j]
+    p0, p1, p2 = P[i - 1, j], P[i, j], P[i + 1, j]
+
+    # Divided differences, so that a mesh clustered towards the nose is fitted
+    # on its own spacing rather than on an assumed uniform one.
+    d01 = z1 - z0
+    d12 = z2 - z1
+    s01 = (p1 - p0) / d01
+    s12 = (p2 - p1) / d12
+    curvature = (s12 - s01) / (z2 - z0)
+
+    # Vertex of the Newton form `p0 + s01 (z - z0) + c (z - z0)(z - z1)`, whose
+    # derivative vanishes at `(z0 + z1) / 2 - s01 / (2 c)`, written relative to
+    # `z1`. Taking it as `-(s01 + s12) / (4 c)` instead --- the midpoint slope
+    # over twice the curvature --- is the same number only when the two
+    # spacings match, and is out by `(d01 - d12) / 4` when they do not: a
+    # sub-cell bias that moves as the stagnation point crosses cells, which is
+    # exactly what refining between nodes is here to remove.
+    #
+    # A triple that is not concave down has no vertex to find, which happens
+    # only where `get_i_stag` did not find a maximum either. Left on the node.
+    delta = np.where(curvature >= 0.0, 0.0, -0.5 * d01 - s01 / (2.0 * curvature))
+
+    # Kept inside the bracket the three points span: a nearly flat parabola
+    # puts its vertex arbitrarily far away, and the answer is known to lie
+    # between the neighbours of a maximum.
+    return z1 + np.clip(delta, -d01, d12)
+
+
+def surface_normal_yaw(cut, zeta, e_m, chi):
+    """Return the yaw of the inward surface normal at arc length `zeta` [deg].
+
+    Yaw in the ``(m, r * theta)`` frame a metal angle is quoted in, so it can be
+    differenced against one directly. At a stagnation point this is the angle
+    the flow arrives at: the dividing streamline meets the wall along its
+    normal, which is what lets an incidence be read off the blade rather than
+    off a plane somewhere upstream.
+
+    Parameters
+    ----------
+    cut : ember.block.Block
+        A two-dimensional cut of a blade surface.
+    zeta : array_like, shape (nj,)
+        Arc length along each j-line to take the normal at, as
+        :func:`get_zeta_stag` returns.
+    e_m : array_like, shape (2,)
+        Unit vector in ``(x, r)`` pointing downstream along the meridional
+        direction. What tells a coordinate difference along the surface from a
+        signed meridional distance --- arc length alone cannot, being positive
+        on both sides of a leading edge.
+    chi : float
+        Metal angle at the leading edge [deg]. Orients the normal: of the two
+        normals to a surface, the one wanted here points into the blade, and at
+        the nose that is the camber direction. Which of the two the arithmetic
+        produces depends on the direction the cut runs in, and that is a
+        property of the mesh --- `cut_blade_sides` joins the ``k = 0`` and
+        ``k = -1`` faces in an order the H-mesh and O-mesh branches do not
+        share --- so it is settled from the geometry rather than assumed.
+
+    Returns
+    -------
+    ndarray, shape (nj,)
+        Yaw of the inward normal on each j-line [deg].
+
+    """
+    zeta_line = get_zeta(cut)
+    nj = cut.shape[1]
+
+    # Central differences, so the tangent is centred on the node its arc length
+    # is, and the interpolation below is between neighbours rather than across
+    # a half-cell offset.
+    dx = np.gradient(cut.x, axis=0)
+    dr = np.gradient(cut.r, axis=0)
+    dt = np.gradient(cut.t, axis=0)
+
+    # Into the frame the angle is quoted in. The tangential step is an angle
+    # until a radius makes it a distance.
+    t_m = dx * e_m[0] + dr * e_m[1]
+    t_rt = cut.r * dt
+
+    zeta = np.atleast_1d(zeta)
+    yaw = np.zeros((nj,))
+    for j in range(nj):
+        # The components are interpolated, not the angle they make: an angle
+        # would have to be unwrapped first, and the point of a sub-cell arc
+        # length is that what comes out of it moves smoothly.
+        m_j = np.interp(zeta[j], zeta_line[:, j], t_m[:, j])
+        rt_j = np.interp(zeta[j], zeta_line[:, j], t_rt[:, j])
+
+        # The tangent turned a quarter turn is a normal; which of the two it is
+        # follows from the sign.
+        n_m, n_rt = -rt_j, m_j
+        if n_m * cosd(chi) + n_rt * sind(chi) < 0.0:
+            n_m, n_rt = -n_m, -n_rt
+
+        yaw[j] = np.degrees(np.arctan2(n_rt, n_m))
+
+    return yaw
 
 
 def _wall_Omega(block, const_dim, at_end):
@@ -439,6 +621,64 @@ def _wall_Omega(block, const_dim, at_end):
     return speeds.pop()
 
 
+def row_blocks(grid, i_row):
+    """Split one row into the block flow passes through and the rest.
+
+    A row is a list of blocks and nothing says which is which, but the
+    difference matters to everything that reads a surface off a mesh: the
+    passage is where the blade, the endwalls and the edges are, and a tip
+    block meshing a clearance is a piece hanging inside it.
+
+    Told apart by where the row's flow enters and leaves, which is a property
+    of the topology rather than of one mesher: a passage carries an inlet, a
+    mixing plane or an outlet on each of its `i` faces, and a block filling a
+    clearance carries none. Preferred to counting blocks, reading a label, or
+    taking the one with the most spanwise points --- the first stops being
+    true the moment a row has two blocks, and the other two are a convention
+    of whichever mesher wrote them.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    i_row : int
+        Which row, in the order `grid.rows` gives them.
+
+    Returns
+    -------
+    tuple
+        The passage block, and a list of the other blocks in the row.
+
+    Raises
+    ------
+    ValueError
+        If the row does not have exactly one passage block, which no mesh
+        turbigen builds produces and which nothing downstream could read.
+
+    """
+    row = grid.rows[i_row]
+    throughflow = (
+        ember.patch.InletPatch,
+        ember.patch.OutletPatch,
+        ember.patch.MixingPatch,
+    )
+    passage = [
+        block
+        for block in row
+        if any(
+            isinstance(patch, throughflow) and patch.const_dim == 0
+            for patch in block.patches
+        )
+    ]
+    if len(passage) != 1:
+        raise ValueError(
+            f"Row {i_row} has {len(passage)} blocks the flow passes through, "
+            f"and a row is read through exactly one. Blocks: "
+            f"{[block.label for block in row]}."
+        )
+    return passage[0], [block for block in row if block is not passage[0]]
+
+
 def cut_blade_sides(grid, offset=0):
     """Return the pressure and suction side cuts of each row.
 
@@ -476,40 +716,42 @@ def cut_blade_sides(grid, offset=0):
         ite = None
         j_gap = None
 
-        for block in grid.rows[i]:
-            for patch in block.patches.periodic:
-                # A pitchwise periodic spans the span and sits on one k face,
-                # and the pair of them stop at the two edges of the blade.
-                lim = patch.ijk_lim_abs
-                spans_j = np.allclose(lim[1], [0, block.shape[1] - 1])
-                spans_i = np.allclose(lim[0], [0, block.shape[0] - 1])
-                at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
-                    lim[2, 0] == 0 or lim[2, 0] == block.shape[2] - 1
-                )
+        # The passage alone: a block filling a clearance carries k-face
+        # periodics of its own, spanning all of its own i and j, and they say
+        # nothing about where the blade begins or ends.
+        passage, _ = row_blocks(grid, i)
 
-                if spans_j and at_k_boundary and not spans_i:
-                    if lim[0, 0] == 0:
-                        ile = lim[0, 1]
-                    elif lim[0, 1] == block.shape[0] - 1:
-                        ite = lim[0, 0]
+        for patch in passage.patches.periodic:
+            # A pitchwise periodic spans the span and sits on one k face,
+            # and the pair of them stop at the two edges of the blade.
+            lim = patch.ijk_lim_abs
+            spans_j = np.allclose(lim[1], [0, passage.shape[1] - 1])
+            spans_i = np.allclose(lim[0], [0, passage.shape[0] - 1])
+            at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
+                lim[2, 0] == 0 or lim[2, 0] == passage.shape[2] - 1
+            )
 
-                # The one k-face periodic that does not span the span is the
-                # clearance gap: it runs along the blade rather than upstream
-                # or downstream of it. Both sides carry one with the same
-                # limits, so finding it twice is finding the same gap.
-                if at_k_boundary and not spans_j and not spans_i:
-                    j_gap = lim[1]
+            if spans_j and at_k_boundary and not spans_i:
+                if lim[0, 0] == 0:
+                    ile = lim[0, 1]
+                elif lim[0, 1] == passage.shape[0] - 1:
+                    ite = lim[0, 0]
 
-            # A cusp or an inviscid patch on a k face marks the trailing edge
-            # where the periodics do not.
-            for patch in block.patches:
-                if (
-                    isinstance(
-                        patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch)
-                    )
-                    and patch.const_dim == 2
-                ):
-                    ite = patch.ijk_lim_abs[0, 0]
+            # The one k-face periodic that does not span the span is the
+            # clearance gap: it runs along the blade rather than upstream
+            # or downstream of it. Both sides carry one with the same
+            # limits, so finding it twice is finding the same gap.
+            if at_k_boundary and not spans_j and not spans_i:
+                j_gap = lim[1]
+
+        # A cusp or an inviscid patch on a k face marks the trailing edge
+        # where the periodics do not.
+        for patch in passage.patches:
+            if (
+                isinstance(patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch))
+                and patch.const_dim == 2
+            ):
+                ite = patch.ijk_lim_abs[0, 0]
 
         if not ile or not ite:
             cuts.append(None)
@@ -517,7 +759,7 @@ def cut_blade_sides(grid, offset=0):
 
         # Where the gap sits comes from its own patch rather than being assumed
         # to be at the casing, so a hub clearance would trim the other end.
-        nj = grid[i].shape[1]
+        nj = passage.shape[1]
         if j_gap is None:
             jst, jen = 0, nj
         elif j_gap[1] == nj - 1:
@@ -526,13 +768,13 @@ def cut_blade_sides(grid, offset=0):
             jst, jen = j_gap[1], nj
 
         sides = [
-            grid[i][ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
-            grid[i][ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
+            passage[ile : (ite + 1), jst:jen, 0 + offset].copy(keep_patches=False),
+            passage[ile : (ite + 1), jst:jen, -1 - offset].copy(keep_patches=False),
         ]
         # The patches described the block these were sliced out of, not the
         # slices. Read the wall speed off the block first, the patches that say
         # it being among those about to go.
-        speeds = [_wall_Omega(grid[i], 2, at_end) for at_end in (False, True)]
+        speeds = [_wall_Omega(passage, 2, at_end) for at_end in (False, True)]
         for side, Omega in zip(sides, speeds):
             side.patches.clear()
             side.set_Omega(Omega)
@@ -540,12 +782,29 @@ def cut_blade_sides(grid, offset=0):
         # Bring the two sides into one pitch, so a surface made of them is
         # continuous rather than a pitch apart.
         upper = np.argmax([side.t.max() for side in sides])
-        sides[upper].set_t(sides[upper].t - grid[i].pitch)
+        sides[upper].set_t(sides[upper].t - passage.pitch)
 
         cuts.append(sides)
 
     assert len(cuts) == len(grid.rows)
     return cuts
+
+
+def _is_h_mesh(grid):
+    """Whether a grid's rows are H passages rather than O blocks.
+
+    Read off the first row's passage: an H passage carries the pitchwise
+    periodics that bound it either side of the blade, on a k face and spanning
+    the span. An O block has no such face, being wrapped around the blade
+    instead.
+    """
+    passage, _ = row_blocks(grid, 0)
+    return any(
+        patch.const_dim == 2
+        and np.allclose(patch.ijk_lim_abs[1], [0, passage.shape[1] - 1])
+        and not np.allclose(patch.ijk_lim_abs[0], [0, passage.shape[0] - 1])
+        for patch in passage.patches.periodic
+    )
 
 
 def cut_blade_surfs(grid, offset=0):
@@ -570,10 +829,13 @@ def cut_blade_surfs(grid, offset=0):
     """
     surfs = []
 
-    # One block per row is an H-mesh, where the blade is two k faces to be
-    # joined; anything else is an O-mesh, where a block already wraps the
-    # blade and only has to be recognised.
-    if len(grid) == len(grid.rows):
+    # An H-mesh passage is bounded pitchwise by the blade, so its blade is two
+    # k faces to be joined; an O-mesh has a block already wrapping the blade,
+    # which only has to be recognised. Told apart by asking the passage of the
+    # first row which it is, rather than by counting blocks against rows --- a
+    # count that says H-mesh only while no row has a second block, and a
+    # gridded tip clearance is one.
+    if _is_h_mesh(grid):
         for sides in cut_blade_sides(grid, offset):
             if sides is None:
                 surfs.append(None)
@@ -618,10 +880,17 @@ def cut_endwalls(grid, offset=0):
 
     The endwalls need none of the edge-hunting `cut_blade_sides` does. The
     mesher's convention is that ``j`` runs hub to casing, so an endwall is one
-    whole ``j`` face of a block and there is nothing to search for. A tip gap
-    does not change that: the gap is periodic patches on the ``k`` faces of the
-    same block, and the casing over it is still a wall, only one turning at its
-    own speed rather than the blade's.
+    whole ``j`` face of a block and there is nothing to search for.
+
+    How many faces that is depends on how the row is built. A pinched tip gap
+    leaves one block spanning the whole annulus, so the two endwalls are two
+    faces. A gridded one puts a block in the clearance, and the casing is then
+    the passage's ``j = -1`` outside the blade and the tip block's inside it
+    --- two pieces that tile it exactly once between them. So this returns a
+    list per row of whatever length the mesh implies, and a caller that wants
+    the casing wants all of the pieces rather than one of them. What is never
+    returned is the tip block's ``j = 0``: that face is the tip of the blade,
+    not an endwall, and :func:`cut_blade_tips` has it.
 
     Each cut carries the speed its own wall turns at rather than the frame its
     block was solved in, so `ho_rel` on it is the stagnation enthalpy the
@@ -639,23 +908,452 @@ def cut_endwalls(grid, offset=0):
     Returns
     -------
     list
-        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise,
-        hub then casing for each block in the row. Never `None`: unlike a
-        blade surface, an endwall is always there.
+        One list of 2D ``(ni, nk)`` cuts per row, streamwise by pitchwise, of
+        no fixed length. Never `None`: unlike a blade surface, an endwall is
+        always there.
 
     """
     walls = []
 
-    for row_block in grid.rows:
+    for i_row in range(len(grid.rows)):
+        passage, others = row_blocks(grid, i_row)
         walls.append([])
-        for block in row_block:
-            for at_end, j in ((False, 0 + offset), (True, -1 - offset)):
-                # Copied, not sliced: a view shares its block's angular
-                # velocity, so setting the wall speed on one would re-time the
-                # grid itself.
-                wall = block[:, j, :].copy(keep_patches=False)
-                wall.patches.clear()
-                wall.set_Omega(_wall_Omega(block, 1, at_end))
-                walls[-1].append(wall)
+
+        faces = [(passage, False), (passage, True)]
+        # A block inside the row reaches the casing and not the hub, its lower
+        # face being the tip of the blade it sits on.
+        faces += [(block, True) for block in others]
+
+        for block, at_end in faces:
+            j = -1 - offset if at_end else offset
+            # Copied, not sliced: a view shares its block's angular velocity,
+            # so setting the wall speed on one would re-time the grid itself.
+            wall = block[:, j, :].copy(keep_patches=False)
+            wall.patches.clear()
+            wall.set_Omega(_wall_Omega(block, 1, at_end))
+            walls[-1].append(wall)
 
     return walls
+
+
+def cut_blade_tips(grid, offset=0):
+    """Return the tip face of each row's blade, where the mesh has one.
+
+    The face closing the top of a blade against its clearance, which exists as
+    a surface only where the clearance is gridded: pinched, the blade is
+    brought to nothing over the gap and there is no tip to cut. It is blade
+    rather than endwall --- it turns with the row, and the loss on it belongs
+    with the blade's --- but it is not part of a surface distribution either,
+    running chordwise by pitchwise where a blade surface runs chordwise by
+    spanwise. So it is its own cut and its own bucket.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    offset : int
+        Cells away from the surface, for reading just off the wall.
+
+    Returns
+    -------
+    list
+        One list of 2D ``(ni, nk)`` cuts per row, empty for a row whose
+        clearance is pinched or which has none.
+
+    """
+    tips = []
+
+    for i_row in range(len(grid.rows)):
+        _, others = row_blocks(grid, i_row)
+        tips.append([])
+        for block in others:
+            tip = block[:, offset, :].copy(keep_patches=False)
+            tip.patches.clear()
+            tip.set_Omega(_wall_Omega(block, 1, False))
+            tips[-1].append(tip)
+
+    return tips
+
+
+#
+# SURFACE DISTRIBUTIONS
+#
+# What a blade does to the flow, read off the blade. A surface plot draws
+# these, and the iterator that shapes a camber line to a target measures with
+# them, which is exactly why they live here rather than in either: the two must
+# agree about what the distribution *is*, and the surest way to make them agree
+# is to have one of them.
+#
+
+TINY_RISE = 1e-9
+"""Rise across a segment, over the Mach scale, below which a peak is rounding."""
+
+N_SPAN_CUT = 101
+"""Meridional points defining the span curve a blade surface is cut along.
+
+Only the placement of the cut surface depends on this: `structured_meridional`
+walks the grid's own gridlines, so the resolution of what comes back is the
+mesh's, not the curve's.
+"""
+
+
+SCAN_STRIDE = 8
+"""Stride the band scan subsamples a block by, in `i` and `k`.
+
+Only to find which `j` the cut passes through, so it can be coarse: the band
+is padded by :data:`BAND_PAD` afterwards, and a cut surface that moved by more
+than that between neighbouring gridlines would be a mesh nobody could contour
+anyway. Eight cuts the scan to a sixty-fourth of a full pass.
+"""
+
+BAND_PAD = 2
+"""Extra `j` nodes kept either side of the band the scan found.
+
+The scan reads every eighth gridline, so the sign change it misses is on one
+of the seven between --- which can only be a node or two further out, the
+surface being continuous. Two is that, doubled.
+"""
+
+
+def cut_band(block, xr_cut, stride=SCAN_STRIDE, pad=BAND_PAD):
+    """Return the `j` slice of `block` a meridional cut can pass through.
+
+    The whole of `j` where the scan cannot bracket it, so this only ever
+    narrows the work when it is sure --- an empty cut where a block should
+    have been drawn is a wrong picture, and being slow is not.
+
+    A constant-span cut crosses a narrow band of `j` and nothing else, so
+    everything outside that band can only ever be one sign of distance from
+    it. Found by subsampling, which is what makes this worth doing: the scan
+    costs a sixty-fourth of what it saves.
+    """
+    whole = slice(0, block.shape[1])
+
+    d = ember.cut.signed_distance(
+        xr_cut, np.asarray(block.xrt[::stride, :, ::stride, :2])
+    )
+
+    # Between neighbouring `j` rather than within one, the surface passing
+    # between two gridlines. Non-positive, not negative: a cut that lands
+    # exactly on a gridline leaves a distance of exactly zero there, whose
+    # sign multiplies to zero and never to less than it -- and a mesh with an
+    # odd number of spanwise nodes puts a gridline on mid-span every time.
+    signs = np.sign(d)
+    crossed = np.where((signs[:, :-1, :] * signs[:, 1:, :] <= 0.0).any(axis=(0, 2)))[0]
+    if not len(crossed):
+        return whole
+
+    return slice(
+        max(int(crossed.min()) - pad, 0),
+        min(int(crossed.max()) + 1 + pad, block.shape[1]),
+    )
+
+
+def cut_spanwise(grid, xr_cut):
+    """Return the constant-span cut of `grid` along the curve `xr_cut`.
+
+    :func:`ember.cut.structured_meridional`, with each block cropped to the
+    band the cut actually crosses first. The distance it evaluates costs one
+    multiply per grid node per curve segment, and a whole machine against a
+    curve spanning it is hundreds of millions of them --- almost all on nodes
+    nowhere near the cut.
+
+    Exact, not an approximation: the cut surface lies inside the band by
+    construction, so the nodes dropped could only have contributed distances
+    of one sign. Measured on a two-row machine of 1.1M nodes it returns the
+    same cut, node for node, in a thirteenth of the time.
+
+    Blocks the cut misses are left whole and handed on, for
+    `structured_meridional` to leave out as it always has: deciding that here
+    would be a second opinion on what intersects, and the two could disagree.
+    """
+    slabs = [block[:, cut_band(block, xr_cut), :] for block in grid]
+
+    return ember.cut.structured_meridional(slabs, xr_cut)
+
+
+def cut_section(surface, annulus, i_row, spf, n=N_SPAN_CUT):
+    """Return a constant-span cut of one blade surface.
+
+    The three lines of index arithmetic that place a row on the annulus, and
+    the padding `ember.cut.structured_meridional` insists on, written once.
+
+    Parameters
+    ----------
+    surface : ember.block.Block
+        One row's blade surface, as `cut_blade_surfs` returns it: a 2D
+        ``(ni, nj)`` cut running trailing edge, round the nose, and back.
+    annulus : Annulus
+        The annulus the row sits in.
+    i_row : int
+        Index of the row, which is what places it on the meridional curve.
+    spf : float
+        Span fraction to cut at.
+    n : int
+        Meridional points along the cut.
+
+    Returns
+    -------
+    cut : ember.block.Block or None
+        A 2D cut of `surface` at `spf`, or None where the blade has no surface
+        there --- above a clearance gap, the span being trimmed off as flow
+        rather than wall.
+    xr : ndarray
+        The ``(2, n)`` meridional curve the cut was taken along, which is the
+        only thing that knows which way is downstream: arc length around a
+        nose is positive on both sides of it and cannot say.
+
+    """
+    # Rows occupy the odd meridional segments of the annulus, so row i runs
+    # from the leading edge at 2i+1 to the trailing edge at 2i+2.
+    m = np.linspace(2 * i_row + 1, 2 * i_row + 2, n)
+    xr = annulus.evaluate_xr(m, spf)
+
+    # `structured_meridional` walks the second axis of a three-axis block, so
+    # the surface is padded to put its spanwise axis there and the cut comes
+    # back one wide.
+    cut = ember.cut.structured_meridional(surface[:, :, None], xr.T)
+
+    return (cut[0] if len(cut) else None), xr
+
+
+def isentropic_mach(cut, s_ref):
+    """Return isentropic Mach number over `cut`, referred to entropy `s_ref`.
+
+    Expanded isentropically from the row inlet entropy to the local static
+    pressure, so the result reads as the Mach number the blade would see with
+    no loss upstream of the point in question.
+    """
+    # Set in place on a copy, not chained off one: ember's setters return
+    # nothing, whatever the idiom in the package this is ported from suggests.
+    isen = cut.copy()
+    isen.set_P_s(cut.P, s_ref)
+
+    # Stagnation enthalpy and sound speed are taken as surface means so that
+    # only local static pressure drives the distribution. Left local, radial
+    # redistribution of ho_rel and variation in a split the two surfaces apart
+    # at the trailing edge, where they must meet.
+    ho = np.mean(cut.ho_rel)
+    a_ref = np.mean(isen.a)
+
+    # Shift so the lowest point sits exactly at rest rather than slightly
+    # below it, which the discrete field can otherwise produce.
+    hs = isen.h
+    hs = hs + np.min(ho - hs)
+
+    return np.sqrt(2.0 * np.maximum(ho - hs, 0.0)) / a_ref
+
+
+def normalise_surface_distance(cut, mas, xrt_nose):
+    """Return surface distance in [-1, 1], zero at the stagnation point.
+
+    Each surface is normalised by its own length, so both reach one at the
+    trailing edge however asymmetric the blade is. The sign says which surface
+    a point is on, following the direction the cut loops in; a plot folds it
+    away and `suction_side` reads it, but normalising the two sides has to
+    happen while they are still told apart.
+    """
+    zeta = get_zeta(cut)[:, 0]
+
+    # The geometric nose anchors the search window, which is more robust on
+    # blades with a strongly asymmetric leading edge than the arc-length
+    # midpoint the function falls back on. Whether it found a real maximum does
+    # not matter here: the origin moves onto the lowest Mach number below in
+    # any case, and this only has to land on the right side of the blade.
+    i_stag = int(get_i_stag(cut, xrt_LE=xrt_nose)[0][0])
+    zeta = zeta - zeta[i_stag]
+
+    # Then move the origin onto the lowest Mach number, which is the
+    # stagnation point of the flow rather than of the grid.
+    zeta = zeta - zeta[np.argmin(mas)]
+
+    upper = zeta.max()
+    lower = np.abs(zeta.min())
+    return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
+
+
+def suction_side(zeta, mas):
+    """Return the suction-surface half of a signed surface distribution.
+
+    `normalise_surface_distance` signs `zeta` by which surface a point sits on,
+    so the two are told apart by that sign alone. Which of them is the suction
+    surface is whichever carries the higher Mach number --- there is nothing
+    else it could be, and reading it off the flow rather than off a mesh
+    convention means it stays right for a compressor, a turbine and a blade at
+    enough incidence to have swapped its surfaces over.
+
+    Returns
+    -------
+    zeta, mas : ndarray
+        Unsigned surface distance, increasing from the stagnation point, and
+        the Mach number along it.
+
+    """
+    zeta = np.asarray(zeta, dtype=float)
+    mas = np.asarray(mas, dtype=float)
+
+    upper, lower = zeta > 0.0, zeta < 0.0
+    if not upper.any() or not lower.any():
+        # One-sided already, or degenerate. Folding it is all there is to do.
+        order = np.argsort(np.abs(zeta))
+        return np.abs(zeta)[order], mas[order]
+
+    sign = 1.0 if np.nanmax(mas[upper]) >= np.nanmax(mas[lower]) else -1.0
+    keep = np.sign(zeta) == sign
+
+    order = np.argsort(np.abs(zeta[keep]))
+    return np.abs(zeta[keep])[order], mas[keep][order]
+
+
+def fit_two_lines(zeta, ma, n_scan=101):
+    """Fit two straight lines meeting at a peak.
+
+    One line rising to a breakpoint and another falling from it, constrained to
+    meet there::
+
+        ma = a + b * min(zeta - zp, 0) + c * max(zeta - zp, 0)
+
+    At a fixed breakpoint `zp` that is linear in ``(a, b, c)``, so the whole fit
+    is a scan over `zp` with a least-squares solve inside it. No optimiser, no
+    initial guess, and no local minimum to fall into.
+
+    Fitting lines rather than reading a maximum is what makes the peak robust.
+    It comes back as the intersection of two lines each fitted over many
+    points, where an argmax on a flat-topped distribution --- which is a whole
+    design style, not a pathology --- wanders onto whichever node the noise
+    happened to lift.
+
+    Parameters
+    ----------
+    zeta : array_like
+        Surface distance, increasing.
+    ma : array_like
+        Isentropic Mach number at each `zeta`.
+    n_scan : int
+        Breakpoints to try, before refining between the neighbours of the best.
+
+    Returns
+    -------
+    zeta_peak, ma_peak, slope_front, slope_aft : float
+        The breakpoint, the value there, and the slope of each line. All NaN
+        when the data carry no peak: a distribution that only rises, or only
+        falls, has no interior maximum to place, and saying so is better than
+        returning the least-bad breakpoint of a curve that has none.
+
+    """
+    zeta = np.asarray(zeta, dtype=float)
+    ma = np.asarray(ma, dtype=float)
+
+    # Three coefficients, so four points is the fewest that constrains them.
+    if zeta.size < 4:
+        return np.nan, np.nan, np.nan, np.nan
+
+    def fit(zp):
+        """Return the sum of squares and coefficients at breakpoint `zp`."""
+        d = zeta - zp
+        basis = np.stack(
+            [np.ones_like(d), np.minimum(d, 0.0), np.maximum(d, 0.0)], axis=1
+        )
+        coefficients, *_ = np.linalg.lstsq(basis, ma, rcond=None)
+        return float(np.sum((basis @ coefficients - ma) ** 2)), coefficients
+
+    # Interior breakpoints only: one at either end degenerates to a single
+    # line, which fits a monotonic curve perfectly and says nothing about a
+    # peak. The margin is what keeps the scan away from that.
+    lo, hi = float(zeta[0]), float(zeta[-1])
+    margin = 0.05 * (hi - lo)
+    coarse = np.linspace(lo + margin, hi - margin, n_scan)
+    i_best = int(np.argmin([fit(zp)[0] for zp in coarse]))
+
+    # Refined between the neighbours of the best, where the true minimum lies.
+    step = coarse[1] - coarse[0]
+    fine = np.linspace(
+        max(coarse[i_best] - step, lo + margin),
+        min(coarse[i_best] + step, hi - margin),
+        n_scan,
+    )
+    zeta_peak = float(fine[int(np.argmin([fit(zp)[0] for zp in fine]))])
+
+    _, (ma_peak, slope_front, slope_aft) = fit(zeta_peak)
+
+    # A peak is a rise and then a fall, and both have to be real rather than
+    # rounding: on an exactly flat distribution the two slopes come back at
+    # 1e-16 of either sign, which passes a bare comparison against zero and
+    # would hand back whichever breakpoint the scan happened to stop on.
+    # Measured as the rise and the fall themselves, against the size of the
+    # data, so the test means the same thing whatever the Mach number is.
+    scale = np.max(np.abs(ma)) or 1.0
+    rise = slope_front * (zeta_peak - lo)
+    fall = -slope_aft * (hi - zeta_peak)
+    if not (rise > TINY_RISE * scale and fall > TINY_RISE * scale):
+        return np.nan, np.nan, np.nan, np.nan
+
+    return zeta_peak, float(ma_peak), float(slope_front), float(slope_aft)
+
+
+def loading_from_distribution(zeta, mas, zeta_front=0.1, zeta_TE=0.98):
+    """Reduce a suction-surface distribution to the shape numbers on it.
+
+    Reads the curve and nothing else. What the peak and front Mach numbers are
+    then divided *by* is a statement about the duty, which needs a mean line
+    and so belongs to the caller --- see
+    :func:`turbigen.iterate.measure_loading`.
+
+    Parameters
+    ----------
+    zeta : array_like
+        Unsigned surface distance, increasing, as `suction_side` returns.
+    mas : array_like
+        Isentropic Mach number along it.
+    zeta_front : float
+        Front anchor, and the start of the window fitted. Below it the
+        distribution belongs to the leading edge rather than to the camber.
+    zeta_TE : float
+        End of the window, short of the trailing edge where the two surfaces
+        must meet.
+
+    Returns
+    -------
+    zeta_peak : float
+        Surface fraction of the peak.
+    ma_peak : float
+        Isentropic Mach number there, from the fitted apex.
+    ma_front : float
+        Isentropic Mach number at `zeta_front`, off the fitted front line.
+
+    All NaN when there is no peak in the window to measure.
+
+    """
+    zeta = np.asarray(zeta, dtype=float)
+    mas = np.asarray(mas, dtype=float)
+
+    window = (zeta >= zeta_front) & (zeta <= zeta_TE)
+    if window.sum() < 4:
+        return np.nan, np.nan, np.nan
+
+    zeta_peak, ma_peak, slope_front, _ = fit_two_lines(zeta[window], mas[window])
+    if not np.isfinite(zeta_peak) or not ma_peak:
+        return np.nan, np.nan, np.nan
+
+    return zeta_peak, ma_peak, float(ma_peak + slope_front * (zeta_front - zeta_peak))
+
+
+def loading_target(zeta, zeta_front, zeta_peak, ma_front, ma_peak, ma_TE):
+    """Return the piecewise-linear target distribution, for drawing.
+
+    Two straight lines: the front anchor up to the peak, and the peak down to
+    the trailing edge. Absolute Mach numbers rather than the ratios a target is
+    written in, because those ratios are normalised against a duty this knows
+    nothing about --- the caller converts, and this just draws three points.
+
+    NaN ahead of `zeta_front`, so a plot of it stops where the window does
+    rather than drawing a claim over the leading edge that nobody made.
+    """
+    zeta = np.asarray(zeta, dtype=float)
+
+    front = ma_front + (ma_peak - ma_front) * (zeta - zeta_front) / (
+        zeta_peak - zeta_front
+    )
+    aft = ma_peak + (ma_TE - ma_peak) * (zeta - zeta_peak) / (1.0 - zeta_peak)
+
+    return np.where(zeta < zeta_front, np.nan, np.where(zeta < zeta_peak, front, aft))

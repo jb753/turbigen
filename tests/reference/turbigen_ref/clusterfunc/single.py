@@ -1,10 +1,11 @@
 """Distribute points with single-sided clustering."""
 
 import numpy as np
+from scipy.optimize import root_scalar
+
+import turbigen_ref.clusterfunc.check
 import turbigen_ref.clusterfunc.util
 from turbigen_ref.clusterfunc.exceptions import ClusteringException
-from scipy.optimize import root_scalar
-import turbigen_ref.clusterfunc.check
 
 
 def fixed(dmin, dmax, ERmax, N, x0=0.0, x1=1.0, check=True):

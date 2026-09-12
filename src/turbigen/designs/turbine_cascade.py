@@ -2,9 +2,9 @@
 
 from typing import ClassVar
 
+import ember.set_iterative
 import numpy as np
 
-import ember.set_iterative
 from turbigen.design import MeanLineDesign
 
 

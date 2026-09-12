@@ -9,28 +9,35 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pytest  # noqa: E402
-import yaml  # noqa: E402
+import ember.util
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+import yaml
+from test_blade import build
+from test_cli import ITERATE_CASE, RUN_CASE
+from test_mesh import MESH, TIP
 
-import ember.util  # noqa: E402
-from test_blade import build  # noqa: E402
-from test_cli import RUN_CASE  # noqa: E402
-from test_mesh import MESH, TIP  # noqa: E402
-from turbigen import (  # noqa: E402
+from turbigen import (
     AnnulusPlot,
+    CamberPlot,
     Config,
     ContourPlot,
     ConvergencePlot,
     Post,
     Result,
     SectionsPlot,
+    SpanwisePlot,
     SurfacePlot,
     VelocityTrianglePlot,
     cli,
+    iterate,
+    loading,
+    mixout,
     post,
+    util,
 )
+from turbigen.post import IterationPlot
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -90,12 +97,19 @@ def meshed(bladed):
 
 @pytest.fixture(scope="module")
 def solved(bladed):
-    """The same case marched briefly, for a real field and a real history."""
+    """The same case marched briefly, for a real field and a real history.
+
+    Mixed out as well, because a spanwise profile is referred to the mean line
+    the grid achieved and there is no reason for a second march to get one.
+    """
     _, machine, grid = cli.prepare(bladed)
     history = bladed.solver.solve(grid)
+    actual, Ds_mix = mixout.mean_line(grid, machine)
     return Result(
         machine=machine,
         grid=grid,
+        actual=actual,
+        Ds_mix=Ds_mix,
         converged=True,
         history=history,
     )
@@ -103,10 +117,16 @@ def solved(bladed):
 
 @pytest.fixture(scope="module")
 def gapped():
-    """A two-row case whose second row has a tip gap, meshed but not marched."""
+    """A two-row case whose second row has a tip gap, meshed but not marched.
+
+    The only rotating machine here, and the only one with more than one row,
+    so it is what says a profile is referred to the right row and scaled by a
+    blade speed.
+    """
     config = build(blades=TIP, mesh=MESH)
     _, machine, grid = cli.prepare(config)
-    return config, Result(machine=machine, grid=grid)
+    actual, Ds_mix = mixout.mean_line(grid, machine)
+    return config, Result(machine=machine, grid=grid, actual=actual, Ds_mix=Ds_mix)
 
 
 @pytest.fixture(autouse=True)
@@ -413,6 +433,229 @@ def test_surface_plot_draws_a_physical_distribution(bladed, solved):
     assert 0.3 < mas.max() < 1.5
 
 
+@pytest.fixture(scope="module")
+def machine(bladed):
+    """The bladed case designed, for the duty a loading target is scaled by."""
+    return bladed.design()
+
+
+def _shaped(config, fac_peak=None, **kwargs):
+    """Return `config` with a Bernstein camber and a loading iterator on row 0.
+
+    `fac_peak` adds the `peak_Ma` member beside it, which is what states the
+    level of the target; without one the overlay draws the shape at the height
+    the blade reached.
+    """
+    import dataclasses
+
+    from turbigen import camber, iterate
+
+    blade = config.blades[0]
+    sections = tuple(
+        dataclasses.replace(section, camber=camber.Bernstein(order=2, coeff=(0.0,)))
+        for section in blade.sections
+    )
+    correct = [iterate.LoadingDistribution(**kwargs)]
+    if fac_peak is not None:
+        correct.append(
+            iterate.PeakMach(
+                i_row=kwargs.get("i_row", 0),
+                spf=kwargs.get("spf", 0.5),
+                fac_peak=fac_peak,
+            )
+        )
+    return dataclasses.replace(
+        config,
+        blades=(dataclasses.replace(blade, sections=sections),),
+        iterate=iterate.Iteration(correct=tuple(correct)),
+    )
+
+
+def _peaked(n=200):
+    """A signed distribution with a real peak on the positive surface.
+
+    The fixtures here are a cascade that accelerates all the way to its
+    trailing edge, which has no interior peak to aim at --- see
+    `test_surface_plot_overlays_nothing_without_a_peak`. Drawing the overlay
+    needs one, so this supplies it. Its peak is at 0.55 and its trailing edge
+    value 1.0, both read back by the tests below.
+    """
+    zeta = np.linspace(-1.0, 1.0, n)
+    suction = util.loading_target(np.abs(zeta), 0.2, 0.55, 0.700, 1.3, 1.0)
+    # The pressure side rises to meet the suction side at the trailing edge,
+    # as the two surfaces must, so the mean of the cut's two ends is 1.0.
+    pressure = 0.2 + 0.8 * np.abs(zeta)
+    return zeta, np.where(zeta > 0.0, np.nan_to_num(suction, nan=0.2), pressure)
+
+
+def _ma_front(config, machine, ma_TE=1.0):
+    """Return the Mach number the configured target implies at `zeta_front`."""
+    from turbigen.loading import mach_ratio
+
+    iterator = config.iterate.correct[0]
+    return iterator.fac_front * ma_TE / mach_ratio(machine, iterator.i_row)
+
+
+def test_surface_plot_overlays_a_loading_target(bladed, machine):
+    """A configured target is drawn over the distribution it is aiming at.
+
+    The point of the overlay: what the iterator closes is the gap between these
+    two lines, which is far easier to see than to read off a table.
+    """
+    config = _shaped(bladed, fac_front=1.8, fac_peak=1.3)
+    zeta, mas = _peaked()
+
+    _fig, ax = plt.subplots()
+    (measured,) = ax.plot(np.abs(zeta), mas, color="C3")
+    post._draw_loading_target(
+        ax, config, machine, 0, 0.5, zeta, mas, measured.get_color()
+    )
+
+    # The target line and nothing else: no fit, no apex marker.
+    assert len(ax.lines) == 2
+
+    (target,) = [ln for ln in ax.lines if "target" in ln.get_label()]
+
+    # Dashed and in the colour of the distribution it belongs to, so a plot of
+    # several sections stays readable.
+    assert target.get_linestyle() != measured.get_linestyle()
+    assert target.get_color() == measured.get_color()
+
+    # Drawn only over the window that is matched, and through the two points
+    # the target is defined by.
+    x, y = target.get_xdata(), target.get_ydata()
+    assert x[np.isfinite(y)].min() == pytest.approx(0.2)
+    # The apex sits where `_peaked` put it (0.55), which is only ever read off
+    # the achieved distribution; the front anchor and the peak height are the
+    # two numbers that were actually asked for, denormalised against this
+    # row's duty.
+    assert x[np.nanargmax(y)] == pytest.approx(0.55, abs=x[1] - x[0])
+    assert np.nanmax(y) == pytest.approx(config.iterate.correct[1].fac_peak, rel=1e-2)
+    assert np.interp(0.2, x, y) == pytest.approx(
+        _ma_front(config, machine, ma_TE=1.0), rel=1e-3
+    )
+
+
+def _profiled(config, **kwargs):
+    """Return `config` with a `loading_profile` iterator on row 0.
+
+    No camber line is substituted: the overlay reads the target off the
+    iterator and the samples off the solution, and neither asks what the
+    config's camber is made of.
+    """
+    import dataclasses
+
+    from turbigen import iterate
+
+    return dataclasses.replace(
+        config,
+        iterate=iterate.Iteration(correct=(iterate.LoadingProfile(**kwargs),)),
+    )
+
+
+def test_surface_plot_overlays_a_loading_profile(bladed, solved):
+    """The whole template is drawn, and marked where the iterator reads it.
+
+    `LoadingProfile` states both ends of its target, so unlike
+    `test_surface_plot_overlays_a_loading_target` nothing here is read off the
+    achieved distribution --- and the circles say which points the errors were
+    formed from.
+    """
+    config = _profiled(bladed, order=4, zeta_front=0.2, zeta_peak=0.6)
+    iterator = config.iterate.correct[0]
+
+    ax = SurfacePlot().report(config, solved)[0].axes[0]
+    (measured,) = [ln for ln in ax.lines if ln.get_label().startswith("spf")]
+    (target,) = [ln for ln in ax.lines if "target" in ln.get_label()]
+    (samples,) = [ln for ln in ax.lines if "samples" in ln.get_label()]
+
+    # In the colour of the distribution they belong to, so a plot of several
+    # sections stays readable, and dashed for the line, circles for the points.
+    assert target.get_color() == measured.get_color()
+    assert samples.get_color() == measured.get_color()
+    assert target.get_linestyle() != measured.get_linestyle()
+    assert samples.get_marker() == "o"
+
+    # Drawn over the driven window only, with its apex where the target asks
+    # for one rather than where the blade put one.
+    x, y = target.get_xdata(), target.get_ydata()
+    assert x[np.isfinite(y)].min() == pytest.approx(iterator.zeta_front)
+    assert x[np.nanargmax(y)] == pytest.approx(iterator.zeta_peak, abs=x[1] - x[0])
+
+    # The two anchors and the trailing edge, denormalised exactly as the
+    # iterator normalises what it measures: `fac_front` carries the row's duty
+    # factor, `fac_peak` -- plain Ma_peak/Ma_TE -- does not.
+    ma_TE = 0.5 * (measured.get_ydata()[0] + measured.get_ydata()[-1])
+    scale = ma_TE / loading.mach_ratio(solved.machine, 0)
+    assert np.interp(iterator.zeta_front, x, y) == pytest.approx(
+        iterator.fac_front * scale, rel=1e-3
+    )
+    assert np.nanmax(y) == pytest.approx(iterator.fac_peak * ma_TE, rel=1e-2)
+    assert y[-1] == pytest.approx(ma_TE, rel=1e-3)
+
+    # One circle per camber coefficient, at the surface fraction that
+    # coefficient's `m` lands on -- the iterator's own numbers, not a reading
+    # off the drawn curve.
+    zeta_knob, fac_knob = loading.measure_profile(
+        solved, 0, iterator.spf, iterator.knob_m()
+    )
+    assert len(samples.get_xdata()) == iterator.order - 1
+    assert samples.get_xdata() == pytest.approx(zeta_knob)
+    assert samples.get_ydata() == pytest.approx(fac_knob * scale)
+
+
+def test_surface_plot_profile_overlay_ignores_another_span(bladed, solved):
+    """A profile set at one span says nothing about the sections either side."""
+    config = _profiled(bladed, spf=0.25)
+    labels = [
+        ln.get_label() for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+    ]
+    assert not any("target" in label or "samples" in label for label in labels)
+
+
+def test_surface_plot_overlays_nothing_without_an_iterator(bladed, solved):
+    """No target configured is no claim to draw."""
+    (line,) = SurfacePlot().report(bladed, solved)[0].axes[0].lines
+    assert "target" not in line.get_label()
+
+
+def test_surface_plot_draws_no_apex_it_cannot_find(bladed, solved):
+    """No peak to fit is no place to draw the target's apex, `peak_Ma` or not.
+
+    This fixture accelerates all the way to its trailing edge, so it offers no
+    peak for either the iterator or the overlay to read a position from. The
+    target's front value is still a claim, but with nowhere to put the other
+    end of the line, nothing is drawn rather than something invented.
+    """
+    for config in (
+        _shaped(bladed, fac_front=1.8),
+        _shaped(bladed, fac_front=1.8, fac_peak=1.3),
+    ):
+        labels = [
+            ln.get_label()
+            for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
+        ]
+        assert not any("target" in label for label in labels)
+
+
+def test_surface_plot_overlay_ignores_another_span(bladed, machine):
+    """A target set at one span says nothing about the sections either side."""
+    config = _shaped(bladed, fac_front=1.8, spf=0.25)
+
+    _fig, ax = plt.subplots()
+    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
+    assert not ax.lines
+
+
+def test_surface_plot_overlay_ignores_another_row(bladed, machine):
+    """One row per iterator, so a target for row 1 is not drawn on row 0."""
+    config = _shaped(bladed, fac_front=1.8, i_row=1)
+
+    _fig, ax = plt.subplots()
+    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
+    assert not ax.lines
+
+
 def test_surface_plot_draws_an_unmarched_grid(bladed, meshed):
     """Plotting the initial guess is a way to look at a mesh, not a mistake."""
     figures = SurfacePlot().report(bladed, meshed)
@@ -451,7 +694,7 @@ def test_surface_plot_skips_a_diverged_march(bladed, solved):
     The plot has to notice, because the standard set runs unasked: raising here
     would report a diverged run as a broken config.
     """
-    import dataclasses  # noqa: PLC0415
+    import dataclasses
 
     history = solved.history.copy()
     history.diverged = True
@@ -462,31 +705,33 @@ def test_surface_plot_skips_a_diverged_march(bladed, solved):
 
 
 def test_contour_plot_draws_a_blade_to_blade_view(bladed, solved):
-    figures = ContourPlot().report(bladed, solved)
+    """One figure per span fraction, holding every row that was cut."""
+    figures = ContourPlot(spf=(0.5,)).report(bladed, solved)
 
-    assert len(figures) == len(solved.machine.rows)
+    assert len(figures) == 1
     ax = figures[0].axes[0]
 
     # One filled set per block per passage, all on one colour scale.
-    assert len(ax.collections) == ContourPlot().n_passage
+    assert len(ax.collections) % ContourPlot().n_passage == 0
+    assert len(ax.collections) >= ContourPlot().n_passage
     # The conformal plane is only conformal if both axes are scaled alike.
     assert ax.get_aspect() == 1.0
 
 
-def test_contour_plot_frames_the_row_not_the_machine(bladed, solved):
-    """A machine-wide view is mostly duct, and the row a few pixels of it."""
+def test_contour_plot_frames_the_whole_machine(bladed, solved):
+    """Nothing is clipped meridionally: the ducts and every row are in frame."""
     figures = ContourPlot().report(bladed, solved)
     lo, hi = figures[0].axes[0].get_xlim()
 
     annulus = solved.machine.annulus
     curve = annulus.evaluate_xr(np.linspace(0.0, annulus.m_max, 101), 0.5).T
-    edges = annulus.evaluate_xr([1, 2], 0.5).T
+    edges = annulus.evaluate_xr([1, 2 * annulus.n_row], 0.5).T
     m_LE, m_TE = ember.util.unwrap_meridional(curve, edges)
 
-    # The row, and a margin of it either side -- not the whole curve.
+    # Every row, from the first leading edge to the last trailing edge, with
+    # the ducts either side of them still there.
     assert lo < m_LE
     assert hi > m_TE
-    assert hi - lo < ember.util.unwrap_meridional(curve, curve[-1])
 
 
 def test_contour_plot_repeats_passages(bladed, solved):
@@ -508,6 +753,174 @@ def test_contour_plot_without_a_grid_is_empty(config, result):
 def test_contour_plot_rejects_a_variable_no_block_carries(bladed, solved):
     with pytest.raises(ValueError, match="no property 'Wobble'"):
         ContourPlot(variable="Wobble").report(bladed, solved)
+
+
+#
+# SPANWISE PROFILES
+#
+
+
+def test_cut_row_attributes_a_gap_to_the_row_upstream():
+    """Rows are the odd segments, gaps the even ones.
+
+    A cut inside a row belongs to it and there is nothing to decide. A cut in a
+    gap is a choice, and the row that produced the flow is the one it is read
+    against -- except in the inlet duct, where there is no upstream row.
+    """
+    n_row = 2
+
+    assert [post._cut_row(m, n_row) for m in (0.5, 1.0, 1.5, 2.0)] == [0, 0, 0, 0]
+    assert [post._cut_row(m, n_row) for m in (2.5, 3.0, 3.5, 4.0)] == [0, 1, 1, 1]
+
+    # The exit duct has no downstream row to fall to.
+    assert post._cut_row(4.5, n_row) == 1
+
+
+def test_spanwise_plot_draws_one_profile_per_cut(bladed, solved):
+    figures = SpanwisePlot(m_cut=(0.9, 2.1)).report(bladed, solved)
+
+    assert len(figures) == 2
+    for figure in figures:
+        (line,) = figure.axes[0].lines
+        _, spf = line.get_data()
+
+        # Hub to casing, in order, and face-centred -- so the ends approach 0
+        # and 1 without reaching them.
+        assert np.all(np.diff(spf) > 0.0)
+        assert 0.0 < spf[0] < spf[-1] < 1.0
+        assert figure.axes[0].get_ylim() == (0.0, 1.0)
+
+
+def test_spanwise_loss_is_the_size_the_mean_line_reports(bladed, solved):
+    """A units-and-blunders guard on the datum and the scaling velocity.
+
+    The profile is taken inside the trailing edge gap and the mean line is
+    reduced at the station beyond it, mixing included, so the two are not the
+    same number -- but a wrong entropy datum or the other row's kinetic energy
+    would be out by far more than the gap between them.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Ys").report(bladed, solved)
+    Ys, _ = figure.axes[0].lines[0].get_data()
+
+    row = solved.actual[:, 0]
+    reference = solved.actual.get_characteristic_station(0)
+    Ys_mean_line = (
+        float(row.T[1]) * float(row.s[1] - row.s[0]) / float(reference.halfVsq_rel)
+    )
+
+    assert np.all(Ys > 0.0)
+    assert np.mean(Ys) == pytest.approx(Ys_mean_line, rel=0.5)
+
+
+def test_spanwise_plot_refers_each_cut_to_its_own_row(gapped):
+    """The second row of the two-row case turns the flow the other way.
+
+    Which is only visible if each cut is scaled by its own row's conditions:
+    referred to one row throughout, both profiles would have the same sign.
+    """
+    config, result = gapped
+
+    Vt = [
+        SpanwisePlot(m_cut=(m,), variable="Vt")
+        .report(config, result)[0]
+        .axes[0]
+        .lines[0]
+        .get_data()[0]
+        for m in (2.1, 4.1)
+    ]
+
+    assert np.all(Vt[0] > 0.0)
+    assert np.all(Vt[1] < 0.0)
+
+
+def test_spanwise_velocity_is_scaled_by_blade_speed_where_there_is_one(gapped):
+    config, result = gapped
+
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Vt").report(config, result)
+
+    assert figure.axes[0].get_xlabel().endswith("$V_\\theta/U$")
+
+
+def test_spanwise_velocity_of_a_cascade_falls_back_to_its_own_velocity(bladed, solved):
+    """A cascade never rotates, so there is no blade speed to divide by.
+
+    Scaled by the velocity of the row's characteristic station instead, which
+    the label has to say -- a profile against an unnamed datum is unreadable.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Vt").report(bladed, solved)
+    Vt, _ = figure.axes[0].lines[0].get_data()
+
+    assert figure.axes[0].get_xlabel().endswith("$V_\\theta/V$")
+
+    # The exit flow angle the cascade was asked for, which is what a velocity
+    # divided by its own magnitude has to come back as.
+    Alpha = np.radians(yaml.safe_load(RUN_CASE)["mean_line"]["Alpha"][1])
+    assert np.mean(Vt) == pytest.approx(np.sin(Alpha), rel=0.05)
+
+
+def test_spanwise_yaw_angle_is_the_angle_the_row_turned_to(bladed, solved):
+    """In degrees, and against nothing: an angle is already a number.
+
+    Weighed against the mixed-out exit angle, which is the same average taken
+    the other way -- so this is what says the profile is neither in radians nor
+    referred to some scale it does not need.
+    """
+    (figure,) = SpanwisePlot(m_cut=(2.1,), variable="Alpha").report(bladed, solved)
+    Alpha, _ = figure.axes[0].lines[0].get_data()
+
+    assert figure.axes[0].get_xlabel().endswith("/deg")
+    assert np.mean(Alpha) == pytest.approx(float(solved.actual[:, 0].Alpha[1]), abs=2.0)
+
+
+def test_spanwise_yaw_angle_is_taken_in_the_frame_it_is_asked_for(gapped):
+    """The rotor sees a different angle from the one the duct downstream does.
+
+    Which is the whole reason the relative one is offered: on the row that
+    turns, the two frames differ by the swirl the blade speed adds, and a
+    profile in the wrong frame is a plausible-looking answer to another
+    question.
+    """
+    config, result = gapped
+
+    angles = [
+        SpanwisePlot(m_cut=(4.1,), variable=variable)
+        .report(config, result)[0]
+        .axes[0]
+        .lines[0]
+        .get_data()[0]
+        for variable in ("Alpha", "Alpha_rel")
+    ]
+
+    assert np.all(np.abs(angles[0] - angles[1]) > 1.0)
+    assert np.mean(angles[1]) == pytest.approx(
+        float(result.actual[:, 1].Alpha_rel[1]), abs=2.0
+    )
+
+
+def test_spanwise_plot_rejects_a_variable_it_cannot_build(bladed, solved):
+    with pytest.raises(ValueError, match="no spanwise variable 'Wobble'"):
+        SpanwisePlot(m_cut=(2.1,), variable="Wobble").report(bladed, solved)
+
+
+def test_spanwise_plot_without_a_grid_is_empty(config, result):
+    assert SpanwisePlot(m_cut=(2.1,)).report(config, result) == []
+
+
+def test_spanwise_plot_without_a_mixed_out_mean_line_is_empty(bladed, meshed):
+    """The datum is the mean line the grid achieved, so there is nothing to
+    refer a profile to until the grid has been reduced to one."""
+    assert meshed.actual is None
+    assert SpanwisePlot(m_cut=(2.1,)).report(bladed, meshed) == []
+
+
+def test_spanwise_plot_skips_a_diverged_march(bladed, solved):
+    import dataclasses
+
+    history = solved.history.copy()
+    history.diverged = True
+    diverged = dataclasses.replace(solved, history=history)
+
+    assert SpanwisePlot(m_cut=(2.1,)).report(bladed, diverged) == []
 
 
 #
@@ -633,3 +1046,139 @@ def test_a_failing_post_processor_is_not_swallowed(tmp_path, monkeypatch):
     case.write_text(CASE)
 
     assert cli.main(["report", str(case)]) == 1
+
+
+#
+# The camber line, which is design rather than flow: it draws from the machine
+# geometry alone, so unlike the surface plot it needs no solution and no mesh.
+#
+
+
+def test_camber_plot_draws_each_row(bladed, meshed):
+    figures = CamberPlot().report(bladed, meshed)
+
+    assert len(figures) == len(meshed.machine.rows)
+    # The normalised shape alone, one curve for one designed section.
+    (shape,) = figures[0].axes
+    assert len(shape.lines) == 1
+
+
+def test_camber_plot_takes_the_span_fractions_it_is_given(bladed, meshed):
+    figures = CamberPlot(spf=(0.25, 0.75)).report(bladed, meshed)
+
+    assert len(figures[0].axes[0].lines) == 2
+
+
+def test_camber_plot_marks_the_knobs_a_loading_profile_moves(bladed, meshed):
+    """The points the iterator moves, on the curve it moves them on.
+
+    Its own `knob_m`, not a guess at where they sit: a plot that sampled
+    somewhere else would be drawing circles the iterator never reads, which is
+    what `_draw_loading_profile` avoids the same way.
+    """
+    config = _profiled(bladed, order=4)
+    iterator = config.iterate.correct[0]
+
+    ax = CamberPlot().report(config, meshed)[0].axes[0]
+    (knobs,) = [ln for ln in ax.lines if "knobs" in ln.get_label()]
+    (shape,) = [ln for ln in ax.lines if ln.get_label().startswith("spf")]
+
+    assert knobs.get_marker() == "o"
+    assert knobs.get_color() == shape.get_color()
+    assert knobs.get_xdata() == pytest.approx(iterator.knob_m())
+
+
+def test_camber_plot_leaves_an_unshaped_row_unmarked(bladed, meshed):
+    ax = CamberPlot().report(bladed, meshed)[0].axes[0]
+
+    assert not [ln for ln in ax.lines if "knobs" in ln.get_label()]
+
+
+def test_camber_plot_without_blades_is_empty(config, result):
+    assert CamberPlot().report(config, result) == []
+
+
+#
+# THE DESIGN LOOP'S OWN HISTORY, which is a sequence of designs rather than one
+# --- so it takes a trajectory, and a trajectory is plain data.
+#
+
+
+@pytest.fixture
+def iterating():
+    """A config with two iterators, and the knobs they own."""
+    config = Config.from_dict(yaml.safe_load(ITERATE_CASE))
+    return config, list(iterate.unknowns(config))
+
+
+def trajectory_of(config, names, n, drop=()):
+    """Return `n` passes, each erring less than the last.
+
+    `drop` names knobs left out of the middle pass, as an iterator that could
+    not measure leaves its own out.
+    """
+    return [
+        (
+            config,
+            Result(
+                error={
+                    name: 0.5 * 0.5**k
+                    for j, name in enumerate(names)
+                    if not (k == n // 2 and name in drop)
+                }
+            ),
+        )
+        for k in range(n)
+    ]
+
+
+def test_the_iteration_plot_draws_a_page_for_each_iterator(iterating):
+    """An overview that puts every knob on one axis, then one page each."""
+    config, names = iterating
+
+    figures = IterationPlot().report(trajectory_of(config, names, 4))
+
+    assert len(figures) == 1 + len(config.iterate.correct)
+
+    # The overview divides by tolerance, so it is one axes; the per-iterator
+    # pages carry the values beneath the errors, so they are two.
+    assert len(figures[0].axes) == 1
+    assert all(len(figure.axes) == 2 for figure in figures[1:])
+    assert [figure.axes[0].get_title() for figure in figures[1:]] == [
+        f"{iterator.type} Iteration" for iterator in config.iterate.correct
+    ]
+
+
+def test_one_iteration_is_not_a_history(iterating):
+    """Nothing to draw from a single design, as a march with no records draws
+    no convergence plot."""
+    config, names = iterating
+
+    assert IterationPlot().report(trajectory_of(config, names, 1)) == []
+    assert IterationPlot().report([]) == []
+
+
+def test_a_knob_nobody_measured_is_a_gap_not_a_zero(iterating):
+    """An iterator that could not measure omits its knobs, and a zero there
+    would draw as converged."""
+    config, names = iterating
+    missing = names[0]
+
+    figures = IterationPlot().report(trajectory_of(config, names, 5, drop={missing}))
+
+    drawn = [
+        line
+        for figure in figures[1:]
+        for line in figure.axes[0].lines
+        if line.get_label() == missing
+    ]
+    assert drawn, missing
+
+    y = np.asarray(drawn[0].get_ydata(), dtype=float)
+    assert np.isnan(y).sum() == 1
+    assert not (y == 0.0).any()
+
+
+def test_a_design_that_iterates_nothing_has_no_history(config, result):
+    """The plot needs iterators to group by, and `run` configures none."""
+    assert IterationPlot().report([(config, result), (config, result)]) == []

@@ -4,12 +4,14 @@ import logging
 
 import dataclasses
 import re
+from pathlib import Path
+
 import numpy as np
-import turbigen_ref.yaml_utils
 
 # import turbigen_ref.config2
 from scipy.stats.qmc import LatinHypercube
-from pathlib import Path
+
+import turbigen_ref.yaml_utils
 
 logger = logging.getLogger("turbigen")
 
@@ -31,13 +33,13 @@ class IndependentConfig:
 
     """
 
-    mean_line: dict = dataclasses.field(default_factory=lambda: ({}))
+    mean_line: dict = dataclasses.field(default_factory=dict)
     """Keyed by design variable name, value a limits tuple of (min, max)."""
 
-    nblade: dict = dataclasses.field(default_factory=lambda: ({}))
+    nblade: dict = dataclasses.field(default_factory=dict)
     """Keyed by row index of dict keyed by blade count parameter, value a limits tuple of (min, max)."""
 
-    tip: dict = dataclasses.field(default_factory=lambda: ({}))
+    tip: dict = dataclasses.field(default_factory=dict)
     """Keyed by row index of tuples of (min, max) for each blade row."""
 
     def __post_init__(self):
@@ -316,7 +318,7 @@ class DesignSpace:
         fnames = sorted(self.basedir.glob("**/config*.yaml"))
 
         # Exclude root config
-        fnames = [f for f in fnames if not f.parent == self.basedir]
+        fnames = [f for f in fnames if f.parent != self.basedir]
 
         # Exclude iterations, only keep finished runs
         fnames = [f for f in fnames if f.parent.parent == self.basedir]

@@ -1,4 +1,5 @@
 import logging
+
 import numpy as np
 
 try:
@@ -9,17 +10,16 @@ except ImportError:
     # equivalence tests need.
     resource = None
 
-from turbigen_ref import util
-
-import turbigen_ref.geometry
-from turbigen_ref import clusterfunc
-import turbigen_ref.mesh
 import dataclasses
-import matplotlib.pyplot as plt
 
-import ember.patch
 import ember.block
 import ember.grid
+import ember.patch
+import matplotlib.pyplot as plt
+
+import turbigen_ref.geometry
+import turbigen_ref.mesh
+from turbigen_ref import clusterfunc, util
 
 logger = logging.getLogger("turbigen")
 
@@ -570,7 +570,7 @@ class H(turbigen_ref.mesh.Mesher):
     def _stitch_mixing_planes(self, g):
         """Force xr coordinates to match exactly at mixing planes."""
         nrow = len(g)
-        for irow in range(0, nrow - 1):
+        for irow in range(nrow - 1):
             xr0 = g[irow].xrt[-1, :, 0, :2]
             xr1 = g[irow + 1].xrt[0, :, 0, :2]
             xrav = 0.5 * (xr0 + xr1)
@@ -790,7 +790,7 @@ def _plot_grid(g):
     for b in g:
         ax.plot(b.x[:, :, 0], b.r[:, :, 0], "k-", lw=0.5)
         ax.plot(b.x[:, :, 0].T, b.r[:, :, 0].T, "k-", lw=0.5)
-    fig, ax = plt.subplots()
+    _fig, ax = plt.subplots()
     ax.axis("equal")
     for b in g:
         ax.plot(b.x[:, b.nj // 2, :], b.rt[:, b.nj // 2, :], "k-", lw=0.5)
@@ -1026,7 +1026,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, plot=True):
 
     # Plot old coords
     if plot:
-        fig, ax = plt.subplots()
+        _fig, ax = plt.subplots()
         ax.plot(
             xrrt[0, :, jmid, (0, -1)].T,
             xrrt[2, :, jmid, (0, -1)].T,

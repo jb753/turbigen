@@ -1,8 +1,8 @@
 """Distribute points with symmetric clustering."""
 
 import turbigen.clusterfunc.check
-import turbigen.clusterfunc.util
 import turbigen.clusterfunc.double
+import turbigen.clusterfunc.util
 
 
 def fixed(dmin, N, x0=0.0, x1=1.0):

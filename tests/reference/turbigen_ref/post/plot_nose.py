@@ -2,10 +2,11 @@ import logging
 
 """Save pressure field around the nose."""
 
-import numpy as np
 import os
-import turbigen_ref.util
+
 import matplotlib.pyplot as plt
+import numpy as np
+import turbigen_ref.util
 
 logger = logging.getLogger("turbigen")
 
@@ -90,7 +91,7 @@ def post(grid, machine, meanline, _, postdir, row_spf, fac_Rle=1.0):
             dCp = 0.1
             lev_Cp = turbigen_ref.util.clipped_levels(Cpall, dCp)
 
-            fig, ax2 = plt.subplots(1, 2)
+            _fig, ax2 = plt.subplots(1, 2)
             ax = ax2[0]
             # ax.plot(*surf.squeeze().xr, "rx")
             for b in cut:

@@ -1,10 +1,12 @@
-import logging
-from turbigen_ref import util
-import numpy as np
 import dataclasses
-import turbigen_ref.nblade
+import logging
+
+import numpy as np
+
 import turbigen_ref.camber
+import turbigen_ref.nblade
 import turbigen_ref.thickness
+from turbigen_ref import util
 
 logger = logging.getLogger("turbigen")
 
@@ -19,7 +21,7 @@ class VortexDistribution:
 
     def r(self, spf):
         """Radius at a given span fraction. [m]"""
-        if not np.shape(spf) == ():
+        if np.shape(spf) != ():
             spf = spf.reshape(-1, 1)
         return self.ml.r_hub * (1.0 - spf) + self.ml.r_cas * spf
 
@@ -168,7 +170,7 @@ class BladeDesigner:
         """Get the centre of the leading edge."""
 
         # Make a meridional grid vector for just the le
-        cam, thick = self._get_camber_thickness(spf)
+        _cam, thick = self._get_camber_thickness(spf)
         Rle = thick.R_LE / fac_Rle
         m = util.cluster_cosine(500)
         xrtul = np.stack(self.evaluate_section(spf, m=m), axis=0)

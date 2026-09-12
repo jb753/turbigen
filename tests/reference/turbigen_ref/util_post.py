@@ -1,13 +1,14 @@
 """Functions for post processing, without plotting."""
 
-import numpy as np
+import logging
+
 import ember.block
 import ember.block_util
 import ember.cut
 import ember.patch
-from turbigen_ref import util
+import numpy as np
 
-import logging
+from turbigen_ref import util
 
 try:
     import resource

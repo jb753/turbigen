@@ -35,6 +35,16 @@ contra-rotating casing would change, and because zero here means "stationary in
 the absolute frame" rather than "no rotation configured".
 """
 
+RF_RADIAL_EQUILIBRIUM = 0.1
+"""Relaxation factor on the exit radial-equilibrium profile [--].
+
+The profile is re-derived from the solution every step, so it is a boundary
+condition that follows the flow it is imposed on, and a loose relaxation is
+what stops the two chasing each other. A hundredth is what the package this
+replaces used; ember's own default is a tenth, which is its default for a
+patch used on its own rather than under a design loop.
+"""
+
 
 class InletProfile(Node):
     """A non-uniform inlet, as a spanwise perturbation from the mean line.
@@ -405,6 +415,11 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     mass flow additionally throttles the exit to it, the prescribed pressure
     becoming the controller's starting point rather than its answer.
 
+    The exit pressure is a level and not a profile: the spanwise shape is
+    radial equilibrium, re-derived from the solution each step, because
+    swirling flow leaving a machine carries a radial pressure gradient that a
+    single prescribed number would fight.
+
     Parameters
     ----------
     grid : ember.grid.Grid
@@ -422,6 +437,7 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
 
     """
     inlet = machine.mean_line.inlet
+    outlet = machine.mean_line.outlet
 
     patches_in = grid.patches.inlet
     patches_out = grid.patches.outlet
@@ -449,6 +465,24 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     P_out = exit_pressure(machine, operating_point)
     for patch in patches_out:
         patch.set_P(P_out)
+
+        # One pressure is imposed across the whole span, and swirling exit flow
+        # does not have one: it carries a centrifugal gradient, dp/dr = rho
+        # Vt^2 / r, rising from hub to casing. Prescribed flat, the boundary
+        # fights that gradient, and what gives way is the outer span, where the
+        # imposed pressure is highest relative to what the flow wants -- it is
+        # pushed back into the domain. An outlet that takes inflow is not a
+        # boundary condition anybody wrote down, and a machine with a tip
+        # clearance feeds the casing exactly the swirl that provokes it.
+        #
+        # So the profile satisfying that equation is added to the level, hub
+        # anchored, re-derived from the solution each step. What `set_P` names
+        # stays the pressure that is actually enforced; the profile says how
+        # the rest of the span stands relative to it, which is what makes this
+        # additional to the throttle rather than in competition with it.
+        patch.set_adjustment(radial_equilibrium=True, rf=RF_RADIAL_EQUILIBRIUM)
+        patch.set_backflow_Po_To(outlet.Po, outlet.To)
+        patch.set_backflow_Vt(outlet.Vt)
 
     apply_throttle(patches_out, machine, operating_point)
 

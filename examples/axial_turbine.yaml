@@ -1,0 +1,152 @@
+# Axial turbine
+#
+# A repeating-stage axial turbine: a stator and a rotor, with a tip gap over
+# the rotor. Where the cascade example has one row and one blade section, this
+# has two rows separated by a mixing plane and three sections stacked up the
+# span, so it exercises the parts of the pipeline a single row cannot.
+
+fluid:
+  type: perfect
+  cp: 1100.0
+  gamma: 1.33
+  mu: 5.6e-5
+
+mean_line:
+  type: axial_turbine
+  # Duty
+  mdot: 500.0
+  r_rms: 1.0
+  Po1: 16.0e5
+  To1: 1600.0
+  # Aerodynamics
+  psi: 1.6
+  phi2: 0.6
+  Ma2: 0.7
+  fac_Ma3_rel: 1.0
+  zeta: [1.0, 1.0]
+  # Guessed loss, which the mean_line iterator below replaces with what the
+  # CFD actually produces
+  Ys: [0.02, 0.05]
+
+# Dimensional chords, rather than aspect ratios, because the duty above already
+# fixes the annulus radius: the gaps are inlet duct, interspace, exit duct.
+annulus:
+  type: fixed_axial_chord
+  cx_row: [0.1, 0.1]
+  cx_gap: [0.1, 0.06, 0.2]
+
+blades:
+  # Stator: turning the flow from axial into the rotor.
+  - count:
+      type: Co
+      Co: 0.6
+    vortex_exponent: -0.6
+    sections:
+      - spf: 0.2
+        dchi_LE: -8.0
+        dchi_TE: 0.0
+        camber: &camber
+          type: quadratic
+          aft_loading: 0.0
+        thickness: &thickness
+          type: taylor
+          R_LE: 0.04
+          t_max: 0.12
+          m_tmax: 0.35
+          kappa_max: 0.0
+          t_TE: 0.02
+          tanwedge: 0.18
+      - spf: 0.5
+        dchi_LE: -8.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+      - spf: 0.8
+        dchi_LE: -8.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+
+  # Rotor: running with a clearance under a stationary casing.
+  - count:
+      type: Co
+      Co: 0.6
+    vortex_exponent: -0.6
+    tip_span: 0.01
+    sections:
+      - spf: 0.2
+        dchi_LE: 6.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+      - spf: 0.5
+        dchi_LE: 6.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+      - spf: 0.8
+        dchi_LE: 6.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+
+mesh:
+  type: h
+  yplus: 30.0
+  dm_TE: 0.0
+  AR_cusp: 2.0
+  ni_cusp: 5
+
+iterate:
+  correct:
+    # Set the viscosity from a surface Reynolds number rather than stating it,
+    # so the design is specified aerodynamically.
+    - type: Re_surf
+      target: 4.0e5
+    - type: deviation
+      tolerance: 0.5
+    - type: incidence
+      tolerance: 2.
+    - type: mean_line
+      variables: [Ys]
+      clip: 0.01
+      tolerance: 0.01
+    - type: repeat
+      gain: 1.0
+      order: 3
+      atol_head: 0.01
+      atol_angle: 1.
+      clip_head: 0.1
+      clip_angle: 5.0
+      tolerance: 0.1
+
+solver:
+  type: ember
+  n_step: 1000
+  n_step_avg: 500
+  n_step_log: 100
+  cfl: 4
+  n_stage: 4
+  sf_resid: 1
+  fac_mgrid: 0.2
+  n_levels: 3
+  dampin: 25.0
+  gain_filt: 1
+  delta_filt: 0.1
+
+# Entropy generated in the boundary layers on every wetted wall, broken down by
+# row and by whether it was made on the endwalls or on the blades.
+metrics:
+  - type: surface_dissipation
+    Cd: 0.002
+  # How far the surface Mach number falls from its peak back to the trailing
+  # edge, which says whether the blade count suits the loading.
+  - type: diffusion_factor
+    spf: [0.5]
+
+batch:
+  bounds:
+    mean_line.phi2: [0.4, 1.2]
+    mean_line.psi: [1.0, 2.4]
+    blades[0].count.Co: [0.4, 0.8]
+    blades[1].count.Co: [0.4, 0.8]

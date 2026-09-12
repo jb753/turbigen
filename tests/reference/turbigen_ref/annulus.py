@@ -12,14 +12,15 @@ To make a new annulus, subclass the BaseAnnulus and implement:
 
 """
 
-from turbigen_ref import util
-from turbigen_ref.geometry import MeridionalLine
-from scipy.optimize import minimize, root_scalar
-from scipy.interpolate import PchipInterpolator
-import scipy.interpolate
 from abc import abstractmethod
 
 import numpy as np
+import scipy.interpolate
+from scipy.interpolate import PchipInterpolator
+from scipy.optimize import minimize, root_scalar
+
+from turbigen_ref import util
+from turbigen_ref.geometry import MeridionalLine
 
 logger = logging.getLogger("turbigen")
 

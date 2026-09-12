@@ -25,7 +25,6 @@ Test cases:
 import numpy as np
 import pytest
 
-from test_blade import build
 from turbigen import cli, mixout
 from turbigen.config import Config
 

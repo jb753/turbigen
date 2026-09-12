@@ -28,11 +28,12 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-import numpy as np
-
+import ember.average
 import ember.block_util
 import ember.cut
 import ember.util
+import numpy as np
+
 import turbigen.util
 from turbigen.node import Node
 
@@ -48,16 +49,18 @@ Far fewer than the ten thousand `evaluate_section` defaults to, which is a
 resolution for geometry and not for a line on a page.
 """
 
-N_SPAN_CUT = 101
-"""Meridional points defining the span curve a blade surface is cut along.
-
-Only the placement of the cut surface depends on this: `structured_meridional`
-walks the grid's own gridlines, so the resolution of what comes back is the
-mesh's, not the curve's.
-"""
-
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
+
+MAS_STEP = 0.1
+"""Step the isentropic Mach axis is rounded up to on a surface distribution.
+
+Fixed at the bottom and rounded at the top rather than left to autoscale: the
+distributions of several rows are read against each other, and an axis that
+starts wherever a row's lowest point happened to land makes a peak look higher
+on the row that stagnated harder. Zero is where the stagnation point sits and
+is the one meaningful bottom.
+"""
 
 N_SPAN_ANNULUS = 10
 """Spanwise stations for the blade outline drawn on the annulus plot.
@@ -76,6 +79,25 @@ LABELS = {
 }
 """Axis labels for the block properties worth contouring, by attribute name."""
 
+_SPANWISE_LABELS = {
+    "Ys": r"Entropy Loss Coefficient, $Y_s$",
+    "CP": r"Static Pressure, $C_p$",
+    "CPo": r"Stagnation Pressure, $C_{p0}$",
+    "Cho": r"Stagnation Enthalpy, $C_{h0}$",
+    "Vm": r"Meridional Velocity, $V_m/{sym}$",
+    "Vt": r"Circumferential Velocity, $V_\theta/{sym}$",
+    "Alpha": r"Yaw Angle, $\alpha$/deg",
+    "Alpha_rel": r"Relative Yaw Angle, $\alpha^\mathrm{rel}$/deg",
+}
+"""Axis labels for the quantities `SpanwisePlot` will average, by name.
+
+Separate from `LABELS` because none of these are block properties: they are
+coefficients built from a cut and a mean line, so nothing can look one up the
+way `ContourPlot._values` looks up what it contours. ``{sym}`` is filled in
+with the symbol of whatever reference velocity was available, by
+`SpanwisePlot._profile`.
+"""
+
 
 @contextlib.contextmanager
 def styled():
@@ -91,9 +113,9 @@ def styled():
     whole report in it; a notebook running one processor by hand can do the
     same.
     """
-    import matplotlib as mpl  # noqa: PLC0415
-    import matplotlib.pyplot as plt  # noqa: PLC0415
-    from matplotlib.style.core import STYLE_BLACKLIST  # noqa: PLC0415
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    from matplotlib.style.core import STYLE_BLACKLIST
 
     with importlib.resources.as_file(_STYLE) as style_path:
         layers = [str(style_path)]
@@ -192,7 +214,7 @@ class AnnulusPlot(Post):
 
         # Imported here so that turbigen can be used without a display, and
         # without paying for matplotlib when nothing is being plotted.
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(layout="constrained")
         ax.axis("off")
@@ -255,7 +277,7 @@ class SectionsPlot(Post):
             logger.info("No blades were designed, skipping the sections plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # One curve spanning the whole machine, unwrapped onto the conformal
         # (m', theta) plane exactly as the contour plot does it: angles and
@@ -364,6 +386,81 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
     ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
 
 
+class CamberPlot(Post):
+    """Metal angle along the camber line of each row.
+
+    The design-side companion to :class:`SurfacePlot`: that draws what the
+    flow did with a blade, this draws the blade. Where a `loading_profile`
+    iterator is shaping the row, the points it reads are marked, exactly as
+    the surface plot marks them --- a camber coefficient is moved in `m` and
+    measured in `zeta`, and seeing the knobs on the curve they actually move
+    is what makes a saturated or a flat one recognisable.
+
+    The angle itself, in degrees, rather than a shape normalised between the
+    ends. Not every camber design has such a normalised form --- a
+    :class:`~turbigen.camber.CircularArc` is fixed by the end angles and says
+    nothing without them --- and the one curve every shape can be drawn as is
+    the angle it actually lands on. It reads directly against the metal angles
+    the mean line set, and a section with no turning draws as the flat line it
+    is rather than as nothing at all. The thickness wrapped around it is a
+    plot of its own.
+    """
+
+    type: ClassVar[str] = "camber"
+
+    spf: tuple[float, ...] = ()
+    """Span fractions to draw. Empty for the designed sections."""
+
+    def report(self, config, result):
+        from turbigen.iterate import LoadingProfile
+
+        rows = result.machine.rows if result.machine else ()
+        if not rows:
+            logger.info("No blades were designed, skipping the camber plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        m = np.linspace(0.0, 1.0, N_CHORD_PLOT)
+
+        figures = []
+        for i_row, row in enumerate(rows):
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"Row {i_row} Camber")
+            ax.set_ylabel(r"Metal Angle, $\chi$ / deg")
+            ax.set_xlabel(r"Meridional Distance, $m/c_m$")
+            ax.set_xlim((0.0, 1.0))
+
+            for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+                camber, _ = row.blade._get_cam_thick(spf)
+                color = f"C{i_spf}"
+
+                ax.plot(m, camber.chi(m), color=color, label=f"spf={spf:.2f}")
+
+                # Only where an iterator reads this row and span: a knob drawn
+                # at a section nobody shapes would be a claim the design never
+                # made, which is how `_draw_loading_profile` treats its own
+                # sample points.
+                profile = _matching(config, LoadingProfile, i_row, spf)
+                if profile is None:
+                    continue
+
+                m_knob = profile.knob_m()
+                ax.plot(
+                    m_knob,
+                    camber.chi(m_knob),
+                    "o",
+                    color=color,
+                    fillstyle="none",
+                    label=f"knobs, spf={spf:.2f}",
+                )
+
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
 class VelocityTrianglePlot(Post):
     """Mean-line velocity triangles at inlet and exit of each row.
 
@@ -386,7 +483,7 @@ class VelocityTrianglePlot(Post):
             logger.info("No mean line, skipping the velocity triangle plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # Every station, in streamwise order: inlet then exit of each row.
         stations = []
@@ -478,8 +575,8 @@ class ConvergencePlot(Post):
             logger.info("The march logged no records, skipping the convergence plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
-        import matplotlib.ticker as mticker  # noqa: PLC0415
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
 
         # A history arrives trimmed to the records actually written, so there
         # is no NaN tail to slice off here.
@@ -536,57 +633,229 @@ class ConvergencePlot(Post):
         return [fig_resid, fig_error]
 
 
-def _isentropic_mach(cut, s_ref):
-    """Return isentropic Mach number over `cut`, referred to entropy `s_ref`.
+def _matching(config, cls, i_row, spf):
+    """Return the first iterator of `cls` reading this row and span, or None."""
+    for iterator in config.iterate.correct:
+        if (
+            isinstance(iterator, cls)
+            and iterator.i_row == i_row
+            and np.isclose(iterator.spf, spf)
+        ):
+            return iterator
+    return None
 
-    Expanded isentropically from the row inlet entropy to the local static
-    pressure, so the result reads as the Mach number the blade would see with
-    no loss upstream of the point in question.
+
+def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
+    """Overlay what a `loading` iterator is aiming this section at, if any.
+
+    Only where one is configured for this row and reads this span fraction: a
+    target drawn at a span nobody iterates would be a claim the design never
+    made. Dashed, and in the colour of the distribution it belongs to, so a
+    plot of several sections stays readable.
+
+    **The target and nothing else.** The solid curve beside it is what was
+    achieved, and the gap between the two is what the iteration closes;
+    anything more on the axes only makes that harder to see.
+
+    `loading` only ever targets one point, the front value at `zeta_front`, so
+    the apex the target line is drawn through is read off the achieved
+    distribution rather than asked for. The height at that apex comes from the
+    `peak_Ma` beside it where one is configured; with none, the line is drawn
+    through the height the blade reached and only its front value is a claim.
     """
-    # Set in place on a copy, not chained off one: ember's setters return
-    # nothing, whatever the idiom in the package this is ported from suggests.
-    isen = cut.copy()
-    isen.set_P_s(cut.P, s_ref)
+    from turbigen.iterate import (
+        LoadingDistribution,
+        PeakMach,
+    )
+    from turbigen.loading import mach_ratio
 
-    # Stagnation enthalpy and sound speed are taken as surface means so that
-    # only local static pressure drives the distribution. Left local, radial
-    # redistribution of ho_rel and variation in a split the two surfaces apart
-    # at the trailing edge, where they must meet.
-    ho = np.mean(cut.ho_rel)
-    a_ref = np.mean(isen.a)
+    shape = _matching(config, LoadingDistribution, i_row, spf)
+    if shape is None:
+        return
 
-    # Shift so the lowest point sits exactly at rest rather than slightly
-    # below it, which the discrete field can otherwise produce.
-    hs = isen.h
-    hs = hs + np.min(ho - hs)
+    # The cut wraps the blade from one trailing edge round to the other, so its
+    # two ends are the two sides of the trailing edge and their mean is the
+    # exit value -- read the same way `loading.measure` reads it.
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
 
-    return np.sqrt(2.0 * np.maximum(ho - hs, 0.0)) / a_ref
+    level = _matching(config, PeakMach, i_row, spf)
+    zeta_TE = level.zeta_TE if level is not None else 0.98
+
+    # The apex position is read from the data even where the height is not:
+    # `loading` states no target for it, so the only honest place to draw the
+    # peak of the target line is wherever the blade actually put one.
+    folded, suction = turbigen.util.suction_side(zeta, mas)
+    window = (folded >= shape.zeta_front) & (folded <= zeta_TE)
+    if window.sum() < 4:
+        return
+    zeta_peak, ma_peak_fit, _ = turbigen.util.loading_from_distribution(
+        folded[window], suction[window], shape.zeta_front, zeta_TE
+    )
+    if not np.isfinite(zeta_peak):
+        return
+
+    ma_peak = level.fac_peak * ma_TE if level is not None else ma_peak_fit
+
+    drawn = np.linspace(shape.zeta_front, 1.0, 101)
+    ax.plot(
+        drawn,
+        turbigen.util.loading_target(
+            drawn,
+            shape.zeta_front,
+            zeta_peak,
+            shape.fac_front * ma_TE / mach_ratio(machine, i_row),
+            ma_peak,
+            ma_TE,
+        ),
+        linestyle="--",
+        color=color,
+        linewidth=1.0,
+        label=f"target, spf={spf:.2f}",
+    )
 
 
-def _normalise_surface_distance(cut, mas, xrt_nose):
-    """Return surface distance in [-1, 1], zero at the stagnation point.
+def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
+    """Overlay what a `loading_profile` iterator is aiming this section at.
 
-    Each surface is normalised by its own length, so both reach one at the
-    trailing edge however asymmetric the blade is. The sign says which surface
-    a point is on, following the direction the cut loops in; the plot folds it
-    away, but normalising the two sides has to happen while they are still
-    told apart.
+    The sibling of :func:`_draw_loading_target`, for the iterator that shapes
+    the whole curve rather than one point on it --- see
+    :class:`~turbigen.iterate.LoadingProfile`. Two differences follow from
+    that:
+
+    * The apex is drawn where the target puts it, not where the blade did.
+      `LoadingProfile` states a `zeta_peak` as well as a `fac_peak`, so there
+      is no need to read a position off the achieved distribution and no
+      honesty in doing so.
+    * The points the iterator actually reads are marked. It samples the curve
+      at one `m` per camber coefficient, and where those land in `zeta` is a
+      property of the blade's geometry rather than anything the target says;
+      a circle apiece shows which part of the gap between the two lines each
+      knob is answering for.
     """
-    zeta = turbigen.util.get_zeta(cut)[:, 0]
+    from turbigen.iterate import LoadingProfile
+    from turbigen.loading import mach_ratio, measure_profile
 
-    # The geometric nose anchors the search window, which is more robust on
-    # blades with a strongly asymmetric leading edge than the arc-length
-    # midpoint the function falls back on.
-    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0])
-    zeta = zeta - zeta[i_stag]
+    profile = _matching(config, LoadingProfile, i_row, spf)
+    if profile is None:
+        return
 
-    # Then move the origin onto the lowest Mach number, which is the
-    # stagnation point of the flow rather than of the grid.
-    zeta = zeta - zeta[np.argmin(mas)]
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
 
-    upper = zeta.max()
-    lower = np.abs(zeta.min())
-    return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
+    # `fac_front` is written in `fac`, which is the trailing-edge Mach number
+    # times the row's `Ma_2 / Ma_1`; dividing that back out is what turns one
+    # into a Mach number these axes can carry. `fac_peak` carries no such
+    # factor -- it is plain `Ma_peak / Ma_TE`, as `peak_Ma` states a peak --
+    # so it denormalises against `ma_TE` alone.
+    scale = ma_TE / mach_ratio(result.machine, i_row)
+
+    drawn = np.linspace(profile.zeta_front, 1.0, 101)
+    ax.plot(
+        drawn,
+        turbigen.util.loading_target(
+            drawn,
+            profile.zeta_front,
+            profile.zeta_peak,
+            profile.fac_front * scale,
+            profile.fac_peak * ma_TE,
+            ma_TE,
+        ),
+        linestyle="--",
+        color=color,
+        linewidth=1.0,
+        label=f"target, spf={spf:.2f}",
+    )
+
+    # Measured the same way the iterator measures, rather than interpolated
+    # off the drawn curve: the two differ by whatever the plot's `offset` and
+    # the sampler's own cut disagree about, and the circles are only worth
+    # drawing if they are the numbers the errors were formed from.
+    measured = measure_profile(result, i_row, spf, profile.knob_m())
+    if measured is None:
+        return
+    zeta_knob, fac_knob = measured
+
+    ax.plot(
+        zeta_knob,
+        fac_knob * scale,
+        linestyle="none",
+        marker="o",
+        markerfacecolor="none",
+        color=color,
+        label=f"samples, spf={spf:.2f}",
+    )
+
+
+def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
+    """Overlay what a `clark_profile` iterator is aiming this section at.
+
+    Two curves rather than one, and no straight lines: a
+    :class:`~turbigen.iterate.ClarkProfile` shapes both surfaces against
+    :mod:`turbigen.clark`, so what it aims at is drawn by asking the iterator
+    for its own target rather than by rebuilding one here. A plot that drew a
+    curve of its own would be free to contradict the design it describes.
+
+    The samples are marked as :func:`_draw_loading_profile` marks its own, at
+    one point per shape-space coefficient and per surface --- which is where
+    that coefficient does the most to the blade, and so the part of the gap
+    between the two curves it answers for.
+
+    **The circles sit on a slightly different abscissa from the line.** These
+    axes are `normalise_surface_distance`, measured from the flow's stagnation
+    point; a `ClarkProfile` measures from the geometric leading edge, which is
+    what Clark's `z` means and what keeps a target still while the thickness
+    under it moves. The two differ by where the flow attached --- about a per
+    cent of surface on the case this was checked against, and visible only
+    near the nose. Drawn at the measured `z` regardless, because these are
+    meant to be the numbers the errors were formed from rather than points
+    that merely sit on the drawn line.
+    """
+    from turbigen.iterate import ClarkProfile
+    from turbigen.loading import measure_clark_profile
+
+    profile = _matching(config, ClarkProfile, i_row, spf)
+    if profile is None:
+        return
+
+    ma_TE = 0.5 * (mas[0] + mas[-1])
+    if not ma_TE:
+        return
+
+    thickness = config.blades[i_row].sections[0].thickness
+
+    # The target on its own abscissa, which is the surface fraction of each
+    # side separately -- the two surfaces are not the same length, so one grid
+    # of `z` does not serve both.
+    drawn = np.linspace(0.0, 1.0, 201)
+    for target in profile.target(np.stack((drawn, drawn)), result.machine):
+        ax.plot(
+            drawn,
+            target * ma_TE,
+            linestyle="--",
+            color=color,
+            linewidth=1.0,
+        )
+    ax.plot([], [], linestyle="--", color=color, label=f"target, spf={spf:.2f}")
+
+    # Measured the same way the iterator measures, rather than read off the
+    # curves above.
+    measured = measure_clark_profile(result, i_row, spf, thickness.m_ctl)
+    if measured is None:
+        return
+    z_knob, fac_knob = measured.z, measured.fac
+
+    ax.plot(
+        z_knob.ravel(),
+        fac_knob.ravel() * ma_TE,
+        linestyle="none",
+        marker="o",
+        markerfacecolor="none",
+        color=color,
+        label=f"samples, spf={spf:.2f}",
+    )
 
 
 class SurfacePlot(Post):
@@ -616,7 +885,7 @@ class SurfacePlot(Post):
             logger.info("The march diverged, skipping the surface distribution plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         # One cut of the whole blade per row, sliced at each span fraction
         # below: the cut is the expensive part and does not depend on span.
@@ -639,7 +908,7 @@ class SurfacePlot(Post):
             # and the cut comes back one wide. Both halves are here rather
             # than split across the cut helper, because the shape is this
             # call's business and nothing else's.
-            surface = surfaces[i_row][0][:, :, None]
+            surface = surfaces[i_row][0]
             s_ref = result.machine.mean_line[:, i_row].s[0]
 
             fig, ax = plt.subplots(layout="constrained")
@@ -649,31 +918,39 @@ class SurfacePlot(Post):
             ax.set_xlim(0.0, 1.0)
 
             for spf in _span_fractions(self.spf, row.blade):
-                # Rows occupy the odd meridional segments of the annulus, so
-                # row i spans m from 2i+1 to 2i+2.
-                m = np.linspace(2 * i_row + 1, 2 * i_row + 2, N_SPAN_CUT)
-                xr = annulus.evaluate_xr(m, spf)
-                cut = ember.cut.structured_meridional(surface, xr.T)
+                cut, _ = turbigen.util.cut_section(surface, annulus, i_row, spf)
 
                 # Above a clearance gap the blade has no surface to cut, the
                 # span there being trimmed off as flow rather than wall. Asked
                 # for a section that is not there, say so and draw the rest.
-                if not len(cut):
+                if cut is None:
                     logger.info(
                         f"Row {i_row} has no blade surface at spf={spf:.2f}, "
                         "skipping that section."
                     )
                     continue
-                cut = cut[0]
 
-                mas = _isentropic_mach(cut, s_ref)[:, 0]
+                mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
+
+                # Either surface would do for the nose: the thickness vanishes
+                # at m = 0, so the two coincide exactly there.
                 xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-                zeta = _normalise_surface_distance(cut, mas, xrt_nose)
+                zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 
                 # Folded onto the positive axis, so both surfaces run from the
                 # stagnation point at zero out to the trailing edge at one and
                 # can be read against each other directly.
-                ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+                (line,) = ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
+
+                _draw_loading_target(
+                    ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
+                )
+                _draw_loading_profile(
+                    ax, config, result, i_row, spf, mas, line.get_color()
+                )
+                _draw_clark_profile(
+                    ax, config, result, i_row, spf, mas, line.get_color()
+                )
 
             # Every section asked for was above the gap, so there is nothing on
             # the axes. An empty frame in the report is worse than no frame, and
@@ -681,6 +958,15 @@ class SurfacePlot(Post):
             if not ax.lines:
                 plt.close(fig)
                 continue
+
+            # Off the data bound rather than the autoscaled one, which carries
+            # a margin -- so the top is a round number the curve reaches, not a
+            # round number plus five per cent. Everything drawn counts, targets
+            # included: an axis that cut off the curve being iterated towards
+            # would hide exactly the gap the plot is for.
+            top = float(ax.dataLim.y1)
+            if np.isfinite(top) and top > 0.0:
+                ax.set_ylim(0.0, np.ceil(top / MAS_STEP) * MAS_STEP)
 
             ax.legend()
             figures.append(fig)
@@ -714,12 +1000,6 @@ class ContourPlot(Post):
     cmap: str = "viridis"
     """Colour map to fill with."""
 
-    margin: float = 1.0
-    """How far to look either side of a row, as a fraction of its meridional
-    length (leading to trailing edge) -- so the default frames roughly one
-    chord of approach and wake either side. Raise it for a highly staggered
-    row, whose true chord runs well past its meridional extent."""
-
     def report(self, config, result):
         machine = result.machine
         annulus = machine.annulus if machine else None
@@ -731,7 +1011,7 @@ class ContourPlot(Post):
             logger.info("The march diverged, skipping the contour plot.")
             return []
 
-        import matplotlib.pyplot as plt  # noqa: PLC0415
+        import matplotlib.pyplot as plt
 
         figures = []
         for spf in self.spf:
@@ -742,7 +1022,7 @@ class ContourPlot(Post):
             m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
             xr_curve = annulus.evaluate_xr(m, spf).T
 
-            cut = ember.cut.structured_meridional(result.grid, xr_curve)
+            cut = turbigen.util.cut_spanwise(result.grid, xr_curve)
             if not len(cut):
                 logger.info(f"No block reaches spf={spf}, skipping its contour plot.")
                 continue
@@ -764,8 +1044,7 @@ class ContourPlot(Post):
 
             levels, extend = self._levels(fields)
 
-            for window, title in self._windows(annulus, xr_curve, spf):
-                figures.append(self._draw(plt, passages, levels, extend, window, title))
+            figures.append(self._draw(plt, passages, levels, extend, f"spf={spf:.2f}"))
 
         return figures
 
@@ -778,7 +1057,7 @@ class ContourPlot(Post):
         the rounded edges -- which the percentile trim makes likely -- so the
         colourbar grows a triangle rather than the plot silently clipping.
         """
-        import matplotlib.ticker as mticker  # noqa: PLC0415
+        import matplotlib.ticker as mticker
 
         pooled = np.concatenate([field.ravel() for field in fields])
         lo, hi = np.percentile(
@@ -795,40 +1074,16 @@ class ContourPlot(Post):
         )
         return levels, extend
 
-    def _windows(self, annulus, xr_curve, spf):
-        """Return the meridional window and title of each figure.
+    def _draw(self, plt, passages, levels, extend, title):
+        """Contour every passage of every row, on one set of axes.
 
-        One figure per row, framed on the row itself: a machine-wide view is
-        mostly inlet and outlet duct, and on a multi-stage machine the rows
-        would be a few pixels each. Rows occupy the odd annulus segments, so
-        the leading and trailing edges are at integer meridional stations, and
-        `unwrap_meridional` puts them on the same scale as the cut.
+        The whole machine in one frame, ducts included: rows drawn apart could
+        not be read against one another, and where a wake leaves one row and
+        arrives at the next is a thing the plot exists to show.
         """
-        if not annulus.n_row:
-            return [(None, f"spf={spf:.2f}")]
-
-        windows = []
-        for i_row in range(annulus.n_row):
-            edges = annulus.evaluate_xr([2 * i_row + 1, 2 * i_row + 2], spf).T
-            m_LE, m_TE = ember.util.unwrap_meridional(xr_curve, edges)
-            margin = self.margin * (m_TE - m_LE)
-            windows.append(
-                ((m_LE - margin, m_TE + margin), f"Row {i_row}, spf={spf:.2f}")
-            )
-        return windows
-
-    def _draw(self, plt, passages, levels, extend, window, title):
-        """Contour every passage that shows through `window`."""
         fig, ax = plt.subplots(layout="constrained")
 
-        theta = []
         for mp, passage_theta, values in passages:
-            # Blocks outside the window are skipped rather than drawn and
-            # clipped: on a multi-stage machine that is most of them, every
-            # time.
-            if window is not None and (mp.min() > window[1] or mp.max() < window[0]):
-                continue
-
             filled = ax.contourf(
                 mp, passage_theta, values, levels=levels, cmap=self.cmap, extend=extend
             )
@@ -839,22 +1094,11 @@ class ContourPlot(Post):
             filled.set_edgecolor("face")
             filled.set_linewidth(0.05)
 
-            visible = passage_theta[
-                (mp >= window[0]) & (mp <= window[1]) if window else ...
-            ]
-            if visible.size:
-                theta.append((visible.min(), visible.max()))
-
         # Equal aspect is not decoration: m' and theta are both dimensionless,
         # and scaling them alike is what makes the plane conformal, so a
-        # section keeps the shape it has in the machine. It also means the
-        # limits have to be set from the visible data, or the aspect ratio
-        # pads the figure out with empty duct.
+        # section keeps the shape it has in the machine. Nothing is clipped, so
+        # the limits are whatever was drawn and matplotlib finds them itself.
         ax.set_aspect("equal")
-        if window is not None:
-            ax.set_xlim(*window)
-        if theta:
-            ax.set_ylim(min(lo for lo, _ in theta), max(hi for _, hi in theta))
 
         # The plane carries its own scale -- m' and theta are dimensionless and
         # drawn conformal -- so the frame, ticks and axis labels only take room
@@ -874,6 +1118,342 @@ class ContourPlot(Post):
                 f"An ember block has no property {self.variable!r} to contour; "
                 f"try one of {sorted(LABELS)}."
             ) from None
+
+
+def _cut_row(m, n_row):
+    """Return the row a cut at meridional position `m` is measured against.
+
+    Rows are the odd segments of an annulus and gaps the even ones, so a cut
+    inside a row belongs to it and there is nothing to decide. A cut in a gap
+    is a choice, and it is attributed to the row *upstream* of it: a profile
+    taken just past a trailing edge is read as what that row did, not as what
+    the next one is about to be given. The inlet duct has no upstream row, so
+    it falls to the first one.
+    """
+    segment = int(np.floor(m))
+    if segment % 2:
+        i_row = (segment - 1) // 2
+    else:
+        i_row = segment // 2 - 1
+    return int(np.clip(i_row, 0, n_row - 1))
+
+
+def _cut_spf(cut):
+    """Return face-centred span fraction along a structured cut.
+
+    A cut is not a patch, so `ember`'s own `spf` is out of reach and the span
+    is measured from the cut's own meridional line: normalised arc length hub
+    to casing. Face-centred, because everything `ember.average` returns is,
+    and a profile plotted against nodal span would be off by half a cell.
+    """
+    # Index 0 of the cut runs meridionally and index 1 in theta, so any
+    # constant-theta line carries the whole meridional extent.
+    xr = np.asarray(cut.xrt[:, 0, :2])
+    arc = np.concatenate(
+        [[0.0], np.cumsum(np.sqrt((np.diff(xr, axis=0) ** 2).sum(axis=-1)))]
+    )
+    spf = arc / arc[-1]
+    return 0.5 * (spf[:-1] + spf[1:])
+
+
+class SpanwisePlot(Post):
+    """Pitch-averaged flow quantity against span fraction, at a cut plane.
+
+    Where a row loses, rather than how much: the mixed-out mean line reduces a
+    station to one number and a blade-to-blade contour shows one span fraction
+    at a time, so neither can say that the loss sits in a corner or at the tip.
+
+    Everything is referred to `result.actual`, the mixed-out mean line the grid
+    achieved, so the datum and the field being averaged are the same flow. A
+    result that has not been mixed out yields no figures.
+    """
+
+    type: ClassVar[str] = "spanwise"
+
+    m_cut: tuple[float, ...] = ()
+    """Normalised meridional positions to cut and pitch-average at."""
+
+    variable: str = "Ys"
+    """Quantity to plot: ``Ys``, ``CP``, ``CPo``, ``Cho``, ``Vm``, ``Vt``,
+    ``Alpha`` or ``Alpha_rel``."""
+
+    def report(self, config, result):
+        machine = result.machine
+        annulus = machine.annulus if machine else None
+        if result.grid is None or annulus is None:
+            logger.info("No grid to cut, skipping the spanwise plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the spanwise plot.")
+            return []
+
+        if result.actual is None:
+            logger.info(
+                "No mixed-out mean line to refer to, skipping the spanwise plot."
+            )
+            return []
+
+        if self.variable not in _SPANWISE_LABELS:
+            raise ValueError(
+                f"There is no spanwise variable {self.variable!r} to plot; "
+                f"try one of {sorted(_SPANWISE_LABELS)}."
+            )
+
+        import matplotlib.pyplot as plt
+
+        figures = []
+        for m in self.m_cut:
+            cut = ember.cut.unstructured(
+                result.grid, annulus.evaluate_xr(m, [0.0, 1.0]).T
+            )
+            if cut is None:
+                logger.info(f"No block reaches m={m}, skipping its spanwise plot.")
+                continue
+
+            i_row = _cut_row(m, annulus.n_row)
+
+            # Resolved at the mesh's own resolution rather than an invented
+            # one. A block is (streamwise, pitchwise, spanwise) and a cut is
+            # (meridional, theta), so the spanwise count leads.
+            # _, nj, nk = result.grid.rows[i_row][0].shape
+            nj = 137
+            nk = 113
+            try:
+                structured = ember.cut.interpolate_to_structured(cut, (nk, nj))
+            except ValueError as err:
+                # A plane placed between two rows of different blade count has
+                # no single pitch to wrap theta by. That is a bad cut, not a
+                # broken report, so the other planes still get drawn.
+                logger.info(f"Could not interpolate the cut at m={m}: {err}")
+                continue
+
+            values, label = self._profile(structured, result.actual, i_row)
+            figures.append(
+                self._draw(plt, values, _cut_spf(structured), label, m, i_row)
+            )
+
+        return figures
+
+    def _profile(self, cut, mean_line, i_row):
+        """Return the spanwise profile to plot, and the label for it."""
+        row = mean_line[:, i_row]
+        ref = mean_line.get_characteristic_station(i_row)
+
+        def mass_avg(prop):
+            return ember.average.mass_average(prop, cut, axes=(1,))
+
+        def area_avg(prop):
+            return ember.average.area_average(prop, cut, axes=(1,))
+
+        # One reference velocity for the whole machine, so a stator profile can
+        # be read against the rotor beside it. A machine that does not rotate
+        # has no blade speed to scale by and falls back to the velocity of the
+        # row's characteristic station, which the label then says.
+        U_ref = float(np.max(np.abs(mean_line.U)))
+        sym = "U"
+        if not U_ref > 0.0:
+            U_ref = float(ref.V)
+            sym = "V"
+
+        # Which end of the row sets the scale, on the mean line's own reading
+        # of what the row does to the flow.
+        is_compressor = float(row.P[1]) > float(row.P[0])
+        dP = (
+            float(row.Po_rel[0]) - float(row.P[0])
+            if is_compressor
+            else float(row.Po_rel[1]) - float(row.P[1])
+        )
+
+        if self.variable == "Ys":
+            values = (
+                float(row.T[1])
+                * (mass_avg(cut.s) - float(row.s[0]))
+                / float(ref.halfVsq_rel)
+            )
+        elif self.variable == "CP":
+            values = (area_avg(cut.P) - float(row.Po_rel[0])) / dP
+        elif self.variable == "CPo":
+            values = (mass_avg(cut.Po) - float(row.Po_rel[0])) / dP
+        elif self.variable == "Cho":
+            values = (mass_avg(cut.ho) - float(row.ho[0])) / U_ref**2
+        elif self.variable == "Vm":
+            values = mass_avg(cut.Vm) / U_ref
+        elif self.variable == "Vt":
+            values = mass_avg(cut.Vt) / U_ref
+        elif self.variable in ("Alpha", "Alpha_rel"):
+            # The two quantities here that carry their own units, so they are
+            # averaged and plotted as they stand rather than referred to
+            # anything. Mass-weighted like the velocities, so a wake cannot
+            # pull the angle around. The relative one is taken in the frame the
+            # cut carries, which is the frame of the blocks it was cut from --
+            # so a rotor profile is the angle its own blades see.
+            values = mass_avg(getattr(cut, self.variable))
+        else:
+            raise ValueError(f"Unhandled spanwise variable {self.variable!r}.")
+
+        return values, _SPANWISE_LABELS[self.variable].replace("{sym}", sym)
+
+    def _draw(self, plt, values, spf, label, m, i_row):
+        fig, ax = plt.subplots(layout="constrained")
+        ax.plot(values, spf)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Span Fraction")
+        ax.set_ylim((0.0, 1.0))
+        ax.set_title(f"{self.variable} at m={m:.3g}, row {i_row}")
+        return fig
+
+
+class PostChain:
+    """Draws a sequence of designs, where a :class:`Post` draws one.
+
+    A `Post` answers "what did this design do"; a `PostChain` answers "where
+    is the loop going", which needs every design it has been through. So the
+    signature differs --- one trajectory rather than one config and one result
+    --- and that is the whole of the distinction between the two families.
+
+    **Not a `Post` and not a `Node`.** Not a `Post` because the argument is
+    not the same thing; not a `Node` because there is nothing to configure. A
+    run either has a trajectory to draw or it does not, and a plot of the loop
+    is wanted whenever there is a loop, so these are always on and never named
+    in a config file.
+
+    A trajectory is a sequence of ``(config, result)`` pairs, oldest first,
+    each the design one iteration ran and what it achieved. Plain data: no
+    grid, no filesystem, and a test can build one by hand.
+    """
+
+    def report(self, trajectory):
+        """Return figures describing `trajectory`, which may be empty."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement report(trajectory)"
+        )
+
+
+class IterationPlot(PostChain):
+    """How each iterator's errors and knobs moved, iteration by iteration.
+
+    The design loop's own convergence history, as
+    :class:`ConvergencePlot` is the march's. A run of twenty iterations
+    otherwise says nothing about itself but a table per pass in the log, and a
+    table cannot show a knob walking steadily away from where it started.
+
+    **An overview page, then one page per iterator.** The overview divides
+    every error by its own tolerance, so a recamber in degrees, a loss
+    coefficient and a shape-space coefficient can be read on one axis, with a
+    rule at one: below it is converged. The per-iterator pages give the same
+    errors in their own units, and beneath them the *values* of the knobs.
+
+    **The value panel is the point of this plot.** An error that is not
+    falling looks the same whether the knob is inching towards an answer or
+    sitting on its clip, and only the value says which --- a recamber walking
+    to eleven degrees, or a coefficient pinned where the clip left it, is a
+    design running away rather than one converging slowly.
+    """
+
+    def report(self, trajectory):
+        from turbigen import iterate
+
+        if len(trajectory) < 2:
+            logger.info("Fewer than two iterations, so there is no history to draw.")
+            return []
+
+        config = trajectory[-1][0]
+        if not config.iterate.correct:
+            logger.info("Nothing was being corrected, skipping the iteration plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        # Read once for every page below. A knob missing from an iteration is
+        # a gap rather than a zero: an iterator that could not measure omits
+        # its knobs, and a zero there would draw as converged.
+        n = len(trajectory)
+        errors, values = {}, {}
+        for i, (config_i, result_i) in enumerate(trajectory):
+            for name, value in result_i.error.items():
+                errors.setdefault(name, np.full(n, np.nan))[i] = value
+            for name, value in iterate.unknowns(config_i).items():
+                values.setdefault(name, np.full(n, np.nan))[i] = value
+
+        iterators = list(config.iterate.correct)
+        figures = [self._overview(plt, config, iterators, errors, n)]
+        for i_iterator, iterator in enumerate(iterators):
+            figure = self._one(plt, config, iterator, i_iterator, errors, values, n)
+            if figure is not None:
+                figures.append(figure)
+
+        return figures
+
+    def _overview(self, plt, config, iterators, errors, n):
+        """Every knob against its own tolerance, on one axis."""
+        fig, ax = plt.subplots(layout="constrained")
+        ax.set_title("Design Iteration")
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel(r"$|\epsilon|$ / tolerance")
+        ax.set_yscale("log")
+
+        for i_iterator, iterator in enumerate(iterators):
+            tolerances = iterator.tolerances(config)
+            for name, tolerance in tolerances.items():
+                if name not in errors or not tolerance:
+                    continue
+                ax.plot(
+                    np.arange(n),
+                    np.abs(errors[name]) / tolerance,
+                    color=f"C{i_iterator}",
+                    linewidth=1.0,
+                )
+            # One legend entry per iterator, not per knob: twenty-five lines
+            # named individually is a legend nobody reads.
+            ax.plot([], [], color=f"C{i_iterator}", label=iterator.type)
+
+        # Converged is below one, whatever the knob is measured in, which is
+        # the whole reason for dividing through.
+        ax.axhline(1.0, color="k", linestyle="--", linewidth=1.0)
+        ax.legend()
+        return fig
+
+    def _one(self, plt, config, iterator, i_iterator, errors, values, n):
+        """One iterator's errors, and the knobs that answer for them."""
+        names = [name for name in iterator.unknowns(config) if name in errors]
+        if not names:
+            return None
+
+        fig, (ax_err, ax_val) = plt.subplots(2, 1, sharex=True, layout="constrained")
+        ax_err.set_title(f"{iterator.type} Iteration")
+        ax_err.set_ylabel(r"Error, $\epsilon$")
+        ax_val.set_ylabel("Value")
+        ax_val.set_xlabel("Iteration")
+
+        tolerances = iterator.tolerances(config)
+        iteration = np.arange(n)
+        for i_name, name in enumerate(names):
+            color = f"C{i_name}"
+            ax_err.plot(iteration, errors[name], color=color, label=name)
+            if name in values:
+                ax_val.plot(iteration, values[name], color=color)
+
+        # Drawn as a band rather than two lines, and only where every knob
+        # shares a tolerance -- which is the common case, and where a single
+        # band means anything.
+        band = {tolerances[name] for name in names if name in tolerances}
+        if len(band) == 1:
+            tolerance = band.pop()
+            if tolerance:
+                ax_err.axhspan(-tolerance, tolerance, color="k", alpha=0.1)
+
+        ax_err.legend(fontsize="small")
+        return fig
+
+
+STANDARD_CHAIN = (IterationPlot(),)
+"""The chain plots every report draws, there being nothing to configure.
+
+The counterpart of :data:`STANDARD`, and separate from it because the two
+families take different arguments. A tuple rather than one class so that a
+second chain plot -- a `chic` sweep, say -- is one line here.
+"""
 
 
 STANDARD = (
