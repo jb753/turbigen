@@ -10,8 +10,15 @@ Test cases:
 - test_a_saved_field_comes_back_unchanged: the round trip, at one resolution
 - test_a_field_can_be_restarted_onto_a_finer_mesh: interpolated in index space
 - test_a_field_is_not_reinterpreted_by_a_changed_datum: why not conserved
-- test_the_file_holds_primitives_only: no coordinates, no patches, no conserved
+- test_the_file_holds_primitives_only: no coordinates, no conserved, and
+  critical indices beside the state
 - test_a_field_for_another_machine_is_refused: block count must match
+- test_the_file_holds_the_critical_indices: ends and patch boundaries per block
+- test_a_restart_holds_patch_boundaries_where_they_started: agrees with ember's
+  grid-to-grid mapping, not the end-to-end one
+- test_a_field_without_critical_indices_restarts_as_before: old files
+- test_mismatched_critical_indices_fall_back_to_end_to_end: topology changed
+- test_the_critical_indices_are_not_counted_as_blocks
 - test_the_stamp_follows_the_design: what the digest does and does not depend on
 - test_an_unstamped_field_reads_back_no_stamp: fields written before stamps
 - test_a_stamped_field_still_restarts_onto_a_changed_design: the stamp records
@@ -95,18 +102,22 @@ def test_a_field_is_not_reinterpreted_by_a_changed_datum(solved):
 
 
 def test_the_file_holds_primitives_only(solved):
-    """No coordinates, no patches, no conserved variables.
+    """No coordinates, no conserved variables, and the critical indices.
 
-    Coordinates are unnecessary because the mapping is in index space, patches
-    because a flow field needs no boundary alignment, and conserved because of
-    the datum.
+    Coordinates are unnecessary because the mapping is in index space, and
+    conserved because of the datum. The patches themselves are not stored, only
+    where their boundaries fall, which is all a mapping that holds them fixed
+    needs.
     """
     _, grid, path = solved
     data = np.load(path)
 
-    assert set(data.files) == {f"b0_{name}" for name in restart.STATE}
-    assert all(data[key].shape == grid[0].shape for key in data.files)
-    assert all(data[key].dtype == np.float32 for key in data.files)
+    state = {f"b0_{name}" for name in restart.STATE}
+    crit = {f"b0_{key}" for key in restart.CRIT_KEYS}
+    assert set(data.files) == state | crit
+    assert all(data[key].shape == grid[0].shape for key in state)
+    assert all(data[key].dtype == np.float32 for key in state)
+    assert all(data[key].dtype == np.int32 for key in crit)
 
 
 def test_a_field_for_another_machine_is_refused(solved, tmp_path):
@@ -121,6 +132,123 @@ def test_a_field_for_another_machine_is_refused(solved, tmp_path):
 
     with pytest.raises(ValueError, match="2 block"):
         restart.apply(fresh, two_block)
+
+
+#
+# CRITICAL INDICES
+#
+# A remesh moves patch boundaries relative to the ends of a block: the cascade
+# at resolution_factor 0.4 goes from i indices [0, 16, 36, 40, 48] to
+# [0, 24, 52, 56, 72], so an end-to-end stretch lands the trailing edge about
+# two nodes out. The stored indices let a file restart map as ember does from
+# grid to grid, and anything it cannot trust falls back to the old stretch.
+#
+
+FIELDS = ("P", "T", "Vx", "Vr", "Vt")
+
+
+def _finer():
+    finer = Config.from_dict(
+        {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
+    )
+    *_, fresh = cli.prepare(finer)
+    return fresh
+
+
+def _end_to_end(path):
+    """The finer grid filled as every restart was before indices were stored."""
+    data = np.load(path)
+    fresh = _finer()
+    fresh.interp_from_arrays([[data[f"b0_{name}"] for name in restart.STATE]])
+    return fresh
+
+
+def _rewrite(path, tmp_path, edit):
+    data = dict(np.load(path))
+    edit(data)
+    out = tmp_path / "edited.npz"
+    np.savez_compressed(out, **data)
+    return out
+
+
+def _assert_same_field(a, b, **kwargs):
+    for name in FIELDS:
+        np.testing.assert_allclose(
+            np.asarray(getattr(a[0], name)),
+            np.asarray(getattr(b[0], name)),
+            err_msg=f"{name} differs",
+            **kwargs,
+        )
+
+
+def test_the_file_holds_the_critical_indices(solved):
+    _, grid, path = solved
+    data = np.load(path)
+
+    for key, expected in zip(restart.CRIT_KEYS, restart.critical_indices(grid[0])):
+        np.testing.assert_array_equal(data[f"b0_{key}"], expected)
+
+    # Interior patch boundaries, not just the ends, or the test below proves
+    # nothing.
+    assert data["b0_crit_i"].size > 2
+
+
+def test_a_restart_holds_patch_boundaries_where_they_started(solved):
+    """From a file, the mapping is the one ember uses from grid to grid."""
+    _, grid, path = solved
+
+    from_file = _finer()
+    restart.apply(from_file, path)
+
+    from_grid = _finer()
+    from_grid.interp_from_grid(grid)
+
+    _assert_same_field(from_file, from_grid, rtol=1e-5)
+
+    # And it is not the end-to-end stretch, which puts the boundaries elsewhere.
+    stretched = _end_to_end(path)
+    assert not np.allclose(
+        np.asarray(from_file[0].T), np.asarray(stretched[0].T), rtol=1e-6
+    )
+
+
+def test_a_field_without_critical_indices_restarts_as_before(solved, tmp_path):
+    _, _grid, path = solved
+
+    def strip(data):
+        for key in restart.CRIT_KEYS:
+            del data[f"b0_{key}"]
+
+    old = _rewrite(path, tmp_path, strip)
+    fresh = _finer()
+    restart.apply(fresh, old)
+
+    _assert_same_field(fresh, _end_to_end(path), rtol=0.0, atol=0.0)
+
+
+def test_mismatched_critical_indices_fall_back_to_end_to_end(solved, tmp_path):
+    """A topology change is not an error: the whole block is stretched."""
+    _, _grid, path = solved
+
+    def add_index(data):
+        crit = data["b0_crit_i"]
+        extra = (crit[0] + crit[1]) // 2
+        data["b0_crit_i"] = np.sort(np.append(crit, extra)).astype(np.int32)
+
+    mismatched = _rewrite(path, tmp_path, add_index)
+    fresh = _finer()
+    restart.apply(fresh, mismatched)
+
+    _assert_same_field(fresh, _end_to_end(path), rtol=0.0, atol=0.0)
+
+
+def test_the_critical_indices_are_not_counted_as_blocks(solved):
+    """A one-block field with its indices in it is still a one-block field."""
+    config, _grid, path = solved
+    *_, fresh = cli.prepare(config)
+
+    # Would raise "has 2 block(s)" or more if the index keys were counted.
+    restart.apply(fresh, path)
 
 
 #
