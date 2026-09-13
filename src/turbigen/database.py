@@ -72,6 +72,23 @@ class Database(Node):
     power: float = 2.0
     """Exponent on inverse distance. Higher weights the nearest sample more."""
 
+    max_distance: float = 0.8
+    """Farthest normalised distance a sample's field is seeded from.
+
+    Beyond it the march starts from the meridional guess instead. Distance is
+    measured in the unit cube the samples span, where a design inside a Sobol
+    sweep of 32 in seven variables is typically 0.5 from its nearest sample and
+    one of only six is 0.8, so this is past ordinary spacing once a sweep has
+    a few tens of runs finished, and early in one keeps only the closer half
+    of the seeds. A design that far
+    out lies outside the samples on some axis, and a neighbour's field corrected
+    onto it can carry flow the guess would not: reversed endwall flow at a
+    mixing plane, which diverges a soft start the guess survives.
+
+    Only the field. The knobs are still blended by :func:`warm_start`, which
+    cannot leave the hull and so stays safe at any distance.
+    """
+
     variables: tuple[str, ...] = ()
     """Design variables to use, as `node.flatten` spells them.
 
@@ -273,6 +290,16 @@ def nearest_field(config, samples):
 
     for idx in np.argsort(distance):
         path, _, _ = samples[idx]
+
+        # Sorted, so every candidate after this one is farther still.
+        if distance[idx] > config.database.max_distance:
+            logger.info(
+                f"Starting the march from the meridional guess: the nearest "
+                f"field is {distance[idx]:.3g} away, beyond max_distance "
+                f"{config.database.max_distance:.3g}."
+            )
+            return None
+
         field = path.parent / restart.RESTART_NAME
         # A field and nothing more. `_sample` has already turned away anything
         # that did not finish, so a `restart.npz` beside one of these is a

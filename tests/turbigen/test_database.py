@@ -33,6 +33,9 @@ Test cases:
 - test_nearest_field_needs_a_restart_beside_the_sample: skips to the next
 - test_nearest_field_takes_a_run_with_no_mixed_out_mean_line: not needed
 - test_nearest_field_is_none_without_samples: the graceful refusal
+- test_nearest_field_is_none_beyond_max_distance: too far, so the guess instead
+- test_max_distance_can_admit_a_far_field: the threshold is the config's
+- test_max_distance_is_not_skipped_past: a fieldless near run does not open the far ones
 - test_warm_start_reuses_preloaded_samples: one glob-and-parse for both
 """
 
@@ -354,7 +357,7 @@ def test_nearest_field_needs_a_restart_beside_the_sample(tmp_path):
     solved(tmp_path / "runs" / "000", make(1.6, 6.0), field=False)
     solved(tmp_path / "runs" / "001", make(1.9, 7.0), field=True)
 
-    config = query(1.65)
+    config = query(1.7)
     samples = config.database.load_samples(config, tmp_path)
 
     path = database.nearest_field(config, samples)
@@ -381,6 +384,40 @@ def test_nearest_field_takes_a_run_with_no_mixed_out_mean_line(tmp_path):
 
 def test_nearest_field_is_none_without_samples(tmp_path):
     assert database.nearest_field(query(1.5), []) is None
+
+
+def test_nearest_field_is_none_beyond_max_distance(solved_runs):
+    """psi 2.3 is (2.3 - 1.8) / 0.4 = 1.25 from the nearest run, past 1.0."""
+    config = query(2.3)
+    samples = config.database.load_samples(config, solved_runs)
+
+    assert database.nearest_field(config, samples) is None
+
+
+def test_max_distance_can_admit_a_far_field(solved_runs):
+    config = query(2.3)
+    config = dataclasses.replace(
+        config, database=dataclasses.replace(config.database, max_distance=1.5)
+    )
+    samples = config.database.load_samples(config, solved_runs)
+
+    path = database.nearest_field(config, samples)
+    assert path == (solved_runs / "runs" / "002" / "restart.npz").resolve()
+
+
+def test_max_distance_is_not_skipped_past(tmp_path):
+    """The near run has no field and the next is too far, so there is none.
+
+    Samples span psi 1.6 to 2.0, a range of 0.4. The query at 1.55 is 0.125
+    from the fieldless run and 1.125 from the one with a field.
+    """
+    solved(tmp_path / "runs" / "000", make(1.6, 6.0), field=False)
+    solved(tmp_path / "runs" / "001", make(2.0, 7.0), field=True)
+
+    config = query(1.55)
+    samples = config.database.load_samples(config, tmp_path)
+
+    assert database.nearest_field(config, samples) is None
 
 
 def test_warm_start_reuses_preloaded_samples(solved_runs):
