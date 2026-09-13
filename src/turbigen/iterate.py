@@ -3257,6 +3257,15 @@ class Repeat(Iterator):
 
     type: ClassVar[str] = "repeat"
 
+    learns: ClassVar[bool] = False
+    """A profile copied onto its own exit, which needs no fitting.
+
+    The error is the distance left to travel, so the sensitivity is one by
+    construction, as it is for :class:`MeanLine`. Kept rather than learned, the
+    step on every iteration is the relaxed copy ``u -= gain * e``, instead of a
+    Broyden step fitted to a few near-parallel moves.
+    """
+
     COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha")
     """The profile columns this iterator owns."""
 
