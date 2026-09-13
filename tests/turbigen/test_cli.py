@@ -628,6 +628,99 @@ def test_a_negative_soft_step_count_is_a_message(run_case, capsys):
     assert "n_step_soft must be >= 0" in capsys.readouterr().err
 
 
+#
+# A retry: a solve with no soft start that diverges is rebuilt from the same
+# start and marched again behind `solver.n_step_retry` soft steps, once.
+#
+
+
+def diverge(monkeypatch, *which):
+    """Report the marches numbered `which`, counting from zero, as diverged.
+
+    Every march goes through `Ember.solve`, soft passes included, so counting
+    calls there picks out one by its place in the sequence. The march itself is
+    real; only its verdict is changed, as in the soft-start test above.
+    """
+    from turbigen.solver import Ember
+
+    marched = Ember.solve
+    count = [0]
+
+    def solve(self, grid):
+        history = marched(self, grid)
+        if count[0] in which:
+            history.diverged = True
+        count[0] += 1
+        return history
+
+    monkeypatch.setattr(Ember, "solve", solve)
+
+
+def test_a_diverged_hard_start_is_not_retried_unless_asked(
+    run_case, marches, monkeypatch
+):
+    """Off at its default: the failure is recorded as it always was."""
+    diverge(monkeypatch, 0)
+
+    assert cli.main(["run", str(run_case)]) == 2
+
+    assert [march.n_step for march in marches] == [10]
+
+
+def test_a_diverged_hard_start_retries_behind_a_soft_start(
+    run_case, marches, monkeypatch, capsys
+):
+    """The first march fails, the retry soft starts, and the real march follows."""
+    from turbigen import case
+
+    diverge(monkeypatch, 0)
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_retry=5"]) == 0
+
+    assert [march.n_step for march in marches] == [10, 5, 10]
+    assert "retrying from the same field with 5 soft steps" in capsys.readouterr().err
+
+    _, result = case.read(run_case.parent / cli.OUTPUT_NAME, design=False)
+    assert result.converged
+
+
+def test_a_soft_started_solve_is_not_retried(run_case, marches, monkeypatch):
+    """A soft pass already ran, so running it again is not going to help."""
+    diverge(monkeypatch, 1)
+
+    code = cli.main(
+        [
+            "run",
+            str(run_case),
+            "-s",
+            "solver.n_step_soft=5",
+            "-s",
+            "solver.n_step_retry=5",
+        ]
+    )
+
+    assert code == 2
+    assert [march.n_step for march in marches] == [5, 10]
+
+
+def test_a_retry_that_diverges_is_the_recorded_failure(run_case, marches, monkeypatch):
+    """Once only, and what goes to disk is the retry's field, as for any failure."""
+    diverge(monkeypatch, 0, 1)
+
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_retry=5"]) == 2
+
+    assert [march.n_step for march in marches] == [10, 5]
+    assert (run_case.parent / cli.RESTART_NAME).is_file()
+    assert (run_case.parent / cli.HISTORY_NAME).is_file()
+    assert (run_case.parent / cli.GRID_NAME).is_file()
+
+
+def test_a_negative_retry_step_count_is_a_message(run_case, capsys):
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_retry=-5"]) == 1
+
+    assert "n_step_retry must be >= 0" in capsys.readouterr().err
+
+
 # The march is driven unstable on purpose, so ember's warning that the outlet
 # has gone supersonic is the expected behaviour rather than a problem. Without
 # this the suite's `filterwarnings = error` turns it into an exception, and the
@@ -1487,6 +1580,34 @@ def test_only_the_first_iteration_soft_starts(iterate_case, marches):
 
     # Iteration 0 marches twice, iteration 1 once.
     assert [march.n_step for march in marches] == [5, 10, 10]
+
+
+def test_a_later_iteration_retries(iterate_case, marches, monkeypatch):
+    """The case a retry is for: a chained restart that blows up.
+
+    Iteration 1 starts hard from iteration 0's field, and its march is made to
+    diverge. It is rebuilt from that same field and marched again behind a soft
+    start, rather than ending the loop.
+    """
+    diverge(monkeypatch, 2)
+
+    code = cli.main(
+        [
+            "iterate",
+            str(iterate_case),
+            "-s",
+            "iterate.max_iter=2",
+            "-s",
+            "solver.n_step_soft=5",
+            "-s",
+            "solver.n_step_retry=5",
+        ]
+    )
+
+    assert code == 2  # Two iterations is not enough to settle this design.
+
+    # Iteration 0 soft starts; iteration 1 diverges, retries soft, then marches.
+    assert [march.n_step for march in marches] == [5, 10, 10, 5, 10]
 
 
 def test_a_settled_design_leaves_a_run_directory(settled_case):

@@ -1200,7 +1200,7 @@ def _reattach_patches(grid):
         logger.debug(f"Could not re-attach the grid's patches: {err}")
 
 
-def soft_start(solver, grid):
+def soft_start(solver, grid, n_step=None):
     """March `grid` with a detuned copy of `solver`, and return what it did.
 
     Nothing of it is kept. The grid is marched in place, so the production
@@ -1209,17 +1209,15 @@ def soft_start(solver, grid):
 
     The step count is the config's, replacing the one `soft()` names: how long
     to spend on a robust start depends on the case and the guess it is starting
-    from, which the solver has no way to know.
+    from, which the solver has no way to know. `n_step` defaults to
+    `solver.n_step_soft`; a retry passes `solver.n_step_retry` instead.
     """
-    if solver.n_step_soft < 0:
-        raise ValueError(
-            f"solver.n_step_soft must be >= 0, got {solver.n_step_soft}. It is "
-            "a number of steps to march, and 0 is how a soft start is declined."
-        )
+    if n_step is None:
+        n_step = solver.n_step_soft
 
-    soft = dataclasses.replace(solver.soft(), n_step=solver.n_step_soft)
+    soft = dataclasses.replace(solver.soft(), n_step=n_step)
 
-    run_log.info(f"Soft start: {solver.n_step_soft} steps")
+    run_log.info(f"Soft start: {n_step} steps")
     history = soft.solve(grid)
     run_log.info(convergence_string(history, solver.converged(history)))
 
@@ -1227,7 +1225,14 @@ def soft_start(solver, grid):
 
 
 def solve(
-    config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None, soft=False
+    config,
+    out_dir,
+    restart_path=None,
+    svg=False,
+    trajectory=(),
+    warm=None,
+    soft=False,
+    retry=False,
 ):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
@@ -1251,14 +1256,31 @@ def solve(
     a change to the design, and both are exactly what a robust pass is for.
     What disqualifies a solve is having a loop's previous iteration behind it,
     which only the caller knows.
+
+    `retry` says a divergence here may be tried again, once, from the same
+    start behind `solver.n_step_retry` soft steps, if the config asked for that
+    and this solve had no soft start of its own. The caller decides because a
+    `chic` point that diverges is an answer rather than a failure.
     """
+    # Checked before anything is meshed, so a bad count is a message rather
+    # than an ember error about an averaging window after the mesh is paid for.
+    if config.solver is not None:
+        for name in ("n_step_soft", "n_step_retry"):
+            if getattr(config.solver, name) < 0:
+                raise ValueError(
+                    f"solver.{name} must be >= 0, got "
+                    f"{getattr(config.solver, name)}. It is a number of steps "
+                    "to march, and 0 is how it is declined."
+                )
+
     config, machine, grid = prepare(config, restart_path, warm=warm)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
 
     history = None
-    if soft and config.solver.n_step_soft:
+    soft_ran = bool(soft and config.solver.n_step_soft)
+    if soft_ran:
         history = soft_start(config.solver, grid)
 
         # A soft pass that blew up leaves a field of NaNs, and marching the
@@ -1271,6 +1293,30 @@ def solve(
 
     if history is None:
         history = config.solver.solve(grid)
+
+        # A hard start that diverged gets one more go. Only one that had no
+        # soft start: a soft pass that ran and still led here is not helped by
+        # running it again.
+        if (
+            retry
+            and not soft_ran
+            and config.solver.n_step_retry
+            and getattr(history, "diverged", False)
+        ):
+            run_log.info(
+                "Diverged without a soft start; retrying from the same field "
+                f"with {config.solver.n_step_retry} soft steps"
+            )
+
+            # The march left NaNs in the grid, and the patches carry state of
+            # their own -- mixing-plane exchange, throttle, relaxation -- so the
+            # start is rebuilt rather than restored.
+            del grid
+            config, machine, grid = prepare(config, restart_path, warm=warm)
+
+            history = soft_start(config.solver, grid, config.solver.n_step_retry)
+            if config.solver.converged(history):
+                history = config.solver.solve(grid)
 
     converged = config.solver.converged(history)
 
@@ -1403,6 +1449,7 @@ def _run_one(args, config_path):
             resolve_restart(args, config_path),
             svg=args.svg,
             soft=True,
+            retry=True,
         )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
@@ -1621,6 +1668,7 @@ class _Chain:
             trajectory=self.trajectory,
             warm=warm,
             soft=first,
+            retry=True,
         )
         self.previous = iter_dir / RESTART_NAME
 
