@@ -344,11 +344,19 @@ def test_matches_the_turbigen_implementation(machine, grid):
 @bit_exact
 @pytest.mark.parametrize(
     "mesh, blades",
-    [(CUSP, None), (MESH, TIP)],
-    ids=["cusp", "tip_gap"],
+    [(CUSP, None)],
+    ids=["cusp"],
 )
 def test_optional_features_match_the_turbigen_implementation(mesh, blades):
-    """The cusp and the tip gap are the two paths that reshape the block.
+    """The cusp reshapes the block, so it is compared exactly too.
+
+    The tip gap used to be compared here as well, and is no longer: the old
+    mesher sized the gap's end spacing as the clearance over the node count,
+    which leaves four cells to fill five spacings and a jump of one and a half
+    across the gap. This mesher divides by the cell count instead, which moves
+    every node of a tipped row, so there is nothing exact left to compare.
+    `test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio` pins
+    what replaced it.
 
     Rotating patches are compared separately, below. The old mesher places
     none: there, rotation arrives later from `Grid.apply_rotation` at
@@ -369,6 +377,29 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades):
             p for p in block.patches if not isinstance(p, ember.patch.RotatingPatch)
         ]
         assert [repr(p) for p in shared] == [repr(p) for p in block_ref.patches]
+
+
+@pytest.mark.parametrize("njtip_min", [5, 9])
+@pytest.mark.parametrize("tip", [0.0025, 0.005, 0.03])
+def test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio(tip, njtip_min):
+    """No jump across a clearance too small for the free clustering to fill.
+
+    Below a few casing spacings the gap falls back to a fixed count of nodes,
+    and sizing its ends as the clearance over the node count made the middle
+    cells half as large again as the ends. Every clearance in a typical sweep
+    takes that path, and the jump sat where a mixing-plane blow-up began.
+    """
+    mesher = H(njtip_min=njtip_min)
+    dspf_wall = 3.4e-3
+
+    spf = mesher.spanwise_grid(dspf_wall, dspf_wall, tip)
+
+    # The gap, plus the last cell of the main passage it joins onto.
+    gap = np.diff(spf[spf >= 1.0 - tip - 1e-12])
+    joined = np.diff(spf)[-(len(gap) + 1) :]
+    ratio = joined[1:] / joined[:-1]
+    assert np.maximum(ratio, 1.0 / ratio).max() <= mesher.ER_span
+    assert len(gap) >= njtip_min - 1
 
 
 def test_a_tip_gap_is_the_one_patch_the_old_mesher_does_not_place(machine):
