@@ -1219,7 +1219,7 @@ def soft_start(solver, grid, n_step=None):
 
     run_log.info(f"Soft start: {n_step} steps")
     history = soft.solve(grid)
-    run_log.info(convergence_string(history, solver.converged(history)))
+    run_log.info(convergence_string(solver.converged(history)))
 
     return history
 
@@ -1409,7 +1409,7 @@ def solve(
         config = dataclasses.replace(config, operating_point=achieved)
         result = dataclasses.replace(result, operating_point=achieved)
 
-    run_log.info(convergence_string(history, converged))
+    run_log.info(convergence_string(converged))
     if actual is not None:
         run_log.info(actual.to_string())
 
@@ -2004,17 +2004,16 @@ def _prune_iterations(out_dir):
         )
 
 
-def convergence_string(history, converged):
-    """Report how a march ended, using ember's own summary of the last record.
+def convergence_string(converged):
+    """Report how a march ended, as a verdict alone.
 
-    The verdict is ours; the numbers underneath it are ember's, because a
-    history knows how to describe itself and a second formatter here would be
-    one more thing to keep in step. Note that no step count is quoted: records
+    ember has already logged every record as the march went, so repeating the
+    last one here would print it twice. Nor is a step count quoted: records
     are written every `n_step_log` steps, so the last record is not in general
     the last step marched, and reporting it as one would be wrong.
     """
     verdict = "converged" if converged else "NOT converged"
-    return f"Solver: {verdict}\n{history.format_message()}"
+    return f"Solver: {verdict}"
 
 
 @contextlib.contextmanager
