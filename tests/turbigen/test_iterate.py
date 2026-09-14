@@ -371,6 +371,27 @@ def test_unmeasured_knobs_are_not_converged(config):
     assert iterate.errors(config, Result(), strict=False) == {}
 
 
+class Blows(Fixed):
+    """A stand-in that fails the way a cut through a field of NaNs does."""
+
+    def error(self, config, result):
+        raise ValueError("Pressure must be positive and finite.")
+
+
+def test_tolerant_errors_survive_any_failure_to_measure():
+    """A diverged field raises wherever it is touched, not as MeasurementError."""
+    config = dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(correct=(Blows(), Other())),
+    )
+
+    with pytest.raises(ValueError):
+        iterate.errors(config, Result())
+
+    # The knobs that could be measured are still reported.
+    assert set(iterate.errors(config, Result(), strict=False)) == {"other"}
+
+
 def test_converge_reaches_the_answer():
     config = dataclasses.replace(
         build(),

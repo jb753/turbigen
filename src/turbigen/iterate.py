@@ -374,12 +374,16 @@ def errors(config, result, strict=True):
     steering one --- a report of a march that diverged has nothing to measure
     and is exactly the report someone needs. Each iterator that cannot measure
     is logged and its knobs omitted, and the rest are returned as usual.
+
+    Tolerant of any exception, not only :class:`MeasurementError`: a field of
+    NaNs fails wherever it is first touched, often deep in a property call that
+    knows nothing of iterators, and the report it takes away is the same.
     """
     merged = {}
     for iterator in config.iterate.correct:
         try:
             merged.update(iterator.error(config, result))
-        except MeasurementError as err:
+        except Exception as err:
             if strict:
                 raise
             logger.warning(
