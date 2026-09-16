@@ -1,11 +1,24 @@
 Changelog
 =========
 
+v3.1.0
+^^^^^^
+
+* Add ``fac_tangential`` to blend perpendicular and tangential thickness distributions
+* Improve H-meshing in pinched tips, and add experimental gridded tip
+* Add H-mesh setting to control aspect ratio at mixing planes
+* Add Bernstein and circluar-arc, camber lines
+* Add Clark camber and thickness distributions with inverse design iterator
+* Repeating inlet profiles now support a proper orthogonal basis
+* Add ``metrics:`` key for extra measurements of the 3D flow field
+* Record mixing loss next to the mixed-out mean line data
+* Allow for soft starts, and retrying a diverged run with soft settings
+* Fix incidence iterator to recamber all sections
+
 v3.0.0
 ^^^^^^
 
-* A complete rewrite.
-* Incidence iterator recambers each blade section independently; the incidence ``spf`` key is removed.
+* A complete from-scratch rewrite. Assume nothing.
 
 v2.6.0
 ^^^^^^
