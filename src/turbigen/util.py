@@ -376,21 +376,10 @@ def get_i_stag(block, xrt_LE=None):
     else:
         z_nose = np.zeros((nj,))
 
-    # How far either side of the nose to look, in normalised arc length, where
-    # the whole section perimeter spans two. The stagnation point sweeps round
-    # the nose with incidence, and a window that cuts into that sweep does not
-    # merely lose the answer: the pressure near a stagnation point is flat, so
-    # a truncated window keeps the flank of the plateau and reports its ripples
-    # as the peak. Measured on a stator at three degrees of incidence, the
-    # maxima spanned 0.13 in `z` within 0.09 per cent of each other in
-    # pressure, and windows of 0.08 and 0.10 selected flanks that read as -29
-    # and -17 degrees against the +4 the plateau's own peak gives.
-    #
-    # So it is set wide enough to hold the whole plateau and let the highest
-    # pressure in it decide, rather than tight enough to be sure of excluding
-    # the far side of the blade. The far side is far: on the same section its
-    # nearest maximum sat at 0.27 and the other row's at 0.87, against the
-    # 0.15 here.
+    # How far either side of the nose to look, in normalised arc length (the
+    # whole perimeter spans two). Pressure is nearly flat around a stagnation
+    # point, so a window too narrow to hold the whole plateau picks a ripple on
+    # its flank. Wide enough for the plateau, still well short of the far side.
     half_window = 0.15
     i_stag = np.full((nj,), 0, dtype=int)
     found = np.full((nj,), False)
@@ -465,16 +454,10 @@ def get_zeta_stag(block, i_stag):
     s12 = (p2 - p1) / d12
     curvature = (s12 - s01) / (z2 - z0)
 
-    # Vertex of the Newton form `p0 + s01 (z - z0) + c (z - z0)(z - z1)`, whose
-    # derivative vanishes at `(z0 + z1) / 2 - s01 / (2 c)`, written relative to
-    # `z1`. Taking it as `-(s01 + s12) / (4 c)` instead --- the midpoint slope
-    # over twice the curvature --- is the same number only when the two
-    # spacings match, and is out by `(d01 - d12) / 4` when they do not: a
-    # sub-cell bias that moves as the stagnation point crosses cells, which is
-    # exactly what refining between nodes is here to remove.
-    #
-    # A triple that is not concave down has no vertex to find, which happens
-    # only where `get_i_stag` did not find a maximum either. Left on the node.
+    # Vertex of the Newton form `p0 + s01 (z - z0) + c (z - z0)(z - z1)`, at
+    # `(z0 + z1) / 2 - s01 / (2 c)`, written relative to `z1`. This is exact
+    # for unequal spacings, unlike the midpoint-slope shortcut. A triple that
+    # is not concave down has no vertex, so the point stays on the node.
     delta = np.where(curvature >= 0.0, 0.0, -0.5 * d01 - s01 / (2.0 * curvature))
 
     # Kept inside the bracket the three points span: a nearly flat parabola
@@ -978,11 +961,8 @@ def cut_blade_tips(grid, offset=0):
 #
 # SURFACE DISTRIBUTIONS
 #
-# What a blade does to the flow, read off the blade. A surface plot draws
-# these, and `turbigen.loading` measures with them, which is exactly why they
-# live here rather than in either: the two must agree about what the
-# distribution *is*, and the surest way to make them agree is to have one of
-# them.
+# Shared by the surface plot and `turbigen.loading`, so the two agree about
+# what the distribution is.
 #
 
 N_SPAN_CUT = 101

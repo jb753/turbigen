@@ -53,15 +53,10 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
     flat = actual.flat
     nominal = machine.mean_line.flat
 
-    # Shaft speed is the one thing here that comes from the grid rather than
-    # from either the design or a cut. A cut genuinely cannot measure it, but
-    # the blocks were told it, and what they were told is what the solver used
-    # -- so this reports the speed that ran rather than the speed that was
-    # asked for. The two are the same today and will not be as soon as an
-    # operating point adjusts one, and every `_rel` quantity on this mean line
-    # is derived from it: copied from the design, an off-design run would
-    # report its relative Mach numbers in the wrong rotating frame, with
-    # entirely plausible values.
+    # Shaft speed comes from the grid, which is what the solver actually ran,
+    # not from the design. Every `_rel` quantity depends on it, so an
+    # off-design speed copied from the design would give plausible but wrong
+    # relative Mach numbers.
     actual.set_Omega([float(blocks[0].Omega) for blocks in grid.rows])
 
     # One mixing loss per cut, filled in streamwise order and reshaped to the
@@ -96,15 +91,10 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
         except Exception as err:
             raise ValueError(f"Could not mix out station {i_station}: {err}") from err
 
-        # The loss the reduction introduces: entropy of the uniform state less
-        # the mass-averaged entropy of the cut it replaced. The AR contraction
-        # is isentropic and does not move `mixed.s`, so this is measured at the
-        # true cut area regardless of it. `mass_average` only takes a structured
-        # block, so the cut is interpolated to the resolution of the row it
-        # sits beside first. The passage of that row, not whichever of its
-        # blocks came first: a block gridding a tip clearance is a fraction of
-        # the span and a fraction of the pitch, and interpolating a whole
-        # station onto its shape would throw most of the cut away.
+        # Mixing loss: entropy of the uniform state less the mass-averaged
+        # entropy of the cut (the AR contraction is isentropic). `mass_average`
+        # needs a structured block, so interpolate onto the shape of the row's
+        # passage block, not a tip gap block that covers only part of the cut.
         i_row = i_station // 2
         passage, _ = turbigen.util.row_blocks(grid, i_row)
         nj, nk = passage.shape[1:]

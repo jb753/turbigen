@@ -289,33 +289,12 @@ class ClarkThickness(ThicknessDesign):
     One number, shared by both surfaces, so the two depart symmetrically about
     the camber line.
 
-    **Why this is shared when the interior is not.** A shape-space endpoint
-    moves the thickness as ``m^1.5 (1 - m)``, peaking at ``m = 0.6``, so a
-    wedge angle per surface would be real authority over the rear of each ---
-    the one place :class:`~turbigen.iterate.ClarkProfile` would otherwise have
-    none, since a shared knob reads the two surfaces only through their mean
-    and a pair equally wrong in opposite directions reads as converged.
-
-    It was written that way, and the cost was not worth it. The trailing edge
-    *point* does not move --- half-thickness at ``m = 1`` is ``t_TE / 2`` on
-    each surface whatever the wedge does, that being the linear ramp in
-    :func:`~turbigen.shapespace.thickness_from_tau` rather than anything the
-    shape space curve reaches. What moved was the direction the aerofoil left
-    in: with two wedges the bisector of the surfaces rotates away from the
-    camber line by of order twenty-five degrees per unit of difference between
-    them, which makes the thickness a second claim on the exit angle. Nothing
-    bounded that asymmetry, and :class:`~turbigen.iterate.Deviation` reads the
-    rotation as an exit flow angle error and pulls ``dchi_TE`` back against
-    it. The two then chase each other: a design loop measured the pair walking
-    to a difference of 0.13 --- some three degrees of exit angle --- over six
-    iterations with ``dchi_TE`` running to eleven degrees behind it, and no
-    sign of either settling.
-
-    So the exit angle belongs to the camber line alone, and the rear of each
-    surface is the interior coefficients' to answer for. Reaching as far aft
-    as a split wedge did takes a much higher order --- the rearmost interior
-    control point sits at ``m = 0.64`` at order 4 against the endpoint's
-    ``0.82`` --- which is the price of it, paid where it can be seen.
+    **Why shared.** A different wedge on each surface rotates the direction
+    the aerofoil leaves in, which gives the thickness a second say over the
+    exit angle. :class:`~turbigen.iterate.Deviation` then fights it through
+    ``dchi_TE`` and the two need not settle. So the exit angle belongs to the
+    camber line alone, and the rear of each surface is left to the interior
+    coefficients, which need a higher order to reach as far aft.
     """
 
     t_TE: float = 0.0

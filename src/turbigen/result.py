@@ -112,27 +112,9 @@ class Result:
     #
     # SERIALISATION
     #
-    # A result is not a config node and never appears among a config's own
-    # keys. It is written beside them, under `result:`, because a run's answer
-    # has to be readable back without repeating the CFD that produced it.
-    #
-    # Only the mean line and the verdict are stored. The machine is
-    # reproducible from the config, and the grid is far too large -- carrying a
-    # decimated one instead and re-deriving `actual` from it was considered and
-    # rejected: it costs a re-mesh and an interpolation, and decimation error
-    # lands hardest at the wall, which is exactly where mixed-out efficiency
-    # comes from. The convergence history is left out on the same grounds: it
-    # describes how the answer was reached, not what it is.
-    #
-    # `to_dict` names what it writes rather than dumping the fields, so a field
-    # added above stays out of the file until someone decides it belongs there.
-    # `Ds_mix`, `error` and `metrics` are the ones that do: all handfuls of
-    # numbers measured from the field, kept because that is what a result file
-    # is for.
-    #
-    # Nothing derived is stored either. `eta_tt`, `PR_tt` and the whole
-    # `backward()` dict are recomputed from the mean line, so an archived file
-    # cannot hold a value that no longer matches the definition that made it.
+    # Written under `result:` beside the config. `to_dict` stores only small
+    # measured quantities, listed explicitly; the machine, grid and derived
+    # values are rebuilt or recomputed instead.
     #
 
     @classmethod

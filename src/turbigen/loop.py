@@ -197,16 +197,9 @@ def converge_design(config, out_dir, previous=None):
         field = database.nearest_field(cfg, samples)
         return warm_field.Seed(field) if field is not None else None
 
-    # Iteration -1: where the knobs start. Anchored on the config file's own
-    # directory, because a config is often run from somewhere else, and
-    # excluding that same directory because it is where this run's own
-    # iterations will land -- one directory being one run, nothing else of
-    # anyone's is in there to lose.
-    #
-    # Guarded on there being knobs at all rather than on `correct:`, which is
-    # the test `warm_start` itself makes of what it was handed: a design point
-    # with nothing to correct has nothing to start warm, and reaching in to be
-    # told so would warn about a config that is perfectly in order.
+    # Iteration -1: warm start the knobs from the database, excluding this
+    # run's own directory, where its iterations will land. Skipped when there
+    # are no knobs, as `warm_start` would only warn about nothing to do.
     if iterate.unknowns(config):
         config = database.warm_start(
             config, out_dir, exclude=(out_dir,), samples=samples

@@ -470,20 +470,10 @@ class MeanLineDesign(Node):
                 max_nfev=max_iter * (x0.size + 1),
             )
 
-        # Restarted from somewhere else when the first go stops short, because
-        # what it stops at is usually not a failure to *reach* the root but a
-        # local minimum of the least-squares cost that is not one. Measured on
-        # a stage that would not design: `xtol` satisfied after thirty-two of
-        # five hundred evaluations, gradient down at 6e-05, residual stuck at
-        # 9e-03 -- a solver correctly reporting that it cannot move, from a
-        # place it should not have been. Neighbouring designs a thousandth of
-        # a Mach number away solved, which is what a basin boundary looks like
-        # from the outside.
-        #
-        # Perturbing the *original* guess rather than the point it failed at:
-        # that point is a minimum, and a step from it tends to return to it.
-        # Seeded, so a design that needed three tries needs the same three
-        # tomorrow.
+        # Restart when the first attempt stops short: it has usually found a
+        # local minimum of the least-squares cost rather than the root. Perturb
+        # the original guess, not the failed point, which would lead back to
+        # the same minimum. Seeded so the restarts are reproducible.
         rng = np.random.default_rng(0)
         solution = attempt(x0)
         for i_retry in range(1, N_RESTART + 1):

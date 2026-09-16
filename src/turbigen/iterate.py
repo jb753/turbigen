@@ -585,39 +585,24 @@ def _blocks(config, names):
 def step(config, result, history=()):
     """Return the config to try next, from the errors `result` reports.
 
-    A Newton step on an approximate Jacobian: `B dx = -e`, clipped per key. `B`
-    starts as the diagonal the declared gains already assert --- ``u -= gain *
-    e`` is a Newton step under exactly that assumption, sign included --- and
-    is improved by a rank-one Broyden update for each move the run has already
-    paid for. **With no history the step is arithmetically identical to
-    ``u -= gain * e``**, so a first iteration is never worse than it was.
+    A Newton step on an approximate Jacobian, `B dx = -e`, bounded by the
+    clips. `B` starts as the diagonal the declared gains imply and is improved
+    by a rank-one Broyden update for each previous move. With no history the
+    step is exactly ``u -= gain * e``.
 
-    What that buys is the off-diagonal terms *within an iterator*: the Jacobian
-    is block-diagonal over :func:`_blocks`, one block per iterator, and each
-    block is solved and bounded on its own.
+    The Jacobian is block-diagonal over :func:`_blocks`, and each block is
+    solved and bounded on its own.
 
-    **A knob the geometry pinned last iteration is held out of its block.** A
-    nose against its ``R_LE_lim`` bound moves nowhere however hard it is
-    pushed, so in the block Newton solve it is a near-singular direction that
-    amplifies the coupled knobs' step --- which is how one clamped nose came
-    to swing a blade count by eight per cent. Held out, it takes the decoupled
-    prior-gain step and rejoins its block the first iteration it moves again.
+    **A knob that did not move last iteration is held out of its block**, for
+    example a nose against its ``R_LE_lim`` bound. In the coupled solve it
+    would be a near-singular direction that amplifies the other knobs' steps,
+    so it takes the decoupled prior-gain step instead until it moves again.
     See :data:`DU_PIN`.
 
-    **The cross-iterator terms are deliberately not learned**, though they are
-    plainly not zero --- the exit angle of a row sets the inlet angle of the
-    next, so a deviation correction moves the following row's incidence. They
-    are left at the prior because they were never identifiable from the
-    trajectory a run takes. A twenty-iteration run offers at most nineteen
-    rank-one updates against a full matrix of some hundreds of entries, each
-    constraining it along one direction only, and those directions are strongly
-    correlated because every one of them is the Newton step for a residual that
-    moves slowly. Worse, every knob moves on every iteration, so a single
-    `(du, de)` pair cannot say which knob caused which part of the error
-    change, and the update spreads the credit along `du` regardless. Fitting
-    that data to a block of ten is a question the run can answer; fitting it to
-    a matrix of six hundred is one it cannot, and an unidentifiable term
-    learned anyway is worse than a term left honestly at its prior.
+    **Cross-block terms are not learned**, though they are not zero (one row's
+    exit angle sets the next row's incidence). A run has too few, too
+    correlated moves to identify them, and a poorly identified term is worse
+    than the prior.
 
     Parameters
     ----------
@@ -962,22 +947,10 @@ def converge(config, run, max_iter=10):
             logger.info(f"Converged after {i_iter + 1} iteration(s).")
             return config, result, True
 
-        # The stepped config is what the next pass runs, so the one returned
-        # alongside a result is always the one that produced it.
-        #
-        # **The gains it carries are the ones it was declared with.** A run
-        # measures slopes and they live in the Jacobian, which `_jacobian`
-        # rebuilds from the history on every call --- so every direction the
-        # run has already moved in is governed by the Broyden estimate rather
-        # than by the declared gain, and writing a measured slope back into the
-        # design would be a diagonal rescaling a Newton step is invariant to.
-        # What it would not be invariant to is everything downstream: a gain
-        # written into a config is read back against whatever knobs the *next*
-        # design has, and a sequence measured on one blade means nothing on
-        # another. So a gain is a declared prior and stays one.
-        # `iterate` put back whole: `stepping` is a view holding only the
-        # solution iterators, so the config `step` hands back has lost the
-        # design-only ones. They are unchanged either way, gains included.
+        # Declared gains are never overwritten with measured slopes: those live
+        # in the Jacobian, rebuilt from the history each call, and a slope
+        # measured on one design means nothing for another. `iterate` is put
+        # back whole because `stepping` holds only the solution iterators.
         stepped = dataclasses.replace(
             step(stepping, result, history), iterate=config.iterate
         )
@@ -1204,16 +1177,9 @@ class Incidence(Iterator):
     target: float = 0.0
     """Incidence to aim for [deg]."""
 
-    # Negative because the metal angle rises with the recamber while the
-    # incidence is measured against it, so the error falls as the knob rises.
-    #
-    # Deliberately timid. A swept angle responds more steeply to recamber than
-    # the flow angle this used to measure --- the stagnation point moves
-    # several degrees around the nose for one degree of metal --- and a row
-    # takes much of its incidence from the row upstream, so a first step is
-    # taken before anything has been learned about either. The secant recovers
-    # the rate from the second iteration on, so being cautious here costs a
-    # gentle opening step rather than a slow iteration.
+    # Negative because incidence falls as the recamber rises. Small because
+    # the stagnation point moves several degrees for one degree of metal, and
+    # the Broyden update learns the real rate from the second iteration.
     gain: float = -0.05
     clip: float = 1.0
     tolerance: float = 5.0
@@ -1457,77 +1423,33 @@ def _with_circulation(config, i_row, Co):
 class ClarkProfile(RowIterator):
     """Shape a two-sided thickness to a Clark loading distribution.
 
-    Drives a :class:`~turbigen.thickness.ClarkThickness` against
-    :mod:`turbigen.clark`, on both surfaces at once, with the camber line held
-    where the design put it: this asks what thickness gives a loading, on the
-    turning already chosen.
+    Drives a :class:`~turbigen.thickness.ClarkThickness` towards
+    :mod:`turbigen.clark` on both surfaces at once, with the camber line held
+    where the design put it.
 
-    **The knobs are shape-space coefficients, not the perturbations a config
-    holds.** A `ClarkThickness` stores a leading edge radius, a wedge angle and
-    an interior perturbation on the straight line between them; written as one
-    Bernstein curve, those are its first coefficient, its last, and the ones
-    between --- see
-    :attr:`~turbigen.thickness.ClarkThickness.tau_coeff`. Working in that space
-    is what makes this tractable: every knob does the same kind of thing, which
-    is to thicken its own surface locally and accelerate the flow over it, so
-    **one declared gain covers all of them, sign included**, where a radius and
-    a perturbation would each have needed a prior of their own. A positive
-    leading edge radius comes free with it, being a square.
+    **The knobs are shape-space coefficients**
+    (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`): leading edge
+    radius, interior perturbations and wedge angle as one Bernstein curve.
+    Each thickens its surface locally and speeds up the flow over it, so one
+    gain, sign included, covers them all. Each is measured where it acts, at
+    :attr:`~turbigen.thickness.ClarkThickness.m_ctl` mapped to each surface's
+    own fraction of length.
 
-    **Each knob is read where it acts**, at
-    :attr:`~turbigen.thickness.ClarkThickness.m_ctl`, mapped through each
-    surface's own arc length to a surface fraction --- the two surfaces are not
-    the same length, so one `m` is not one `z`.
+    **Shared ends.** One nose radius and one wedge angle serve both surfaces,
+    so each end's error is the mean of the two surfaces' residuals, the
+    least-squares move for one knob. The cost is that equal and opposite errors
+    at an end read as converged; per-surface control lives in the interior.
 
-    **A shared end is one knob against two residuals, and the mean is what it
-    can answer for.** One nose radius serves both surfaces and one wedge angle
-    serves both, so each end's error is the *mean* of the two surfaces'
-    residuals there --- the least-squares move for a single knob, being the `x`
-    that minimises `(r_s - x)^2 + (r_p - x)^2`. Reading one surface alone
-    instead would move both to suit it, making the other worse by as much, and
-    would report converged with an unbounded error on the surface nobody read.
+    **The level belongs to the blade count.** Thickness redistributes
+    circulation but cannot create it, so `Co` is driven by the circulation
+    error, integrated over the whole cut by
+    :class:`~turbigen.loading.ClarkMeasurement` in the same units as `Co`. The
+    shape knobs see the residuals with that level removed.
 
-    In that mean the level cancels exactly, so a shared end answers only for
-    the common mode there and can neither be driven by the blade count nor
-    fight it. What it costs is a null: an end where the two surfaces are
-    equally wrong in opposite directions reads as converged, because that is
-    the part one knob cannot reach. Both ends now carry that blind spot, and
-    the interior is where per-surface authority lives --- see
-    :attr:`~turbigen.thickness.ClarkThickness.tanwedge` for why the trailing
-    edge gave it up.
-
-    **Knobs and signals are born together**, which is what leaves the loop
-    determined however the order changes: the knobs are read at
-    :attr:`~turbigen.thickness.ClarkThickness.m_ctl`, which is a property of
-    the order alone, so a coefficient and the point it is measured at arrive
-    and depart as a pair. Sharing an end removes a knob and collapses two
-    residuals into one at the same stroke.
-
-    **The level belongs to the blade count.** At a fixed duty the area
-    enclosed by the isentropic Mach loop is the blade circulation, which the
-    pitch sets: a thickness redistributes circulation and cannot create it, so
-    the loop is `Co`'s to answer for and what is left of the residuals is the
-    shape's.
-
-    **And the level is a circulation, measured as one.** Not a reduction of
-    the samples above: those are unevenly spaced, leave about a third of each
-    surface unvisited at the two ends, and move when the curve `order`
-    changes, so a mean of them would make the measured circulation of an
-    unchanged flow depend on how the thickness happens to be parameterised.
-    :class:`~turbigen.loading.ClarkMeasurement` integrates the whole cut
-    instead, weights each surface by its own length, and normalises the way
-    :class:`~turbigen.blade.Circulation` does --- so the error is
-    `Co` achieved less `Co` asked for, in the units of the knob it drives, and
-    the two are directly comparable rather than merely proportional.
-
-    **Measured from the geometric leading edge, not the stagnation point**, so
-    that a target stays still while the thickness under it moves. That leaves
-    an `incidence` member shaping the same nose as this does, which is why the
-    two are learned in one Jacobian block rather than kept apart --- see
-    :meth:`blocks`. Held apart they read each other's work as noise: measured
-    on a five-corner sweep, `dchi_LE` was the only knob whose response the
-    stepper reported flat, on every run it appeared in, while sitting on its
-    clip every pass.
+    **Measured from the geometric leading edge**, not the stagnation point, so
+    the target does not move as the thickness does. An `incidence` iterator
+    shapes the same nose, so the two share a Jacobian block (:meth:`blocks`)
+    rather than reading each other's work as noise.
     """
 
     type: ClassVar[str] = "clark_profile"
@@ -2492,39 +2414,23 @@ def exit_deficit(result, offset=None):
 class Repeat(Iterator):
     """Pass the exit profile back to the inlet, until the stage feeds itself.
 
-    A repeating stage --- the middle of a multistage machine --- is fed by its
-    own exit. So the inlet profile is not something to state but something to
-    find, and finding it is a fixed point.
+    A repeating stage, in the middle of a multistage machine, is fed by its own
+    exit, so the inlet profile is a fixed point to find rather than an input.
 
     **The copy is the existing step rule.** With the error taken as
-    ``inlet - outlet``, :func:`step`'s own ``u -= gain * e`` at ``gain = 1``
-    gives exactly ``u_new = outlet``, so this needs no loop and no stepper of
-    its own; ``gain`` below one is the relaxation the package this replaces
-    called ``relaxation_factor``.
+    ``inlet - outlet``, :func:`step`'s ``u -= gain * e`` at ``gain = 1`` gives
+    ``u_new = outlet``; a smaller gain relaxes it.
 
-    What is passed upstream is modal coefficients rather than a sampled
-    profile. A sampled one is three columns over as many span stations as the
-    mesh has, which would make a dense Broyden Jacobian of that size squared
-    and archive a mesh artefact into every `output.yaml`; the coefficients of a
-    low-order fit are few, independent, smooth over mesh noise, and a
-    resolution somebody chose.
+    **Modal coefficients, not samples**, are passed upstream: few, independent,
+    smooth over mesh noise, and independent of the mesh. The modes are chosen
+    by :attr:`basis`: Legendre polynomials by default, or POD modes from
+    earlier runs, which follow sharp hub and tip features better at low order.
 
-    **Which modes is a choice of** :attr:`basis`. Legendre polynomials by
-    default, which need nothing but an order. Or the POD modes of runs already
-    solved, named by a basis file: the exit profiles of a turbine sweep carry
-    steep hub and tip features well inside the span, which a low-order
-    polynomial rings around and three or four POD modes follow --- at 4
-    coefficients the sweep10 profiles fit to 0.29 relative RMS in DPo against
-    0.72 for Legendre.
-
-    **The fit is weighted by span.** The exit cut clusters its stations at the
-    walls for resolution, and an unweighted fit would read that clustering as
-    emphasis, spending its few modes on the last per cent of span. Weighted, a
-    fit minimises the span integral of its error, so the answer does not
-    depend on how the cut was sampled.
+    **The fit is weighted by span**, so wall-clustered cut stations do not get
+    extra emphasis.
 
     ``DBeta`` is not carried: pitch angle at a repeating station is essentially
-    zero, and a fourth column would be noise.
+    zero.
     """
 
     type: ClassVar[str] = "repeat"

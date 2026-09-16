@@ -426,16 +426,10 @@ def _build(config, datum, paths, values):
         # allows integers, and a blade count must stay one.
         node.set_by_path(data, path, value if isinstance(value, int) else float(value))
 
-    # Screening is deliberate probing of bad points, so numeric complaints are
-    # expected rather than newsworthy: a corner where an equation of state
-    # takes the log of a negative number is exactly a corner to reject. They
-    # are caught rather than silenced, and logged below if the point survives.
-    #
-    # Logged rather than re-raised. A design that iterates through a bad guess
-    # and recovers still warns on the way, so re-issuing would turn a
-    # survivable hiccup into a hard failure for anyone who escalates warnings
-    # -- as the test suite does -- and would detach the warning from the point
-    # that caused it.
+    # Screening probes bad points on purpose, so numeric warnings are expected.
+    # Record them and log them below if the point survives. Not re-raised: a
+    # design that recovers from a bad guess still warns on the way, and
+    # re-raising would fail it wherever warnings are escalated to errors.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try:

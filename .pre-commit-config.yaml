@@ -26,6 +26,12 @@ repos:
         language: system
         files: ^src/turbigen/.*\.py$
         pass_filenames: true
+    -   id: check-comments
+        name: check comment and docstring length
+        entry: uv run python bin/check_comments.py
+        language: system
+        files: ^src/turbigen/.*\.py$
+        pass_filenames: true
     -   id: no-claude-in-commit-msg
         name: no Claude in commit message
         entry: ./bin/check_no_claude_commit_msg.sh

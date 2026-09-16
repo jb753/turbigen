@@ -454,16 +454,10 @@ class H(Mesher):
             tq = np.linspace(0.8, 1.0, 500)
             _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
 
-        # The tip block runs from the leading edge to the cusp tip, so that
-        # span of streamwise cells has to be one a multigrid level can halve.
-        # It already is wherever there is a cusp: `ile` is a multiple of eight,
-        # `chord_deficit` pins the total, and `dn_deficit` pins the downstream
-        # count against `ni_cusp` -- three conditions that between them leave
-        # `icusp - ile` divisible by eight for any `ni_TE` and any `ni_cusp`.
-        # Square, `icusp` is `ite` and loses the cusp's own `-1`, which lands
-        # the same arithmetic one short. Asking the downstream count for one
-        # more point shifts it back, and `chord_deficit` re-balances the total
-        # around it, so nothing else has to be constrained.
+        # The tip block spans `ile` to the cusp tip, and that cell count must be
+        # divisible by eight for multigrid. The deficit constraints already
+        # ensure this with a cusp; a square trailing edge lands one short, so
+        # ask the downstream count for one more point.
         ni_cusp_align = self.ni_cusp + 8
         if self.nk_tip and not self.ni_cusp:
             ni_cusp_align += 1
@@ -700,25 +694,10 @@ class H(Mesher):
                 ]
             )
 
-            # A blade with clearance runs against a casing that is not attached
-            # to it, so the casing needs saying separately. Every wall of a
-            # block takes the block's own angular velocity unless a
-            # `RotatingPatch` overrides it, which makes a shrouded row the case
-            # that needs no patch at all and this the case that does.
-            #
-            # Placed here, not valued here: `bconds` sets how fast every
-            # rotating patch turns, so a speedline costs no re-mesh. And the
-            # rule is purely geometric -- a casing override exists exactly when
-            # there is a gap under it -- so the mesher never has to ask whether
-            # the row turns, which is not its business. On a stator the patch
-            # is a no-op, the block being stationary anyway.
-            #
-            # `j=-1` is the casing by this mesher's own convention, the same
-            # one the tip patches above rely on. `ember.grid.Grid
-            # .apply_rotation` assumes it too, of any grid it is handed, which
-            # is why it is not used: it also conflates placement with value,
-            # and its `tip_gap` row type leaves the casing turning with the
-            # blade.
+            # Walls turn with their block unless a `RotatingPatch` overrides
+            # them, so a casing over a tip gap needs one. The mesher only places
+            # it, at `j=-1` by this mesher's convention; `bconds` sets its speed,
+            # so changing speed needs no re-mesh. On a stator it has no effect.
             patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
 
         block = ember.block.Block(shape=(ni, nj, nk))
@@ -763,23 +742,11 @@ class H(Mesher):
         theta_lim = coords.theta_lim[:, ile : icusp + 1, jtip:]
         xr = coords.xr[:, ile : icusp + 1, jtip:]
 
-        # Across the thickness: a distribution per streamwise station, each
-        # sized on the thickness there, so the cell against the surface is the
-        # wall spacing all along the chord.
-        #
-        # That surface is shared with the passage block, which puts its own
-        # first cell at the same spacing, so holding it constant is what makes
-        # the two agree along the whole join rather than only where the
-        # section happens to be thickest. One distribution for the block
-        # cannot do it: spent as a fraction it thins with the section, and by
-        # the trailing edge the cell against the surface is a twentieth of
-        # what the passage meets it with.
-        #
-        # Where the section is too thin to hold the spacing -- the last few
-        # stations at each end, which run out to a point -- the stations are
-        # spaced evenly instead, that being the coarsest they can be. The
-        # changeover is smooth, Vinokur stretching tending to an even spacing
-        # as the wall spacing approaches its share of the thickness.
+        # Across the thickness: one distribution per streamwise station, sized
+        # so the cell against the surface has the wall spacing all along the
+        # chord and matches the passage block across the shared face. Where the
+        # section is too thin to hold that spacing, near the ends, the cells are
+        # even instead; Vinokur stretching makes the changeover smooth.
         thick = (theta_lim[0] - theta_lim[1]) * xr[1]
         d_surf = geom.drt_norm * geom.pitch_rtheta_max
         uniform = np.linspace(0.0, 1.0, nk)
@@ -918,18 +885,10 @@ class H(Mesher):
             spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
             spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
 
-            # The two pieces share a node, so the span carries
-            # `len(main) + len(tip) - 1` of them, and a multigrid level halves
-            # that only if it is one more than a multiple of eight. Each piece
-            # is separately so when `clusterfunc` chooses its own count, but
-            # `njtip_min` is used as an exact count on the fallback above, and
-            # nothing makes an `njtip_min` of five into eight-and-one.
-            #
-            # The main passage makes up the difference, being the piece with
-            # room to absorb it: adding a node there moves the spanwise
-            # spacing by a fraction of a per cent, where adding one across a
-            # gap resolved by five would be a fifth of the clearance. The tip
-            # gets the count that was asked for and the mesh stays halvable.
+            # The two pieces share a node, and the total must be one more than a
+            # multiple of eight for multigrid. The fallback above can give the
+            # tip any count, so pad the main passage, where an extra node barely
+            # changes the spacing, rather than the tip gap.
             deficit = -(len(spf_main) + len(spf_tip) - 2) % 8
             if deficit:
                 logger.debug(
