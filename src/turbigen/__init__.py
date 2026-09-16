@@ -22,7 +22,14 @@ from turbigen.annulus import (
     RowAnnulus,
 )
 from turbigen.batch import Batch
-from turbigen.bconds import InletProfile, Legendre, OperatingPoint, Sampled
+from turbigen.bconds import (
+    InletProfile,
+    Legendre,
+    Modal,
+    OperatingPoint,
+    Pod,
+    Sampled,
+)
 from turbigen.blade import (
     Blade,
     BladeCount,
@@ -120,10 +127,12 @@ __all__ = [
     "MeanLineDesign",
     "Mesher",
     "Metric",
+    "Modal",
     "Node",
     "OperatingPoint",
     "PchipAnnulus",
     "PerfectFluid",
+    "Pod",
     "Post",
     "Quadratic",
     "RealFluid",

@@ -35,7 +35,6 @@ from typing import ClassVar
 import ember.average
 import ember.cut
 import numpy as np
-from numpy.polynomial import legendre
 
 import turbigen.clark
 import turbigen.loading
@@ -374,12 +373,16 @@ def errors(config, result, strict=True):
     steering one --- a report of a march that diverged has nothing to measure
     and is exactly the report someone needs. Each iterator that cannot measure
     is logged and its knobs omitted, and the rest are returned as usual.
+
+    Tolerant of any exception, not only :class:`MeasurementError`: a field of
+    NaNs fails wherever it is first touched, often deep in a property call that
+    knows nothing of iterators, and the report it takes away is the same.
     """
     merged = {}
     for iterator in config.iterate.correct:
         try:
             merged.update(iterator.error(config, result))
-        except MeasurementError as err:
+        except Exception as err:
             if strict:
                 raise
             logger.warning(
@@ -3140,12 +3143,23 @@ def span_fractions(cut):
     return 0.5 * (spf[:-1] + spf[1:])
 
 
-def exit_profile(result, order, offset=None):
-    """Return the Legendre coefficients of the profile leaving `result`.
+WALL_TRIM = 1
+"""Stations dropped at each endwall before an exit profile is fitted.
+
+The outermost face of the cut sits a fraction of a per cent of span from the
+wall, where the pitch average reads the wall value itself. One face is enough
+to keep that out of the fit; dropping half a per cent of span instead was
+measured to change the fit error of the sweep10 profiles by nothing worth
+having.
+"""
+
+
+def exit_profile(result, modes, order, offset=None):
+    """Return the modal coefficients of the profile leaving `result`.
 
     Cut the last station, mass-average each quantity over the pitch, subtract
     the mixed-out mean, normalise by that station's own dynamic head and
-    dynamic temperature, and fit.
+    dynamic temperature, drop the outermost station at each wall, and fit.
 
     Normalising by the *exit* station's own scales rather than the inlet's is
     what makes "repeating" mean the shape repeats: a stage raises or drops the
@@ -3156,20 +3170,57 @@ def exit_profile(result, order, offset=None):
     ----------
     result : Result
         A solved run.
+    modes : turbigen.bconds.Modes
+        The shapes to fit, whose :meth:`~turbigen.bconds.Modes.fit` is weighted
+        by span rather than by how the cut clusters its stations.
     order : int
-        Highest Legendre mode to fit. Modes start at 1: the constant is
-        dropped, a profile being a redistribution rather than a level.
+        Number of modes to fit. The constant is fitted and dropped, a profile
+        being a redistribution rather than a level.
     offset : float or None
         Cut plane offset in blade chords; `annulus.CUT_OFFSET` by default.
 
     Returns
     -------
     dict
-        One tuple of `order` coefficients per column of
-        :data:`turbigen.bconds.InletProfile.COLUMNS`.
+        One tuple of `order` coefficients per column of :attr:`Repeat.COLUMNS`.
 
     """
-    from turbigen import annulus, bconds
+    spf, deficit, _ = exit_deficit(result, offset)
+
+    inner = slice(WALL_TRIM, spf.size - WALL_TRIM)
+    return {
+        name: modes.fit(name, spf[inner], deficit[name][inner], order)
+        for name in Repeat.COLUMNS
+    }
+
+
+def exit_deficit(result, offset=None):
+    """Return the pitch-averaged spanwise profile leaving `result`, unfitted.
+
+    The measurement :func:`exit_profile` fits, kept apart so that the sampled
+    profile itself can be studied: what order it needs, and where a fit to it
+    goes wrong.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    offset : float or None
+        Cut plane offset in blade chords; `annulus.CUT_OFFSET` by default.
+
+    Returns
+    -------
+    spf : (nspan,) array
+        Span fraction of each face.
+    deficit : dict
+        ``DPo``, ``DTo``, ``DAlpha`` and ``DBeta`` at each `spf`, about the
+        mixed-out mean, the first two in fractions of the scales below.
+    scales : dict
+        The mixed-out ``Po``, ``To``, ``Alpha``, ``Beta``, and the dynamic head
+        ``q`` and dynamic temperature ``dT`` the deficits are normalised by.
+
+    """
+    from turbigen import annulus
 
     grid, machine = result.grid, result.machine
     xr = machine.annulus.cut_planes(annulus.CUT_OFFSET if offset is None else offset)[
@@ -3208,17 +3259,16 @@ def exit_profile(result, order, offset=None):
         "DBeta": pitchwise("Beta") - float(mean.Beta),
     }
 
-    coefficients = {}
-    for name in bconds.InletProfile.COLUMNS:
-        if name not in Repeat.COLUMNS:
-            continue
-        # legfit returns modes 0 upwards; the constant is dropped rather than
-        # carried, so a measured level cannot leak into a profile that is
-        # defined as a redistribution.
-        fit = legendre.legfit(2.0 * spf - 1.0, deficit[name], order)
-        coefficients[name] = tuple(float(value) for value in fit[1:])
+    scales = {
+        "Po": float(mean.Po),
+        "To": float(mean.To),
+        "Alpha": float(mean.Alpha),
+        "Beta": float(mean.Beta),
+        "q": q,
+        "dT": dT,
+    }
 
-    return coefficients
+    return spf, deficit, scales
 
 
 class Repeat(Iterator):
@@ -3234,28 +3284,41 @@ class Repeat(Iterator):
     its own; ``gain`` below one is the relaxation the package this replaces
     called ``relaxation_factor``.
 
-    What is passed upstream is Legendre coefficients rather than a sampled
+    What is passed upstream is modal coefficients rather than a sampled
     profile. A sampled one is three columns over as many span stations as the
     mesh has, which would make a dense Broyden Jacobian of that size squared
     and archive a mesh artefact into every `output.yaml`; the coefficients of a
     low-order fit are few, independent, smooth over mesh noise, and a
     resolution somebody chose.
 
-    **Low order is a claim about the physics.** A Legendre fit to an endwall
-    boundary layer is pointwise poor and integrally good: order 4 recovers only
-    a third of the wall deficit but gets the blockage to within 4 per cent, and
-    the blockage stops improving past order 8 while the pointwise error keeps
-    falling. That is the right trade only if what propagates round a repeating
-    loop is the integrated deficit rather than the wall value --- which it
-    should be, the near-wall flow being re-established by the no-slip wall just
-    downstream of the inlet plane. If that turns out to be wrong the answer is
-    a wall-clustered fitting coordinate, not a higher order.
+    **Which modes is a choice of** :attr:`basis`. Legendre polynomials by
+    default, which need nothing but an order. Or the POD modes of runs already
+    solved, named by a basis file: the exit profiles of a turbine sweep carry
+    steep hub and tip features well inside the span, which a low-order
+    polynomial rings around and three or four POD modes follow --- at 4
+    coefficients the sweep10 profiles fit to 0.29 relative RMS in DPo against
+    0.72 for Legendre.
+
+    **The fit is weighted by span.** The exit cut clusters its stations at the
+    walls for resolution, and an unweighted fit would read that clustering as
+    emphasis, spending its few modes on the last per cent of span. Weighted, a
+    fit minimises the span integral of its error, so the answer does not
+    depend on how the cut was sampled.
 
     ``DBeta`` is not carried: pitch angle at a repeating station is essentially
     zero, and a fourth column would be noise.
     """
 
     type: ClassVar[str] = "repeat"
+
+    learns: ClassVar[bool] = False
+    """A profile copied onto its own exit, which needs no fitting.
+
+    The error is the distance left to travel, so the sensitivity is one by
+    construction, as it is for :class:`MeanLine`. Kept rather than learned, the
+    step on every iteration is the relaxed copy ``u -= gain * e``, instead of a
+    Broyden step fitted to a few near-parallel moves.
+    """
 
     COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha")
     """The profile columns this iterator owns."""
@@ -3264,7 +3327,15 @@ class Repeat(Iterator):
     """Those measured in degrees rather than in fractions of a scale."""
 
     order: int = 3
-    """Highest Legendre mode passed upstream, the modes starting at 1."""
+    """Number of modes passed upstream, per column."""
+
+    basis: str | None = None
+    """Absolute path to a POD basis file, or None for Legendre modes.
+
+    Fixed for a sweep: the coefficients a run writes are in these modes, and a
+    database only blends samples whose profiles share them. See
+    :func:`turbigen.pod.build_basis` for making one.
+    """
 
     offset: float = 0.5
     """Where to read the exit profile, in blade chords past the trailing edge.
@@ -3330,6 +3401,24 @@ class Repeat(Iterator):
                 f"temperature profile that comes round again; above one the "
                 f"loop amplifies its own profile, and below zero it inverts it."
             )
+        if self.basis is not None:
+            # Read now, so a missing file or a basis with too few modes is a
+            # config error rather than a failure after the first march.
+            modes = self.modes()
+            for name in self.COLUMNS:
+                if modes.n_modes(name) < self.order:
+                    raise ValueError(
+                        f"repeat.order is {self.order}, but the POD basis at "
+                        f"{self.basis} has {modes.n_modes(name)} {name} mode(s)."
+                    )
+
+    def modes(self):
+        """Return the :class:`~turbigen.bconds.Modes` profiles are fitted in."""
+        from turbigen import bconds
+
+        if self.basis is None:
+            return bconds.LegendreModes()
+        return bconds.PodModes(self.basis)
 
     #
     # THE PROTOCOL
@@ -3359,8 +3448,6 @@ class Repeat(Iterator):
         }
 
     def with_unknowns(self, config, values):
-        from turbigen import bconds
-
         current = self.unknowns(config)
         moved = {**current, **{k: v for k, v in values.items() if k in current}}
 
@@ -3371,7 +3458,9 @@ class Repeat(Iterator):
             for name in self.COLUMNS
         }
 
-        return dataclasses.replace(config, inlet_profile=bconds.Legendre(**columns))
+        return dataclasses.replace(
+            config, inlet_profile=self.modes().profile(**columns)
+        )
 
     def paths(self, config):
         # The one iterator whose knobs are its leaves, one for one, so the two
@@ -3385,7 +3474,7 @@ class Repeat(Iterator):
                 "feeds the inlet is unmeasured."
             )
 
-        measured = exit_profile(result, self.order, self.offset)
+        measured = exit_profile(result, self.modes(), self.order, self.offset)
         current = self.unknowns(config)
 
         # Inlet minus the exit profile this stage is fed by, so that

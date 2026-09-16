@@ -343,6 +343,36 @@ def test_axial_turbine_refuses_an_inlet_mach_number_over_the_limit():
         tight.design()
 
 
+def test_axial_turbine_accepts_a_rotor_exit_relative_mach_number_under_the_limit():
+    # Same shape as the inlet Mach check: invisible until the default limit
+    # of one is asked to bind on a case that does not approach it.
+    ml = build_config("axial_turbine").design().mean_line
+
+    assert float(ml.flat.Ma_rel[3]) < 1.0
+
+
+def test_axial_turbine_refuses_a_rotor_exit_relative_mach_number_over_the_limit():
+    # Ma3_rel is not a target either -- fac_Ma3_rel targets its ratio to Ma2
+    # -- so the only way to fail this check is the same as Ma1_max's: bring
+    # the limit down onto a design that already converged.
+    config = build_config("axial_turbine")
+    Ma3_rel = float(config.design().mean_line.flat.Ma_rel[3])
+
+    tight = Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": {
+                "type": "axial_turbine",
+                **CASES["axial_turbine"],
+                "Ma3_rel_max": 0.5 * Ma3_rel,
+            },
+        }
+    )
+
+    with pytest.raises(DesignError, match="Ma3_rel_max"):
+        tight.design()
+
+
 def test_axial_turbine_stator_is_stationary():
     ml = build_config("axial_turbine").design().mean_line
 

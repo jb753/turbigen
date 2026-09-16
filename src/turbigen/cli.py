@@ -850,7 +850,16 @@ def _design_one(args, config_path):
     # promise: the resolved config is used and discarded.
     config = iterate.resolve(config)
 
-    run_log.info(config.design().to_string())
+    machine = config.design()
+    run_log.info(machine.to_string())
+
+    # The same table `run` prints last, off the same `backward()` -- but with
+    # no CFD to mix out, there is no actual to set beside the nominal, so it
+    # comes back one column narrower. See `design_variable_string`.
+    try:
+        run_log.info(design_variable_string(config, Result(machine=machine)))
+    except Exception as err:
+        logger.warning(f"Could not print design variables: {err}")
 
     return 0
 
@@ -1191,7 +1200,7 @@ def _reattach_patches(grid):
         logger.debug(f"Could not re-attach the grid's patches: {err}")
 
 
-def soft_start(solver, grid):
+def soft_start(solver, grid, n_step=None):
     """March `grid` with a detuned copy of `solver`, and return what it did.
 
     Nothing of it is kept. The grid is marched in place, so the production
@@ -1200,25 +1209,30 @@ def soft_start(solver, grid):
 
     The step count is the config's, replacing the one `soft()` names: how long
     to spend on a robust start depends on the case and the guess it is starting
-    from, which the solver has no way to know.
+    from, which the solver has no way to know. `n_step` defaults to
+    `solver.n_step_soft`; a retry passes `solver.n_step_retry` instead.
     """
-    if solver.n_step_soft < 0:
-        raise ValueError(
-            f"solver.n_step_soft must be >= 0, got {solver.n_step_soft}. It is "
-            "a number of steps to march, and 0 is how a soft start is declined."
-        )
+    if n_step is None:
+        n_step = solver.n_step_soft
 
-    soft = dataclasses.replace(solver.soft(), n_step=solver.n_step_soft)
+    soft = dataclasses.replace(solver.soft(), n_step=n_step)
 
-    run_log.info(f"Soft start: {solver.n_step_soft} steps")
+    run_log.info(f"Soft start: {n_step} steps")
     history = soft.solve(grid)
-    run_log.info(convergence_string(history, solver.converged(history)))
+    run_log.info(convergence_string(solver.converged(history)))
 
     return history
 
 
 def solve(
-    config, out_dir, restart_path=None, svg=False, trajectory=(), warm=None, soft=False
+    config,
+    out_dir,
+    restart_path=None,
+    svg=False,
+    trajectory=(),
+    warm=None,
+    soft=False,
+    retry=False,
 ):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
@@ -1242,14 +1256,31 @@ def solve(
     a change to the design, and both are exactly what a robust pass is for.
     What disqualifies a solve is having a loop's previous iteration behind it,
     which only the caller knows.
+
+    `retry` says a divergence here may be tried again, once, from the same
+    start behind `solver.n_step_retry` soft steps, if the config asked for that
+    and this solve had no soft start of its own. The caller decides because a
+    `chic` point that diverges is an answer rather than a failure.
     """
+    # Checked before anything is meshed, so a bad count is a message rather
+    # than an ember error about an averaging window after the mesh is paid for.
+    if config.solver is not None:
+        for name in ("n_step_soft", "n_step_retry"):
+            if getattr(config.solver, name) < 0:
+                raise ValueError(
+                    f"solver.{name} must be >= 0, got "
+                    f"{getattr(config.solver, name)}. It is a number of steps "
+                    "to march, and 0 is how it is declined."
+                )
+
     config, machine, grid = prepare(config, restart_path, warm=warm)
 
     if grid is None:
         raise ValueError("The 'run' command needs a mesh: section in the config file.")
 
     history = None
-    if soft and config.solver.n_step_soft:
+    soft_ran = bool(soft and config.solver.n_step_soft)
+    if soft_ran:
         history = soft_start(config.solver, grid)
 
         # A soft pass that blew up leaves a field of NaNs, and marching the
@@ -1262,6 +1293,30 @@ def solve(
 
     if history is None:
         history = config.solver.solve(grid)
+
+        # A hard start that diverged gets one more go. Only one that had no
+        # soft start: a soft pass that ran and still led here is not helped by
+        # running it again.
+        if (
+            retry
+            and not soft_ran
+            and config.solver.n_step_retry
+            and getattr(history, "diverged", False)
+        ):
+            run_log.info(
+                "Diverged without a soft start; retrying from the same field "
+                f"with {config.solver.n_step_retry} soft steps"
+            )
+
+            # The march left NaNs in the grid, and the patches carry state of
+            # their own -- mixing-plane exchange, throttle, relaxation -- so the
+            # start is rebuilt rather than restored.
+            del grid
+            config, machine, grid = prepare(config, restart_path, warm=warm)
+
+            history = soft_start(config.solver, grid, config.solver.n_step_retry)
+            if config.solver.converged(history):
+                history = config.solver.solve(grid)
 
     converged = config.solver.converged(history)
 
@@ -1354,7 +1409,7 @@ def solve(
         config = dataclasses.replace(config, operating_point=achieved)
         result = dataclasses.replace(result, operating_point=achieved)
 
-    run_log.info(convergence_string(history, converged))
+    run_log.info(convergence_string(converged))
     if actual is not None:
         run_log.info(actual.to_string())
 
@@ -1394,6 +1449,7 @@ def _run_one(args, config_path):
             resolve_restart(args, config_path),
             svg=args.svg,
             soft=True,
+            retry=True,
         )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
@@ -1612,6 +1668,7 @@ class _Chain:
             trajectory=self.trajectory,
             warm=warm,
             soft=first,
+            retry=True,
         )
         self.previous = iter_dir / RESTART_NAME
 
@@ -1947,17 +2004,16 @@ def _prune_iterations(out_dir):
         )
 
 
-def convergence_string(history, converged):
-    """Report how a march ended, using ember's own summary of the last record.
+def convergence_string(converged):
+    """Report how a march ended, as a verdict alone.
 
-    The verdict is ours; the numbers underneath it are ember's, because a
-    history knows how to describe itself and a second formatter here would be
-    one more thing to keep in step. Note that no step count is quoted: records
+    ember has already logged every record as the march went, so repeating the
+    last one here would print it twice. Nor is a step count quoted: records
     are written every `n_step_log` steps, so the last record is not in general
     the last step marched, and reporting it as one would be wrong.
     """
     verdict = "converged" if converged else "NOT converged"
-    return f"Solver: {verdict}\n{history.format_message()}"
+    return f"Solver: {verdict}"
 
 
 @contextlib.contextmanager
@@ -2070,22 +2126,34 @@ def _design_variable_rows(config, result):
     variables = {field.name for field in dataclasses.fields(config.mean_line)}
 
     nominal = config.mean_line.backward(result.nominal)
-    actual = config.mean_line.backward(result.actual)
+
+    # `design` builds a result with no CFD behind it at all, so there is no
+    # actual to invert -- every row is nominal-only, not "neither can be
+    # compared" (that verdict is for a field a run's actual declines to
+    # invert, not for a run that never had one).
+    has_actual = result.actual is not None
+    actual = config.mean_line.backward(result.actual) if has_actual else {}
 
     for name, value in nominal.items():
         # A design may declare a variable as not invertible, and it may return
         # one the other call did not; neither is an error, and neither can be
         # compared.
-        if value is None or actual.get(name) is None:
+        if value is None or (has_actual and actual.get(name) is None):
             continue
 
-        was, now = np.atleast_1d(value), np.atleast_1d(actual[name])
-        if was.shape != now.shape:
+        was = np.atleast_1d(value)
+        now = np.atleast_1d(actual[name]) if has_actual else None
+        if now is not None and was.shape != now.shape:
             continue
 
-        for i, (one, other) in enumerate(zip(was, now)):
+        for i in range(was.size):
             label = name if was.size == 1 else f"{name}[{i}]"
-            yield label, float(one), float(other), name in variables
+            yield (
+                label,
+                float(was[i]),
+                float(now[i]) if now is not None else None,
+                name in variables,
+            )
 
 
 def design_variable_string(config, result):
@@ -2104,9 +2172,14 @@ def design_variable_string(config, result):
         return "Design variables: nothing that backward() returns can be compared."
 
     width = max(len(name) for name, _, _, _ in rows)
-    header = (
-        f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
-    )
+
+    # `design` never has a CFD actual to set against the nominal, so it gets
+    # the narrower table this degrades to: a value, not a comparison.
+    has_actual = result.actual is not None
+    if has_actual:
+        header = f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
+    else:
+        header = f"{'name':<{width}}  {'nominal':>10}"
     lines = ["Design variables:", header, "-" * len(header)]
 
     # Set variables first, then what was read off the answer, with a rule
@@ -2120,6 +2193,10 @@ def design_variable_string(config, result):
             lines.append("-" * len(header))
 
         for name, was, now, _ in block:
+            if not has_actual:
+                lines.append(f"{name:<{width}}  {was:10.4g}")
+                continue
+
             error = was - now
             # A nominal of zero has nothing to be relative to. Recamber and
             # swirl angles are routinely zero by design, so this is the common

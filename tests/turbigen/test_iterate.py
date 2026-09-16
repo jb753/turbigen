@@ -371,6 +371,27 @@ def test_unmeasured_knobs_are_not_converged(config):
     assert iterate.errors(config, Result(), strict=False) == {}
 
 
+class Blows(Fixed):
+    """A stand-in that fails the way a cut through a field of NaNs does."""
+
+    def error(self, config, result):
+        raise ValueError("Pressure must be positive and finite.")
+
+
+def test_tolerant_errors_survive_any_failure_to_measure():
+    """A diverged field raises wherever it is touched, not as MeasurementError."""
+    config = dataclasses.replace(
+        build(),
+        iterate=iterate.Iteration(correct=(Blows(), Other())),
+    )
+
+    with pytest.raises(ValueError):
+        iterate.errors(config, Result())
+
+    # The knobs that could be measured are still reported.
+    assert set(iterate.errors(config, Result(), strict=False)) == {"other"}
+
+
 def test_converge_reaches_the_answer():
     config = dataclasses.replace(
         build(),
@@ -1216,7 +1237,7 @@ def test_a_damped_temperature_moves_the_fixed_point_not_the_path(monkeypatch):
     smaller steps towards carrying all of it, which is what a gain would do."""
     exit_profile = {"DPo": (0.4, 0.0), "DTo": (0.6, 0.0), "DAlpha": (2.0, 0.0)}
     monkeypatch.setattr(
-        iterate, "exit_profile", lambda result, order, offset: exit_profile
+        iterate, "exit_profile", lambda result, modes, order, offset: exit_profile
     )
 
     config = repeating(order=2, transfer_To=0.5)
@@ -2561,3 +2582,66 @@ def test_clark_needs_every_section_to_agree_on_order():
 def test_clark_rejects_a_target_off_the_surface(kwargs, match):
     with pytest.raises(ValueError, match=match):
         iterate.ClarkProfile(**kwargs)
+
+
+#
+# THE MODES A REPEATING STAGE IS FITTED IN
+#
+
+
+def test_a_basis_sets_the_modes_the_knobs_are_written_in(tmp_path):
+    from test_pod import basis_file
+
+    from turbigen import bconds
+
+    path, sha = basis_file(tmp_path)
+    config = repeating(order=2, basis=path)
+    repeat = config.iterate.correct[0]
+
+    assert len(iterate.unknowns(config)) == 6
+
+    after = repeat.with_unknowns(
+        config, {"inlet_profile.DPo[0]": 0.4, "inlet_profile.DPo[1]": -0.2}
+    )
+    assert after.inlet_profile.type == "pod"
+    assert after.inlet_profile.sha256 == sha
+
+    modes = bconds.PodModes(path, sha)
+    expected = 0.4 * modes.table["DPo"][0] - 0.2 * modes.table["DPo"][1]
+    assert after.inlet_profile.column("DPo", modes.spf) == pytest.approx(expected)
+
+
+def test_an_order_beyond_the_basis_is_refused(tmp_path):
+    from test_pod import N_MODE, basis_file
+
+    path, _ = basis_file(tmp_path)
+
+    with pytest.raises(ValueError, match="mode"):
+        repeating(order=N_MODE + 1, basis=path)
+
+
+def test_the_repeat_section_with_a_basis_round_trips(tmp_path):
+    from test_pod import basis_file
+
+    path, _ = basis_file(tmp_path)
+    config = repeating(order=2, basis=path)
+
+    assert Config.from_dict(config.to_dict()) == config
+
+
+def test_the_outermost_stations_do_not_move_the_fit(monkeypatch):
+    """The face at the wall reads the wall value itself; one is dropped."""
+    from turbigen import bconds
+
+    n = 137
+    spf = 0.5 * (1.0 - np.cos(np.pi * (np.arange(n) + 0.5) / n))
+    clean = {name: 0.1 * np.cos(np.pi * spf) for name in iterate.Repeat.COLUMNS}
+    spiked = {name: values.copy() for name, values in clean.items()}
+    for values in spiked.values():
+        values[[0, -1]] = -50.0
+
+    def measured(deficit):
+        monkeypatch.setattr(iterate, "exit_deficit", lambda result, offset: (spf, deficit, {}))
+        return iterate.exit_profile(None, bconds.LegendreModes(), 3)
+
+    assert measured(spiked)["DPo"] == pytest.approx(measured(clean)["DPo"])

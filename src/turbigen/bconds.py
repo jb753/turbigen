@@ -16,7 +16,10 @@ here, and changing the speed is a boundary condition rather than a redesign.
 """
 
 import dataclasses
+import functools
+import hashlib
 import logging
+from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
@@ -225,42 +228,222 @@ class Sampled(InletProfile):
         return np.interp(spf, np.asarray(self.spf, dtype=float), values)
 
 
-class Legendre(InletProfile):
-    """A profile given as the coefficients of a Legendre series over the span.
+def face_weights(spf):
+    """Return the span each station at `spf` stands for, summing to the range.
+
+    Edges half way between neighbours, and half a spacing beyond each end
+    clipped to the annulus. A least-squares fit weighted by these minimises the
+    span integral of the squared error, rather than a sum over however the
+    stations happen to be spaced --- which, on a cut clustered towards the
+    endwalls, would weight the walls by point density instead of by span.
+    """
+    spf = np.asarray(spf, dtype=float)
+    if spf.size < 2:
+        raise ValueError(f"Face weights need at least two stations, got {spf.size}.")
+    edges = np.concatenate(
+        [
+            [spf[0] - 0.5 * (spf[1] - spf[0])],
+            0.5 * (spf[1:] + spf[:-1]),
+            [spf[-1] + 0.5 * (spf[-1] - spf[-2])],
+        ]
+    )
+    return np.diff(np.clip(edges, 0.0, 1.0))
+
+
+class Modes:
+    """The spanwise shapes a modal profile's coefficients multiply.
+
+    Not a config node: what a :class:`Modal` profile delegates to, and what
+    :class:`turbigen.iterate.Repeat` fits with before any profile exists. Kept
+    apart from the profile because an empty profile is refused, and a fit needs
+    the shapes before it has coefficients to put in one.
+    """
+
+    identity = None
+    """What two profiles must share for their coefficients to mean the same."""
+
+    def modes(self, name, spf, n):
+        """Return the first `n` modes of column `name` at `spf`, (n, len(spf))."""
+        raise NotImplementedError
+
+    def fit(self, name, spf, values, n):
+        """Return `n` coefficients of `values` at `spf`, fitted over the span.
+
+        Least squares weighted by :func:`face_weights`, so that clustering the
+        stations buys resolution without also buying emphasis. A constant is
+        fitted alongside the modes and dropped, as a profile carries no level:
+        left out of the fit instead, a measured level would leak into whichever
+        modes happen to overlap it.
+        """
+        spf = np.asarray(spf, dtype=float)
+        A = np.vstack([np.ones_like(spf), self.modes(name, spf, n)]).T
+        root_weight = np.sqrt(face_weights(spf))
+        coefficients = np.linalg.lstsq(
+            A * root_weight[:, None], np.asarray(values) * root_weight, rcond=None
+        )[0]
+        return tuple(float(value) for value in coefficients[1:])
+
+    def profile(self, **columns):
+        """Return the profile holding `columns` of coefficients in these modes."""
+        raise NotImplementedError
+
+
+class LegendreModes(Modes):
+    """Legendre polynomials shifted to the span, mode ``n`` being
+    :math:`P_n(2\\,\\mathit{spf} - 1)` from ``n = 1``."""
+
+    identity = "legendre"
+
+    def modes(self, name, spf, n):
+        x = 2.0 * np.asarray(spf, dtype=float) - 1.0
+        return legendre.legvander(x, n)[:, 1:].T
+
+    def profile(self, **columns):
+        return Legendre(**columns)
+
+
+def file_sha256(path):
+    """Return the hex SHA-256 of the bytes at `path`."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+@functools.lru_cache(maxsize=8)
+def _read_basis(path, sha256):
+    """Return the validated mode table at `path`, whose hash must be `sha256`.
+
+    Cached per path and hash, the hash being checked on the first read of each
+    pair in a process. A file rewritten in place hashes differently, so a
+    profile naming the new hash reads it afresh and one naming the old hash is
+    refused, the next time either is read in a fresh process.
+    """
+    actual = file_sha256(path)
+    if actual != sha256:
+        raise ValueError(
+            f"The POD basis at {path} has changed since it was named: its hash "
+            f"is {actual}, not {sha256}. A basis is fixed for a sweep, so "
+            f"coefficients written against the old one mean nothing in this."
+        )
+
+    with np.load(path, allow_pickle=False) as data:
+        if "spf" not in data.files:
+            raise ValueError(f"The POD basis at {path} has no 'spf' array.")
+        spf = np.asarray(data["spf"], dtype=float)
+        table = {
+            name: np.asarray(data[name], dtype=float)
+            for name in InletProfile.COLUMNS
+            if name in data.files
+        }
+
+    if spf.ndim != 1 or spf.size < 2 or np.any(np.diff(spf) <= 0.0):
+        raise ValueError(f"The POD basis at {path} needs spf increasing, got {spf}.")
+    if spf[0] != 0.0 or spf[-1] != 1.0:
+        raise ValueError(
+            f"The POD basis at {path} must be tabulated from spf 0 to spf 1, but "
+            f"runs {spf[0]} to {spf[-1]}. Interpolation clamps, so the ends "
+            f"would be held rather than reported missing."
+        )
+    if not table:
+        raise ValueError(
+            f"The POD basis at {path} has no modes: give at least one of "
+            f"{list(InletProfile.COLUMNS)}."
+        )
+
+    weight = face_weights(spf)
+    for name, modes in table.items():
+        if modes.ndim != 2 or modes.shape[1] != spf.size:
+            raise ValueError(
+                f"POD basis {name} modes must be (n_mode, {spf.size}), got "
+                f"{modes.shape}."
+            )
+        level = modes @ weight
+        norm = np.sqrt((modes**2) @ weight)
+        if np.any(np.abs(level) > 1e-6 * np.maximum(norm, 1e-300)):
+            raise ValueError(
+                f"POD basis {name} modes carry a level (weighted span means "
+                f"{level}). A profile redistributes; a level is the mean line's "
+                f"business."
+            )
+
+    return spf, table
+
+
+class PodModes(Modes):
+    """Modes tabulated in an npz, as :func:`turbigen.pod.build_basis` writes.
+
+    The file holds ``spf``, running from exactly 0 to exactly 1, and an
+    ``(n_mode, n_spf)`` array for each column it has modes for, ordered most
+    energetic first. Anything else in it is provenance and is not read.
+    """
+
+    def __init__(self, basis, sha256=None):
+        path = Path(basis)
+        if not path.is_absolute():
+            raise ValueError(
+                f"A POD basis must be named by an absolute path, got {basis!r}. "
+                f"Configs are copied into working directories, where a relative "
+                f"path would point somewhere else."
+            )
+        if not path.is_file():
+            raise ValueError(f"There is no POD basis at {basis}.")
+
+        self.basis = str(path)
+        self.sha256 = file_sha256(path) if sha256 is None else sha256
+        self.spf, self.table = _read_basis(self.basis, self.sha256)
+
+    @property
+    def identity(self):
+        return self.sha256
+
+    def n_modes(self, name):
+        """Return how many modes the basis has for column `name`, or zero."""
+        return self.table[name].shape[0] if name in self.table else 0
+
+    def modes(self, name, spf, n):
+        if n > self.n_modes(name):
+            raise ValueError(
+                f"The POD basis at {self.basis} has {self.n_modes(name)} {name} "
+                f"mode(s), fewer than the {n} asked for."
+            )
+        spf = np.asarray(spf, dtype=float)
+        return np.array(
+            [np.interp(spf, self.spf, mode) for mode in self.table[name][:n]]
+        )
+
+    def profile(self, **columns):
+        return Pod(basis=self.basis, sha256=self.sha256, **columns)
+
+
+class Modal(InletProfile):
+    """A profile given as coefficients multiplying spanwise modes, per column.
 
     Evaluated at whatever span fractions the inlet patch has, so nothing is
     resampled and the mesh's own resolution is what the profile is applied at.
-    That is the point of the member: anything producing a profile analytically
+    That is the point of the family: anything producing a profile analytically
     --- :class:`turbigen.iterate.Repeat` above all --- would otherwise have to
     write it out as samples and lose accuracy doing so.
 
-    Shifted to the span, so mode ``n`` is :math:`P_n(2\\,\\mathit{spf} - 1)`.
-    Orthogonal, so the coefficients are independent: truncating drops a mode
-    rather than redistributing the others, which is what makes a low order a
-    *statement* rather than a fit artefact.
+    Members differ only in where the modes come from, which :meth:`modes`
+    returns; evaluating, fitting and writing a profile are the same for all.
 
-    **There is no constant term.** The lists start at mode 1, so a profile
-    cannot carry a level. A level is the mean line's business, and one here
-    would fight the design it is supposed to perturb --- the whole point of the
-    node being that it redistributes and nothing else.
+    **There is no constant term.** The lists start at the first mode that is
+    not a level, so a profile cannot carry one. A level is the mean line's
+    business, and one here would fight the design it is supposed to perturb.
 
     There is no ``order`` field either: the order is the length of the lists,
     so nothing can contradict them.
     """
 
-    type: ClassVar[str] = "legendre"
-
     DPo: tuple[float, ...] = ()
-    """Coefficients of modes 1 upwards, in fractions of inlet dynamic head."""
+    """Coefficients, in fractions of inlet dynamic head."""
 
     DTo: tuple[float, ...] = ()
-    """Coefficients of modes 1 upwards, in fractions of dynamic temperature."""
+    """Coefficients, in fractions of dynamic temperature."""
 
     DAlpha: tuple[float, ...] = ()
-    """Coefficients of modes 1 upwards, in degrees."""
+    """Coefficients, in degrees."""
 
     DBeta: tuple[float, ...] = ()
-    """Coefficients of modes 1 upwards, in degrees."""
+    """Coefficients, in degrees."""
 
     def __post_init__(self):
         given = [name for name in self.COLUMNS if getattr(self, name)]
@@ -275,13 +458,22 @@ class Legendre(InletProfile):
         orders = {name: len(getattr(self, name)) for name in given}
         if len(set(orders.values())) > 1:
             raise ValueError(
-                f"Every column of a Legendre inlet profile must have the same "
-                f"number of coefficients, but got {orders}."
+                f"Every column of a {type(self).__name__} inlet profile must "
+                f"have the same number of coefficients, but got {orders}."
             )
+
+    def modes(self):
+        """Return the :class:`Modes` this profile's coefficients multiply."""
+        raise NotImplementedError(f"{type(self).__name__} must implement modes(self)")
+
+    @property
+    def identity(self):
+        """What another profile must share for its coefficients to mean the same."""
+        return self.modes().identity
 
     @property
     def order(self):
-        """Highest Legendre mode carried, the lists starting at mode 1."""
+        """Number of modes carried."""
         for name in self.COLUMNS:
             values = getattr(self, name)
             if values:
@@ -290,13 +482,62 @@ class Legendre(InletProfile):
 
     def column(self, name, spf):
         spf = np.asarray(spf, dtype=float)
-        values = getattr(self, name)
-        if not values:
+        values = np.asarray(getattr(self, name), dtype=float)
+        if not values.size:
             return np.zeros_like(spf)
+        return values @ self.modes().modes(name, spf, values.size)
 
-        # The leading zero is the absent constant term, which `legval` needs a
-        # slot for and this node refuses to have a value in.
-        return legendre.legval(2.0 * spf - 1.0, np.concatenate([[0.0], values]))
+
+class Legendre(Modal):
+    """A profile given as the coefficients of a Legendre series over the span.
+
+    Shifted to the span, so mode ``n`` is :math:`P_n(2\\,\\mathit{spf} - 1)`,
+    starting at ``n = 1``. Orthogonal, so the coefficients are independent:
+    truncating drops a mode rather than redistributing the others, which is
+    what makes a low order a *statement* rather than a fit artefact.
+    """
+
+    type: ClassVar[str] = "legendre"
+
+    def modes(self):
+        return LegendreModes()
+
+
+class Pod(Modal):
+    """A profile given as coefficients of modes tabulated in a basis file.
+
+    The modes are whatever shapes a set of runs actually produced --- see
+    :func:`turbigen.pod.build_basis` --- so a few of them follow endwall and
+    tip features that a low-order polynomial can only ring around.
+
+    **The coefficients mean nothing without the file**, so the file is named
+    by an absolute path and pinned by its hash: a basis rewritten in place is
+    refused rather than silently reinterpreting every profile written against
+    the old one. One basis serves a whole sweep.
+    """
+
+    type: ClassVar[str] = "pod"
+
+    basis: str
+    """Absolute path to the npz holding the modes."""
+
+    sha256: str
+    """Hex SHA-256 of that file, as it was when these coefficients were fitted."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        modes = self.modes()
+        for name in self.COLUMNS:
+            n = len(getattr(self, name))
+            if n > modes.n_modes(name):
+                raise ValueError(
+                    f"This profile carries {n} {name} coefficient(s), but the "
+                    f"POD basis at {self.basis} has {modes.n_modes(name)} "
+                    f"{name} mode(s)."
+                )
+
+    def modes(self):
+        return PodModes(self.basis, self.sha256)
 
 
 class OperatingPoint(Node):

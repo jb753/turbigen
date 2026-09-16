@@ -39,7 +39,7 @@ dependencies = [
     #
     # Keep in sync with the "ember" intersphinx URL in doc/conf.py, which must
     # point at the docs for the release pinned here.
-    'ember-cfd==0.4.2',
+    'ember-cfd==0.4.3',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"

@@ -68,6 +68,15 @@ class AxialTurbine(MeanLineDesign):
     converged, not a target solved for.
     """
 
+    Ma3_rel_max: float = 1.0
+    """Largest acceptable rotor exit relative Mach number [--].
+
+    Read the same way :attr:`Ma1_max` is: `fac_Ma3_rel` sets the *ratio*
+    ``Ma3_rel / Ma2`` as a target the solve hits, but nothing declares what the
+    resulting absolute `Ma3_rel` is allowed to reach, so this checks the
+    outcome once the stage has converged rather than asking for it directly.
+    """
+
     #
     # SHARED DEFINITIONS
     #
@@ -238,6 +247,16 @@ class AxialTurbine(MeanLineDesign):
                 f"Ma1={Ma1} exceeds Ma1_max={self.Ma1_max}."
             )
 
+        # Likewise the rotor exit relative Mach number: `fac_Ma3_rel` targets
+        # its ratio to `Ma2`, not its absolute size, so this is checked here
+        # rather than asked for above.
+        Ma3_rel = float(ml.flat.Ma_rel[3])
+        if Ma3_rel > self.Ma3_rel_max:
+            raise DesignError(
+                f"Mean-line type {self.type!r}: rotor exit relative Mach "
+                f"number Ma3_rel={Ma3_rel} exceeds Ma3_rel_max={self.Ma3_rel_max}."
+            )
+
         return ml
 
     def backward(self, ml):
@@ -260,6 +279,7 @@ class AxialTurbine(MeanLineDesign):
             # finished mean line says what its inlet Mach number was allowed
             # to reach, so declare it deliberately not invertible.
             "Ma1_max": None,
+            "Ma3_rel_max": None,
             # Diagnostics
             "Alpha1": ml.inlet.Alpha,
             "Ma1": flat.Ma[0],

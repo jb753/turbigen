@@ -15,6 +15,15 @@ mesher derives it from each design --- so a conserved field written by one run
 would be quietly misread by the next. Pressure, temperature and velocity cross
 unchanged.
 
+The critical indices of each block are stored with it: its ends and every patch
+boundary, per dimension. A remesh moves a leading edge or a tip gap relative to
+the ends of its block, and a field stretched end to end would put the flow that
+was at the edge a node or two away from it. Holding those indices fixed is what
+ember already does from grid to grid; the file only has to carry the source
+side. Where they are missing or the topology does not match, the field is
+stretched end to end as it always was, because a restart is a guess and a
+slightly misplaced one is still worth having.
+
 Alongside them sits a stamp: a digest of the design the field solves. It
 records provenance and gates nothing here, because applying a field is asking
 whether it is a useful place to start and the answer is usually yes even when
@@ -44,6 +53,9 @@ Taken from ember rather than restated, so a field written here is exactly what
 
 STAMP_KEY = "design_stamp"
 """Where the provenance hash sits in the archive, beside the block arrays."""
+
+CRIT_KEYS = ("crit_i", "crit_j", "crit_k")
+"""Suffixes of each block's critical index arrays, one per dimension."""
 
 STAMPED = (
     "fluid",
@@ -117,6 +129,23 @@ def read_stamp(path):
     return str(data[STAMP_KEY])
 
 
+def critical_indices(block):
+    """Return, per dimension, the indices of `block` a restart holds fixed.
+
+    The two ends and every patch boundary, sorted and unique. The same rule as
+    ``ember.block_util._patch_crit``, taken one block at a time so that half of
+    it can be written to a file; the two must stay in step, or a restart from a
+    file and one from a grid in memory would map the same pair differently.
+    """
+    return [
+        np.unique(
+            [0, block.shape[d] - 1]
+            + [int(index) for patch in block.patches for index in patch.ijk_lim_abs[d]]
+        ).astype(np.int32)
+        for d in range(3)
+    ]
+
+
 def save(path, grid, config=None):
     """Write the flow field in `grid` to `path`.
 
@@ -130,6 +159,8 @@ def save(path, grid, config=None):
             arrays[f"b{i_block}_{name}"] = np.asarray(
                 getattr(block, name), dtype=np.float32
             )
+        for key, indices in zip(CRIT_KEYS, critical_indices(block)):
+            arrays[f"b{i_block}_{key}"] = indices
 
     if config is not None:
         arrays[STAMP_KEY] = np.array(design_stamp(config))
@@ -143,8 +174,10 @@ def apply(grid, path):
 
     Blocks are matched by position and interpolated in index space where the
     resolution differs, so a mesh that changed with the design is fine as long
-    as its topology did not. Index space maps leading edge to leading edge,
-    which is what makes a guess from a previous design worth having.
+    as its topology did not. Patch boundaries are held where they started when
+    the file records them and they correspond one for one with this grid's, so
+    leading edge maps to leading edge; otherwise the block is stretched end to
+    end, as a field written before they were stored always was.
 
     **The stamp is not checked here, deliberately.** Every chained restart in
     the system is a field from a *different* design: `iterate` starts each pass
@@ -156,19 +189,65 @@ def apply(grid, path):
     """
     data = np.load(path)
 
-    # The stamp is not a block, and counting it as one would make every stamped
-    # field look like it came from a machine with an extra block in it.
-    block_keys = [key for key in data.files if key != STAMP_KEY]
-
-    n_block = len({key.split("_", 1)[0] for key in block_keys})
+    # Blocks are counted from the state arrays alone. The stamp and the
+    # critical indices are not blocks, and counting them would make a field
+    # look like it came from a machine with extra blocks in it.
+    n_block = len(
+        {
+            prefix
+            for prefix, _, name in (key.partition("_") for key in data.files)
+            if name in STATE
+        }
+    )
     if n_block != len(grid):
         raise ValueError(
             f"The restart field has {n_block} block(s) but this grid has "
             f"{len(grid)}; it was written for a different machine."
         )
 
-    grid.interp_from_arrays(
-        [[data[f"b{i}_{name}"] for name in STATE] for i in range(n_block)]
-    )
+    for i_block, block in enumerate(grid):
+        arrays = [data[f"b{i_block}_{name}"] for name in STATE]
+        crit, reason = _crit_pair(data, i_block, block, arrays[0].shape)
+        if crit is None:
+            logger.debug(
+                f"Block {i_block} of the restart field is stretched end to end: "
+                f"{reason}."
+            )
+        ember.block_util.interp_from_arrays(block, arrays, crit=crit)
 
     logger.info(f"Started from the restart field in {path}")
+
+
+def _crit_pair(data, i_block, block, src_shape):
+    """Return the ``(src, block)`` critical indices for one block, and why not.
+
+    None, with the reason, whenever the stored indices cannot be trusted to
+    correspond to this block's: absent, malformed, or a different count in any
+    dimension. That falls back to the end-to-end mapping for the whole block
+    rather than one dimension of it, so a restart is either patch-aware or
+    exactly what it was before.
+    """
+    keys = [f"b{i_block}_{key}" for key in CRIT_KEYS]
+    if not all(key in data.files for key in keys):
+        return None, "the file records no critical indices"
+
+    target = critical_indices(block)
+    pairs = []
+    for d, key in enumerate(keys):
+        stored = np.asarray(data[key], dtype=np.int32)
+        if (
+            stored.ndim != 1
+            or stored.size < 2
+            or stored[0] != 0
+            or stored[-1] != src_shape[d] - 1
+            or np.any(np.diff(stored) <= 0)
+        ):
+            return None, f"its {'ijk'[d]} critical indices are malformed"
+        if stored.size != target[d].size:
+            return None, (
+                f"it has {stored.size} critical {'ijk'[d]} indices against "
+                f"{target[d].size} here"
+            )
+        pairs.append((stored, target[d]))
+
+    return pairs, None

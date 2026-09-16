@@ -887,8 +887,11 @@ class H(Mesher):
 
             # We want at least njtip_min nodes across the tip gap
             # So the minimum grid spacing should be the smallest of:
-            #   - njtip_min pts uniform
+            #   - njtip_min pts uniform, which is njtip_min - 1 cells
             #   - target shroud spacing
+            # Dividing by the node count instead leaves the fallback five
+            # spacings to fill with four cells, pinned at both ends, so the
+            # middle two come out half as large again as their neighbours.
             njtip_min = self.njtip_min
             if self.nk_tip:
                 # Gridded, the gap is a block and its spanwise count is the
@@ -897,7 +900,7 @@ class H(Mesher):
                 # has been found to run at, and the fallback below is where
                 # that five is spent exactly.
                 njtip_min = int(8 * np.ceil((njtip_min - 1) / 8)) + 1
-            dspf_tip = np.minimum(dspf_casing, tip / njtip_min)
+            dspf_tip = np.minimum(dspf_casing, tip / (njtip_min - 1))
 
             spf_main = clusterfunc.double.free(
                 dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, Lmain

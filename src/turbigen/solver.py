@@ -57,11 +57,31 @@ class Solver(Node):
     Runs once per invocation: the `run` verb, or the first iteration of an
     `iterate`, whatever guess or restart field the grid is carrying. Later
     iterations and the points of a `chic` sweep start from a solution already,
-    which is what this exists to stand in for.
+    which is what this exists to stand in for. A later iteration that diverges
+    anyway is what :attr:`n_step_retry` is for.
 
     The steps are not free, so this is off unless asked for. ``soft()`` names
     its own count and this replaces it, because how long to spend on a robust
     start is a property of the case rather than of the solver.
+    """
+
+    n_step_retry: int = 0
+    """Steps of a detuned march to retry a diverged hard start with; 0 for none [--].
+
+    A solve that had no soft start --- an `iterate` iteration after the first,
+    or a `run` with :attr:`n_step_soft` at zero --- and diverges is rebuilt from
+    the field it started from and marched again, behind this many steps of
+    ``soft()``. Once: a retry that diverges too is the failure recorded.
+
+    A chained restart is a solution to the design before the corrector moved
+    it, and a large enough step --- blade counts, recamber and loss all at once
+    --- can blow that field up at a mixing plane within a few tens of steps,
+    where a short detuned start carries it through to the same answer. Paying
+    for a soft start on every iteration would cost most of a second march each
+    time for the few that need one; this pays only on those.
+
+    Not for the points of a `chic` sweep, where a divergence near a limit is the
+    answer the bisection is looking for.
     """
 
     def solve(self, grid):

@@ -72,6 +72,23 @@ class Database(Node):
     power: float = 2.0
     """Exponent on inverse distance. Higher weights the nearest sample more."""
 
+    max_distance: float = 0.8
+    """Farthest normalised distance a sample's field is seeded from.
+
+    Beyond it the march starts from the meridional guess instead. Distance is
+    measured in the unit cube the samples span, where a design inside a Sobol
+    sweep of 32 in seven variables is typically 0.5 from its nearest sample and
+    one of only six is 0.8, so this is past ordinary spacing once a sweep has
+    a few tens of runs finished, and early in one keeps only the closer half
+    of the seeds. A design that far
+    out lies outside the samples on some axis, and a neighbour's field corrected
+    onto it can carry flow the guess would not: reversed endwall flow at a
+    mixing plane, which diverges a soft start the guess survives.
+
+    Only the field. The knobs are still blended by :func:`warm_start`, which
+    cannot leave the hull and so stays safe at any distance.
+    """
+
     variables: tuple[str, ...] = ()
     """Design variables to use, as `node.flatten` spells them.
 
@@ -105,6 +122,7 @@ class Database(Node):
         one glob-and-parse serves both the geometry blend and the field seed.
         """
         wanted = set(iterate.unknowns(config))
+        identity = _profile_identity(config)
         excluded = tuple(Path(directory).resolve() for directory in exclude)
 
         rows = []
@@ -116,7 +134,7 @@ class Database(Node):
             if any(resolved.is_relative_to(directory) for directory in excluded):
                 continue
 
-            sample = _sample(resolved, wanted)
+            sample = _sample(resolved, wanted, identity)
             if sample is not None:
                 rows.append((resolved, *sample))
 
@@ -273,6 +291,16 @@ def nearest_field(config, samples):
 
     for idx in np.argsort(distance):
         path, _, _ = samples[idx]
+
+        # Sorted, so every candidate after this one is farther still.
+        if distance[idx] > config.database.max_distance:
+            logger.info(
+                f"Starting the march from the meridional guess: the nearest "
+                f"field is {distance[idx]:.3g} away, beyond max_distance "
+                f"{config.database.max_distance:.3g}."
+            )
+            return None
+
         field = path.parent / restart.RESTART_NAME
         # A field and nothing more. `_sample` has already turned away anything
         # that did not finish, so a `restart.npz` beside one of these is a
@@ -285,8 +313,28 @@ def nearest_field(config, samples):
     return None
 
 
-def _sample(path, wanted):
-    """Return ``(config, result)`` if `path` is a sample, and None if it is not."""
+def _profile_identity(config):
+    """Return the modes a design's repeat iterator writes profiles in, or None.
+
+    None when nothing iterates an inlet profile, in which case there are no
+    profile coefficients to blend and nothing to match.
+    """
+    if config.iterate is None:
+        return None
+    for iterator in config.iterate.correct:
+        if isinstance(iterator, iterate.Repeat):
+            return iterator.modes().identity
+    return None
+
+
+def _sample(path, wanted, identity=None):
+    """Return ``(config, result)`` if `path` is a sample, and None if it is not.
+
+    `identity` is the query's :func:`_profile_identity`. A sample whose inlet
+    profile is written in other modes is refused even though its knobs carry
+    the same names: ``inlet_profile.DPo[0]`` is a Legendre coefficient in one
+    and a POD coefficient in the other, and blending the two is meaningless.
+    """
     # Imported here because `case` reads a `Config`, and a `Config` holds a
     # `Database`: at module scope this closes a cycle that only stays unbroken
     # while `turbigen/__init__.py` happens to import `case` before `config`.
@@ -315,6 +363,15 @@ def _sample(path, wanted):
         # A different row count, or a different set of iterators. There is no
         # correspondence between its knobs and this design's.
         return None
+
+    if identity is not None:
+        theirs = getattr(config.inlet_profile, "identity", None)
+        if theirs != identity:
+            logger.warning(
+                f"Skipping {path}, whose inlet profile is written in different "
+                f"modes ({theirs}) from this design's ({identity})."
+            )
+            return None
 
     return config, result
 
