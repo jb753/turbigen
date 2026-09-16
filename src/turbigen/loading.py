@@ -139,9 +139,7 @@ class _SuctionCut:
     Shared by every consumer that needs the whole curve rather than a
     reduction of it: :func:`measure` folds it into the fitted numbers
     :class:`~turbigen.iterate.LoadingDistribution` and
-    :class:`~turbigen.iterate.PeakMach` iterate on, and :func:`measure_profile`
-    samples it directly at points :class:`~turbigen.iterate.Blade` places by
-    its own geometry.
+    :class:`~turbigen.iterate.PeakMach` iterate on.
     """
 
     blade: object
@@ -156,13 +154,6 @@ class _SuctionCut:
 
     ma_TE: float
     """Isentropic Mach number at the trailing edge [--]."""
-
-    xrt_stag: np.ndarray
-    """The stagnation node's own coordinates, as `(x, r, r * theta)` [m, m, m].
-
-    What :func:`locate_arc_length` needs to place the blade's own geometric
-    curve at the same origin this one is already anchored to.
-    """
 
 
 def locate_arc_length(blade, spf, xrt, nchord=10000):
@@ -298,14 +289,11 @@ def _cut_suction_side(result, i_row, spf):
 
     folded_phys, suction = turbigen.util.suction_side(zeta_phys, mas)
 
-    xrt_stag = np.array([cut.x[i0, 0], cut.r[i0, 0], cut.r[i0, 0] * cut.t[i0, 0]])
-
     return _SuctionCut(
         blade=blade,
         folded_phys=folded_phys,
         suction=suction,
         ma_TE=ma_TE,
-        xrt_stag=xrt_stag,
     )
 
 
@@ -420,74 +408,10 @@ def measure(result, i_row, spf, zeta_front=0.2, zeta_TE=0.98):
     )
 
 
-def measure_profile(result, i_row, spf, m):
-    """Return the loading level at each `m` a :class:`LoadingProfile` moves.
-
-    Where :func:`measure` reduces the suction-surface distribution to a
-    handful of fitted numbers, this samples it directly at points placed by
-    the blade's own geometry rather than read off the curve at a fixed
-    surface fraction --- what a camber coefficient actually moves is
-    expressed in `m`, not in `zeta`, and the two are not the same fraction of
-    the way along the chord.
-
-    Parameters
-    ----------
-    result : Result
-        A solved run.
-    i_row : int
-        Blade row to measure.
-    spf : float
-        Span fraction to measure at.
-    m : array_like
-        Normalised chordwise positions to sample at, as
-        :meth:`~turbigen.blade.Blade.evaluate_section` takes.
-
-    Returns
-    -------
-    zeta, fac : ndarray, shape like `m`
-        Surface fraction of each point, and the isentropic Mach number there
-        referred to the trailing edge and carrying the same `Ma_2 / Ma_1`
-        factor :attr:`Loading.fac_front` does --- so a target built from
-        `fac_front` and a peak value written the same way can be compared
-        against this directly, at every point at once.
-
-    None
-        Where there was nothing to measure at all --- see :func:`measure`.
-
-    """
-    cut = _cut_suction_side(result, i_row, spf)
-    if cut is None:
-        return None
-
-    # The blade's own curve, from its leading edge -- not the flow's
-    # stagnation point, which is `locate_arc_length`'s job to place onto it.
-    # Evaluated over the whole chord even though only a few points are wanted:
-    # `evaluate_section` rescales onto the aerofoil from whatever `m` it is
-    # given, so asking for isolated points would rescale onto them instead of
-    # onto the true leading and trailing edges.
-    #
-    # The suction surface, which is what this measures, is the first of the
-    # pair the blade returns.
-    m_dense, s_dense = cut.blade.evaluate_arc_length(spf)
-    s_dense = s_dense[0]
-    s_stag = locate_arc_length(cut.blade, spf, cut.xrt_stag)
-
-    s = np.interp(np.asarray(m, dtype=float), m_dense, s_dense) - s_stag
-
-    divisor = cut.folded_phys.max() or 1.0
-    zeta = s / divisor
-
-    ma = np.interp(s, cut.folded_phys, cut.suction)
-    fac = ma / cut.ma_TE * mach_ratio(result.machine, i_row)
-
-    return zeta, fac
-
-
 def measure_clark_profile(result, i_row, spf, m):
     """Return the loading of both surfaces at each `m`, suction first.
 
-    The two-sided sibling of :func:`measure_profile`, for a
-    :class:`~turbigen.iterate.ClarkProfile` shaping a
+    For a :class:`~turbigen.iterate.ClarkProfile` shaping a
     :class:`~turbigen.thickness.ClarkThickness` against
     :mod:`turbigen.clark`. Three things differ, and each follows from what
     that target is written in.

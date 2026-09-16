@@ -390,11 +390,7 @@ class CamberPlot(Post):
     """Metal angle along the camber line of each row.
 
     The design-side companion to :class:`SurfacePlot`: that draws what the
-    flow did with a blade, this draws the blade. Where a `loading_profile`
-    iterator is shaping the row, the points it reads are marked, exactly as
-    the surface plot marks them --- a camber coefficient is moved in `m` and
-    measured in `zeta`, and seeing the knobs on the curve they actually move
-    is what makes a saturated or a flat one recognisable.
+    flow did with a blade, this draws the blade.
 
     The angle itself, in degrees, rather than a shape normalised between the
     ends. Not every camber design has such a normalised form --- a
@@ -412,8 +408,6 @@ class CamberPlot(Post):
     """Span fractions to draw. Empty for the designed sections."""
 
     def report(self, config, result):
-        from turbigen.iterate import LoadingProfile
-
         rows = result.machine.rows if result.machine else ()
         if not rows:
             logger.info("No blades were designed, skipping the camber plot.")
@@ -431,29 +425,9 @@ class CamberPlot(Post):
             ax.set_xlabel(r"Meridional Distance, $m/c_m$")
             ax.set_xlim((0.0, 1.0))
 
-            for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+            for spf in _span_fractions(self.spf, row.blade):
                 camber, _ = row.blade._get_cam_thick(spf)
-                color = f"C{i_spf}"
-
-                ax.plot(m, camber.chi(m), color=color, label=f"spf={spf:.2f}")
-
-                # Only where an iterator reads this row and span: a knob drawn
-                # at a section nobody shapes would be a claim the design never
-                # made, which is how `_draw_loading_profile` treats its own
-                # sample points.
-                profile = _matching(config, LoadingProfile, i_row, spf)
-                if profile is None:
-                    continue
-
-                m_knob = profile.knob_m()
-                ax.plot(
-                    m_knob,
-                    camber.chi(m_knob),
-                    "o",
-                    color=color,
-                    fillstyle="none",
-                    label=f"knobs, spf={spf:.2f}",
-                )
+                ax.plot(m, camber.chi(m), label=f"spf={spf:.2f}")
 
             ax.legend()
             figures.append(fig)
@@ -716,79 +690,6 @@ def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
     )
 
 
-def _draw_loading_profile(ax, config, result, i_row, spf, mas, color):
-    """Overlay what a `loading_profile` iterator is aiming this section at.
-
-    The sibling of :func:`_draw_loading_target`, for the iterator that shapes
-    the whole curve rather than one point on it --- see
-    :class:`~turbigen.iterate.LoadingProfile`. Two differences follow from
-    that:
-
-    * The apex is drawn where the target puts it, not where the blade did.
-      `LoadingProfile` states a `zeta_peak` as well as a `fac_peak`, so there
-      is no need to read a position off the achieved distribution and no
-      honesty in doing so.
-    * The points the iterator actually reads are marked. It samples the curve
-      at one `m` per camber coefficient, and where those land in `zeta` is a
-      property of the blade's geometry rather than anything the target says;
-      a circle apiece shows which part of the gap between the two lines each
-      knob is answering for.
-    """
-    from turbigen.iterate import LoadingProfile
-    from turbigen.loading import mach_ratio, measure_profile
-
-    profile = _matching(config, LoadingProfile, i_row, spf)
-    if profile is None:
-        return
-
-    ma_TE = 0.5 * (mas[0] + mas[-1])
-    if not ma_TE:
-        return
-
-    # `fac_front` is written in `fac`, which is the trailing-edge Mach number
-    # times the row's `Ma_2 / Ma_1`; dividing that back out is what turns one
-    # into a Mach number these axes can carry. `fac_peak` carries no such
-    # factor -- it is plain `Ma_peak / Ma_TE`, as `peak_Ma` states a peak --
-    # so it denormalises against `ma_TE` alone.
-    scale = ma_TE / mach_ratio(result.machine, i_row)
-
-    drawn = np.linspace(profile.zeta_front, 1.0, 101)
-    ax.plot(
-        drawn,
-        turbigen.util.loading_target(
-            drawn,
-            profile.zeta_front,
-            profile.zeta_peak,
-            profile.fac_front * scale,
-            profile.fac_peak * ma_TE,
-            ma_TE,
-        ),
-        linestyle="--",
-        color=color,
-        linewidth=1.0,
-        label=f"target, spf={spf:.2f}",
-    )
-
-    # Measured the same way the iterator measures, rather than interpolated
-    # off the drawn curve: the two differ by whatever the plot's `offset` and
-    # the sampler's own cut disagree about, and the circles are only worth
-    # drawing if they are the numbers the errors were formed from.
-    measured = measure_profile(result, i_row, spf, profile.knob_m())
-    if measured is None:
-        return
-    zeta_knob, fac_knob = measured
-
-    ax.plot(
-        zeta_knob,
-        fac_knob * scale,
-        linestyle="none",
-        marker="o",
-        markerfacecolor="none",
-        color=color,
-        label=f"samples, spf={spf:.2f}",
-    )
-
-
 def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
     """Overlay what a `clark_profile` iterator is aiming this section at.
 
@@ -798,10 +699,9 @@ def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
     for its own target rather than by rebuilding one here. A plot that drew a
     curve of its own would be free to contradict the design it describes.
 
-    The samples are marked as :func:`_draw_loading_profile` marks its own, at
-    one point per shape-space coefficient and per surface --- which is where
-    that coefficient does the most to the blade, and so the part of the gap
-    between the two curves it answers for.
+    The samples are marked at one point per shape-space coefficient and per
+    surface --- which is where that coefficient does the most to the blade,
+    and so the part of the gap between the two curves it answers for.
 
     **The circles sit on a slightly different abscissa from the line.** These
     axes are `normalise_surface_distance`, measured from the flow's stagnation
@@ -944,9 +844,6 @@ class SurfacePlot(Post):
 
                 _draw_loading_target(
                     ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
-                )
-                _draw_loading_profile(
-                    ax, config, result, i_row, spf, mas, line.get_color()
                 )
                 _draw_clark_profile(
                     ax, config, result, i_row, spf, mas, line.get_color()
