@@ -139,7 +139,7 @@ iterate:
     offset: 0.5
     transfer_To: 0.5
     order: 4
-    basis: /home/jb753/python/turbigen/sweep11/pod_basis.npz
+    # basis: /home/jb753/python/turbigen/sweep11/pod_basis.npz
     type: repeat
   max_iter: 20
 job:
