@@ -25,7 +25,7 @@ Test cases:
 import numpy as np
 import pytest
 
-from turbigen import cli, mixout
+from turbigen import mixout, pipeline
 from turbigen.config import Config
 
 CASCADE = {
@@ -85,7 +85,7 @@ within a handful of steps.
 def solved():
     """A machine and a short march on it, enough to have a valid field."""
     config = Config.from_dict(CASCADE)
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     config.solver.solve(grid)
     return machine, grid
 

@@ -35,7 +35,16 @@ from test_blade import build
 from test_cli import RUN_CASE
 from test_mesh import MESH, TIP
 
-from turbigen import Config, Result, SurfaceDissipation, case, cli, metric, mixout, util
+from turbigen import (
+    Config,
+    Result,
+    SurfaceDissipation,
+    case,
+    metric,
+    mixout,
+    pipeline,
+    util,
+)
 
 TIP_ROW = 1
 """The row of the two-row fixture that has a clearance gap."""
@@ -45,7 +54,7 @@ TIP_ROW = 1
 def gapped():
     """The two-row tip-gap machine on its initial guess, never marched."""
     config = build(blades=TIP, mesh=MESH)
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     actual, Ds_mix = mixout.mean_line(grid, machine)
     result = Result(machine=machine, grid=grid, actual=actual, Ds_mix=Ds_mix)
     return config, result
@@ -55,7 +64,7 @@ def gapped():
 def solved():
     """The fast cascade, marched briefly for a real field and a real loss."""
     config = Config.from_dict(yaml.safe_load(RUN_CASE))
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     history = config.solver.solve(grid)
     actual, Ds_mix = mixout.mean_line(grid, machine)
     result = Result(
@@ -80,9 +89,7 @@ def solved():
 
 def _wall_relative_speed(cut):
     """Speed relative to the wall the cut was taken from, from the components."""
-    return np.sqrt(
-        cut.Vx**2 + cut.Vr**2 + (cut.Vt - float(cut.Omega) * cut.r) ** 2
-    )
+    return np.sqrt(cut.Vx**2 + cut.Vr**2 + (cut.Vt - float(cut.Omega) * cut.r) ** 2)
 
 
 def test_edge_velocity_is_the_speed_relative_to_the_wall(gapped):

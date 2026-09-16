@@ -11,7 +11,7 @@ import textwrap
 
 import pytest
 
-from turbigen import cli, iterate, plugins, restart
+from turbigen import cli, iterate, pipeline, plugins, restart
 
 CASE = """
 fluid:
@@ -566,7 +566,7 @@ def test_a_soft_start_leaves_nothing_behind_but_the_field(run_case, marches):
     assert result.converged
 
     # One record per log step of the march that counts, and none of the other.
-    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    history = pipeline.read_history(run_case.parent / cli.HISTORY_NAME)
     assert history.i_log + 1 == 1
 
 
@@ -598,7 +598,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
     only record of what happened here.
     """
 
-    real_soft_start = cli.soft_start
+    real_soft_start = pipeline.soft_start
 
     def diverging(solver, grid):
         # The real pass, reported as having blown up. A genuine divergence
@@ -608,7 +608,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
         history.diverged = True
         return history
 
-    monkeypatch.setattr(cli, "soft_start", diverging)
+    monkeypatch.setattr(pipeline, "soft_start", diverging)
 
     assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 2
 
@@ -618,7 +618,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
     # And its evidence is on disk, as any failed march's is.
     assert (run_case.parent / cli.RESTART_NAME).is_file()
     assert (run_case.parent / cli.HISTORY_NAME).is_file()
-    assert (run_case.parent / cli.GRID_NAME).is_file()
+    assert (run_case.parent / pipeline.GRID_NAME).is_file()
 
 
 def test_a_negative_soft_step_count_is_a_message(run_case, capsys):
@@ -712,7 +712,7 @@ def test_a_retry_that_diverges_is_the_recorded_failure(run_case, marches, monkey
     assert [march.n_step for march in marches] == [10, 5]
     assert (run_case.parent / cli.RESTART_NAME).is_file()
     assert (run_case.parent / cli.HISTORY_NAME).is_file()
-    assert (run_case.parent / cli.GRID_NAME).is_file()
+    assert (run_case.parent / pipeline.GRID_NAME).is_file()
 
 
 def test_a_negative_retry_step_count_is_a_message(run_case, capsys):
@@ -798,7 +798,7 @@ def test_a_raising_measurement_leaves_the_whole_grid(run_case, monkeypatch):
 
     assert cli.main(["run", str(run_case)]) == 1
 
-    path = run_case.parent / cli.GRID_NAME
+    path = run_case.parent / pipeline.GRID_NAME
     assert path.is_file()
 
     # Read back through ember's own reader, carrying the geometry the field
@@ -820,7 +820,7 @@ def test_a_run_that_measures_leaves_no_grid(run_case):
     assert cli.main(["run", str(run_case)]) == 0
 
     assert (run_case.parent / cli.RESTART_NAME).is_file()
-    assert not (run_case.parent / cli.GRID_NAME).exists()
+    assert not (run_case.parent / pipeline.GRID_NAME).exists()
 
 
 def test_run_without_a_solver_section_is_a_message(run_case, capsys):
@@ -1481,7 +1481,7 @@ def test_a_report_hands_the_chain_the_whole_trajectory(tmp_path, monkeypatch):
     # not merely about the shape of it.
     trajectory = [(config, Result(error={"k": float(i)})) for i in range(3)]
 
-    cli.write_report(trajectory, tmp_path)
+    post.write_report(trajectory, tmp_path)
 
     assert seen["chain"] == trajectory
     assert seen["post"][1] is trajectory[-1][1]
@@ -1756,7 +1756,7 @@ def test_a_diverged_iteration_stops_the_loop_rather_than_crashing_it(
     # And the iteration that diverged is on disk to be looked at, field,
     # history, whole grid and all.
     iter_dir = iterate_case.parent / "iter_0000"
-    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, cli.GRID_NAME):
+    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, pipeline.GRID_NAME):
         assert (iter_dir / name).is_file(), name
 
 
@@ -2128,7 +2128,7 @@ def test_run_writes_its_convergence_history(run_case):
 def test_a_replot_recovers_the_convergence_history(run_case):
     cli.main(["run", str(run_case)])
 
-    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    history = pipeline.read_history(run_case.parent / cli.HISTORY_NAME)
 
     assert history is not None
     assert history.i_log >= 0
@@ -2145,11 +2145,11 @@ def test_a_history_that_will_not_load_is_not_fatal(tmp_path):
     path = tmp_path / cli.HISTORY_NAME
     path.write_text("not a pickle")
 
-    assert cli.read_history(path) is None
+    assert pipeline.read_history(path) is None
 
 
 def test_no_history_beside_a_restart_is_not_fatal(tmp_path):
-    assert cli.read_history(tmp_path / cli.HISTORY_NAME) is None
+    assert pipeline.read_history(tmp_path / cli.HISTORY_NAME) is None
 
 
 def test_bare_restart_says_when_there_is_nothing_to_read(run_case, capsys):
@@ -2211,7 +2211,7 @@ def _table(nominal_config, actual_config=None):
     other = (
         machine if actual_config is None else Config.from_dict(actual_config).design()
     )
-    return cli.design_variable_string(
+    return pipeline.design_variable_string(
         config, Result(machine=machine, actual=other.mean_line)
     )
 
@@ -2311,7 +2311,7 @@ def test_a_failed_comparison_does_not_cost_the_run_its_output(run_case, monkeypa
     def boom(config, result):
         raise RuntimeError("table exploded")
 
-    monkeypatch.setattr(cli, "design_variable_string", boom)
+    monkeypatch.setattr(pipeline, "design_variable_string", boom)
 
     assert cli.main(["run", str(run_case)]) == 0
 

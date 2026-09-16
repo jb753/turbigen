@@ -26,7 +26,7 @@ from test_blade import build
 from test_cli import RUN_CASE
 from test_mesh import MESH, TIP
 
-from turbigen import Config, Result, case, cli, loading, metric, mixout, util
+from turbigen import Config, Result, case, loading, metric, mixout, pipeline, util
 from turbigen.metric import DiffusionFactor
 
 TIP_ROW = 1
@@ -37,7 +37,7 @@ TIP_ROW = 1
 def gapped():
     """The two-row tip-gap machine on its initial guess, never marched."""
     config = build(blades=TIP, mesh=MESH)
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     return config, Result(machine=machine, grid=grid)
 
 
@@ -45,7 +45,7 @@ def gapped():
 def solved():
     """The fast cascade, marched briefly for a real surface distribution."""
     config = Config.from_dict(yaml.safe_load(RUN_CASE))
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     history = config.solver.solve(grid)
     actual, Ds_mix = mixout.mean_line(grid, machine)
     return config, Result(

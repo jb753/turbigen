@@ -28,7 +28,7 @@ Alongside them sits a stamp: a digest of the design the field solves. It
 records provenance and gates nothing here, because applying a field is asking
 whether it is a useful place to start and the answer is usually yes even when
 the design has moved. The strict question --- is this field the solution to
-*this* config --- is asked by :mod:`turbigen.cli` before it will write an
+*this* config --- is asked by :func:`turbigen.pipeline.reconstruct` before it will write an
 answer down, and by nobody else.
 """
 
@@ -83,7 +83,8 @@ def design_stamp(config):
     Two configs with the same stamp describe the same machine, mesh and
     operating point, so a field written under one *is* the solution to the
     other. That is a stricter question than the one :func:`apply` asks, and
-    only :mod:`turbigen.cli`'s report verb asks it --- see the note there.
+    only :func:`turbigen.pipeline.reconstruct` asks it, for the report verb
+    --- see the note there.
 
     Hash the *resolved* config, after `turbigen.iterate.resolve`, or the two
     sides will not be comparing the same thing: resolve moves design-only knobs

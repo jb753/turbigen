@@ -84,6 +84,19 @@ class Solver(Node):
     answer the bisection is looking for.
     """
 
+    def __post_init__(self):
+        # Checked when the config loads, so a bad count is a message rather
+        # than an ember error about an averaging window after the mesh is paid
+        # for.
+        for name in ("n_step_soft", "n_step_retry"):
+            if getattr(self, name) < 0:
+                raise ValueError(
+                    f"solver.{name} must be >= 0, got {getattr(self, name)}. It "
+                    "is a number of steps to march, and 0 is how it is declined."
+                )
+        if (post_init := getattr(super(), "__post_init__", None)) is not None:
+            post_init()
+
     def solve(self, grid):
         """March `grid` in place and return its convergence history."""
         raise NotImplementedError(

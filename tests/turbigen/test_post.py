@@ -33,6 +33,7 @@ from turbigen import (
     cli,
     iterate,
     mixout,
+    pipeline,
     post,
 )
 from turbigen.post import IterationPlot
@@ -89,7 +90,7 @@ def bladed():
 @pytest.fixture(scope="module")
 def meshed(bladed):
     """Meshed and given an initial guess, but never marched."""
-    _, machine, grid = cli.prepare(bladed)
+    _, machine, grid = pipeline.prepare(bladed)
     return Result(machine=machine, grid=grid)
 
 
@@ -100,7 +101,7 @@ def solved(bladed):
     Mixed out as well, because a spanwise profile is referred to the mean line
     the grid achieved and there is no reason for a second march to get one.
     """
-    _, machine, grid = cli.prepare(bladed)
+    _, machine, grid = pipeline.prepare(bladed)
     history = bladed.solver.solve(grid)
     actual, Ds_mix = mixout.mean_line(grid, machine)
     return Result(
@@ -122,7 +123,7 @@ def gapped():
     blade speed.
     """
     config = build(blades=TIP, mesh=MESH)
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     actual, Ds_mix = mixout.mean_line(grid, machine)
     return config, Result(machine=machine, grid=grid, actual=actual, Ds_mix=Ds_mix)
 
@@ -712,7 +713,7 @@ def test_spanwise_plot_skips_a_diverged_march(bladed, solved):
 def test_the_standard_set_runs_unasked():
     bare = Config.from_dict({"fluid": FLUID, "mean_line": MEAN_LINE})
 
-    running = cli.processors(bare)
+    running = post.processors(bare)
 
     assert [p.type for p in running] == [p.type for p in post.STANDARD]
 
@@ -724,7 +725,7 @@ def test_a_configured_processor_replaces_its_standard_counterpart(config):
     into the user's own list from __post_init__, so the config that ran was not
     the config that was written.
     """
-    running = cli.processors(config)
+    running = post.processors(config)
 
     annulus_plots = [p for p in running if p.type == "annulus"]
     assert annulus_plots == [config.post_process[0]]
@@ -742,7 +743,7 @@ def test_a_configured_processor_of_a_new_type_is_added(config):
         {**config.to_dict(), "post_process": [{"type": Extra.type}]}
     )
 
-    running = cli.processors(extended)
+    running = post.processors(extended)
 
     # The whole standard set, and the extra one after it.
     assert len(running) == len(post.STANDARD) + 1

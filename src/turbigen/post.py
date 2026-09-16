@@ -25,6 +25,7 @@ from inside a plot.
 import contextlib
 import importlib.resources
 import logging
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -38,6 +39,10 @@ import turbigen.util
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
+
+run_log = logging.getLogger("turbigen.run")
+"""What one run produced, as :data:`turbigen.pipeline.run_log` records it; the
+same logger, named here because this module cannot import that one."""
 
 _STYLE = importlib.resources.files("turbigen") / "turbigen.mplstyle"
 """Shipped plotting style, applied by :func:`styled`."""
@@ -1291,7 +1296,112 @@ STANDARD = (
 
 Cheap next to a solve, and each one degrades to no figures when what it needs
 is absent, so the set is safe to run for every verb. It is not part of a
-config: `turbigen.cli.processors` combines it with whatever `post_process`
+config: :func:`processors` combines it with whatever `post_process`
 names, and a configured processor of the same type replaces its standard
 counterpart rather than adding to it.
 """
+
+
+def processors(config):
+    """Return the post-processors to run, standard set first.
+
+    A configured entry *replaces* the standard plot of its own type rather than
+    adding to it, so naming one in a config tunes it instead of producing two
+    of them. That was the rule in the package this replaces as well, but it got
+    there by inserting into the user's own list from `__post_init__`, so the
+    config that ran was not the config that was written. Nothing is mutated
+    here: the standard set is a property of the report, and `post_process`
+    means what it says.
+    """
+    configured = {p.type for p in config.post_process}
+    standard = [p for p in STANDARD if p.type not in configured]
+    return standard + list(config.post_process)
+
+
+def write_report(trajectory, out_dir, svg=False):
+    """Run the post-processors and collect their figures into one PDF.
+
+    `trajectory` is the sequence of ``(config, result)`` pairs the run has been
+    through, oldest first and never empty. A :class:`~turbigen.post.Post` draws
+    one design and is handed the last of them; a
+    :class:`~turbigen.post.PostChain` draws the sequence and is handed all of
+    them. Passing the sequence rather than a pair is what lets the loop be
+    drawn without a `Result` carrying anything about designs other than its
+    own.
+
+    Nothing is produced without an output directory, so the figures are only
+    made when there is somewhere to put them. With one, a report is always
+    written: the standard plots cost a fraction of a solve, and a run whose
+    output nobody looks at is worse than a page nobody needed.
+
+    `svg` additionally writes each figure as its own file, for a document that
+    places them one at a time. Off by default, by the same rule: a directory of
+    pictures nobody opens is worse than the one PDF that holds them. The names
+    carry the post-processor that drew each figure rather than a page number,
+    so adding a plot cannot silently rename the images after it.
+    """
+    # Imported here so that the CLI does not pay for matplotlib until there is
+    # something to plot.
+    import matplotlib
+
+    # Only claim the backend if nothing has chosen one yet. pyplot in sys.modules
+    # means a caller -- a notebook driving main(), say -- is already plotting,
+    # and switching it out from under them would be rude.
+    if "matplotlib.pyplot" not in sys.modules:
+        matplotlib.use("Agg")
+
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    config, result = trajectory[-1]
+
+    path = out_dir / "post.pdf"
+    n_page = 0
+    # styled() spans figure creation, not just savefig: rcParams are read as
+    # artists are built. The user's own matplotlibrc still wins inside it.
+    with styled(), PdfPages(path) as pdf:
+        for i_processor, processor in enumerate(processors(config)):
+            logger.debug(f"Running post-processor {processor}")
+            stem = out_dir / f"post_{i_processor:02d}_{processor.type}"
+            n_page += _save_figures(
+                pdf, processor.report(config, result), stem if svg else None
+            )
+
+        # After the per-design pages, and named apart from them: a chain plot
+        # is not in `processors`, so numbering its figures alongside would let
+        # adding one rename the images of the plots before it.
+        for i_processor, processor in enumerate(STANDARD_CHAIN):
+            logger.debug(f"Running chain post-processor {processor}")
+            name = type(processor).__name__.lower()
+            stem = out_dir / f"chain_{i_processor:02d}_{name}"
+            n_page += _save_figures(
+                pdf, processor.report(trajectory), stem if svg else None
+            )
+
+    # Nothing to draw is normal -- a mean-line design gives every standard plot
+    # nothing to work with -- and matplotlib writes no file for an empty
+    # document, so there is no report to announce and none to find.
+    if not n_page:
+        run_log.info("No figures were produced, so no report was written.")
+        return None
+
+    run_log.info(f"Wrote report to {path}")
+    return path
+
+
+def _save_figures(pdf, figures, svg_stem=None):
+    """Write each of `figures` to `pdf`, and return how many there were.
+
+    With `svg_stem`, each also goes to ``<svg_stem>_<i>.svg``. Figures are
+    closed as they are written rather than collected and closed at the end, so
+    a long report holds one at a time.
+    """
+    import matplotlib.pyplot as plt
+
+    n_figure = 0
+    for i_figure, figure in enumerate(figures):
+        pdf.savefig(figure)
+        if svg_stem is not None:
+            figure.savefig(f"{svg_stem}_{i_figure}.svg")
+        plt.close(figure)
+        n_figure += 1
+    return n_figure
