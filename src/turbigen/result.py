@@ -68,8 +68,9 @@ class Result:
     had not settled.
 
     Carried here rather than returned alongside, so that the one thing a solve
-    produces stays one object --- and read by `converge_design`, which has to
-    hand the operating point a design converged at to whatever sweeps it next.
+    produces stays one object --- and read by
+    :func:`turbigen.loop.converge_design`, which has to hand the operating
+    point a design converged at to whatever sweeps it next.
     Not written to the result file: it belongs in the `operating_point:`
     section of the resolved config, where it can be run again, and it is
     written there instead.

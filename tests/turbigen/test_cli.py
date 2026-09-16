@@ -11,7 +11,7 @@ import textwrap
 
 import pytest
 
-from turbigen import cli, iterate, pipeline, plugins, restart
+from turbigen import cli, iterate, loop, pipeline, plugins, restart
 
 CASE = """
 fluid:
@@ -1651,11 +1651,11 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
         for name in (*names, cli.RESTART_NAME):
             (iter_dir / name).write_text(f"{i_iter} {name}")
 
-    field = cli.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
+    field = loop.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
 
     # The last iteration's artefacts are the run's artefacts now.
     assert field == tmp_path / cli.RESTART_NAME
-    for name in cli.PROMOTED:
+    for name in loop.PROMOTED:
         assert (tmp_path / name).read_text() == f"2 {name}"
 
     # Its own directory keeps the config that produced it, and nothing else.
@@ -1666,7 +1666,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     # The ones before it keep what is worth keeping.
     for i_iter in range(2):
         kept = sorted(p.name for p in (tmp_path / f"iter_{i_iter:04d}").iterdir())
-        assert kept == sorted(cli.KEPT_PER_ITERATION)
+        assert kept == sorted(loop.KEPT_PER_ITERATION)
 
 
 def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
@@ -1678,7 +1678,7 @@ def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
     for name in names:
         (iter_dir / name).write_text(name)
 
-    field = cli.promote_final(tmp_path, iter_dir, converged=False)
+    field = loop.promote_final(tmp_path, iter_dir, converged=False)
 
     assert field == iter_dir / cli.RESTART_NAME
     assert sorted(p.name for p in iter_dir.iterdir()) == sorted(names)
