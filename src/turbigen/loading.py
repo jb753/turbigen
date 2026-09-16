@@ -1,21 +1,16 @@
-"""What a blade does to the flow, read off its suction surface.
+"""What a blade does to the flow, read off both of its surfaces.
 
-One measurement with three consumers, which is why it has a module of its own.
-:class:`~turbigen.iterate.LoadingDistribution` corrects the shape of the
-distribution, :class:`~turbigen.iterate.PeakMach` corrects its level, and
-:class:`~turbigen.metric.DiffusionFactor` records both without correcting
-anything --- and all three have to mean the same thing by "where the peak is",
-or a design would be iterated onto a target the report then contradicts.
+One measurement with two consumers, which is why it has a module of its own.
+:class:`~turbigen.iterate.ClarkProfile` steers a blade onto a loading and
+:class:`~turbigen.metric.DiffusionFactor` records one without correcting
+anything --- and the two have to mean the same thing by "where the peak is"
+and "what circulation the blade drew", or a design would be iterated onto a
+target the report then contradicts. Both read :func:`surfaces`.
 
 Neither an iterator nor a metric owns it. `iterate` importing `metric` would
 reach `post`, which imports `iterate` back; that resolves today only because
 the import in `post` is deferred, and a leaf module both can depend on has no
 such trap in it.
-
-The arithmetic on the curve itself lives in `turbigen.util` --- the fit, the
-suction-side fold, the isentropic expansion --- because none of it needs to
-know what a machine is. What is here is the part that does: cutting a row at a
-span fraction, and referring the Mach numbers to a mean line.
 """
 
 import dataclasses
@@ -30,58 +25,6 @@ logger = logging.getLogger("turbigen")
 
 N_CHORD_NOSE = 501
 """Chordwise points used to place the geometric nose of a section."""
-
-
-@dataclasses.dataclass(frozen=True)
-class Loading:
-    """The loading distribution of one blade section, as numbers.
-
-    Frozen, and not a :class:`~turbigen.node.Node`: this is measured from a
-    solution rather than asked for in a config file.
-    """
-
-    zeta_peak: float
-    """Surface fraction of the peak, from the fitted breakpoint [--]."""
-
-    fac_front: float
-    """``Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1`` [--].
-
-    Clark (2019) parameter 3: how hard the leading edge accelerates, referred
-    to the trailing edge because that is a mean-line quantity fixed by the
-    duty, and carrying the Mach ratio so the same number means the same style
-    of leading edge across rows of differing duty.
-
-    Read straight off the surface distribution at `zeta_front`, unlike
-    :attr:`fac_peak`, which comes from a fit. A single interpolated point
-    needs no peak to exist, so this is finite even on a blade that
-    accelerates all the way to its trailing edge.
-    """
-
-    fac_peak: float
-    """``Ma_peak / Ma_TE`` [--].
-
-    The level of the loading, and one more than the diffusion factor.
-    """
-
-    ma_peak: float
-    """Isentropic Mach number at the peak, from the fitted apex [--]."""
-
-    ma_TE: float
-    """Isentropic Mach number at the trailing edge [--]."""
-
-    ma_max: float
-    """Largest isentropic Mach number on the suction surface [--].
-
-    A maximum of the data, where :attr:`ma_peak` is the apex of a fit. Noisier,
-    and it steps between nodes rather than sliding, so it is the wrong thing to
-    iterate on --- but it exists for every distribution, including one that
-    accelerates all the way to its trailing edge and so has no interior peak to
-    fit. A metric that has to describe every blade needs the one that always
-    exists; a loop that has to steer needs the one that moves smoothly.
-    """
-
-    zeta_max: float
-    """Surface fraction of :attr:`ma_max` [--]."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,30 +73,6 @@ class ClarkMeasurement:
     the surface offset that would cause it, and recomputing it there would be
     a second opinion on a number this measurement already formed.
     """
-
-
-@dataclasses.dataclass(frozen=True)
-class _SuctionCut:
-    """The raw suction-surface distribution of one cut, before any reduction.
-
-    Shared by every consumer that needs the whole curve rather than a
-    reduction of it: :func:`measure` folds it into the fitted numbers
-    :class:`~turbigen.iterate.LoadingDistribution` and
-    :class:`~turbigen.iterate.PeakMach` iterate on.
-    """
-
-    blade: object
-    """The row's blade, for placing a point on its geometry."""
-
-    folded_phys: np.ndarray
-    """Physical arc length from the flow's own stagnation point, increasing,
-    along the suction surface only [m]."""
-
-    suction: np.ndarray
-    """Isentropic Mach number at each point of :attr:`folded_phys` [--]."""
-
-    ma_TE: float
-    """Isentropic Mach number at the trailing edge [--]."""
 
 
 def locate_arc_length(blade, spf, xrt, nchord=10000):
@@ -225,9 +144,8 @@ def locate_arc_length(blade, spf, xrt, nchord=10000):
 def _cut(result, i_row, spf):
     """Return `(blade, cut, mas, ma_TE)` for row `i_row` at `spf`, or None.
 
-    Everything a surface distribution needs before anything is decided about
-    which half of it to keep --- shared by :func:`_cut_suction_side`, which
-    folds one surface out, and :func:`measure_clark_profile`, which keeps both.
+    Everything a surface distribution needs before it is split into its two
+    surfaces by :func:`surfaces`.
 
     None where there is nothing to measure: no blade at this row, no section at
     this span, or a trailing edge so thin `ma_TE` reads as zero.
@@ -256,45 +174,6 @@ def _cut(result, i_row, spf):
         return None
 
     return blade, cut, mas, ma_TE
-
-
-def _cut_suction_side(result, i_row, spf):
-    """Return the raw suction-surface distribution of row `i_row`, or None.
-
-    None for the same reasons :func:`measure` returns None: no blade at this
-    row, no section at this span, or a trailing edge so thin `ma_TE` reads as
-    zero.
-    """
-    cut_all = _cut(result, i_row, spf)
-    if cut_all is None:
-        return None
-    blade, cut, mas, ma_TE = cut_all
-
-    # The geometric nose anchors the stagnation search, exactly as the surface
-    # distribution plot anchors it. Either surface would do: the thickness
-    # vanishes at m = 0, so the two coincide exactly there and which one the
-    # blade hands back first does not come into it.
-    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
-
-    # Physical arc length from the flow's own stagnation point -- the coldest
-    # node, which is what `normalise_surface_distance` actually zeroes at,
-    # rather than `get_i_stag`'s pressure-based search window -- kept
-    # unnormalised so a caller can place a point measured in true distance,
-    # not only one already expressed as a fraction of some divisor.
-    zeta_phys = turbigen.util.get_zeta(cut)[:, 0]
-    i_stag = int(turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)[0][0])
-    zeta_phys = zeta_phys - zeta_phys[i_stag]
-    i0 = int(np.argmin(mas))
-    zeta_phys = zeta_phys - zeta_phys[i0]
-
-    folded_phys, suction = turbigen.util.suction_side(zeta_phys, mas)
-
-    return _SuctionCut(
-        blade=blade,
-        folded_phys=folded_phys,
-        suction=suction,
-        ma_TE=ma_TE,
-    )
 
 
 def mach_ratio(machine, i_row):
@@ -337,128 +216,69 @@ def mach_ratio_axial(machine, i_row):
     return float(ml.Ma_rel[1] / ml.Max[0])
 
 
-def measure(result, i_row, spf, zeta_front=0.2, zeta_TE=0.98):
-    """Return the loading of row `i_row` at span fraction `spf`.
+@dataclasses.dataclass(frozen=True)
+class Surfaces:
+    """Both surfaces of one section, as a solution loaded them.
 
-    Cut the blade, expand isentropically from the row inlet entropy, keep the
-    suction surface, fit two straight lines to it, and refer what they say to
-    the mean line.
-
-    The peak comes from the fit rather than from a maximum of the data, and so
-    does the front value. A fitted peak uses every point in the window and
-    moves smoothly as a design does; `np.argmax` returns whichever single node
-    the noise happened to lift, and steps between nodes rather than sliding.
-    That matters most on the flat-topped distributions that are a design style
-    rather than a pathology.
-
-    Parameters
-    ----------
-    result : Result
-        A solved run.
-    i_row : int
-        Blade row to measure.
-    spf : float
-        Span fraction to measure at.
-    zeta_front : float
-        Front anchor, and the start of the window fitted.
-    zeta_TE : float
-        End of the window, short of the trailing edge.
-
-    Returns
-    -------
-    Loading or None
-        None where there was no distribution at all --- a row with no blade, or
-        a section above a clearance gap. A distribution that *exists* but
-        carries no interior peak comes back with :attr:`Loading.ma_max` and
-        :attr:`Loading.zeta_max` measured and the four fitted fields NaN, which
-        is the honest answer for a blade that accelerates to its trailing edge:
-        there is something to describe and nothing to place a peak at. Callers
-        that iterate check the field they use; a metric records both.
-
+    The raw distribution every two-sided consumer reduces:
+    :func:`measure_clark_profile` samples it at a thickness's control points
+    and :class:`~turbigen.metric.DiffusionFactor` reads its peak, so the two
+    cannot disagree about where a surface starts or what its circulation is.
     """
-    cut = _cut_suction_side(result, i_row, spf)
-    if cut is None:
-        return None
 
-    # Divide the physical distance down to the [0, 1] fraction every zeta
-    # elsewhere is written in -- the total physical extent of the suction
-    # side this particular cut happened to have.
-    divisor = cut.folded_phys.max() or 1.0
-    folded = cut.folded_phys / divisor
-    i_max = int(np.argmax(cut.suction))
+    blade: object
+    """The row's blade, for placing a point on its geometry."""
 
-    # Read straight off the data rather than off the two-line fit below: the
-    # front value does not need a peak to be meaningful, only a point at
-    # `zeta_front`, which interpolating the suction side always has.
-    ma_front = float(np.interp(zeta_front, folded, cut.suction))
+    z: tuple[np.ndarray, np.ndarray]
+    """Surface fraction of every node from the geometric leading edge, suction
+    first [--]."""
 
-    zeta_peak, ma_peak, _ = turbigen.util.loading_from_distribution(
-        folded, cut.suction, zeta_front, zeta_TE
-    )
-    fitted = np.isfinite(ma_peak)
+    ma: tuple[np.ndarray, np.ndarray]
+    """Isentropic Mach number at every node, suction first [--]."""
 
-    return Loading(
-        zeta_peak=zeta_peak,
-        fac_front=ma_front / cut.ma_TE * mach_ratio(result.machine, i_row),
-        fac_peak=ma_peak / cut.ma_TE if fitted else np.nan,
-        ma_peak=ma_peak,
-        ma_TE=cut.ma_TE,
-        ma_max=float(cut.suction[i_max]),
-        zeta_max=float(folded[i_max]),
-    )
+    ma_TE: float
+    """Isentropic Mach number at the trailing edge, the mean of its two sides
+    [--]."""
+
+    length_ratio: float
+    """Pressure surface length over suction surface length [--]."""
+
+    @property
+    def Co(self):
+        """Return the circulation coefficient the blade drew [--].
+
+        See :attr:`ClarkMeasurement.Co` for what this integral is and is not.
+        `z` is each surface's own arc length normalised by its own extent, so
+        an integral over it is a mean along that surface and the length puts it
+        back into a circulation: the two surfaces are not the same length, and
+        a difference of per-surface means would be `Γ_ss/L_ss - Γ_ps/L_ps`
+        rather than anything proportional to `Γ`. Divided through by the
+        suction surface length, which is the ideal circulation Coull and Hodson
+        normalise by, so what comes out is `Co` itself.
+        """
+        loop = [float(np.trapezoid(self.ma[i] / self.ma_TE, self.z[i])) for i in (0, 1)]
+        return loop[0] - self.length_ratio * loop[1]
 
 
-def measure_clark_profile(result, i_row, spf, m):
-    """Return the loading of both surfaces at each `m`, suction first.
-
-    For a :class:`~turbigen.iterate.ClarkProfile` shaping a
-    :class:`~turbigen.thickness.ClarkThickness` against
-    :mod:`turbigen.clark`. Three things differ, and each follows from what
-    that target is written in.
-
-    **Both surfaces, not the folded suction side.** A two-sided thickness has
-    a row of coefficients per surface, and each answers for the distribution
-    over its own side.
+def surfaces(result, i_row, spf):
+    """Return both surfaces of row `i_row` at span fraction `spf`, or None.
 
     **Measured from the geometric leading edge, not the stagnation point.**
     Clark's independent variable is ``z = l / L_surf``, the fraction of the
     way along a surface from where it starts. The stagnation point is not
     where a surface starts; it is where the flow happened to attach, and with
     no incidence iterator holding it, it wanders as the very thickness being
-    driven changes. Anchoring on the geometry instead means the abscissa a
-    target is evaluated on does not move with the knobs moving the blade.
+    driven changes. Anchoring on the geometry instead means the abscissa does
+    not move with the knobs moving the blade.
 
     **Plain ``Ma / Ma_TE``, with no ``Ma_2 / Ma_1`` factor.** :mod:`turbigen.clark`
     works in that, and mixing two normalisations inside one curve --- whose
     pieces are built from differences between its own parameters --- would
-    not evaluate to anything. Where a designer states a front value in the
-    units :attr:`~Loading.fac_front` uses --- on either surface --- the
-    conversion happens once as the parameter goes in, not here.
+    not evaluate to anything.
 
-    Parameters
-    ----------
-    result : Result
-        A solved run.
-    i_row : int
-        Blade row to measure.
-    spf : float
-        Span fraction to measure at.
-    m : array_like
-        Normalised chordwise positions to sample at, as
-        :attr:`~turbigen.thickness.ClarkThickness.m_ctl` gives them.
-
-    Returns
-    -------
-    ClarkMeasurement
-        The samples at `m`, suction surface first --- the order
-        :meth:`~turbigen.blade.Blade.evaluate_section` returns surfaces in and
-        :attr:`~turbigen.thickness.ClarkThickness.coeff` holds its rows in ---
-        and the circulation the blade drew, which is measured over the whole
-        cut rather than from those samples.
-
-    None
-        Where there was nothing to measure at all --- see :func:`measure`.
-
+    None where there is nothing to measure: no blade at this row, no section at
+    this span, a trailing edge so thin `ma_TE` reads as zero, or both halves of
+    the cut landing on the same surface.
     """
     cut_all = _cut(result, i_row, spf)
     if cut_all is None:
@@ -491,7 +311,7 @@ def measure_clark_profile(result, i_row, spf, m):
     # to wrap the blade, so the loop direction says nothing about which side of
     # the camber line a half is on. `locate_arc_length` already answers this,
     # signing a point by the surface it lands on.
-    z_meas, ma_meas = [None, None], [None, None]
+    z, ma = [None, None], [None, None]
     for half in halves:
         distance = np.abs(zeta[half] - zeta[i_nose])
         extent = distance[-1] or 1.0
@@ -499,42 +319,76 @@ def measure_clark_profile(result, i_row, spf, m):
         middle = xrrt[:, half][:, len(distance) // 2]
         i_surf = 0 if locate_arc_length(blade, spf, middle) >= 0.0 else 1
 
-        z_meas[i_surf] = distance / extent
-        ma_meas[i_surf] = mas[half]
+        z[i_surf] = distance / extent
+        ma[i_surf] = mas[half]
 
-    if z_meas[0] is None or z_meas[1] is None:
+    if z[0] is None or z[1] is None:
         logger.info(
             f"Both halves of row {i_row}'s section at spf={spf:.2f} placed on "
             f"the same surface, so its loading cannot be split between them."
         )
         return None
 
+    L = blade.evaluate_surface_length(spf)
+    return Surfaces(
+        blade=blade,
+        z=tuple(z),
+        ma=tuple(ma),
+        ma_TE=ma_TE,
+        length_ratio=float(L[1] / L[0]) if L[0] else 1.0,
+    )
+
+
+def measure_clark_profile(result, i_row, spf, m):
+    """Return the loading of both surfaces at each `m`, suction first.
+
+    For a :class:`~turbigen.iterate.ClarkProfile` shaping a
+    :class:`~turbigen.thickness.ClarkThickness` against :mod:`turbigen.clark`:
+    the :func:`surfaces` of the section, sampled where each coefficient acts.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    i_row : int
+        Blade row to measure.
+    spf : float
+        Span fraction to measure at.
+    m : array_like
+        Normalised chordwise positions to sample at, as
+        :attr:`~turbigen.thickness.ClarkThickness.m_ctl` gives them.
+
+    Returns
+    -------
+    ClarkMeasurement
+        The samples at `m`, suction surface first --- the order
+        :meth:`~turbigen.blade.Blade.evaluate_section` returns surfaces in and
+        :attr:`~turbigen.thickness.ClarkThickness.coeff` holds its rows in ---
+        and the circulation the blade drew, which is measured over the whole
+        cut rather than from those samples.
+
+    None
+        Where there was nothing to measure at all --- see :func:`surfaces`.
+
+    """
+    measured = surfaces(result, i_row, spf)
+    if measured is None:
+        return None
+
     # Where each sample sits, in the same surface fraction, off the geometry
     # alone -- the two surfaces have different lengths, so one `m` is not one
     # `z`.
-    m_dense, s = blade.evaluate_arc_length(spf)
+    m_dense, s = measured.blade.evaluate_arc_length(spf)
     m = np.asarray(m, dtype=float)
 
     z = np.stack([np.interp(m, m_dense, s[i]) / (s[i][-1] or 1.0) for i in (0, 1)])
-    fac = np.stack([np.interp(z[i], z_meas[i], ma_meas[i]) / ma_TE for i in (0, 1)])
-
-    # The loop the blade drew, off the measured distribution rather than off
-    # the samples above. `z_meas` is each surface's own arc length normalised
-    # by its own extent, so an integral over it is a mean along that surface
-    # and the length puts it back into a circulation: the two surfaces are not
-    # the same length, and a difference of per-surface means would be
-    # `Γ_ss/L_ss - Γ_ps/L_ps` rather than anything proportional to `Γ`.
-    #
-    # Divided through by the suction surface length, which is the ideal
-    # circulation Coull and Hodson normalise by -- so what comes out is `Co`
-    # itself and can be read against the one the design asked for.
-    L = blade.evaluate_surface_length(spf)
-    length_ratio = float(L[1] / L[0]) if L[0] else 1.0
-    loop = [float(np.trapezoid(ma_meas[i] / ma_TE, z_meas[i])) for i in (0, 1)]
+    fac = np.stack(
+        [
+            np.interp(z[i], measured.z[i], measured.ma[i]) / measured.ma_TE
+            for i in (0, 1)
+        ]
+    )
 
     return ClarkMeasurement(
-        z=z,
-        fac=fac,
-        Co=loop[0] - length_ratio * loop[1],
-        length_ratio=length_ratio,
+        z=z, fac=fac, Co=measured.Co, length_ratio=measured.length_ratio
     )

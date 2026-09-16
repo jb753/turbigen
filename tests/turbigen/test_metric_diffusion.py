@@ -9,12 +9,11 @@ Test cases:
 - test_nothing_to_measure_returns_nothing: the Metric contract
 - test_a_diverged_march_is_not_measured: a field of NaN has no distribution
 - test_keys_and_shape: (n_spf, n_row), span fractions then rows
-- test_the_factor_is_made_of_the_two_mach_numbers: DF is exactly the ratio
-- test_it_measures_what_the_surface_plot_draws: the same cut, the same numbers
-- test_the_peak_sits_where_the_distribution_peaks: and on the plot's own axis
+- test_it_measures_what_the_surface_plot_draws: the suction peak over the exit
+- test_the_peak_sits_on_the_suction_surface: argmax of the data, no fit
+- test_it_reads_what_clark_profile_reads: one measurement, not a second opinion
 - test_a_section_above_the_gap_is_unmeasured: NaN rather than a wrong number
-- test_the_fitted_peak_is_reported_beside_the_raw_one: two peaks, two questions
-- test_a_peakless_blade_still_gets_a_diffusion_factor: the raw one always exists
+- test_a_peakless_blade_still_gets_a_diffusion_factor: the maximum always exists
 - test_values_survive_the_case_file: floats and NaN both
 """
 
@@ -27,9 +26,8 @@ from test_blade import build
 from test_cli import RUN_CASE
 from test_mesh import MESH, TIP
 
-from turbigen import Config, Result, case, cli, metric, mixout, util
+from turbigen import Config, Result, case, cli, loading, metric, mixout, util
 from turbigen.metric import DiffusionFactor
-from turbigen.post import N_CHORD_PLOT
 
 TIP_ROW = 1
 """The row of the two-row fixture that has a clearance gap."""
@@ -94,24 +92,10 @@ def test_keys_and_shape(solved):
 
     values = DiffusionFactor(spf=spf).evaluate(config, result)
 
-    assert set(values) == {
-        "DF",
-        "Mas_max",
-        "Mas_TE",
-        "zeta_max",
-        "zeta_peak",
-        "fac_front",
-        "fac_peak",
-    }
+    assert set(values) == {"DF", "zeta_peak", "Co"}
     for name, value in values.items():
         assert np.shape(value) == (len(spf), result.grid.n_row), name
-
-    # The columns read from a maximum of the data exist for every blade with a
-    # surface. The fitted ones do not -- an accelerating cascade has no
-    # interior peak to place -- so they are allowed to be NaN here and are
-    # covered by their own tests below.
-    for name in ("DF", "Mas_max", "Mas_TE", "zeta_max"):
-        assert np.all(np.isfinite(values[name])), name
+        assert np.all(np.isfinite(value)), name
 
 
 #
@@ -119,57 +103,33 @@ def test_keys_and_shape(solved):
 #
 
 
-def test_the_factor_is_made_of_the_two_mach_numbers(solved):
-    """The peak over the exit, less one --- and a peak is never below an exit."""
-    config, result = solved
-
-    values = DiffusionFactor().evaluate(config, result)
-
-    DF = np.asarray(values["DF"])
-    np.testing.assert_allclose(
-        DF, np.asarray(values["Mas_max"]) / np.asarray(values["Mas_TE"]) - 1.0
-    )
-    assert np.all(DF >= 0.0)
-
-
 def test_it_measures_what_the_surface_plot_draws(solved):
-    """Against the distribution itself, cut here rather than by the metric.
+    """The suction peak over the exit, less one, off the curve the plot draws.
 
-    The surface Mach number is the number someone reads off `SurfacePlot`, so
-    the metric has to be that curve reduced --- not a second definition that
-    happens to be close.
+    The exit value is checked against a cut taken here rather than by the
+    metric, so `DF` is that curve reduced rather than a second definition that
+    happens to be close. The peak is the suction surface's own, as `Ma_peak` is
+    for `ClarkProfile` --- so on a blade that accelerates to its trailing edge,
+    like this barely-marched one, `DF` can sit a little below zero, the suction
+    side there reading under the mean of the two.
     """
     config, result = solved
     spf = 0.5
     i_row = 0
 
-    mas, zeta = _distribution(result, i_row, spf)
+    mas = _distribution(result, i_row, spf)
+    measured = loading.surfaces(result, i_row, spf)
 
     values = DiffusionFactor(spf=(spf,)).evaluate(config, result)
 
-    assert values["Mas_max"][0][i_row] == pytest.approx(float(mas.max()))
-    assert values["Mas_TE"][0][i_row] == pytest.approx(0.5 * float(mas[0] + mas[-1]))
-    assert values["zeta_max"][0][i_row] == pytest.approx(
-        abs(float(zeta[np.argmax(mas)]))
+    assert measured.ma_TE == pytest.approx(0.5 * float(mas[0] + mas[-1]))
+    assert values["DF"][0][i_row] == pytest.approx(
+        float(measured.ma[0].max()) / measured.ma_TE - 1.0
     )
 
 
-def test_the_peak_sits_where_the_distribution_peaks(solved):
-    """Between the stagnation point and the trailing edge, folded positive.
-
-    The axis is the one `SurfacePlot` draws: zero where the flow stagnates and
-    one at the trailing edge, whichever surface the point is on.
-    """
-    config, result = solved
-
-    zeta_max = np.asarray(DiffusionFactor().evaluate(config, result)["zeta_max"])
-
-    assert np.all(zeta_max >= 0.0)
-    assert np.all(zeta_max <= 1.0)
-
-
 def _distribution(result, i_row, spf):
-    """Return ``(mas, zeta)`` cut here rather than by the metric."""
+    """Return the isentropic Mach number round a section, cut here."""
     import ember.cut
 
     surface = util.cut_blade_surfs(result.grid, 0)[i_row][0][:, :, None]
@@ -177,10 +137,32 @@ def _distribution(result, i_row, spf):
     xr = result.machine.annulus.evaluate_xr(m, spf)
     cut = ember.cut.structured_meridional(surface, xr.T)[0]
 
-    mas = util.isentropic_mach(cut, result.machine.mean_line[:, i_row].s[0])[:, 0]
-    blade = result.machine.rows[i_row].blade
-    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
-    return mas, util.normalise_surface_distance(cut, mas, xrt_nose)
+    return util.isentropic_mach(cut, result.machine.mean_line[:, i_row].s[0])[:, 0]
+
+
+def test_the_peak_sits_on_the_suction_surface(solved):
+    """The node the maximum is on, on Clark's own axis, and nothing fitted."""
+    config, result = solved
+    spf = 0.5
+
+    values = DiffusionFactor(spf=(spf,)).evaluate(config, result)
+    measured = loading.surfaces(result, 0, spf)
+
+    i_peak = int(np.argmax(measured.ma[0]))
+    assert values["zeta_peak"][0][0] == pytest.approx(measured.z[0][i_peak])
+    assert 0.0 <= values["zeta_peak"][0][0] <= 1.0
+
+
+def test_it_reads_what_clark_profile_reads(solved):
+    """The circulation is the one the iterator drives the blade count with."""
+    config, result = solved
+    spf = 0.5
+
+    values = DiffusionFactor(spf=(spf,)).evaluate(config, result)
+    iterated = loading.measure_clark_profile(result, 0, spf, np.array([0.5]))
+
+    assert values["Co"][0][0] == pytest.approx(iterated.Co)
+    assert values["Co"][0][0] > 0.0
 
 
 def test_a_section_above_the_gap_is_unmeasured(gapped):
@@ -189,41 +171,18 @@ def test_a_section_above_the_gap_is_unmeasured(gapped):
 
     values = DiffusionFactor(spf=(0.5, 0.999)).evaluate(config, result)
 
-    DF = np.asarray(values["DF"])
-    assert np.isfinite(DF[0, TIP_ROW]), "mid-span is below the gap and is blade"
-    assert np.isnan(DF[1, TIP_ROW]), "the tip section is trimmed off as flow"
-
-
-def test_the_fitted_peak_is_reported_beside_the_raw_one(solved):
-    """Two peaks, because they answer different questions.
-
-    `Mas_max` and `zeta_max` come from a maximum of the data and exist for
-    every distribution. `fac_peak` and `zeta_peak` come from the two-line fit
-    the iterators steer on, which slides smoothly but is undefined on a blade
-    that accelerates all the way to its trailing edge.
-    """
-    config, result = solved
-    values = DiffusionFactor().evaluate(config, result)
-
-    # The raw pair is always measurable on a blade that has a surface.
-    assert np.isfinite(np.asarray(values["Mas_max"])).all()
-
-    fac_peak = np.asarray(values["fac_peak"])
-    if np.isfinite(fac_peak).any():
-        # Where the fit succeeded, the level agrees with the raw ratio to
-        # within the few per cent an apex overshoots a rounded crest by.
-        raw = np.asarray(values["Mas_max"]) / np.asarray(values["Mas_TE"])
-        assert fac_peak[np.isfinite(fac_peak)] == pytest.approx(
-            raw[np.isfinite(fac_peak)], rel=0.1
-        )
+    for name in ("DF", "zeta_peak", "Co"):
+        value = np.asarray(values[name])
+        assert np.isfinite(value[0, TIP_ROW]), "mid-span is below the gap"
+        assert np.isnan(value[1, TIP_ROW]), "the tip section is trimmed off"
 
 
 def test_a_peakless_blade_still_gets_a_diffusion_factor(gapped):
     """An accelerating cascade has no interior peak, and still diffuses.
 
-    The fitted columns are NaN there and `DF` is not, which is the whole reason
-    both are reported: a metric that has to describe every blade cannot use a
-    number that only some blades have.
+    Its maximum is at the trailing edge, so `DF` is small rather than missing:
+    a metric that has to describe every blade cannot use a number that only
+    some blades have.
     """
     config, result = gapped
     values = DiffusionFactor().evaluate(config, result)
@@ -250,12 +209,4 @@ def test_values_survive_the_case_file(gapped, tmp_path):
 
     for name, value in result.metrics.items():
         np.testing.assert_allclose(read_back.metrics[name], value)
-    assert set(read_back.metrics) == {
-        "DF",
-        "Mas_max",
-        "Mas_TE",
-        "zeta_max",
-        "zeta_peak",
-        "fac_front",
-        "fac_peak",
-    }
+    assert set(read_back.metrics) == {"DF", "zeta_peak", "Co"}

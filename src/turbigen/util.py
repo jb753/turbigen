@@ -979,14 +979,11 @@ def cut_blade_tips(grid, offset=0):
 # SURFACE DISTRIBUTIONS
 #
 # What a blade does to the flow, read off the blade. A surface plot draws
-# these, and the iterator that shapes a camber line to a target measures with
-# them, which is exactly why they live here rather than in either: the two must
-# agree about what the distribution *is*, and the surest way to make them agree
-# is to have one of them.
+# these, and `turbigen.loading` measures with them, which is exactly why they
+# live here rather than in either: the two must agree about what the
+# distribution *is*, and the surest way to make them agree is to have one of
+# them.
 #
-
-TINY_RISE = 1e-9
-"""Rise across a segment, over the Mach scale, below which a peak is rounding."""
 
 N_SPAN_CUT = 101
 """Meridional points defining the span curve a blade surface is cut along.
@@ -1150,8 +1147,8 @@ def normalise_surface_distance(cut, mas, xrt_nose):
     Each surface is normalised by its own length, so both reach one at the
     trailing edge however asymmetric the blade is. The sign says which surface
     a point is on, following the direction the cut loops in; a plot folds it
-    away and `suction_side` reads it, but normalising the two sides has to
-    happen while they are still told apart.
+    away, but normalising the two sides has to happen while they are still
+    told apart.
     """
     zeta = get_zeta(cut)[:, 0]
 
@@ -1170,190 +1167,3 @@ def normalise_surface_distance(cut, mas, xrt_nose):
     upper = zeta.max()
     lower = np.abs(zeta.min())
     return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
-
-
-def suction_side(zeta, mas):
-    """Return the suction-surface half of a signed surface distribution.
-
-    `normalise_surface_distance` signs `zeta` by which surface a point sits on,
-    so the two are told apart by that sign alone. Which of them is the suction
-    surface is whichever carries the higher Mach number --- there is nothing
-    else it could be, and reading it off the flow rather than off a mesh
-    convention means it stays right for a compressor, a turbine and a blade at
-    enough incidence to have swapped its surfaces over.
-
-    Returns
-    -------
-    zeta, mas : ndarray
-        Unsigned surface distance, increasing from the stagnation point, and
-        the Mach number along it.
-
-    """
-    zeta = np.asarray(zeta, dtype=float)
-    mas = np.asarray(mas, dtype=float)
-
-    upper, lower = zeta > 0.0, zeta < 0.0
-    if not upper.any() or not lower.any():
-        # One-sided already, or degenerate. Folding it is all there is to do.
-        order = np.argsort(np.abs(zeta))
-        return np.abs(zeta)[order], mas[order]
-
-    sign = 1.0 if np.nanmax(mas[upper]) >= np.nanmax(mas[lower]) else -1.0
-    keep = np.sign(zeta) == sign
-
-    order = np.argsort(np.abs(zeta[keep]))
-    return np.abs(zeta[keep])[order], mas[keep][order]
-
-
-def fit_two_lines(zeta, ma, n_scan=101):
-    """Fit two straight lines meeting at a peak.
-
-    One line rising to a breakpoint and another falling from it, constrained to
-    meet there::
-
-        ma = a + b * min(zeta - zp, 0) + c * max(zeta - zp, 0)
-
-    At a fixed breakpoint `zp` that is linear in ``(a, b, c)``, so the whole fit
-    is a scan over `zp` with a least-squares solve inside it. No optimiser, no
-    initial guess, and no local minimum to fall into.
-
-    Fitting lines rather than reading a maximum is what makes the peak robust.
-    It comes back as the intersection of two lines each fitted over many
-    points, where an argmax on a flat-topped distribution --- which is a whole
-    design style, not a pathology --- wanders onto whichever node the noise
-    happened to lift.
-
-    Parameters
-    ----------
-    zeta : array_like
-        Surface distance, increasing.
-    ma : array_like
-        Isentropic Mach number at each `zeta`.
-    n_scan : int
-        Breakpoints to try, before refining between the neighbours of the best.
-
-    Returns
-    -------
-    zeta_peak, ma_peak, slope_front, slope_aft : float
-        The breakpoint, the value there, and the slope of each line. All NaN
-        when the data carry no peak: a distribution that only rises, or only
-        falls, has no interior maximum to place, and saying so is better than
-        returning the least-bad breakpoint of a curve that has none.
-
-    """
-    zeta = np.asarray(zeta, dtype=float)
-    ma = np.asarray(ma, dtype=float)
-
-    # Three coefficients, so four points is the fewest that constrains them.
-    if zeta.size < 4:
-        return np.nan, np.nan, np.nan, np.nan
-
-    def fit(zp):
-        """Return the sum of squares and coefficients at breakpoint `zp`."""
-        d = zeta - zp
-        basis = np.stack(
-            [np.ones_like(d), np.minimum(d, 0.0), np.maximum(d, 0.0)], axis=1
-        )
-        coefficients, *_ = np.linalg.lstsq(basis, ma, rcond=None)
-        return float(np.sum((basis @ coefficients - ma) ** 2)), coefficients
-
-    # Interior breakpoints only: one at either end degenerates to a single
-    # line, which fits a monotonic curve perfectly and says nothing about a
-    # peak. The margin is what keeps the scan away from that.
-    lo, hi = float(zeta[0]), float(zeta[-1])
-    margin = 0.05 * (hi - lo)
-    coarse = np.linspace(lo + margin, hi - margin, n_scan)
-    i_best = int(np.argmin([fit(zp)[0] for zp in coarse]))
-
-    # Refined between the neighbours of the best, where the true minimum lies.
-    step = coarse[1] - coarse[0]
-    fine = np.linspace(
-        max(coarse[i_best] - step, lo + margin),
-        min(coarse[i_best] + step, hi - margin),
-        n_scan,
-    )
-    zeta_peak = float(fine[int(np.argmin([fit(zp)[0] for zp in fine]))])
-
-    _, (ma_peak, slope_front, slope_aft) = fit(zeta_peak)
-
-    # A peak is a rise and then a fall, and both have to be real rather than
-    # rounding: on an exactly flat distribution the two slopes come back at
-    # 1e-16 of either sign, which passes a bare comparison against zero and
-    # would hand back whichever breakpoint the scan happened to stop on.
-    # Measured as the rise and the fall themselves, against the size of the
-    # data, so the test means the same thing whatever the Mach number is.
-    scale = np.max(np.abs(ma)) or 1.0
-    rise = slope_front * (zeta_peak - lo)
-    fall = -slope_aft * (hi - zeta_peak)
-    if not (rise > TINY_RISE * scale and fall > TINY_RISE * scale):
-        return np.nan, np.nan, np.nan, np.nan
-
-    return zeta_peak, float(ma_peak), float(slope_front), float(slope_aft)
-
-
-def loading_from_distribution(zeta, mas, zeta_front=0.1, zeta_TE=0.98):
-    """Reduce a suction-surface distribution to the shape numbers on it.
-
-    Reads the curve and nothing else. What the peak and front Mach numbers are
-    then divided *by* is a statement about the duty, which needs a mean line
-    and so belongs to the caller --- see
-    :func:`turbigen.iterate.measure_loading`.
-
-    Parameters
-    ----------
-    zeta : array_like
-        Unsigned surface distance, increasing, as `suction_side` returns.
-    mas : array_like
-        Isentropic Mach number along it.
-    zeta_front : float
-        Front anchor, and the start of the window fitted. Below it the
-        distribution belongs to the leading edge rather than to the camber.
-    zeta_TE : float
-        End of the window, short of the trailing edge where the two surfaces
-        must meet.
-
-    Returns
-    -------
-    zeta_peak : float
-        Surface fraction of the peak.
-    ma_peak : float
-        Isentropic Mach number there, from the fitted apex.
-    ma_front : float
-        Isentropic Mach number at `zeta_front`, off the fitted front line.
-
-    All NaN when there is no peak in the window to measure.
-
-    """
-    zeta = np.asarray(zeta, dtype=float)
-    mas = np.asarray(mas, dtype=float)
-
-    window = (zeta >= zeta_front) & (zeta <= zeta_TE)
-    if window.sum() < 4:
-        return np.nan, np.nan, np.nan
-
-    zeta_peak, ma_peak, slope_front, _ = fit_two_lines(zeta[window], mas[window])
-    if not np.isfinite(zeta_peak) or not ma_peak:
-        return np.nan, np.nan, np.nan
-
-    return zeta_peak, ma_peak, float(ma_peak + slope_front * (zeta_front - zeta_peak))
-
-
-def loading_target(zeta, zeta_front, zeta_peak, ma_front, ma_peak, ma_TE):
-    """Return the piecewise-linear target distribution, for drawing.
-
-    Two straight lines: the front anchor up to the peak, and the peak down to
-    the trailing edge. Absolute Mach numbers rather than the ratios a target is
-    written in, because those ratios are normalised against a duty this knows
-    nothing about --- the caller converts, and this just draws three points.
-
-    NaN ahead of `zeta_front`, so a plot of it stops where the window does
-    rather than drawing a claim over the leading edge that nobody made.
-    """
-    zeta = np.asarray(zeta, dtype=float)
-
-    front = ma_front + (ma_peak - ma_front) * (zeta - zeta_front) / (
-        zeta_peak - zeta_front
-    )
-    aft = ma_peak + (ma_TE - ma_peak) * (zeta - zeta_peak) / (1.0 - zeta_peak)
-
-    return np.where(zeta < zeta_front, np.nan, np.where(zeta < zeta_peak, front, aft))

@@ -1049,13 +1049,6 @@ def _with_sections(config, i_row, fn):
     return _with_blade(config, i_row, sections=sections)
 
 
-def _shift_camber(section, shift):
-    """Return `section` with `shift` added to its camber coefficients."""
-    camber = section.camber
-    coeff = tuple(np.asarray(camber.coeff) + shift)
-    return dataclasses.replace(section, camber=dataclasses.replace(camber, coeff=coeff))
-
-
 def _recamber_unknowns(config, field):
     """Return the mean recamber of each row, under `field`.
 
@@ -1418,18 +1411,6 @@ spacing and five hundred intervals put it far below any tolerance a design
 would set on a circulation coefficient.
 """
 
-N_COEFF = 1
-"""Interior Bernstein coefficients a loading distribution moves.
-
-One, because :class:`LoadingDistribution` chases one number: the Mach number
-at `zeta_front`. A camber line with its ends pinned needs one interior degree
-of freedom to move one point on the curve, and no more --- a second knob would
-have nothing of its own left to null, since `PeakMach` already owns the level.
-"""
-
-BERNSTEIN_ORDER = N_COEFF + 1
-"""Bernstein order carrying exactly :data:`N_COEFF` interior coefficients."""
-
 
 class RowIterator(Iterator):
     """Base for an iterator that shapes one blade row, measured at one span.
@@ -1450,202 +1431,8 @@ class RowIterator(Iterator):
         return config.blades[self.i_row]
 
 
-class LoadingDistribution(RowIterator):
-    """Shape the leading-edge acceleration by moving the camber line.
-
-    :class:`Deviation` and :class:`Incidence` correct the *ends* of a blade
-    against the flow. This corrects one point in between: how hard the
-    leading edge accelerates by `zeta_front`, which is what a designer chooses
-    when they pick an aerodynamic style, and which Clark (2019) shows is a
-    useful number to hold rather than let the mean-line design produce
-    whatever it produces.
-
-    The knob is the single interior coefficient of a
-    :class:`~turbigen.camber.Bernstein` camber line --- see :data:`N_COEFF`.
-    Its endpoint counterparts are pinned at zero, so the metal angles do not
-    move and this iterator cannot fight the two that own them.
-
-    Read straight off the suction surface at `zeta_front` rather than off a
-    fit, so this needs no peak to exist and asks nothing of where one sits or
-    how high it stands. `PeakMach` sits beside it and owns the level; between
-    the two, neither where the peak is nor how it is reached is a target ---
-    only the front acceleration and the overall diffusion are.
-    """
-
-    type: ClassVar[str] = "loading"
-
-    fac_front: float = 1.8
-    """Target leading-edge Mach number, normalised by duty [--].
-
-    ``Ma(zeta_front) / Ma_TE * Ma_2 / Ma_1``, which is Clark (2019) parameter
-    3. Referred to the trailing edge rather than to the peak because `Ma_TE` is
-    a mean-line quantity, fixed by the duty, where the peak is a fitted one
-    that moves with the loading --- and the ``Ma_2 / Ma_1`` factor is what
-    makes the same number mean the same style of leading edge across rows of
-    different duty, which is the whole reason the parameter is written this
-    way.
-
-    Typically greater than one on a turbine, the surface being faster at a
-    tenth of its length than the mean line is at exit.
-    """
-
-    zeta_front: float = 0.2
-    """Front anchor, and where the Mach number is read off [--].
-
-    It is the boundary between what the leading edge decides and what the
-    camber line does, so it says *where to measure* rather than what to want
-    --- and below it the distribution belongs to :class:`Incidence` and the
-    thickness, neither of which this moves.
-
-    A fifth rather than a tenth, because a point that close to the nose still
-    sits inside the sharp acceleration round it, which is not the camber
-    line's to answer for.
-
-    :class:`PeakMach` carries the same setting for its own fitted window, and
-    the two should agree so that a design's front and peak describe the same
-    curve.
-    """
-
-    gain: float = -0.5
-    """How much of the error to subtract.
-
-    **A starting direction, not a calibration.** Measured on two different
-    cascades, the sign of the response came out opposite --- a first blade
-    gave ``d(fac_front)/dc = -0.80`` while the blade in
-    `examples/turbine_cascade_loading.yaml` gave ``+0.15`` for the
-    corresponding coefficient. Which way the one Bernstein bump moves the
-    front value is evidently a property of the blade rather than of the
-    parametrisation, so there is no scalar here that is right in general, and
-    one confident enough to matter would be wrong half the time.
-
-    Small, accordingly. Two things follow from that and both are wanted: a
-    first step taken on a wrong sign costs one iteration rather than an
-    excursion, and the step it asks for sits *inside* :attr:`clip`.
-
-    The Broyden update is what actually steers this iterator. It only has to
-    avoid getting in its way.
-    """
-
-    clip: float = 0.1
-    """Largest change in the coefficient per iteration [--].
-
-    Measured against how far it actually travels. On the cascade in
-    `examples/turbine_cascade_loading.yaml` it converged at about -0.23 from a
-    start of zero, and at a clip of 0.05 the step saturated for five
-    iterations running --- which is not merely slow: a step saturated at the
-    clip keeps only the *sign* of what the Jacobian asked for.
-    """
-
-    tolerance: float = 0.05
-    """Converged when the front Mach number is within this [--].
-
-    Around 1.9 on the cascade measured here, so this is a few per cent of what
-    it measures.
-    """
-
-    def __post_init__(self):
-        if not 0.0 < self.zeta_front <= 1.0:
-            raise ValueError(f"zeta_front must be in (0, 1], got {self.zeta_front}.")
-        if not self.fac_front > 0.0:
-            raise ValueError(
-                f"fac_front must be positive, got {self.fac_front}. It is a "
-                f"Mach number over a Mach number, and on a turbine it is "
-                f"usually greater than one."
-            )
-
-    #
-    # THE PROTOCOL
-    #
-
-    def names(self):
-        """Return the table key of the knob, as a one-element list.
-
-        Carrying the row, so that two entries shaping two rows cannot collide
-        in `unknowns`. A list rather than a bare name because `unknowns` and
-        `paths` are written generically over :data:`N_COEFF`.
-        """
-        return [f"camber_coeff[{self.i_row}][{j}]" for j in range(N_COEFF)]
-
-    def unknowns(self, config):
-        coefficients = np.array(
-            [section.camber.coeff for section in self._check(config).sections],
-            dtype=float,
-        )
-        return {
-            name: float(np.mean(coefficients[:, j]))
-            for j, name in enumerate(self.names())
-        }
-
-    def with_unknowns(self, config, values):
-        current = self.unknowns(config)
-        moved = _merged(current, values)
-        shift = np.array([moved[name] - current[name] for name in self.names()])
-        return _with_sections(config, self.i_row, lambda _, s: _shift_camber(s, shift))
-
-    def paths(self, config):
-        return {
-            f"blades[{self.i_row}].sections[{i_section}].camber.coeff[{j}]"
-            for i_section in range(len(self._blade(config).sections))
-            for j in range(N_COEFF)
-        }
-
-    def error(self, config, result):
-        _require_grid(result, f"the loading distribution of row {self.i_row}")
-        self._check(config)
-
-        measured = turbigen.loading.measure(
-            result, self.i_row, self.spf, self.zeta_front
-        )
-        if measured is None or not np.isfinite(measured.fac_front):
-            raise MeasurementError(
-                f"no suction surface could be read on row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its front acceleration is unmeasured. "
-                f"{GAP_HINT}"
-            )
-
-        return dict(zip(self.names(), (measured.fac_front - self.fac_front,)))
-
-    def _check(self, config):
-        """Return this row's blade, raising unless its camber lines carry the knob.
-
-        Written out in full, so that the coefficient this moves is a leaf of
-        the config rather than a zero padded in behind it.
-        """
-        from turbigen.camber import Bernstein
-
-        blade = self._blade(config)
-        for i_section, section in enumerate(blade.sections):
-            camber = section.camber
-            where = f"row {self.i_row} section {i_section}"
-
-            if not isinstance(camber, Bernstein):
-                raise ValueError(
-                    f"Shaping a loading distribution moves the interior "
-                    f"coefficient of a Bernstein camber line, and {where} has "
-                    f"a {type(camber).__name__} camber, which has none. Set "
-                    f"camber: {{type: bernstein, order: {BERNSTEIN_ORDER}, "
-                    f"coeff: [0.0]}}."
-                )
-
-            if camber.order != BERNSTEIN_ORDER or len(camber.coeff) != N_COEFF:
-                raise ValueError(
-                    f"Shaping a loading distribution needs exactly {N_COEFF} "
-                    f"interior camber coefficient written out in full, so order "
-                    f"must be {BERNSTEIN_ORDER}; {where} has "
-                    f"order={camber.order} with {len(camber.coeff)} "
-                    f"coefficient(s)."
-                )
-
-        return blade
-
-
 def _circulation_count(config, i_row):
-    """Return row `i_row`'s blade count design, which has to have a `Co`.
-
-    Shared by every iterator that moves the blade count -- :class:`PeakMach`
-    and :class:`ClarkProfile` both do, and neither owns the other's
-    validation.
-    """
+    """Return row `i_row`'s blade count design, which has to have a `Co`."""
     from turbigen.blade import Circulation
 
     _check_i_row(i_row, len(config.blades))
@@ -1665,129 +1452,6 @@ def _with_circulation(config, i_row, Co):
     """Return `config` with row `i_row`'s circulation coefficient set to `Co`."""
     count = _circulation_count(config, i_row)
     return _with_blade(config, i_row, count=dataclasses.replace(count, Co=Co))
-
-
-class PeakMach(RowIterator):
-    """Set the level of the loading by moving the blade count.
-
-    The companion to :class:`LoadingDistribution`, which shapes a distribution
-    but cannot say how high it stands. At a fixed duty the area enclosed by the
-    isentropic Mach loop is the blade circulation, which the pitch sets and a
-    camber line only redistributes --- so the level belongs to the blade count,
-    and this is the iterator that owns it.
-
-    **Its own member rather than a third knob on the other one, because a gain
-    is per-iterator.** :attr:`Iterator.gain` carries the sign of a knob's
-    sensitivity as well as its size, and one scalar cannot carry two signs: the
-    peak rises with the circulation coefficient while the shape targets fall
-    with the camber coefficients. Folded together, a single negative gain drove
-    this knob the wrong way at every iteration --- `Co` walked from 0.70 to
-    0.57 while the peak it was meant to raise fell with it. Split, each member
-    declares the sign it has.
-
-    Moving blade count is what kept `DiffusionFactor` from being ported, on the
-    grounds that it changes the mesh. It does: the mesher sizes the grid from
-    the pitch, so `Co` of 0.70 and 0.75 meshed at 225 and 209 streamwise nodes
-    on the example cascade. That puts a floor under :attr:`tolerance`, since
-    remeshing moves the measurement a little for reasons that are
-    discretisation rather than flow, but it does not prevent the loop --- every
-    iteration remeshes anyway, and restarts interpolate in index space. The
-    integer blade count is the smaller worry it looks: one blade is 0.36 per
-    cent of `Co` on that cascade, far finer than any step taken, though it
-    scales as ``1 / n_blade`` and would bite on a row with forty.
-    """
-
-    type: ClassVar[str] = "peak_Ma"
-
-    fac_peak: float = 1.2
-    """Target peak Mach number over the trailing edge value [--].
-
-    One more than the diffusion factor
-    :class:`turbigen.metric.DiffusionFactor` records, so a target here is a
-    statement about diffusion in the units a designer already reads.
-    """
-
-    zeta_front: float = 0.2
-    """Front anchor of the window fitted [--].
-
-    The peak is read from a fit rather than from a maximum of the data, so it
-    depends on the window fitted. Must match the
-    :class:`LoadingDistribution` alongside, or the two describe different
-    curves.
-    """
-
-    zeta_TE: float = 0.98
-    """Far end of the window fitted [--].
-
-    `LoadingDistribution` reads its own target straight off the surface
-    rather than from a fit, so it carries no matching setting of its own; only
-    `zeta_front` needs to agree between the two.
-    """
-
-    gain: float = 1.5
-    """How much of the error to subtract [--].
-
-    **Positive, and measured rather than guessed.** The peak rises with the
-    circulation coefficient --- more circulation per blade is a bigger loop ---
-    at a slope of +0.50 across a sweep of `Co` from 0.6 to 0.8, +0.58 within a
-    single run, and +0.58 again from replaying that run's Jacobian. A Newton
-    step on the diagonal would be about +1.7, and this sits a little under it
-    so that it undershoots rather than overshoots.
-
-    Unlike :attr:`LoadingDistribution.gain`, which is a weak prior because the
-    camber sensitivities changed sign between two cascades, this is a
-    calibration: the sign follows from what a circulation coefficient *is*, and
-    all three measurements agree on the size.
-    """
-
-    clip: float = 0.05
-    """Largest change in the circulation coefficient per iteration [--]."""
-
-    tolerance: float = 0.02
-    """Converged when the peak Mach ratio is within this [--]."""
-
-    def __post_init__(self):
-        if not self.fac_peak > 0.0:
-            raise ValueError(
-                f"fac_peak must be positive, got {self.fac_peak}. It is the "
-                f"peak Mach number over the trailing edge one, so on a turbine "
-                f"it is greater than one."
-            )
-        if not 0.0 < self.zeta_front < self.zeta_TE <= 1.0:
-            raise ValueError(
-                f"A loading level needs 0 < zeta_front < zeta_TE <= 1, got "
-                f"{self.zeta_front} and {self.zeta_TE}. The peak is fitted "
-                f"inside that window."
-            )
-
-    def unknowns(self, config):
-        return {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
-
-    def with_unknowns(self, config, values):
-        name = f"Co[{self.i_row}]"
-        if name not in values:
-            return config
-        return _with_circulation(config, self.i_row, values[name])
-
-    def paths(self, config):
-        del config
-        return {f"blades[{self.i_row}].count.Co"}
-
-    def error(self, config, result):
-        _require_grid(result, f"the loading level of row {self.i_row}")
-        _circulation_count(config, self.i_row)
-
-        measured = turbigen.loading.measure(
-            result, self.i_row, self.spf, self.zeta_front, self.zeta_TE
-        )
-        if measured is None or not np.isfinite(measured.fac_peak):
-            raise MeasurementError(
-                f"no suction peak could be fitted on row {self.i_row} at "
-                f"spf={self.spf:.2f}, so its loading level is unmeasured. "
-                f"{GAP_HINT}"
-            )
-
-        return {f"Co[{self.i_row}]": measured.fac_peak - self.fac_peak}
 
 
 class ClarkProfile(RowIterator):
@@ -1839,10 +1503,11 @@ class ClarkProfile(RowIterator):
     and depart as a pair. Sharing an end removes a knob and collapses two
     residuals into one at the same stroke.
 
-    **The level belongs to the blade count**, as it does for every loading
-    iterator: a thickness redistributes circulation and cannot create it, so
+    **The level belongs to the blade count.** At a fixed duty the area
+    enclosed by the isentropic Mach loop is the blade circulation, which the
+    pitch sets: a thickness redistributes circulation and cannot create it, so
     the loop is `Co`'s to answer for and what is left of the residuals is the
-    shape's. See :class:`PeakMach` for why it cannot simply be ignored.
+    shape's.
 
     **And the level is a circulation, measured as one.** Not a reduction of
     the samples above: those are unevenly spaced, leave about a third of each
@@ -1870,8 +1535,7 @@ class ClarkProfile(RowIterator):
     Ma_peak: float = 1.2
     """Target peak Mach number over the trailing edge value [--].
 
-    What :attr:`PeakMach.fac_peak` states, under the name :mod:`turbigen.clark`
-    gives it, and one more than the diffusion factor
+    One more than the diffusion factor
     :class:`turbigen.metric.DiffusionFactor` records.
     """
 
@@ -1886,10 +1550,9 @@ class ClarkProfile(RowIterator):
     number the curve is required to reach at that station: see `Z_LE` in
     :mod:`turbigen.clark` for why the two are not the same thing.
 
-    Carries the `Ma_2 / Ma_1` factor, written the way
-    :attr:`turbigen.loading.Loading.fac_front` and
-    :attr:`LoadingDistribution.fac_front` are, so the same number means the same
-    style of leading edge across rows of differing duty. Divided back out once,
+    Carries the `Ma_2 / Ma_1` factor, Clark (2019) parameter 3, so the same
+    number means the same style of leading edge across rows of differing
+    duty. Divided back out once,
     on the way into :mod:`turbigen.clark`, which works in plain `Ma / Ma_TE`
     throughout --- a curve whose pieces are built from differences between its
     own parameters cannot carry two normalisations at once.
@@ -1926,7 +1589,7 @@ class ClarkProfile(RowIterator):
     are shape-space coefficients: a thicker surface is a faster one wherever
     the thickening happens, so nose, interior and wedge all share a sign.
 
-    **Positive**, unlike :attr:`LoadingDistribution.gain`, and the sign is a
+    **Positive**, and the sign is a
     statement about what a coefficient *is* rather than a guess. A gain is the
     reciprocal of an assumed slope, the step being `u -= gain * e`; here the
     slope is positive, since raising a coefficient thickens the surface,
@@ -1958,7 +1621,7 @@ class ClarkProfile(RowIterator):
     :attr:`~turbigen.loading.ClarkMeasurement.Co` assumes; a few per cent on a
     step, not a different order of magnitude.
 
-    Positive, for the reason :attr:`PeakMach.gain` is. **Read only while
+    Positive, because more circulation per blade is a bigger loop. **Read only while
     :attr:`gain` is a scalar**: declared as a sequence, `gain` carries every
     knob including this one.
     """

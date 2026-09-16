@@ -34,7 +34,6 @@ from turbigen import (
     iterate,
     mixout,
     post,
-    util,
 )
 from turbigen.post import IterationPlot
 
@@ -432,150 +431,10 @@ def test_surface_plot_draws_a_physical_distribution(bladed, solved):
     assert 0.3 < mas.max() < 1.5
 
 
-@pytest.fixture(scope="module")
-def machine(bladed):
-    """The bladed case designed, for the duty a loading target is scaled by."""
-    return bladed.design()
-
-
-def _shaped(config, fac_peak=None, **kwargs):
-    """Return `config` with a Bernstein camber and a loading iterator on row 0.
-
-    `fac_peak` adds the `peak_Ma` member beside it, which is what states the
-    level of the target; without one the overlay draws the shape at the height
-    the blade reached.
-    """
-    import dataclasses
-
-    from turbigen import camber, iterate
-
-    blade = config.blades[0]
-    sections = tuple(
-        dataclasses.replace(section, camber=camber.Bernstein(order=2, coeff=(0.0,)))
-        for section in blade.sections
-    )
-    correct = [iterate.LoadingDistribution(**kwargs)]
-    if fac_peak is not None:
-        correct.append(
-            iterate.PeakMach(
-                i_row=kwargs.get("i_row", 0),
-                spf=kwargs.get("spf", 0.5),
-                fac_peak=fac_peak,
-            )
-        )
-    return dataclasses.replace(
-        config,
-        blades=(dataclasses.replace(blade, sections=sections),),
-        iterate=iterate.Iteration(correct=tuple(correct)),
-    )
-
-
-def _peaked(n=200):
-    """A signed distribution with a real peak on the positive surface.
-
-    The fixtures here are a cascade that accelerates all the way to its
-    trailing edge, which has no interior peak to aim at --- see
-    `test_surface_plot_overlays_nothing_without_a_peak`. Drawing the overlay
-    needs one, so this supplies it. Its peak is at 0.55 and its trailing edge
-    value 1.0, both read back by the tests below.
-    """
-    zeta = np.linspace(-1.0, 1.0, n)
-    suction = util.loading_target(np.abs(zeta), 0.2, 0.55, 0.700, 1.3, 1.0)
-    # The pressure side rises to meet the suction side at the trailing edge,
-    # as the two surfaces must, so the mean of the cut's two ends is 1.0.
-    pressure = 0.2 + 0.8 * np.abs(zeta)
-    return zeta, np.where(zeta > 0.0, np.nan_to_num(suction, nan=0.2), pressure)
-
-
-def _ma_front(config, machine, ma_TE=1.0):
-    """Return the Mach number the configured target implies at `zeta_front`."""
-    from turbigen.loading import mach_ratio
-
-    iterator = config.iterate.correct[0]
-    return iterator.fac_front * ma_TE / mach_ratio(machine, iterator.i_row)
-
-
-def test_surface_plot_overlays_a_loading_target(bladed, machine):
-    """A configured target is drawn over the distribution it is aiming at.
-
-    The point of the overlay: what the iterator closes is the gap between these
-    two lines, which is far easier to see than to read off a table.
-    """
-    config = _shaped(bladed, fac_front=1.8, fac_peak=1.3)
-    zeta, mas = _peaked()
-
-    _fig, ax = plt.subplots()
-    (measured,) = ax.plot(np.abs(zeta), mas, color="C3")
-    post._draw_loading_target(
-        ax, config, machine, 0, 0.5, zeta, mas, measured.get_color()
-    )
-
-    # The target line and nothing else: no fit, no apex marker.
-    assert len(ax.lines) == 2
-
-    (target,) = [ln for ln in ax.lines if "target" in ln.get_label()]
-
-    # Dashed and in the colour of the distribution it belongs to, so a plot of
-    # several sections stays readable.
-    assert target.get_linestyle() != measured.get_linestyle()
-    assert target.get_color() == measured.get_color()
-
-    # Drawn only over the window that is matched, and through the two points
-    # the target is defined by.
-    x, y = target.get_xdata(), target.get_ydata()
-    assert x[np.isfinite(y)].min() == pytest.approx(0.2)
-    # The apex sits where `_peaked` put it (0.55), which is only ever read off
-    # the achieved distribution; the front anchor and the peak height are the
-    # two numbers that were actually asked for, denormalised against this
-    # row's duty.
-    assert x[np.nanargmax(y)] == pytest.approx(0.55, abs=x[1] - x[0])
-    assert np.nanmax(y) == pytest.approx(config.iterate.correct[1].fac_peak, rel=1e-2)
-    assert np.interp(0.2, x, y) == pytest.approx(
-        _ma_front(config, machine, ma_TE=1.0), rel=1e-3
-    )
-
-
 def test_surface_plot_overlays_nothing_without_an_iterator(bladed, solved):
     """No target configured is no claim to draw."""
     (line,) = SurfacePlot().report(bladed, solved)[0].axes[0].lines
     assert "target" not in line.get_label()
-
-
-def test_surface_plot_draws_no_apex_it_cannot_find(bladed, solved):
-    """No peak to fit is no place to draw the target's apex, `peak_Ma` or not.
-
-    This fixture accelerates all the way to its trailing edge, so it offers no
-    peak for either the iterator or the overlay to read a position from. The
-    target's front value is still a claim, but with nowhere to put the other
-    end of the line, nothing is drawn rather than something invented.
-    """
-    for config in (
-        _shaped(bladed, fac_front=1.8),
-        _shaped(bladed, fac_front=1.8, fac_peak=1.3),
-    ):
-        labels = [
-            ln.get_label()
-            for ln in SurfacePlot().report(config, solved)[0].axes[0].lines
-        ]
-        assert not any("target" in label for label in labels)
-
-
-def test_surface_plot_overlay_ignores_another_span(bladed, machine):
-    """A target set at one span says nothing about the sections either side."""
-    config = _shaped(bladed, fac_front=1.8, spf=0.25)
-
-    _fig, ax = plt.subplots()
-    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
-    assert not ax.lines
-
-
-def test_surface_plot_overlay_ignores_another_row(bladed, machine):
-    """One row per iterator, so a target for row 1 is not drawn on row 0."""
-    config = _shaped(bladed, fac_front=1.8, i_row=1)
-
-    _fig, ax = plt.subplots()
-    post._draw_loading_target(ax, config, machine, 0, 0.5, *_peaked(), "C0")
-    assert not ax.lines
 
 
 def test_surface_plot_draws_an_unmarched_grid(bladed, meshed):

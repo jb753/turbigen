@@ -268,7 +268,7 @@ def _within_the_machine(cut, planes):
 
 
 class DiffusionFactor(Metric):
-    r"""Peak-to-exit diffusion over the blade surfaces of each row.
+    r"""Peak-to-exit diffusion and circulation of each row.
 
     The isentropic surface Mach number is a distribution, and the amount it
     falls from its peak back to the trailing edge is what the boundary layer on
@@ -277,28 +277,27 @@ class DiffusionFactor(Metric):
     .. math::
         \mathit{DF} = \frac{\mathit{Ma}_{s,\mathrm{max}}}{\mathit{Ma}_{s,\mathrm{TE}}} - 1
 
-    where the trailing-edge value is the mean of the two sides of the cut, the
-    surface being wrapped from one of them round to the other. Where the peak
-    sits is reported with it: the same diffusion late on the surface is harder
-    on the boundary layer than early, so the factor alone does not say what
-    the blade is doing.
+    where the peak is the largest value on the suction surface and the
+    trailing-edge value is the mean of the two sides of the cut. Where the peak
+    sits is reported with it, and the circulation coefficient the blade drew
+    beside both.
+
+    **Read directly, nothing fitted.** The peak is the maximum of the data and
+    `zeta_peak` the surface fraction of that node, so they exist for every
+    blade that has a surface --- including one that accelerates all the way to
+    its trailing edge, where `DF` can sit slightly below zero because the
+    suction side reads under the mean of the two --- and `Co` is the integral
+    round the whole cut.
+
+    **The numbers** :class:`~turbigen.iterate.ClarkProfile` **steers.** Every
+    one comes from :func:`turbigen.loading.surfaces`, so `zeta_peak` is Clark's
+    ``z = l / L_surf`` from the geometric leading edge, `DF + 1` is its
+    `Ma_peak`, and `Co` is the circulation it drives the blade count with. A
+    metric and an iterator that disagreed would let a design be driven onto a
+    target the report then contradicts.
 
     The isentropic Mach number is referred to the entropy entering *that row*,
-    the same reference :class:`~turbigen.post.SurfacePlot` draws it against, so
-    what this measures is the number that plot shows.
-
-    Every number here comes from :func:`turbigen.loading.measure`, which is
-    also what :class:`~turbigen.iterate.LoadingDistribution` and
-    :class:`~turbigen.iterate.PeakMach` correct against. That sharing is the
-    point: a metric and an iterator that disagreed about where the peak was
-    would let a design be driven onto a target the report then contradicts.
-
-    The peak is fitted rather than taken as a maximum of the data --- two
-    straight lines meeting at a breakpoint, so it uses every point in the
-    window and slides where an argmax steps between nodes. That makes `DF`
-    a little different from a peak read straight off the curve, by around
-    three per cent on the case it was checked against, and much steadier on the
-    flat-topped distributions that are a design style rather than a pathology.
+    the same reference :class:`~turbigen.post.SurfacePlot` draws it against.
     """
 
     type: ClassVar[str] = "diffusion_factor"
@@ -306,36 +305,15 @@ class DiffusionFactor(Metric):
     spf: tuple[float, ...] = (0.5,)
     """Span fractions to measure the surface distribution at [--]."""
 
-    offset: int = 0
-    """Cells away from the wall to take the distribution at."""
-
-    zeta_front: float = 0.2
-    """Front anchor of the window fitted [--].
-
-    Matches the default the iterators carry, so a config that shapes a blade
-    and a config that only measures one describe the same curve.
-    """
-
-    zeta_TE: float = 0.98
-    """Far end of the window fitted [--]."""
-
     def evaluate(self, config, result):
         """Return the diffusion of each row, at each span fraction.
 
         Returns
         -------
         dict
-            ``DF``, ``Mas_peak``, ``Mas_TE``, ``zeta_peak``, ``fac_front`` and
-            ``fac_peak`` [--], each shaped ``(n_spf, n_row)``. The two Mach
-            numbers are the parts `DF` is made of, so a change in it says
-            whether the peak grew or the exit fell; `fac_peak` is the same
-            ratio written as ``DF + 1``, which is the form the iterators take a
-            target in. `zeta_peak` is where the peak sits and `fac_front` how
-            hard the leading edge accelerates --- the same two numbers
-            :class:`~turbigen.iterate.LoadingDistribution` shapes a blade to.
-            NaN for a row and span with nothing to measure: above a clearance
-            gap, a row with no blade, or a distribution with no peak in the
-            window.
+            ``DF``, ``zeta_peak`` and ``Co`` [--], each shaped
+            ``(n_spf, n_row)``. NaN for a row and span with nothing to measure:
+            above a clearance gap, or a row with no blade.
         """
         del config
 
@@ -345,23 +323,11 @@ class DiffusionFactor(Metric):
             return {}
 
         shape = (len(self.spf), len(result.grid.rows))
-        out = {
-            name: np.full(shape, np.nan)
-            for name in (
-                "Mas_max",
-                "Mas_TE",
-                "zeta_max",
-                "zeta_peak",
-                "fac_front",
-                "fac_peak",
-            )
-        }
+        out = {name: np.full(shape, np.nan) for name in ("DF", "zeta_peak", "Co")}
 
         for i_row in range(shape[1]):
             for i_spf, spf in enumerate(self.spf):
-                measured = turbigen.loading.measure(
-                    result, i_row, spf, self.zeta_front, self.zeta_TE
-                )
+                measured = turbigen.loading.surfaces(result, i_row, spf)
                 if measured is None:
                     logger.debug(
                         f"Row {i_row} has no loading to measure at "
@@ -369,19 +335,9 @@ class DiffusionFactor(Metric):
                     )
                     continue
 
-                out["Mas_max"][i_spf, i_row] = measured.ma_max
-                out["Mas_TE"][i_spf, i_row] = measured.ma_TE
-                out["zeta_max"][i_spf, i_row] = measured.zeta_max
-                out["zeta_peak"][i_spf, i_row] = measured.zeta_peak
-                out["fac_front"][i_spf, i_row] = measured.fac_front
-                out["fac_peak"][i_spf, i_row] = measured.fac_peak
+                i_peak = int(np.argmax(measured.ma[0]))
+                out["DF"][i_spf, i_row] = measured.ma[0][i_peak] / measured.ma_TE - 1.0
+                out["zeta_peak"][i_spf, i_row] = measured.z[0][i_peak]
+                out["Co"][i_spf, i_row] = measured.Co
 
-        # From the maximum rather than from the fit, so that every blade gets a
-        # diffusion factor: one that accelerates to its trailing edge has no
-        # interior peak to fit, and it is still diffusing nothing, which is a
-        # measurement rather than a failure.
-        with np.errstate(divide="ignore", invalid="ignore"):
-            out["DF"] = np.where(
-                out["Mas_TE"] > 0.0, out["Mas_max"] / out["Mas_TE"] - 1.0, np.nan
-            )
         return out

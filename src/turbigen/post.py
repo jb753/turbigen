@@ -619,77 +619,6 @@ def _matching(config, cls, i_row, spf):
     return None
 
 
-def _draw_loading_target(ax, config, machine, i_row, spf, zeta, mas, color):
-    """Overlay what a `loading` iterator is aiming this section at, if any.
-
-    Only where one is configured for this row and reads this span fraction: a
-    target drawn at a span nobody iterates would be a claim the design never
-    made. Dashed, and in the colour of the distribution it belongs to, so a
-    plot of several sections stays readable.
-
-    **The target and nothing else.** The solid curve beside it is what was
-    achieved, and the gap between the two is what the iteration closes;
-    anything more on the axes only makes that harder to see.
-
-    `loading` only ever targets one point, the front value at `zeta_front`, so
-    the apex the target line is drawn through is read off the achieved
-    distribution rather than asked for. The height at that apex comes from the
-    `peak_Ma` beside it where one is configured; with none, the line is drawn
-    through the height the blade reached and only its front value is a claim.
-    """
-    from turbigen.iterate import (
-        LoadingDistribution,
-        PeakMach,
-    )
-    from turbigen.loading import mach_ratio
-
-    shape = _matching(config, LoadingDistribution, i_row, spf)
-    if shape is None:
-        return
-
-    # The cut wraps the blade from one trailing edge round to the other, so its
-    # two ends are the two sides of the trailing edge and their mean is the
-    # exit value -- read the same way `loading.measure` reads it.
-    ma_TE = 0.5 * (mas[0] + mas[-1])
-    if not ma_TE:
-        return
-
-    level = _matching(config, PeakMach, i_row, spf)
-    zeta_TE = level.zeta_TE if level is not None else 0.98
-
-    # The apex position is read from the data even where the height is not:
-    # `loading` states no target for it, so the only honest place to draw the
-    # peak of the target line is wherever the blade actually put one.
-    folded, suction = turbigen.util.suction_side(zeta, mas)
-    window = (folded >= shape.zeta_front) & (folded <= zeta_TE)
-    if window.sum() < 4:
-        return
-    zeta_peak, ma_peak_fit, _ = turbigen.util.loading_from_distribution(
-        folded[window], suction[window], shape.zeta_front, zeta_TE
-    )
-    if not np.isfinite(zeta_peak):
-        return
-
-    ma_peak = level.fac_peak * ma_TE if level is not None else ma_peak_fit
-
-    drawn = np.linspace(shape.zeta_front, 1.0, 101)
-    ax.plot(
-        drawn,
-        turbigen.util.loading_target(
-            drawn,
-            shape.zeta_front,
-            zeta_peak,
-            shape.fac_front * ma_TE / mach_ratio(machine, i_row),
-            ma_peak,
-            ma_TE,
-        ),
-        linestyle="--",
-        color=color,
-        linewidth=1.0,
-        label=f"target, spf={spf:.2f}",
-    )
-
-
 def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
     """Overlay what a `clark_profile` iterator is aiming this section at.
 
@@ -842,9 +771,6 @@ class SurfacePlot(Post):
                 # can be read against each other directly.
                 (line,) = ax.plot(np.abs(zeta), mas, label=f"spf={spf:.2f}")
 
-                _draw_loading_target(
-                    ax, config, result.machine, i_row, spf, zeta, mas, line.get_color()
-                )
                 _draw_clark_profile(
                     ax, config, result, i_row, spf, mas, line.get_color()
                 )
