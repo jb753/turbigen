@@ -913,3 +913,149 @@ def test_a_profile_must_name_its_form():
         Config.from_dict(
             {**build(mesh=MESH).to_dict(), "inlet_profile": {"DPo": [0.1, 0.2]}}
         )
+
+
+#
+# MODAL PROFILES
+#
+# Legendre and POD profiles are one family: coefficients times modes, fitted
+# by span rather than by however the stations were clustered.
+#
+
+
+def test_face_weights_cover_the_span():
+    spf = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, 41)))
+
+    assert bconds.face_weights(spf).sum() == pytest.approx(1.0)
+    assert np.all(bconds.face_weights(spf) > 0.0)
+
+
+def test_a_modal_fit_drops_the_level_and_recovers_the_coefficients():
+    spf = 0.5 * (1.0 - np.cos(np.pi * (np.arange(137) + 0.5) / 137))
+    coefficients = (0.4, -0.25, 0.10)
+    values = 0.3 + bconds.Legendre(DPo=coefficients).column("DPo", spf)
+
+    fitted = bconds.LegendreModes().fit("DPo", spf, values, 3)
+
+    assert fitted == pytest.approx(coefficients)
+
+
+def test_the_weighted_fit_does_not_depend_on_how_the_span_is_sampled():
+    """Clustering stations buys resolution; weighting stops it buying emphasis.
+    The unweighted fit this replaced moved its coefficients by a quarter."""
+    from numpy.polynomial import legendre
+
+    def profile(spf):
+        return -np.exp(-spf / 0.08) - 0.5 * np.exp(-(1 - spf) / 0.05) + 0.2 * np.sin(np.pi * spf)
+
+    n = 137
+    uniform = (np.arange(n) + 0.5) / n
+    clustered = 0.5 * (1.0 - np.cos(np.pi * (np.arange(n) + 0.5) / n))
+
+    def spread(a, b):
+        return np.max(np.abs(np.asarray(a) - np.asarray(b))) / np.max(np.abs(a))
+
+    modes = bconds.LegendreModes()
+    weighted = spread(
+        modes.fit("DPo", uniform, profile(uniform), 3),
+        modes.fit("DPo", clustered, profile(clustered), 3),
+    )
+    unweighted = spread(
+        legendre.legfit(2 * uniform - 1, profile(uniform), 3)[1:],
+        legendre.legfit(2 * clustered - 1, profile(clustered), 3)[1:],
+    )
+
+    assert weighted < 0.01
+    assert unweighted > 0.05
+
+
+def test_a_pod_profile_is_its_modes(tmp_path):
+    from test_pod import basis_file
+
+    path, sha = basis_file(tmp_path)
+    profile = bconds.Pod(basis=path, sha256=sha, DPo=(0.0, 2.0))
+    modes = bconds.PodModes(path, sha)
+
+    assert profile.column("DPo", modes.spf) == pytest.approx(2.0 * modes.table["DPo"][1])
+    assert profile.column("DTo", modes.spf) == pytest.approx(np.zeros(modes.spf.size))
+    assert profile.identity == sha
+
+
+def test_a_pod_profile_carries_no_level(tmp_path):
+    from test_pod import basis_file
+
+    path, sha = basis_file(tmp_path)
+    profile = bconds.Pod(basis=path, sha256=sha, DPo=(0.4, -0.3, 0.2))
+    spf = np.linspace(0.0, 1.0, 2001)
+    column = profile.column("DPo", spf)
+
+    rms = np.sqrt(np.trapezoid(column**2, spf))
+    assert abs(np.trapezoid(column, spf)) < 1e-3 * rms
+
+
+def test_a_pod_basis_needs_an_absolute_path(tmp_path, monkeypatch):
+    from test_pod import basis_file
+
+    _, sha = basis_file(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="absolute path"):
+        bconds.Pod(basis="basis.npz", sha256=sha, DPo=(0.1,))
+
+
+def test_a_rewritten_pod_basis_is_refused(tmp_path):
+    from test_pod import basis_file
+
+    path, _ = basis_file(tmp_path)
+
+    with pytest.raises(ValueError, match="has changed"):
+        bconds.Pod(basis=path, sha256="0" * 64, DPo=(0.1,))
+
+
+def test_a_missing_pod_basis_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="no POD basis"):
+        bconds.Pod(basis=str(tmp_path / "absent.npz"), sha256="0" * 64, DPo=(0.1,))
+
+
+def test_more_coefficients_than_modes_are_refused(tmp_path):
+    from test_pod import N_MODE, basis_file
+
+    path, sha = basis_file(tmp_path)
+
+    with pytest.raises(ValueError, match="mode"):
+        bconds.Pod(basis=path, sha256=sha, DPo=(0.1,) * (N_MODE + 1))
+
+
+def test_the_pod_profile_round_trips(tmp_path):
+    from test_pod import basis_file
+
+    from turbigen import Config
+
+    path, sha = basis_file(tmp_path)
+    config = dataclasses.replace(
+        build(mesh=MESH), inlet_profile=bconds.Pod(basis=path, sha256=sha, DPo=(0.4, -0.25))
+    )
+
+    assert Config.from_dict(config.to_dict()) == config
+    assert config.to_dict()["inlet_profile"]["type"] == "pod"
+
+
+def test_a_pod_profile_is_one_idea_with_the_others(shrouded, tmp_path):
+    """Sampled densely and handed over as `sampled`, a POD profile gives the
+    same boundary condition, as a Legendre one does."""
+    from test_pod import basis_file
+
+    machine, grid = shrouded
+    path, sha = basis_file(tmp_path)
+    series = bconds.Pod(basis=path, sha256=sha, DPo=(0.3, -0.2, 0.05))
+
+    spf = np.linspace(0.0, 1.0, 2001)
+    samples = bconds.Sampled(spf=tuple(spf), DPo=tuple(series.column("DPo", spf)))
+
+    bconds.apply(grid, machine, None, series)
+    from_series = spanwise(grid.patches.inlet[0], "Po").copy()
+
+    bconds.apply(grid, machine, None, samples)
+    from_samples = spanwise(grid.patches.inlet[0], "Po")
+
+    assert from_series == pytest.approx(from_samples, rel=1e-5)

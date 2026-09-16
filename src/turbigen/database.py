@@ -122,6 +122,7 @@ class Database(Node):
         one glob-and-parse serves both the geometry blend and the field seed.
         """
         wanted = set(iterate.unknowns(config))
+        identity = _profile_identity(config)
         excluded = tuple(Path(directory).resolve() for directory in exclude)
 
         rows = []
@@ -133,7 +134,7 @@ class Database(Node):
             if any(resolved.is_relative_to(directory) for directory in excluded):
                 continue
 
-            sample = _sample(resolved, wanted)
+            sample = _sample(resolved, wanted, identity)
             if sample is not None:
                 rows.append((resolved, *sample))
 
@@ -312,8 +313,28 @@ def nearest_field(config, samples):
     return None
 
 
-def _sample(path, wanted):
-    """Return ``(config, result)`` if `path` is a sample, and None if it is not."""
+def _profile_identity(config):
+    """Return the modes a design's repeat iterator writes profiles in, or None.
+
+    None when nothing iterates an inlet profile, in which case there are no
+    profile coefficients to blend and nothing to match.
+    """
+    if config.iterate is None:
+        return None
+    for iterator in config.iterate.correct:
+        if isinstance(iterator, iterate.Repeat):
+            return iterator.modes().identity
+    return None
+
+
+def _sample(path, wanted, identity=None):
+    """Return ``(config, result)`` if `path` is a sample, and None if it is not.
+
+    `identity` is the query's :func:`_profile_identity`. A sample whose inlet
+    profile is written in other modes is refused even though its knobs carry
+    the same names: ``inlet_profile.DPo[0]`` is a Legendre coefficient in one
+    and a POD coefficient in the other, and blending the two is meaningless.
+    """
     # Imported here because `case` reads a `Config`, and a `Config` holds a
     # `Database`: at module scope this closes a cycle that only stays unbroken
     # while `turbigen/__init__.py` happens to import `case` before `config`.
@@ -342,6 +363,15 @@ def _sample(path, wanted):
         # A different row count, or a different set of iterators. There is no
         # correspondence between its knobs and this design's.
         return None
+
+    if identity is not None:
+        theirs = getattr(config.inlet_profile, "identity", None)
+        if theirs != identity:
+            logger.warning(
+                f"Skipping {path}, whose inlet profile is written in different "
+                f"modes ({theirs}) from this design's ({identity})."
+            )
+            return None
 
     return config, result
 

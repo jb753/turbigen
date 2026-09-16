@@ -37,6 +37,7 @@ Test cases:
 - test_max_distance_can_admit_a_far_field: the threshold is the config's
 - test_max_distance_is_not_skipped_past: a fieldless near run does not open the far ones
 - test_warm_start_reuses_preloaded_samples: one glob-and-parse for both
+- test_a_sample_in_other_modes_is_skipped: same knob names, different meaning
 """
 
 import dataclasses
@@ -429,3 +430,39 @@ def test_warm_start_reuses_preloaded_samples(solved_runs):
     passed = database.warm_start(config, solved_runs, samples=rows)
 
     assert recamber(passed) == pytest.approx(recamber(loaded))
+
+
+#
+# PROFILES IN DIFFERENT MODES
+#
+
+
+def test_a_sample_in_other_modes_is_skipped(tmp_path, caplog):
+    """`inlet_profile.DPo[0]` is a Legendre coefficient in one run and a POD
+    coefficient in another; the names match and the numbers do not."""
+    from test_pod import basis_file
+
+    from turbigen import bconds
+
+    path, _ = basis_file(tmp_path / "basis")
+    in_legendre = iterate.Iteration(correct=(*ITERATORS, iterate.Repeat(order=1)))
+    in_pod = iterate.Iteration(correct=(*ITERATORS, iterate.Repeat(order=1, basis=path)))
+    columns = {"DPo": (0.1,), "DTo": (0.0,), "DAlpha": (0.0,)}
+
+    legendre_run = dataclasses.replace(
+        make(1.4, 5.0), iterate=in_legendre, inlet_profile=bconds.Legendre(**columns)
+    )
+    pod_run = dataclasses.replace(
+        make(1.8, 7.0),
+        iterate=in_pod,
+        inlet_profile=in_pod.correct[-1].modes().profile(**columns),
+    )
+    write(tmp_path / "runs" / "000", legendre_run)
+    write(tmp_path / "runs" / "001", pod_run)
+
+    config = dataclasses.replace(query(1.5), iterate=in_pod)
+    samples = config.database.load(config, tmp_path)
+
+    assert len(samples) == 1
+    assert samples[0].inlet_profile.type == "pod"
+    assert "different modes" in caplog.text
