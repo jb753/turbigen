@@ -1478,6 +1478,14 @@ class ClarkProfile(RowIterator):
     :class:`turbigen.metric.DiffusionFactor` records.
     """
 
+    Ma_peak_max: float = 1.0
+    """Largest suction peak Mach number the target may ask for [--].
+
+    The peak itself, `Ma_peak` times the row exit relative Mach number, not
+    the ratio. One by default, because a Clark curve has no shock in it; set
+    it lower to keep a margin, or to `.inf` to switch the check off.
+    """
+
     z_peak: float = 0.55
     """Target surface fraction of the suction peak [--]."""
 
@@ -1623,7 +1631,7 @@ class ClarkProfile(RowIterator):
                 f"A loading peak sits on the surface, so z_peak must satisfy "
                 f"0 < z_peak < 1, got {self.z_peak}."
             )
-        for name in ("Ma_peak", "Ma_LE", "Ma_PS"):
+        for name in ("Ma_peak", "Ma_peak_max", "Ma_LE", "Ma_PS"):
             if not getattr(self, name) > 0.0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
         if not self.tolerance_tau_LE > 0.0:
@@ -1636,20 +1644,20 @@ class ClarkProfile(RowIterator):
     #
 
     def check(self, machine):
-        """Raise unless the target's suction peak is subsonic.
+        """Raise unless the target's suction peak is within :attr:`Ma_peak_max`.
 
         :attr:`Ma_peak` is over the trailing edge value, so the peak it asks
         for is that times the row exit relative Mach number off the nominal
-        mean line. A Clark distribution has no shock in it, so a supersonic
-        peak is a target no thickness can meet.
+        mean line.
         """
         _check_i_row(self.i_row, machine.mean_line.n_row)
         Ma_TE = float(machine.mean_line[:, self.i_row].Ma_rel[1])
-        if self.Ma_peak * Ma_TE > 1.0:
+        if self.Ma_peak * Ma_TE > self.Ma_peak_max:
             raise DesignError(
                 f"Row {self.i_row}: target suction peak "
                 f"Ma_peak * Ma_TE = {self.Ma_peak} * {Ma_TE:.3f} = "
-                f"{self.Ma_peak * Ma_TE:.3f} is supersonic."
+                f"{self.Ma_peak * Ma_TE:.3f} exceeds "
+                f"Ma_peak_max={self.Ma_peak_max}."
             )
 
     def unknowns(self, config):

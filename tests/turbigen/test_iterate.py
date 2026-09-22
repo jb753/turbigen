@@ -1902,6 +1902,7 @@ def test_clark_needs_every_section_to_agree_on_order():
         ({"z_peak": 0.0}, "0 < z_peak < 1"),
         ({"z_peak": 1.0}, "0 < z_peak < 1"),
         ({"Ma_peak": 0.0}, "Ma_peak must be positive"),
+        ({"Ma_peak_max": 0.0}, "Ma_peak_max must be positive"),
         ({"Ma_LE": -1.0}, "Ma_LE must be positive"),
         ({"Ma_PS": 0.0}, "Ma_PS must be positive"),
         ({"tolerance_tau_LE": 0.0}, "tolerance_tau_LE must be positive"),
@@ -1923,7 +1924,7 @@ def test_clark_refuses_a_supersonic_peak(clark, i_row):
             correct=(iterate.ClarkProfile(i_row=i_row, Ma_peak=1.01 / Ma_TE),)
         ),
     )
-    with pytest.raises(DesignError, match=f"Row {i_row}: .* is supersonic"):
+    with pytest.raises(DesignError, match=f"Row {i_row}: .* exceeds Ma_peak_max=1.0"):
         config.design()
 
 
@@ -1936,6 +1937,26 @@ def test_clark_accepts_a_subsonic_peak(clark):
         ),
     )
     config.design()
+
+
+@pytest.mark.parametrize("Ma_peak_max, refused", [(0.8, True), (1.2, False)])
+def test_clark_peak_limit_is_configurable(clark, Ma_peak_max, refused):
+    """The limit is on the peak itself, so the same target is refused under a
+    tighter limit and accepted under a looser one."""
+    Ma_TE = float(clark.design().mean_line[:, 0].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(Ma_peak=1.0 / Ma_TE, Ma_peak_max=Ma_peak_max),
+            )
+        ),
+    )
+    if refused:
+        with pytest.raises(DesignError, match="exceeds Ma_peak_max=0.8"):
+            config.design()
+    else:
+        config.design()
 
 
 def test_an_iterator_checks_nothing_by_default(config):
