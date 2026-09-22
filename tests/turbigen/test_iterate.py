@@ -52,7 +52,7 @@ from test_blade import FLUID, MEAN_LINE, blade, build
 
 import turbigen.loading
 import turbigen.util
-from turbigen import Config, Result, iterate, node, shapespace
+from turbigen import Config, DesignError, Result, iterate, node, shapespace
 
 
 @pytest.fixture
@@ -1433,6 +1433,10 @@ CLARK_THICKNESS = {
 """A symmetric two-sided section of order 3, so a `ClarkProfile` has two
 interior coefficients per surface to move."""
 
+CLARK_MEAN_LINE = {**MEAN_LINE, "Ma2": 0.75}
+"""Slow enough that the default `Ma_peak` asks for a subsonic suction peak,
+which `ClarkProfile.check` insists on before anything is designed."""
+
 
 def thickened(thickness=None, **kwargs):
     """Return a blade whose sections carry a two-sided thickness."""
@@ -1448,7 +1452,7 @@ def thickened(thickness=None, **kwargs):
 def clark():
     """A two-row config whose first row has its thickness shaped."""
     return dataclasses.replace(
-        build(blades=[thickened(), thickened()]),
+        build(blades=[thickened(), thickened()], mean_line=CLARK_MEAN_LINE),
         iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
     )
 
@@ -1750,7 +1754,10 @@ def test_clark_measures_a_level_the_curve_order_cannot_move(monkeypatch):
     for coeff in ([[0.0, 0.0], [0.0, 0.0]], [[0.0] * 4, [0.0] * 4]):
         section = {**CLARK_THICKNESS, "coeff": coeff}
         config = dataclasses.replace(
-            build(blades=[thickened(section), thickened(section)]),
+            build(
+                blades=[thickened(section), thickened(section)],
+                mean_line=CLARK_MEAN_LINE,
+            ),
             iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
         )
         iterator = config.iterate.correct[0]
@@ -1903,6 +1910,38 @@ def test_clark_needs_every_section_to_agree_on_order():
 def test_clark_rejects_a_target_off_the_surface(kwargs, match):
     with pytest.raises(ValueError, match=match):
         iterate.ClarkProfile(**kwargs)
+
+
+@pytest.mark.parametrize("i_row", [0, 1])
+def test_clark_refuses_a_supersonic_peak(clark, i_row):
+    """The peak is `Ma_peak` times the row exit relative Mach number, checked
+    at design time so a batch screens the point out before it is solved."""
+    Ma_TE = float(clark.design().mean_line[:, i_row].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(i_row=i_row, Ma_peak=1.01 / Ma_TE),)
+        ),
+    )
+    with pytest.raises(DesignError, match=f"Row {i_row}: .* is supersonic"):
+        config.design()
+
+
+def test_clark_accepts_a_subsonic_peak(clark):
+    Ma_TE = float(clark.design().mean_line[:, 0].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(Ma_peak=0.99 / Ma_TE),)
+        ),
+    )
+    config.design()
+
+
+def test_an_iterator_checks_nothing_by_default(config):
+    """The hook is opt-in, so an iterator without a design-time target is
+    never the reason a design fails."""
+    config.design()
 
 
 #

@@ -40,6 +40,7 @@ import turbigen.clark
 import turbigen.loading
 import turbigen.shapespace
 import turbigen.util
+from turbigen.design import DesignError
 from turbigen.node import Node
 from turbigen.result import Result
 
@@ -214,6 +215,16 @@ class Iterator(Node):
     # PROVIDED
     #
 
+    def check(self, machine):
+        """Raise :class:`~turbigen.design.DesignError` if `machine` cannot
+        meet this iterator's target.
+
+        Called on every design, before anything is solved, so a batch screens
+        out a point whose target is infeasible rather than spending a job
+        finding out. Reads the design alone: whatever needs a flow field is
+        :meth:`error`'s business. Does nothing by default.
+        """
+
     learns: ClassVar[bool] = True
     """Whether a run improves this iterator's sensitivities, or keeps them.
 
@@ -313,6 +324,12 @@ class Iteration(Node):
     try rather than what to build --- and an archived case still records what
     it was run under, which is why it is a key at all rather than a flag.
     """
+
+    def check(self, machine):
+        """Raise :class:`~turbigen.design.DesignError` if any iterator's target
+        is infeasible for `machine`."""
+        for iterator in self.correct:
+            iterator.check(machine)
 
 
 #
@@ -1617,6 +1634,23 @@ class ClarkProfile(RowIterator):
     #
     # THE PROTOCOL
     #
+
+    def check(self, machine):
+        """Raise unless the target's suction peak is subsonic.
+
+        :attr:`Ma_peak` is over the trailing edge value, so the peak it asks
+        for is that times the row exit relative Mach number off the nominal
+        mean line. A Clark distribution has no shock in it, so a supersonic
+        peak is a target no thickness can meet.
+        """
+        _check_i_row(self.i_row, machine.mean_line.n_row)
+        Ma_TE = float(machine.mean_line[:, self.i_row].Ma_rel[1])
+        if self.Ma_peak * Ma_TE > 1.0:
+            raise DesignError(
+                f"Row {self.i_row}: target suction peak "
+                f"Ma_peak * Ma_TE = {self.Ma_peak} * {Ma_TE:.3f} = "
+                f"{self.Ma_peak * Ma_TE:.3f} is supersonic."
+            )
 
     def unknowns(self, config):
         """Return the level first, then every shape-space coefficient.

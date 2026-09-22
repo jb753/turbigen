@@ -559,7 +559,9 @@ apart:
 
 - an **iterator** declares the design variables it owns
   (`unknowns`/`with_unknowns`), measures the error they should null (`error`),
-  and carries `gain`, `clip` and `tolerance`;
+  and carries `gain`, `clip` and `tolerance`. It may also override `check`,
+  which every design calls before anything is solved, to raise `DesignError`
+  on a target the design cannot meet, so a batch screens that point out;
 - the **stepper** assembles every iterator's knobs into one flat table, solves
   `B dx = -e` for the step, clips it, and decides convergence against the
   declared tolerances;
@@ -651,6 +653,8 @@ profile.
 shapes everything in between: a two-sided `clark` thickness is driven so that
 both surface Mach distributions of one row, at one span fraction, match the
 curves `turbigen.clark` draws from `Ma_peak`, `z_peak`, `Ma_LE` and `Ma_PS`.
+`Ma_peak` is over the row exit relative Mach number, and a design whose target
+peak `Ma_peak * Ma_TE` exceeds one is refused: the curve has no shock in it.
 
 **The level belongs to the blade count.** At a fixed duty the area enclosed by
 the isentropic Mach loop is the blade circulation, which the pitch sets; a
