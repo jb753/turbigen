@@ -26,6 +26,7 @@ Test cases:
 - test_converge_reaches_the_answer: the loop, on an analytic error
 - test_converge_stops_on_a_diverged_march: a blown-up run measures nothing
 - test_converge_gives_up: and stops when it cannot
+- test_converge_prepares_once: an iterator's prepare runs before the first pass only
 - test_no_history_is_the_declared_gain: a first iteration is what it always was
 - test_a_coupled_system_converges_faster: the claim of Broyden, on a stage-like
   lower-triangular Jacobian
@@ -1329,57 +1330,36 @@ def test_the_fit_recovers_blockage_but_not_the_wall():
     [
         # Nothing over its limit passes through untouched.
         ([0.05, -0.02], [0.1, 0.1], [0.05, -0.02]),
-        # One knob over: everything shrinks by the same factor.
-        ([0.3, 0.05], [0.1, 0.1], [0.1, 0.05 / 3.0]),
-        # Both over, which is the case that used to be projected onto a corner.
-        ([0.3, -0.2], [0.1, 0.1], [0.1, -0.2 / 3.0]),
-        # A knob with no clip does not constrain the others.
+        # One knob over: it alone is cut, and the other keeps its whole step.
+        ([0.3, 0.05], [0.1, 0.1], [0.1, 0.05]),
+        # Both over: each is cut to its own limit.
+        ([0.3, -0.2], [0.1, 0.1], [0.1, -0.1]),
+        # A knob with no clip is not cut.
         ([5.0, -2.0], [np.inf, np.inf], [5.0, -2.0]),
-        ([0.3, -0.2], [0.1, np.inf], [0.1, -0.2 / 3.0]),
-        # A step of nothing stays nothing rather than dividing by zero.
+        ([0.3, -0.2], [0.1, np.inf], [0.1, -0.2]),
+        # A step of nothing stays nothing.
         ([0.0, 0.0], [0.1, 0.1], [0.0, 0.0]),
     ],
 )
-def test_the_trust_bound_scales_rather_than_clipping(change, limit, expected):
-    """The direction survives; only the length is cut."""
+def test_the_trust_bound_clips_each_knob(change, limit, expected):
+    """Each knob is held to its own clip, whatever the others asked for."""
     np.testing.assert_allclose(
         iterate._bounded(np.array(change), np.array(limit)), expected
     )
 
 
-def test_the_trust_bound_keeps_the_direction():
-    """The ratio between knobs is what per-component clipping destroyed."""
-    change = np.array([0.31, -0.17, 0.02])
-    bounded = iterate._bounded(change, np.full(3, 0.1))
+def test_one_knob_on_its_clip_does_not_throttle_the_rest():
+    """A knob far over its limit leaves the others' steps alone.
 
-    # Same direction, shorter.
-    np.testing.assert_allclose(
-        bounded / np.linalg.norm(bounded), change / np.linalg.norm(change)
-    )
-    assert np.linalg.norm(bounded) < np.linalg.norm(change)
-
-    # And the knob that binds moves exactly its clip, which is what the
-    # setting promises.
-    assert np.max(np.abs(bounded)) == pytest.approx(0.1)
-
-
-def test_a_saturated_step_does_not_cycle():
-    """Two knobs whose Newton step exceeds both clips must not orbit.
-
-    Clipping each on its own sent a two-knob loading iterator into a period-2
-    orbit: the corner of the box overshoots, the next step wants the opposite
-    corner, and the design lands exactly where it was two iterations before.
-    Scaling cannot do that, because it never changes the direction it was
-    handed.
+    Scaling the step as a whole let one thickness coefficient marching
+    against its clip hold a circulation coefficient to a fifth of its own
+    step, every pass.
     """
-    change = np.array([0.4, -0.25])
-    limit = np.full(2, 0.1)
+    change = np.array([2.0, 0.04, -0.03])
+    bounded = iterate._bounded(change, np.full(3, 0.05))
 
-    first = iterate._bounded(change, limit)
-    # The corner would have been (+0.1, -0.1): equal magnitudes, no memory of
-    # the 0.4-to-0.25 ratio that the Jacobian actually asked for.
-    assert abs(first[0]) != pytest.approx(abs(first[1]))
-    np.testing.assert_allclose(first[0] / first[1], change[0] / change[1])
+    assert bounded[0] == pytest.approx(0.05)
+    np.testing.assert_allclose(bounded[1:], change[1:])
 
 
 #
@@ -1854,6 +1834,121 @@ def test_clark_leading_edge_tolerance_is_its_own(clark):
     assert tolerances["tau[0][0][1]"] == pytest.approx(0.01)
 
 
+def test_clark_circulation_is_a_block_of_its_own(clark):
+    """`Co` and the recambers are each learned apart from the shape knobs."""
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(),
+                iterate.Incidence(),
+                iterate.Deviation(),
+            )
+        ),
+    )
+    names = list(iterate.unknowns(config))
+
+    blocks = [
+        sorted(names[i] for i in idx) for idx, _ in iterate._blocks(config, names)
+    ]
+
+    assert ["Co[0]"] in blocks
+    (aerofoil,) = [block for block in blocks if "tau_LE[0]" in block]
+    assert "Co[0]" not in aerofoil
+    assert not any(name.startswith("dchi_") for name in aerofoil)
+    assert ["dchi_TE[0]"] in blocks
+    assert sorted(n for n in names if n.startswith("dchi_LE[0]")) in blocks
+
+
+def test_clark_profile_does_not_learn(clark):
+    """`Co`'s slope is one by definition and the shape knobs' secants are
+    noise, so both blocks keep the prior."""
+    names = list(iterate.unknowns(clark))
+
+    learns = {
+        tuple(sorted(names[i] for i in idx)): learning
+        for idx, learning in iterate._blocks(clark, names)
+    }
+
+    assert learns[("Co[0]",)] is False
+    (shape,) = [block for block in learns if "tau_LE[0]" in block]
+    assert learns[shape] is False
+
+
+@pytest.fixture
+def lopsided():
+    """A config whose first row is on a Clark camber, its pressure side thicker."""
+    thickness = {**CLARK_THICKNESS, "coeff": [[0.0, 0.0], [0.3, 0.3]]}
+    camber = {"type": "clark", "exponent": 2.5}
+    return dataclasses.replace(
+        build(
+            blades=[thickened(thickness, section={"camber": camber}), thickened()],
+            mean_line=CLARK_MEAN_LINE,
+        ),
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
+    )
+
+
+def test_clark_prepare_equalises_the_thickness(lopsided):
+    from turbigen.recentre import imbalance
+
+    prepared = lopsided.iterate.correct[0].prepare(lopsided)
+
+    for old, new in zip(lopsided.blades[0].sections, prepared.blades[0].sections):
+        assert new.camber.exponent != old.camber.exponent
+        assert new.dchi_LE != old.dchi_LE
+        assert imbalance(new.thickness) < 0.5 * imbalance(old.thickness)
+
+
+def test_clark_prepare_moves_only_what_it_declares(lopsided):
+    """A leaf `prepare` moves is not a design variable, so `paths` owns it."""
+    iterator = lopsided.iterate.correct[0]
+    before = node.flatten(lopsided)
+    after = node.flatten(iterator.prepare(lopsided))
+    moved = {path for path, value in before.items() if after[path] != value}
+
+    assert moved
+    assert moved <= iterator.paths(lopsided)
+    assert iterator.paths(lopsided) <= set(before)
+
+
+def test_clark_prepare_can_be_switched_off(lopsided):
+    iterator = iterate.ClarkProfile(recentre=False)
+
+    assert iterator.prepare(lopsided) is lopsided
+    assert not any("exponent" in path for path in iterator.paths(lopsided))
+
+
+def test_clark_prepare_leaves_other_cambers_alone(clark):
+    """The fixture's camber is quadratic, which has no exponent to move."""
+    assert clark.iterate.correct[0].prepare(clark) is clark
+
+
+class Preparing(Fixed):
+    """A stand-in that records each time it is prepared."""
+
+    def prepare(self, config):
+        PREPARED.append(float(config.mean_line.psi))
+        return config
+
+
+PREPARED = []
+"""What `Preparing.prepare` saw, once per call."""
+
+
+def test_converge_prepares_once():
+    """Before the first pass and never again, however many passes follow."""
+    PREPARED.clear()
+    config = dataclasses.replace(
+        build(), iterate=iterate.Iteration(correct=(Preparing(target=3.0, gain=0.0),))
+    )
+
+    _, _, converged = iterate.converge(config, lambda c, i: Result(), max_iter=3)
+
+    assert not converged
+    assert PREPARED == [pytest.approx(config.mean_line.psi)]
+
+
 def test_clark_leading_edge_tolerance_defaults_wide(clark):
     """An old config that never named it still gets the wider nose criterion."""
     tolerances = clark.iterate.correct[0].tolerances(clark)
@@ -1914,26 +2009,26 @@ def test_clark_rejects_a_target_off_the_surface(kwargs, match):
 
 
 @pytest.mark.parametrize("i_row", [0, 1])
-def test_clark_refuses_a_supersonic_peak(clark, i_row):
+def test_clark_refuses_a_peak_over_the_default_limit(clark, i_row):
     """The peak is `Ma_peak` times the row exit relative Mach number, checked
     at design time so a batch screens the point out before it is solved."""
     Ma_TE = float(clark.design().mean_line[:, i_row].Ma_rel[1])
     config = dataclasses.replace(
         clark,
         iterate=iterate.Iteration(
-            correct=(iterate.ClarkProfile(i_row=i_row, Ma_peak=1.01 / Ma_TE),)
+            correct=(iterate.ClarkProfile(i_row=i_row, Ma_peak=1.11 / Ma_TE),)
         ),
     )
-    with pytest.raises(DesignError, match=f"Row {i_row}: .* exceeds Ma_peak_max=1.0"):
+    with pytest.raises(DesignError, match=f"Row {i_row}: .* exceeds Ma_peak_max=1.1"):
         config.design()
 
 
-def test_clark_accepts_a_subsonic_peak(clark):
+def test_clark_accepts_a_peak_under_the_default_limit(clark):
     Ma_TE = float(clark.design().mean_line[:, 0].Ma_rel[1])
     config = dataclasses.replace(
         clark,
         iterate=iterate.Iteration(
-            correct=(iterate.ClarkProfile(Ma_peak=0.99 / Ma_TE),)
+            correct=(iterate.ClarkProfile(Ma_peak=1.09 / Ma_TE),)
         ),
     )
     config.design()

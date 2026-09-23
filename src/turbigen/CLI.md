@@ -654,8 +654,8 @@ shapes everything in between: a two-sided `clark` thickness is driven so that
 both surface Mach distributions of one row, at one span fraction, match the
 curves `turbigen.clark` draws from `Ma_peak`, `z_peak`, `Ma_LE` and `Ma_PS`.
 `Ma_peak` is over the row exit relative Mach number, and a design whose target
-peak `Ma_peak * Ma_TE` exceeds `Ma_peak_max` is refused. That defaults to one,
-since the curve has no shock in it.
+peak `Ma_peak * Ma_TE` exceeds `Ma_peak_max` is refused. That defaults to 1.1,
+a mildly supersonic peak, since the curve has no shock in it.
 
 **The level belongs to the blade count.** At a fixed duty the area enclosed by
 the isentropic Mach loop is the blade circulation, which the pitch sets; a

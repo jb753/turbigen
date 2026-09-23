@@ -897,10 +897,9 @@ def test_the_iteration_plot_draws_a_page_for_each_iterator(iterating):
 
     assert len(figures) == 1 + len(config.iterate.correct)
 
-    # The overview divides by tolerance, so it is one axes; the per-iterator
-    # pages carry the values beneath the errors, so they are two.
-    assert len(figures[0].axes) == 1
-    assert all(len(figure.axes) == 2 for figure in figures[1:])
+    # The overview divides the errors by tolerance, and the per-iterator pages
+    # give them in their own units, so every page is one axes.
+    assert all(len(figure.axes) == 1 for figure in figures)
     assert [figure.axes[0].get_title() for figure in figures[1:]] == [
         f"{iterator.type} Iteration" for iterator in config.iterate.correct
     ]
@@ -939,3 +938,33 @@ def test_a_knob_nobody_measured_is_a_gap_not_a_zero(iterating):
 def test_a_design_that_iterates_nothing_has_no_history(config, result):
     """The plot needs iterators to group by, and `run` configures none."""
     assert IterationPlot().report([(config, result), (config, result)]) == []
+
+
+def test_a_clipped_step_is_marked_on_the_iteration_it_left(iterating):
+    """A knob that moved its whole clip was clipped, and gets a circle on the
+    error that step answered; a shorter step gets none."""
+    config, names = iterating
+    (deviation,) = [it for it in config.iterate.correct if it.type == "deviation"]
+    (name,) = deviation.unknowns(config)
+    clip = deviation.clips(config)[name]
+    start = deviation.unknowns(config)[name]
+
+    configs = [
+        deviation.with_unknowns(config, {name: start + offset})
+        for offset in (0.0, clip, 1.5 * clip)
+    ]
+    trajectory = [
+        (config_k, Result(error={n: 0.5 * 0.5**k for n in names}))
+        for k, config_k in enumerate(configs)
+    ]
+
+    figures = IterationPlot().report(trajectory)
+
+    marked = [
+        line
+        for figure in figures[1:]
+        for line in figure.axes[0].lines
+        if line.get_marker() == "o"
+    ]
+    assert len(marked) == 1
+    assert list(marked[0].get_xdata()) == [0]

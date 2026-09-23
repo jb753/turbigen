@@ -38,6 +38,7 @@ import numpy as np
 
 import turbigen.clark
 import turbigen.loading
+import turbigen.recentre
 import turbigen.shapespace
 import turbigen.util
 from turbigen.design import DesignError
@@ -225,6 +226,16 @@ class Iterator(Node):
         :meth:`error`'s business. Does nothing by default.
         """
 
+    def prepare(self, config):
+        """Return `config` made ready to iterate, before the first pass.
+
+        Called once by :func:`converge`, after any warm start and before
+        anything is solved. It is for rewriting the design into a form that
+        iterates better without changing what it is. Every leaf it moves
+        belongs in :meth:`paths`. Returns `config` unchanged by default.
+        """
+        return config
+
     learns: ClassVar[bool] = True
     """Whether a run improves this iterator's sensitivities, or keeps them.
 
@@ -257,6 +268,15 @@ class Iterator(Node):
         drawn between them is a claim that it does not.
         """
         return {name: id(self) for name in self.unknowns(config)}
+
+    def learning(self, config):
+        """Return whether each unknown's block learns, by name.
+
+        :attr:`learns` for every knob by default. Overridden where one knob's
+        sensitivity is a definition and its neighbours' are guesses; knobs
+        sharing a block have to agree, since a block is updated whole.
+        """
+        return {name: self.learns for name in self.unknowns(config)}
 
     def tolerances(self, config):
         """Return the tolerance on each unknown, by name."""
@@ -568,6 +588,7 @@ def _blocks(config, names):
     """
     seen, grouped, learns = {}, {}, {}
     for iterator in config.iterate.correct:
+        learning = iterator.learning(config)
         for name, key in iterator.blocks(config).items():
             if name in seen and name in names:
                 raise ValueError(
@@ -578,16 +599,16 @@ def _blocks(config, names):
             grouped.setdefault(key, set()).add(name)
 
             # Learning is a property of the block, the update being applied to
-            # it whole, so iterators sharing one have to agree. Refused rather
+            # it whole, so knobs sharing one have to agree. Refused rather
             # than resolved: either rule -- the doubters win, or the learners
             # do -- makes `learns` mean something different depending on what
             # it sits beside, which is worse than a setting that will not load.
-            was = learns.setdefault(key, (iterator.learns, type(iterator).__name__))
-            if was[0] != iterator.learns:
+            was = learns.setdefault(key, (learning[name], type(iterator).__name__))
+            if was[0] != learning[name]:
                 raise ValueError(
                     f"{was[1]} and {type(iterator).__name__} share a Jacobian "
                     f"block but disagree on whether it learns "
-                    f"({was[0]} against {iterator.learns}). A block is updated "
+                    f"({was[0]} against {learning[name]}). A block is updated "
                     f"whole, so they must agree."
                 )
 
@@ -651,12 +672,11 @@ def step(config, result, history=()):
         ]
     )
 
-    # Solved and bounded a block at a time, both for the same reason: a block
-    # is meant to be answerable for itself. Solving the assembled
+    # Solved a block at a time, because a block is meant to be answerable for
+    # itself, and bounded knob by knob --- see `_bounded`. Solving the assembled
     # block-diagonal in one go is the same arithmetic but hands every knob to
     # the worst-conditioned block, since `_newton` reads one condition number
-    # and falls back for everything; bounding it in one go lets a block sitting
-    # on its clip shrink the step of a block that is nowhere near its own.
+    # and falls back for everything.
     change = np.zeros(len(names))
     for idx, _ in table.blocks:
         # A knob its geometry would not let move last time is held out of the
@@ -752,34 +772,27 @@ def _jacobian(names, prior, history, current, u_scale, e_scale, blocks):
 
 
 def _bounded(change, limit):
-    """Return `change` scaled down until every knob is inside its limit.
+    """Return `change` with each knob clipped to its own limit.
 
-    **Scaled, not clipped per knob.** Clipping each component on its own is the
-    obvious reading of "no knob moves more than its clip", and it silently
-    throws away the thing the Jacobian was solved for: a step over the limit in
-    two knobs at once gets projected onto a *corner* of the box, so what
-    survives is the sign pattern of the direction and none of its shape.
+    **Clipped per knob, not scaled as a whole.** Scaling the step until its
+    worst knob is inside its limit keeps the Newton direction, but it hands
+    every knob in a block to whichever one is furthest over. An aerofoil block
+    carries a circulation coefficient, a recamber and eleven thickness
+    coefficients, and one thickness coefficient marching against its clip
+    every pass held the circulation to a fifth or less of the step its own
+    clip allowed, for the whole run.
 
-    That is not a slow step, it is a different one, and it cycles. Two runs of
-    a two-knob loading iterator sat in a period-2 orbit doing it --- steps of
-    exactly ``+(0.1, -0.1)`` and ``-(0.1, +0.1)`` alternating, each overshoot
-    provoking the opposite corner and landing back where it had been two
-    iterations before. Broyden could not break the orbit either, every move
-    being collinear with the last, so it only ever learned along that one
-    diagonal.
+    The direction kept by scaling was also rarely worth keeping there: with no
+    history the Jacobian is diagonal, so each component is already its own
+    answer, and once Broyden has run, a Newton step many clips outside the box
+    is an extrapolation of a linear model far beyond where it was learned.
 
-    Scaling keeps the direction and shortens the step, which is what a trust
-    region is. The knob that binds still moves exactly its clip, so what the
-    setting promises is unchanged; the others move less than they asked for,
-    which is the price of going the right way.
+    The price is the direction when the Jacobian is right. A step over the
+    limit in two coupled knobs at once is projected onto a corner of the box,
+    which keeps its sign pattern and none of its shape, and a two-knob loading
+    iterator once sat in a period-2 orbit doing exactly that.
     """
-    with np.errstate(divide="ignore", invalid="ignore"):
-        excess = np.max(np.where(np.isfinite(limit), np.abs(change) / limit, 0.0))
-
-    if not np.isfinite(excess) or excess <= 1.0:
-        return change
-
-    return change / excess
+    return np.clip(change, -limit, limit)
 
 
 def _newton(jacobian, error, prior):
@@ -923,6 +936,11 @@ def converge(config, run, max_iter=10):
     """
     result = None
 
+    # Once, not every pass: a knob whose meaning changed between passes would
+    # make the slopes the history has measured for it describe another knob.
+    for iterator in config.iterate.correct:
+        config = iterator.prepare(config)
+
     # Numbers only. A Result holds the live grid it was measured from -- tens
     # of megabytes for the smallest case here and gigabytes for a real machine
     # -- and keeping one per iteration would stop any of them being freed to
@@ -986,8 +1004,9 @@ def converge(config, run, max_iter=10):
 def _AEROFOIL_BLOCK(i_row):
     """Return the Jacobian block that shapes row `i_row`'s aerofoil.
 
-    What :class:`Incidence`, :class:`Deviation` and :class:`ClarkProfile` all
-    answer with for the same row, so their knobs are learned as one.
+    What :class:`ClarkProfile` answers with for its shape knobs. The
+    recambers of :class:`Incidence` and :class:`Deviation` are kept out of it:
+    see :meth:`Deviation.blocks`.
     """
     return ("aerofoil", int(i_row))
 
@@ -1106,11 +1125,8 @@ class Deviation(Iterator):
     clip: float = 1.0
     """Largest recamber in one iteration [deg].
 
-    One degree, not two: this knob shares a Jacobian block with the leading
-    edge and the thickness, and a learned block that has picked up a bad
-    sensitivity --- most often from a nose held against its ``R_LE_lim`` bound
-    --- discharges it as a single large recamber that moves the blade count
-    and throws the solution off. A tighter clip bounds that excursion to
+    One degree, not two: a single large recamber moves the blade count and
+    throws the solution off, and a tighter clip bounds that excursion to
     something the next iteration can walk back.
     """
     tolerance: float = 1.0
@@ -1120,21 +1136,22 @@ class Deviation(Iterator):
         return _recamber_unknowns(config, "dchi_TE")
 
     def blocks(self, config):
-        """Return the aerofoil block each recamber belongs to.
+        """Return a block of its own for each row's recamber.
 
-        A row's recamber and its thickness distribution shape the same
-        aerofoil: moving the leading edge round changes the incidence, which
-        is most of what the front thickness coefficients are for, and moving
-        the trailing edge changes the exit angle the rear ones are shaped
-        against. Learned together, that coupling is a term in the Jacobian;
-        learned apart, it is two iterators pushing on one nose and reading
-        each other's work as noise.
+        **Not the aerofoil block** the thickness knobs of a
+        :class:`ClarkProfile` learn in, though the coupling between them is
+        real. A block of a dozen knobs of different units, learned from a
+        handful of clipped moves, fills its off-diagonal terms with noise: a
+        run discharged one as a full degree of recamber on a row whose exit
+        angle was already within tolerance, which moved its exit Mach number
+        by eight per cent and with it every loading residual measured against
+        that. Apart, a recamber learns only its own slope.
 
-        Keyed by row, because that is as far as the coupling reaches --- one
-        row's aerofoil is not the next one's.
+        Keyed by row, because one row's recamber is not answerable for the
+        next row's exit angle in any way a run can identify.
         """
         return {
-            name: _AEROFOIL_BLOCK(i_row)
+            name: ("deviation", i_row)
             for i_row, name in enumerate(_recamber_unknowns(config, "dchi_TE"))
         }
 
@@ -1216,21 +1233,14 @@ class Incidence(Iterator):
         }
 
     def blocks(self, config):
-        """Return the aerofoil block each recamber belongs to.
+        """Return a block of its own for each row's recambers.
 
-        A row's recamber and its thickness distribution shape the same
-        aerofoil: moving the leading edge round changes the incidence, which
-        is most of what the front thickness coefficients are for, and moving
-        the trailing edge changes the exit angle the rear ones are shaped
-        against. Learned together, that coupling is a term in the Jacobian;
-        learned apart, it is two iterators pushing on one nose and reading
-        each other's work as noise.
-
-        Keyed by row, because that is as far as the coupling reaches --- one
-        row's aerofoil is not the next one's.
+        Kept out of the thickness knobs' aerofoil block for the reason
+        :meth:`Deviation.blocks` gives. Keyed by row, so the sections of one
+        row are learned together.
         """
         return {
-            f"dchi_LE[{i_row}][{i_section}]": _AEROFOIL_BLOCK(i_row)
+            f"dchi_LE[{i_row}][{i_section}]": ("incidence", i_row)
             for i_row, i_section, _ in _sections(config)
         }
 
@@ -1465,11 +1475,33 @@ class ClarkProfile(RowIterator):
 
     **Measured from the geometric leading edge**, not the stagnation point, so
     the target does not move as the thickness does. An `incidence` iterator
-    shapes the same nose, so the two share a Jacobian block (:meth:`blocks`)
-    rather than reading each other's work as noise.
+    shapes the same nose, but is learned in a block of its own
+    (:meth:`blocks`).
     """
 
     type: ClassVar[str] = "clark_profile"
+
+    learns: ClassVar[bool] = False
+    """Neither the shape knobs nor `Co` learn: every step is the prior's.
+
+    **The shape knobs**, because the noise in their residuals is as large as
+    the signal. The loading is measured over the trailing edge Mach number,
+    which the rest of the machine moves by three to eight per cent a pass
+    --- a recamber, a blade count, an inlet profile --- and that alone moves
+    every residual on the row by 0.03 to 0.08. A clipped step of 0.1 moves
+    them by 0.05 to 0.1. Secants learned from that swung between +2.8 and
+    -1.3 for one knob over two runs, and twice discharged as a full clip on
+    every knob the wrong way. The slopes those runs measured were 0.2 to 1.5,
+    so a :attr:`gain` of one is within the factor of two a fixed
+    step needs to converge, and needs no improving.
+
+    **`Co`**, because its error is in the units of the knob, so its slope is
+    one by definition, which is what :attr:`gain_Co` asserts. What Broyden
+    would learn is the last secant, and over a small move that is the noise
+    in the level and whatever the shape knobs did to it: a run measured
+    slopes from -0.27 to 2.04 step to step, about one overall, and the -0.27
+    sent `Co` the wrong way.
+    """
 
     Ma_peak: float = 1.2
     """Target peak Mach number over the trailing edge value [--].
@@ -1478,12 +1510,13 @@ class ClarkProfile(RowIterator):
     :class:`turbigen.metric.DiffusionFactor` records.
     """
 
-    Ma_peak_max: float = 1.0
+    Ma_peak_max: float = 1.1
     """Largest suction peak Mach number the target may ask for [--].
 
     The peak itself, `Ma_peak` times the row exit relative Mach number, not
-    the ratio. One by default, because a Clark curve has no shock in it; set
-    it lower to keep a margin, or to `.inf` to switch the check off.
+    the ratio. A Clark curve has no shock in it, so the default allows only a
+    mildly supersonic peak; set it lower to keep a margin, or to `.inf` to
+    switch the check off.
     """
 
     z_peak: float = 0.55
@@ -1542,8 +1575,10 @@ class ClarkProfile(RowIterator):
     slope is positive, since raising a coefficient thickens the surface,
     accelerates the flow over it and lifts the `fac` the error is measured in.
     A surface running faster than its target is therefore one to thin. The
-    *size* is still a guess, improved by the Broyden update inside a run
-    rather than written back into the design.
+    *size* is still a guess, and kept for the whole run: see :attr:`learns`.
+    A step `-gain * e` converges while `gain` times the true slope is between
+    zero and two, and the slopes measured are 0.2 to 1.5, so one is about as
+    large as it can safely be.
 
     :attr:`gain_Co` carries the level beside it. The two agree on sign; what
     keeps them apart is that a circulation coefficient and a shape-space
@@ -1613,9 +1648,7 @@ class ClarkProfile(RowIterator):
     wants should be visible.
 
     That costs the step its Newton direction for the pass, as any per-knob
-    truncation does --- see :func:`_bounded`. Accepted because a bound reached
-    is already an abnormal pass: the alternative, scaling the whole block to
-    respect it, would let one saturated nose shorten every other knob's step.
+    truncation does --- see :func:`_bounded`, which truncates the same way.
 
     The loop is not made to converge by this. A radius that walks one way
     without turning is a target the nose cannot reach, and the nose is where
@@ -1623,6 +1656,23 @@ class ClarkProfile(RowIterator):
     the mean of the two surfaces. What the bound buys is a design that stays
     meshable and says so, rather than one that runs away and announces it as a
     divergence two iterations later.
+    """
+
+    recentre: bool = True
+    """Whether to refit the camber exponent once, before the first iteration.
+
+    Picks the :class:`~turbigen.camber.ClarkCamber` exponent that runs the
+    camber line midway between the surfaces, and refits the thickness so the
+    aerofoil does not move; see :mod:`turbigen.recentre`. This matters when
+    the thickness coefficients come from a warm start or an earlier run, which
+    can leave one surface far thicker than the other. On the concave side
+    that amplifies surface curvature by ``1 / (1 - t kappa)``, so every step
+    after it comes back as a large swing in curvature.
+
+    Done once rather than every pass, so the knobs the loop is stepping do
+    not change meaning under it. Moves the inlet metal angle,
+    ``dchi_LE``. A row without a Clark camber on every section has no
+    exponent to move, and is left as it is.
     """
 
     def __post_init__(self):
@@ -1659,6 +1709,76 @@ class ClarkProfile(RowIterator):
                 f"{self.Ma_peak * Ma_TE:.3f} exceeds "
                 f"Ma_peak_max={self.Ma_peak_max}."
             )
+
+    def prepare(self, config):
+        """Return `config` with this row's sections re-centred, if :attr:`recentre`.
+
+        Each section is refitted at its own span fraction, and its inlet
+        recamber moves by however far its inlet metal angle did, so the flow
+        angle half of that angle is left alone.
+        """
+        from turbigen.camber import CamberLine
+
+        if not self.recentre:
+            return config
+
+        self._check(config)
+        if not self._recentres(config):
+            logger.info(
+                f"Row {self.i_row} does not have a Clark camber line on every "
+                f"section, so there is no exponent to re-centre it with; "
+                f"iterating it as it is."
+            )
+            return config
+
+        blade = config.design().rows[self.i_row].blade
+
+        sections = []
+        for i_section, section in enumerate(config.blades[self.i_row].sections):
+            where = f"Row {self.i_row} section {i_section}"
+            spf = float(blade.spf[i_section])
+            chi_LE, chi_TE = np.ravel(blade.evaluate_chi(spf))
+            refit = turbigen.recentre.recentre(
+                CamberLine(section.camber, *turbigen.util.tand((chi_LE, chi_TE))),
+                section.thickness,
+                blade.evaluate_fac_tangential(spf),
+                blade._suction_is_upper,
+            )
+            chi_LE_new = float(np.degrees(np.arctan(refit.camber.tanchi_LE)))
+
+            m = np.linspace(0.0, 1.0, 201)
+            before = [t.max() for t in section.thickness.thick_both(m)]
+            after = [t.max() for t in refit.thickness.thick_both(m)]
+            logger.info(
+                f"{where} re-centred: exponent "
+                f"{section.camber.exponent:.3f} -> "
+                f"{refit.camber.shape.exponent:.3f}, chi_LE {chi_LE:.2f} -> "
+                f"{chi_LE_new:.2f} deg, max half-thickness SS/PS "
+                f"{before[0]:.3f}/{before[1]:.3f} -> "
+                f"{after[0]:.3f}/{after[1]:.3f}, surfaces moved at most "
+                f"{refit.error:.1e} chord."
+            )
+
+            sections.append(
+                dataclasses.replace(
+                    section,
+                    camber=refit.camber.shape,
+                    dchi_LE=float(section.dchi_LE + chi_LE_new - chi_LE),
+                    thickness=refit.thickness,
+                )
+            )
+
+        sections = self._within_R_LE(tuple(sections))
+
+        closed = self._too_thin(sections)
+        if closed is not None:
+            logger.info(
+                f"Re-centring row {self.i_row} would leave {closed}; keeping "
+                f"the sections as they were."
+            )
+            return config
+
+        return _with_blade(config, self.i_row, sections=sections)
 
     def unknowns(self, config):
         """Return the level first, then every shape-space coefficient.
@@ -1759,6 +1879,12 @@ class ClarkProfile(RowIterator):
         order = self._order(config)
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
+            # What `prepare` moves too: once, but a leaf a run changed is not
+            # a design variable, so `database` must not read it as one.
+            if self._recentres(config):
+                section = f"blades[{self.i_row}].sections[{i_section}]"
+                paths |= {f"{section}.camber.exponent", f"{section}.dchi_LE"}
+
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
             paths |= {f"{stem}.tanwedge"}
@@ -1843,14 +1969,20 @@ class ClarkProfile(RowIterator):
     #
 
     def blocks(self, config):
-        """Return this row's aerofoil block for every knob.
+        """Return this row's aerofoil block for every shape knob, and `Co` its own.
 
-        The same block :class:`Incidence` and :class:`Deviation` put this
-        row's recamber in --- see :meth:`Deviation.blocks`. A thickness
-        distribution and the angles the flow meets it at are one aerofoil, and
-        the loop learns them as one.
+        The recambers of :class:`Incidence` and :class:`Deviation` are not in
+        it, for the reason :meth:`Deviation.blocks` gives.
+
+        **`Co` is kept apart.** Its error has the shape's removed by
+        construction, and the shape knobs see the residuals with the level
+        taken off, so the coupling between them is meant to be nothing.
+        Neither block learns (:attr:`learns`), but they are kept apart so that
+        what is declared to be uncoupled stays so if one ever does.
         """
-        return {name: _AEROFOIL_BLOCK(self.i_row) for name in self.unknowns(config)}
+        blocks = {name: _AEROFOIL_BLOCK(self.i_row) for name in self.unknowns(config)}
+        blocks[f"Co[{self.i_row}]"] = ("circulation", int(self.i_row))
+        return blocks
 
     def _by_knob(self, config, shape_value, level_value):
         """Return `level_value` for `Co` and `shape_value` for every shape knob."""
@@ -1976,6 +2108,15 @@ class ClarkProfile(RowIterator):
                 for section in config.blades[self.i_row].sections
             ],
             axis=0,
+        )
+
+    def _recentres(self, config):
+        """Return whether :meth:`prepare` would refit this row's exponents."""
+        from turbigen.camber import ClarkCamber
+
+        return self.recentre and all(
+            isinstance(section.camber, ClarkCamber)
+            for section in self._blade(config).sections
         )
 
     def _too_thin(self, sections):

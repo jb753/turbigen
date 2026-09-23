@@ -33,32 +33,41 @@ leading edge (z = 0, stagnation, Ma/Ma_te = 0) to the trailing edge
     ...                              Ma_LE=0.62, Ma_PS=0.20)
 
 --------------------------------------------------------------------------
-Suction surface -- four pieces: a leading-edge curl, a straight loading ramp,
+Stagnation point -- both surfaces. Each surface is an outer curve that knows
+nothing of the nose, multiplied by the surface speed ratio of potential flow
+over a parabolic nose (Lighthill 1951, "A new approach to thin aerofoil
+theory"):
+
+    Ma(z) = outer(z) * N(z / R_NOSE) / N(1 / R_NOSE),   N(eta) = eta / sqrt(1 + eta^2)
+
+R_NOSE is the nose radius as a fraction of that surface's length. A parabola
+is the nose a shape-space thickness has, t ~ sqrt(2 R_LE x), and the factor
+is exact for it. N rises from zero at stagnation, with gradient 1 / R_NOSE,
+and approaches one within a few R_NOSE, so the outer curve is recovered
+downstream without a blend point to place. Dividing by N(1 / R_NOSE) keeps
+Ma / Ma_te exactly one at the trailing edge.
+
+--------------------------------------------------------------------------
+Suction surface -- the outer curve has three pieces: a straight loading ramp,
 a roll-over onto the peak, and the diffusion to the trailing edge.
 
     sec   = (Ma_peak - Ma_LE) / (z_peak - Z_LE)         LE-to-peak secant slope
     sigma = C_RAMP * sec                                ramp slope (~1.15 sec)
-    z_c   = 3 (Ma_LE - sigma Z_LE) / (G_LE - sigma)     curl -> ramp blend point
     z2    = Z_LE + RHO (z_peak - Z_LE)                  roll-over start
 
-  [0, z_c]   curl   cubic, P(0)=0, P'(0)=G_LE, tangent to the ramp line at z_c
-                    (P(z_c)=ramp, P'(z_c)=sigma, P''(z_c)=0).  z_c moves
-                    downstream as Ma_LE rises.
-  [z_c, z2]  ramp   straight line, Ma = Ma_LE + sigma (z - Z_LE)
+  [0, z2]    ramp   straight line, Ma = Ma_LE + sigma (z - Z_LE)
   [z2, zp]   roll   cubic Hermite  (z2, ., sigma) -> (z_peak, Ma_peak, 0)
   [zp, 1]    diff   Ma = Ma_peak - (Ma_peak - 1)(1.5 y^2 - 0.5 y^3),
                     y = (z - z_peak)/(1 - z_peak)
 
-A polynomial in z cannot give the true (near-vertical) LE tangent, so the
-first ~2 % of surface -- physically the stagnation point, Ma ~ 0 -- is only
-approximate.
+The ramp line must be positive at z = 0, Ma_LE > sigma Z_LE, or the nose
+factor would carry a negative Mach number out of stagnation.
 
 --------------------------------------------------------------------------
-Pressure surface -- three pieces: a leading-edge rise, a flat plateau, and a
+Pressure surface -- the outer curve has two pieces: a flat plateau and a
 cubic-Bezier rear.
 
-  [0, Z_RISE]      rise      R = Ma_PS u (2 - u),  u = z / Z_RISE
-  [Z_RISE, Z_ACC] plateau   Ma = Ma_PS
+  [0, Z_ACC]      plateau   Ma = Ma_PS
   [Z_ACC, 1]      rear      cubic Bezier (Z_ACC, Ma_PS) -> (1, 1) with
                             B1 = (Z_ACC + PS_A, Ma_PS)   (leaves the plateau flat)
                             B2 = (1 - PS_B, 1 - TE_K (1 - Ma_PS) PS_B)
@@ -66,30 +75,39 @@ cubic-Bezier rear.
 
 --------------------------------------------------------------------------
 Only the module-level constants below are fixed shape parameters, calibrated
-once against all nine digitised Fig. 3 curves; overall RMS ~0.024 in Mach
-fraction (~0.015 excluding the leading-edge stagnation region).
+against the nine Fig. 3 curves, which are read exactly from the vector paths
+of the paper's PDF. With the style variables fitted per curve, RMS error in
+Mach fraction is 0.023 on the suction surface and 0.011 on the pressure
+surface; within z < 0.1 it is 0.035 and 0.008.
 """
 
 import numpy as np
 
 __all__ = ["suction", "pressure", "loading"]
 
-# ---- fixed shape constants (calibrated against digitised Fig. 3) ----------
-# The ramp *line* passes through (Z_LE, Ma_LE); the curve follows it only from
-# z_c onwards, and z_c sits past Z_LE whenever the front is steep enough to
-# need it, so Ma_LE anchors the ramp rather than naming a value the suction
-# surface attains at z = Z_LE. Raising G_LE pulls z_c back toward Z_LE and the
-# two converge, but nothing here requires that they do.
+# ---- fixed shape constants (calibrated against Fig. 3) -----------------------
+# The ramp *line* passes through (Z_LE, Ma_LE); the curve sits below it by the
+# nose factor, which is 0.98 at Z_LE, so Ma_LE anchors the ramp rather than
+# naming a value the suction surface attains at z = Z_LE.
 Z_LE = 0.10  # suction: ramp reference station (ramp line has Ma = Ma_LE here)
 C_RAMP = 1.15  # suction: ramp slope / LE-to-peak secant slope
-G_LE = 19.5  # suction: leading-edge gradient dMa/dz at z = 0
 RHO = 0.60  # suction: roll-over start, as a fraction of (z_peak - Z_LE)
+R_NOSE_SS = 0.0193  # suction: nose radius / suction surface length
 
-Z_RISE = 0.10  # pressure: leading-edge rise completes here
+R_NOSE_PS = 0.0283  # pressure: nose radius / pressure surface length
 Z_ACC = 0.20  # pressure: rear-Bezier start (plateau runs on past it via B1)
 TE_K = 4.8  # pressure: trailing-edge gradient / (1 - Ma_PS)
 PS_A = 0.11  # pressure: rear-Bezier B1 offset past the plateau end
 PS_B = 0.22  # pressure: rear-Bezier B2 offset back from the trailing edge
+
+
+def _nose(z, r_nose):
+    """Parabolic-nose speed ratio at z, scaled to be one at z = 1."""
+
+    def ratio(eta):
+        return eta / np.sqrt(1.0 + eta**2)
+
+    return ratio(z / r_nose) / ratio(1.0 / r_nose)
 
 
 def _hermite(z, z0, z1, y0, y1, d0, d1):
@@ -131,14 +149,14 @@ def suction(z, Ma_peak, z_peak, Ma_LE, Ma_PS):
 
     sec = (Ma_peak - Ma_LE) / (z_peak - Z_LE)
     sigma = C_RAMP * sec
+    if not Ma_LE - sigma * Z_LE > 0.0:
+        raise ValueError(
+            f"The suction ramp line must be positive at the nose, but "
+            f"Ma_LE - sigma * Z_LE = {Ma_LE - sigma * Z_LE:.3f} with "
+            f"Ma_LE={Ma_LE}, Ma_peak={Ma_peak}, z_peak={z_peak}."
+        )
     z2 = Z_LE + RHO * (z_peak - Z_LE)
     m2 = Ma_LE + sigma * (z2 - Z_LE)
-
-    # leading-edge curl: cubic tangent to the ramp line at z_c
-    z_c = 3.0 * (Ma_LE - sigma * Z_LE) / (G_LE - sigma)
-    a3 = (G_LE - sigma) / (3.0 * z_c**2)
-    a2 = -3.0 * a3 * z_c
-    curl = G_LE * z + a2 * z**2 + a3 * z**3
 
     ramp = Ma_LE + sigma * (z - Z_LE)
 
@@ -147,9 +165,8 @@ def suction(z, Ma_peak, z_peak, Ma_LE, Ma_PS):
     y = np.clip((z - z_peak) / (1.0 - z_peak), 0.0, 1.0)
     diff = Ma_peak - (Ma_peak - 1.0) * (1.5 * y**2 - 0.5 * y**3)
 
-    return np.where(
-        z <= z_c, curl, np.where(z <= z2, ramp, np.where(z <= z_peak, roll, diff))
-    )
+    outer = np.where(z <= z2, ramp, np.where(z <= z_peak, roll, diff))
+    return outer * _nose(z, R_NOSE_SS)
 
 
 def pressure(z, Ma_peak, z_peak, Ma_LE, Ma_PS):
@@ -157,16 +174,14 @@ def pressure(z, Ma_peak, z_peak, Ma_LE, Ma_PS):
     Ma_peak, z_peak, Ma_LE are accepted for a uniform signature but not used."""
     z = np.asarray(z, float)
 
-    u = np.clip(z / Z_RISE, 0.0, 1.0)
-    rise = Ma_PS * u * (2.0 - u)
-
     b1x = Z_ACC + PS_A
     b2x = 1.0 - PS_B
     b2y = 1.0 - TE_K * (1.0 - Ma_PS) * PS_B
     t = _invert_bezier_x(z, Z_ACC, b1x, b2x, 1.0)
     rear = _bezier1d(t, Ma_PS, Ma_PS, b2y, 1.0)
 
-    return np.where(z <= Z_RISE, rise, np.where(z <= Z_ACC, Ma_PS, rear))
+    outer = np.where(z <= Z_ACC, Ma_PS, rear)
+    return outer * _nose(z, R_NOSE_PS)
 
 
 def loading(z, Ma_peak, z_peak, Ma_LE, Ma_PS):

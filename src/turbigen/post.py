@@ -24,6 +24,7 @@ from inside a plot.
 
 import contextlib
 import importlib.resources
+import itertools
 import logging
 import sys
 from pathlib import Path
@@ -65,6 +66,13 @@ distributions of several rows are read against each other, and an axis that
 starts wherever a row's lowest point happened to land makes a peak look higher
 on the row that stagnated harder. Zero is where the stagnation point sits and
 is the one meaningful bottom.
+"""
+
+CLIP_RTOL = 1e-6
+"""Relative slack on a step's size when deciding that a clip bounded it.
+
+The stepper moves a clipped knob by exactly its clip, but the value comes back
+through a config and a sum of floats, so it need only arrive within rounding.
 """
 
 N_SPAN_ANNULUS = 10
@@ -1159,7 +1167,7 @@ class PostChain:
 
 
 class IterationPlot(PostChain):
-    """How each iterator's errors and knobs moved, iteration by iteration.
+    """How each iterator's errors moved, iteration by iteration.
 
     The design loop's own convergence history, as
     :class:`ConvergencePlot` is the march's. A run of twenty iterations
@@ -1170,13 +1178,8 @@ class IterationPlot(PostChain):
     every error by its own tolerance, so a recamber in degrees, a loss
     coefficient and a shape-space coefficient can be read on one axis, with a
     rule at one: below it is converged. The per-iterator pages give the same
-    errors in their own units, and beneath them the *values* of the knobs.
-
-    **The value panel is the point of this plot.** An error that is not
-    falling looks the same whether the knob is inching towards an answer or
-    sitting on its clip, and only the value says which --- a recamber walking
-    to eleven degrees, or a coefficient pinned where the clip left it, is a
-    design running away rather than one converging slowly.
+    errors in their own units, one line per knob and one page per tolerance,
+    with a filled circle where the step taken from that iteration was clipped.
     """
 
     def report(self, trajectory):
@@ -1197,29 +1200,42 @@ class IterationPlot(PostChain):
         # a gap rather than a zero: an iterator that could not measure omits
         # its knobs, and a zero there would draw as converged.
         n = len(trajectory)
-        errors, values = {}, {}
-        for i, (config_i, result_i) in enumerate(trajectory):
+        errors = {}
+        for i, (_, result_i) in enumerate(trajectory):
             for name, value in result_i.error.items():
                 errors.setdefault(name, np.full(n, np.nan))[i] = value
-            for name, value in iterate.unknowns(config_i).items():
-                values.setdefault(name, np.full(n, np.nan))[i] = value
+
+        # Which steps a clip bounded is not recorded, but it can be read back:
+        # the stepper scales a block until its binding knob moves exactly its
+        # clip, so a knob that moved its whole clip was clipped. Marked on the
+        # iteration whose error the step answered; the last has no step yet.
+        clipped = {}
+        for i, ((config_i, _), (config_next, _)) in enumerate(
+            itertools.pairwise(trajectory)
+        ):
+            before = iterate.unknowns(config_i)
+            after = iterate.unknowns(config_next)
+            for iterator in config_i.iterate.correct:
+                for name, clip in iterator.clips(config_i).items():
+                    if not clip or name not in before or name not in after:
+                        continue
+                    if abs(after[name] - before[name]) >= (1.0 - CLIP_RTOL) * clip:
+                        clipped.setdefault(name, np.zeros(n, dtype=bool))[i] = True
 
         iterators = list(config.iterate.correct)
         figures = [self._overview(plt, config, iterators, errors, n)]
-        for i_iterator, iterator in enumerate(iterators):
-            figure = self._one(plt, config, iterator, i_iterator, errors, values, n)
-            if figure is not None:
-                figures.append(figure)
+        for iterator in iterators:
+            figures.extend(self._one(plt, config, iterator, errors, clipped, n))
 
         return figures
 
     def _overview(self, plt, config, iterators, errors, n):
         """Every knob against its own tolerance, on one axis."""
         fig, ax = plt.subplots(layout="constrained")
-        ax.set_title("Design Iteration")
         ax.set_xlabel("Iteration")
         ax.set_ylabel(r"$|\epsilon|$ / tolerance")
         ax.set_yscale("log")
+        ax.set_ylim(1e-2, 1e2)
 
         for i_iterator, iterator in enumerate(iterators):
             tolerances = iterator.tolerances(config)
@@ -1239,40 +1255,52 @@ class IterationPlot(PostChain):
         # Converged is below one, whatever the knob is measured in, which is
         # the whole reason for dividing through.
         ax.axhline(1.0, color="k", linestyle="--", linewidth=1.0)
-        ax.legend()
+        ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5))
         return fig
 
-    def _one(self, plt, config, iterator, i_iterator, errors, values, n):
-        """One iterator's errors, and the knobs that answer for them."""
+    def _one(self, plt, config, iterator, errors, clipped, n):
+        """One iterator's errors in their own units, a page per tolerance."""
         names = [name for name in iterator.unknowns(config) if name in errors]
-        if not names:
-            return None
 
-        fig, (ax_err, ax_val) = plt.subplots(2, 1, sharex=True, layout="constrained")
-        ax_err.set_title(f"{iterator.type} Iteration")
-        ax_err.set_ylabel(r"Error, $\epsilon$")
-        ax_val.set_ylabel("Value")
-        ax_val.set_xlabel("Iteration")
-
+        # Knobs of one iterator need not share a tolerance, and a page with a
+        # rule for each of several is unreadable, so split them into a page
+        # per tolerance, in the order the knobs first appear.
         tolerances = iterator.tolerances(config)
+        groups = {}
+        for name in names:
+            groups.setdefault(tolerances.get(name), []).append(name)
+
+        figures = []
         iteration = np.arange(n)
-        for i_name, name in enumerate(names):
-            color = f"C{i_name}"
-            ax_err.plot(iteration, errors[name], color=color, label=name)
-            if name in values:
-                ax_val.plot(iteration, values[name], color=color)
+        for tolerance, group in groups.items():
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"{iterator.type} Iteration")
+            ax.set_xlabel("Iteration")
+            ax.set_ylabel(r"Error, $\epsilon$")
 
-        # Drawn as a band rather than two lines, and only where every knob
-        # shares a tolerance -- which is the common case, and where a single
-        # band means anything.
-        band = {tolerances[name] for name in names if name in tolerances}
-        if len(band) == 1:
-            tolerance = band.pop()
+            for i_name, name in enumerate(group):
+                color = f"C{i_name}"
+                ax.plot(iteration, errors[name], color=color, label=name)
+                if name in clipped:
+                    mask = clipped[name]
+                    ax.plot(
+                        iteration[mask],
+                        errors[name][mask],
+                        color=color,
+                        linestyle="none",
+                        marker="o",
+                        label="_clipped",
+                    )
+
+            # The errors are signed, so a knob is converged between the rules.
             if tolerance:
-                ax_err.axhspan(-tolerance, tolerance, color="k", alpha=0.1)
+                for sign in (-1.0, 1.0):
+                    ax.axhline(sign * tolerance, color="k", linestyle="--", linewidth=1.0)
 
-        ax_err.legend(fontsize="small")
-        return fig
+            ax.legend(fontsize="small", loc="center left", bbox_to_anchor=(1.0, 0.5))
+            figures.append(fig)
+
+        return figures
 
 
 STANDARD_CHAIN = (IterationPlot(),)
