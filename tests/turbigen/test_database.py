@@ -15,9 +15,13 @@ Test cases:
 - test_x_is_deduced_from_what_varies: a leaf every run agrees on is not an axis
 - test_an_iterated_knob_is_not_a_variable: an output cannot be its own input
 - test_solver_settings_are_not_variables: a finer mesh is the same design
+- test_an_iterator_target_is_a_variable: aiming elsewhere is another design
+- test_an_iterator_gain_is_not_a_variable: how the answer is reached is not
 - test_a_sample_is_reproduced_exactly: querying a run already done returns it
-- test_a_prediction_is_bounded_by_the_samples: it cannot leave the hull
+- test_a_prediction_is_bounded_by_the_samples: clipped to the samples' range
 - test_the_nearest_sample_dominates: which is what inverse distance means
+- test_a_prediction_follows_the_trend: the plane, which IDW alone cannot do
+- test_too_few_samples_for_a_plane_fall_back_to_idw: nothing to fit a trend to
 - test_a_single_sample_is_copied: the graceful end of the decay
 - test_repeat_runs_are_averaged: and neither of two on-top samples wins
 - test_no_samples_leaves_the_config_alone: the only refusal
@@ -56,9 +60,8 @@ SPREAD = ((1.4, 5.0), (1.6, 6.0), (1.8, 7.0))
 
 def make(psi, dchi_TE, **kwargs):
     """Return a two-row config at `psi` whose rows are recambered `dchi_TE`."""
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=ITERATORS), **kwargs
-    )
+    kwargs.setdefault("iterate", iterate.Iteration(correct=ITERATORS))
+    config = dataclasses.replace(build(), **kwargs)
     config = dataclasses.replace(
         config, mean_line=dataclasses.replace(config.mean_line, psi=psi)
     )
@@ -160,6 +163,39 @@ def test_solver_settings_are_not_variables(tmp_path):
     assert config.database.candidates(config, samples) == ("mean_line.psi",)
 
 
+def test_an_iterator_target_is_a_variable(tmp_path):
+    """Two runs aimed at different incidences are different designs."""
+    for i_run, (psi, dchi_TE) in enumerate(SPREAD):
+        correct = (iterate.Deviation(), iterate.Incidence(target=float(i_run)))
+        write(
+            tmp_path / "runs" / f"{i_run:03d}",
+            make(psi, dchi_TE, iterate=iterate.Iteration(correct=correct)),
+        )
+
+    config = query(1.5)
+    samples = config.database.load(config, tmp_path)
+
+    assert config.database.candidates(config, samples) == (
+        "iterate.correct[1].target",
+        "mean_line.psi",
+    )
+
+
+def test_an_iterator_gain_is_not_a_variable(tmp_path):
+    """A run stepped more gently is the same machine."""
+    for i_run, (psi, dchi_TE) in enumerate(SPREAD):
+        correct = (iterate.Deviation(gain=0.1 * (i_run + 1)), iterate.Incidence())
+        write(
+            tmp_path / "runs" / f"{i_run:03d}",
+            make(psi, dchi_TE, iterate=iterate.Iteration(correct=correct)),
+        )
+
+    config = query(1.5)
+    samples = config.database.load(config, tmp_path)
+
+    assert config.database.candidates(config, samples) == ("mean_line.psi",)
+
+
 def test_declared_variables_override_the_deduction(runs):
     config = query(1.5)
     config = dataclasses.replace(
@@ -184,15 +220,15 @@ def test_a_sample_is_reproduced_exactly(runs):
 
 
 def test_a_prediction_is_bounded_by_the_samples(runs):
-    """Far outside the hull, and still a blend of things that converged.
+    """Far outside the hull, the trend is clipped to what converged.
 
-    This is the property that removes the need for a clip: a warm start cannot
-    ask for a recamber no finished design ever used, so it cannot ask for a
-    blade that will not mesh.
+    The plane alone would ask for a recamber of about 100 degrees here. A warm
+    start that cannot ask for a recamber no finished design ever used cannot
+    ask for a blade that will not mesh.
     """
     started = database.warm_start(query(20.0), runs)
 
-    assert 5.0 <= recamber(started) <= 7.0
+    assert recamber(started) == pytest.approx(7.0)
 
 
 def test_the_nearest_sample_dominates(runs):
@@ -200,6 +236,31 @@ def test_the_nearest_sample_dominates(runs):
     started = database.warm_start(query(1.61), runs)
 
     assert recamber(started) == pytest.approx(6.0, abs=0.1)
+
+
+def test_a_prediction_follows_the_trend(runs):
+    """The runs lie on a line, so between them the answer is on it too.
+
+    Plain IDW gives about 5.13 here: its weights pull towards the sample at
+    1.6 and the one at 1.8, where a line through all three says 5.25.
+    """
+    started = database.warm_start(query(1.45), runs)
+
+    assert recamber(started) == pytest.approx(5.25)
+
+
+def test_too_few_samples_for_a_plane_fall_back_to_idw(tmp_path):
+    """Two runs on one axis define a line exactly, so none is fitted.
+
+    Weights of 1/0.05**2 and 1/0.15**2 blend 5 and 6 into 5.1, where the line
+    through them would say 5.25.
+    """
+    write(tmp_path / "runs" / "000", make(1.4, 5.0))
+    write(tmp_path / "runs" / "001", make(1.6, 6.0))
+
+    started = database.warm_start(query(1.45), tmp_path)
+
+    assert recamber(started) == pytest.approx(5.1)
 
 
 def test_a_single_sample_is_copied(tmp_path):

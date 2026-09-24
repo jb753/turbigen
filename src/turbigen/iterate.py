@@ -38,7 +38,6 @@ import numpy as np
 
 import turbigen.clark
 import turbigen.loading
-import turbigen.recentre
 import turbigen.shapespace
 import turbigen.util
 from turbigen.design import DesignError
@@ -117,6 +116,18 @@ class Iterator(Node):
     Declared rather than inferred, for the same reason :meth:`paths` is: what
     an iterator measures its error from is knowledge only its author has, and
     guessing it wrong fails silently in both directions.
+    """
+
+    targets: ClassVar[tuple[str, ...]] = ()
+    """Fields of this iterator that say what the design is aiming for.
+
+    A sweep over a target is a sweep over designs, so
+    :mod:`turbigen.database` measures distance along these as well as along
+    the machine itself. Everything else an iterator holds --- gains, clips,
+    tolerances --- is how the answer is reached, not what it is, and two runs
+    differing only in those are one design.
+
+    Declared rather than deduced, for the reason :attr:`from_solution` is.
     """
 
     gain: float | tuple[float, ...] = 1.0
@@ -225,16 +236,6 @@ class Iterator(Node):
         finding out. Reads the design alone: whatever needs a flow field is
         :meth:`error`'s business. Does nothing by default.
         """
-
-    def prepare(self, config):
-        """Return `config` made ready to iterate, before the first pass.
-
-        Called once by :func:`converge`, after any warm start and before
-        anything is solved. It is for rewriting the design into a form that
-        iterates better without changing what it is. Every leaf it moves
-        belongs in :meth:`paths`. Returns `config` unchanged by default.
-        """
-        return config
 
     learns: ClassVar[bool] = True
     """Whether a run improves this iterator's sensitivities, or keeps them.
@@ -936,11 +937,6 @@ def converge(config, run, max_iter=10):
     """
     result = None
 
-    # Once, not every pass: a knob whose meaning changed between passes would
-    # make the slopes the history has measured for it describe another knob.
-    for iterator in config.iterate.correct:
-        config = iterator.prepare(config)
-
     # Numbers only. A Result holds the live grid it was measured from -- tens
     # of megabytes for the smallest case here and gigabytes for a real machine
     # -- and keeping one per iteration would stop any of them being freed to
@@ -1121,6 +1117,19 @@ class Deviation(Iterator):
 
     type: ClassVar[str] = "deviation"
 
+    learns: ClassVar[bool] = False
+    """Every step is the prior's, `-gain * e`.
+
+    A row's exit angle moves with everything else in the machine --- the
+    other row's recamber, a blade count, the inlet profile --- by as much as
+    a clipped recamber moves it, and at exit angles near seventy degrees that
+    is a lot. The one-knob secant a run learns from that is noise, and twice
+    in one run it came out with the wrong sign: a full degree of recamber the
+    opposite way to the prior's step, tripling the error it was meant to
+    null. The prior's sign follows from what the knob is, and its size needs
+    only to be within a factor of two.
+    """
+
     gain: float = 0.5
     clip: float = 1.0
     """Largest recamber in one iteration [deg].
@@ -1129,7 +1138,7 @@ class Deviation(Iterator):
     throws the solution off, and a tighter clip bounds that excursion to
     something the next iteration can walk back.
     """
-    tolerance: float = 1.0
+    tolerance: float = 0.5
     """Permissible error on exit flow angle [deg]."""
 
     def unknowns(self, config):
@@ -1145,7 +1154,7 @@ class Deviation(Iterator):
         run discharged one as a full degree of recamber on a row whose exit
         angle was already within tolerance, which moved its exit Mach number
         by eight per cent and with it every loading residual measured against
-        that. Apart, a recamber learns only its own slope.
+        that.
 
         Keyed by row, because one row's recamber is not answerable for the
         next row's exit angle in any way a run can identify.
@@ -1208,15 +1217,23 @@ class Incidence(Iterator):
 
     type: ClassVar[str] = "incidence"
 
+    targets: ClassVar[tuple[str, ...]] = ("target",)
+
+    learns: ClassVar[bool] = False
+    """Every step is the prior's, `-gain * e`, for the reason
+    :attr:`Deviation.learns` gives. Learned, one row's recamber stepped a full
+    degree against the prior's sign on alternate passes, with its error at
+    ten to thirty degrees throughout.
+    """
+
     target: float = 0.0
     """Incidence to aim for [deg]."""
 
     # Negative because incidence falls as the recamber rises. Small because
-    # the stagnation point moves several degrees for one degree of metal, and
-    # the Broyden update learns the real rate from the second iteration.
+    # the stagnation point moves several degrees for one degree of metal.
     gain: float = -0.05
     clip: float = 1.0
-    tolerance: float = 5.0
+    tolerance: float = 8.0
     """Permissible error on local incidence [deg].
 
     Loose next to a deviation, because it is measured on the nose: how far the
@@ -1481,6 +1498,8 @@ class ClarkProfile(RowIterator):
 
     type: ClassVar[str] = "clark_profile"
 
+    targets: ClassVar[tuple[str, ...]] = ("Ma_peak", "z_peak", "Ma_LE", "Ma_PS")
+
     learns: ClassVar[bool] = False
     """Neither the shape knobs nor `Co` learn: every step is the prior's.
 
@@ -1522,7 +1541,7 @@ class ClarkProfile(RowIterator):
     z_peak: float = 0.55
     """Target surface fraction of the suction peak [--]."""
 
-    Ma_LE: float = 1.8
+    Ma_LE: float = 1.6
     """Height of the target's leading edge acceleration [--].
 
     The value Clark's ramp line takes at its reference station, which is what
@@ -1538,7 +1557,7 @@ class ClarkProfile(RowIterator):
     own parameters cannot carry two normalisations at once.
     """
 
-    Ma_PS: float = 0.6
+    Ma_PS: float = 1.0
     """Target pressure-surface Mach number on the pre-acceleration plateau [--].
 
     Carries the `Ma_2 / Max_1` factor --- the exit Mach number over the inlet
@@ -1562,7 +1581,7 @@ class ClarkProfile(RowIterator):
     trailing edge value rather than about the inlet.
     """
 
-    gain: float | tuple[float, ...] = 0.5
+    gain: float | tuple[float, ...] = 1.0
     """How much of the error to subtract from each shape knob.
 
     **One number covers every shape knob**, which is the whole reason the knobs
@@ -1585,23 +1604,25 @@ class ClarkProfile(RowIterator):
     coefficient are not the same quantity. See :meth:`gains`.
     """
 
-    clip: float = 0.05
+    clip: float = 0.1
     """Largest change in one shape-space coefficient per iteration [--]."""
 
-    tolerance: float = 0.01
+    tolerance: float = 0.03
     """Converged when every shape residual is within this [--]."""
 
-    gain_Co: float = 1.0
+    gain_Co: float = 0.5
     """How much of the level error to subtract from `Co`, as a prior [--].
 
-    **One, because the error is in the units of the knob.** The level is a
+    **A half, though the error is in the units of the knob.** The level is a
     circulation coefficient too high or too low, and `Co` is the circulation
-    coefficient, so moving it by the whole error is the Newton step under a
-    slope of one --- which is what a coefficient measured against itself
-    should have. That the blade does not land exactly there is loss,
-    deviation and the uniform acoustic speed
-    :attr:`~turbigen.loading.ClarkMeasurement.Co` assumes; a few per cent on a
-    step, not a different order of magnitude.
+    coefficient, so a slope of one is what a coefficient measured against
+    itself ought to have. Measured, it is nearer two: moving `Co` changes the
+    blade count, and the pitch moves the incidence, the deviation and the
+    loading the level is read from along with it. At a gain of one a run sat
+    in a period-two orbit of about 0.03 either side for a dozen passes; at a
+    half the same case converged in ten. The half also damps the step a
+    noisy reading of the level asks for, and the blade count is the knob every
+    other one on the row answers to.
 
     Positive, because more circulation per blade is a bigger loop. **Read only while
     :attr:`gain` is a scalar**: declared as a sequence, `gain` carries every
@@ -1611,10 +1632,12 @@ class ClarkProfile(RowIterator):
     clip_Co: float = 0.05
     """Largest change in the circulation coefficient per iteration [--]."""
 
-    tolerance_Co: float = 0.01
+    tolerance_Co: float = 0.02
     """Converged when the circulation is within this of the target's [--].
 
-    A `Co` of order 0.7, so this is a per cent or so of it.
+    A `Co` of order 0.7, so this is three per cent or so of it. Not tighter,
+    because the level read off one solution scatters by about that much from
+    pass to pass with `Co` itself held still.
     """
 
     tolerance_tau_LE: float = 0.05
@@ -1628,7 +1651,7 @@ class ClarkProfile(RowIterator):
     the other knobs have converged, without slackening them.
     """
 
-    R_LE_lim: tuple[float, float] = (0.02, 0.12)
+    R_LE_lim: tuple[float, float] = (0.01, 0.2)
     """Bounds on the leading edge radius, normalised by chord [--].
 
     **A bound on where the knob arrives, which no clip provides.** `clip`
@@ -1655,24 +1678,9 @@ class ClarkProfile(RowIterator):
     :meth:`_flat_error` is blind by construction --- a shared end reports only
     the mean of the two surfaces. What the bound buys is a design that stays
     meshable and says so, rather than one that runs away and announces it as a
-    divergence two iterations later.
-    """
-
-    recentre: bool = True
-    """Whether to refit the camber exponent once, before the first iteration.
-
-    Picks the :class:`~turbigen.camber.ClarkCamber` exponent that runs the
-    camber line midway between the surfaces, and refits the thickness so the
-    aerofoil does not move; see :mod:`turbigen.recentre`. This matters when
-    the thickness coefficients come from a warm start or an earlier run, which
-    can leave one surface far thicker than the other. On the concave side
-    that amplifies surface curvature by ``1 / (1 - t kappa)``, so every step
-    after it comes back as a large swing in curvature.
-
-    Done once rather than every pass, so the knobs the loop is stepping do
-    not change meaning under it. Moves the inlet metal angle,
-    ``dchi_LE``. A row without a Clark camber on every section has no
-    exponent to move, and is left as it is.
+    divergence two iterations later. The default upper bound is wider than
+    that run suggests, a guard against a runaway rather than a statement of a
+    sensible nose.
     """
 
     def __post_init__(self):
@@ -1709,76 +1717,6 @@ class ClarkProfile(RowIterator):
                 f"{self.Ma_peak * Ma_TE:.3f} exceeds "
                 f"Ma_peak_max={self.Ma_peak_max}."
             )
-
-    def prepare(self, config):
-        """Return `config` with this row's sections re-centred, if :attr:`recentre`.
-
-        Each section is refitted at its own span fraction, and its inlet
-        recamber moves by however far its inlet metal angle did, so the flow
-        angle half of that angle is left alone.
-        """
-        from turbigen.camber import CamberLine
-
-        if not self.recentre:
-            return config
-
-        self._check(config)
-        if not self._recentres(config):
-            logger.info(
-                f"Row {self.i_row} does not have a Clark camber line on every "
-                f"section, so there is no exponent to re-centre it with; "
-                f"iterating it as it is."
-            )
-            return config
-
-        blade = config.design().rows[self.i_row].blade
-
-        sections = []
-        for i_section, section in enumerate(config.blades[self.i_row].sections):
-            where = f"Row {self.i_row} section {i_section}"
-            spf = float(blade.spf[i_section])
-            chi_LE, chi_TE = np.ravel(blade.evaluate_chi(spf))
-            refit = turbigen.recentre.recentre(
-                CamberLine(section.camber, *turbigen.util.tand((chi_LE, chi_TE))),
-                section.thickness,
-                blade.evaluate_fac_tangential(spf),
-                blade._suction_is_upper,
-            )
-            chi_LE_new = float(np.degrees(np.arctan(refit.camber.tanchi_LE)))
-
-            m = np.linspace(0.0, 1.0, 201)
-            before = [t.max() for t in section.thickness.thick_both(m)]
-            after = [t.max() for t in refit.thickness.thick_both(m)]
-            logger.info(
-                f"{where} re-centred: exponent "
-                f"{section.camber.exponent:.3f} -> "
-                f"{refit.camber.shape.exponent:.3f}, chi_LE {chi_LE:.2f} -> "
-                f"{chi_LE_new:.2f} deg, max half-thickness SS/PS "
-                f"{before[0]:.3f}/{before[1]:.3f} -> "
-                f"{after[0]:.3f}/{after[1]:.3f}, surfaces moved at most "
-                f"{refit.error:.1e} chord."
-            )
-
-            sections.append(
-                dataclasses.replace(
-                    section,
-                    camber=refit.camber.shape,
-                    dchi_LE=float(section.dchi_LE + chi_LE_new - chi_LE),
-                    thickness=refit.thickness,
-                )
-            )
-
-        sections = self._within_R_LE(tuple(sections))
-
-        closed = self._too_thin(sections)
-        if closed is not None:
-            logger.info(
-                f"Re-centring row {self.i_row} would leave {closed}; keeping "
-                f"the sections as they were."
-            )
-            return config
-
-        return _with_blade(config, self.i_row, sections=sections)
 
     def unknowns(self, config):
         """Return the level first, then every shape-space coefficient.
@@ -1879,12 +1817,6 @@ class ClarkProfile(RowIterator):
         order = self._order(config)
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
-            # What `prepare` moves too: once, but a leaf a run changed is not
-            # a design variable, so `database` must not read it as one.
-            if self._recentres(config):
-                section = f"blades[{self.i_row}].sections[{i_section}]"
-                paths |= {f"{section}.camber.exponent", f"{section}.dchi_LE"}
-
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
             paths |= {f"{stem}.tanwedge"}
@@ -2110,15 +2042,6 @@ class ClarkProfile(RowIterator):
             axis=0,
         )
 
-    def _recentres(self, config):
-        """Return whether :meth:`prepare` would refit this row's exponents."""
-        from turbigen.camber import ClarkCamber
-
-        return self.recentre and all(
-            isinstance(section.camber, ClarkCamber)
-            for section in self._blade(config).sections
-        )
-
     def _too_thin(self, sections):
         """Return what is wrong with `sections`, or None if nothing is.
 
@@ -2202,10 +2125,10 @@ class MeanLine(Iterator):
     them."""
 
     gain: float = 0.5
-    tolerance: float = 0.01
+    tolerance: float = 0.02
     """Permissible error, as a fraction of the nominal value."""
 
-    clip: float = 0.0
+    clip: float = 0.2
     """Largest change in one iteration, as a fraction of the nominal value.
 
     Relative for the reason :attr:`tolerance` is, and to the same nominal:
@@ -2215,7 +2138,7 @@ class MeanLine(Iterator):
     moving angles in degrees and coefficients that are already dimensionless
     --- a single ``clip: 0.01`` beside a two-row ``Ys`` of ``[0.030, 0.076]``
     permits a third of the first and an eighth of the second, while the
-    tolerance a line above it means one per cent of each. Two conventions, two
+    tolerance a line above it means two per cent of each. Two conventions, two
     adjacent numbers, and a loss coefficient free to walk a third of its value
     per pass.
 
@@ -2348,6 +2271,7 @@ class SurfaceReynolds(Iterator):
 
     type: ClassVar[str] = "Re_surf"
     from_solution: ClassVar[bool] = False
+    targets: ClassVar[tuple[str, ...]] = ("target",)
 
     target: float
     """Surface Reynolds number to design for [--]."""
@@ -2633,7 +2557,7 @@ class Repeat(Iterator):
     ANGLES: ClassVar[tuple[str, ...]] = ("DAlpha", "DBeta")
     """Those measured in degrees rather than in fractions of a scale."""
 
-    order: int = 3
+    order: int = 4
     """Number of modes passed upstream, per column."""
 
     basis: str | None = None
@@ -2651,7 +2575,7 @@ class Repeat(Iterator):
     the machine. The package this replaces reads at the same distance.
     """
 
-    gain: float = 1.0
+    gain: float = 0.8
     """One copies the exit profile outright; less under-relaxes it.
 
     Relaxation only: the loop stops where the error is null, and `gain` scales
@@ -2660,7 +2584,7 @@ class Repeat(Iterator):
     :attr:`transfer_To` and nothing else.
     """
 
-    transfer_To: float = 1.0
+    transfer_To: float = 0.5
     """Fraction of the exit stagnation temperature profile fed back upstream.
 
     One is a strictly repeating stage: whatever temperature redistribution
@@ -2676,7 +2600,8 @@ class Repeat(Iterator):
     slow the loop down and land in the same place anyway.
 
     Only the temperature is damped. Pressure and angle keep their full
-    feedback, so the default is exactly the loop as it was.
+    feedback. One is the loop as it was; the default of a half says the
+    stage mixes out half of what reaches it.
     """
 
     atol_head: float = 0.01
@@ -2686,7 +2611,7 @@ class Repeat(Iterator):
     those columns are measured in.
     """
 
-    atol_angle: float = 0.1
+    atol_angle: float = 1.0
     """Converged when ``DAlpha`` is within this [deg]."""
 
     clip_head: float = 0.2

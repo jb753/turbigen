@@ -186,57 +186,6 @@ each time, not a converging one.
 """
 
 
-def offset_surfaces(camber, thickness, fac_tangential, suction_is_upper, m):
-    """Return how far each surface sits from the camber line, suction first.
-
-    The whole of how a surface is hung off its camber line, in the normalised
-    frame where the camber line runs from `m = 0` to `m = 1` with slope
-    ``camber.dydm``. A free function rather than a :class:`Blade` method so
-    that something refitting a section, :mod:`turbigen.recentre`, lays its
-    trial sections out exactly as the blade will.
-
-    Parameters
-    ----------
-    camber : CamberLine
-        Camber shape placed between its metal angles.
-    thickness : ThicknessDesign
-        Thickness distribution of the section.
-    fac_tangential : float
-        See :attr:`SectionDesign.fac_tangential`.
-    suction_is_upper : bool
-        See :attr:`Blade._suction_is_upper`.
-    m : ndarray
-        Normalised meridional positions along the camber line.
-
-    Returns
-    -------
-    Dm, Dy : ndarray, shape (2, n)
-        Meridional and circumferential offset of each surface from the camber
-        line, normalised by meridional chord. Suction first.
-
-    """
-    chi = np.arctan(camber.dydm(m))
-
-    # Each surface carries its own thickness, the same number twice unless
-    # the distribution says otherwise, so the two are offset independently
-    # rather than one being the other reflected in the camber line.
-    t_s, t_p = thickness.thick_both(m)
-
-    # The camber normal (-sin chi, cos chi) points to the higher-angle
-    # side, and `sgn` turns it to point at the suction surface, which is
-    # the whole suction-first convention. The pressure surface offsets
-    # along that normal rotated by `w chi`, a unit direction that reduces
-    # to the perpendicular offset where `w` is zero, at both ends. See
-    # `SectionDesign.fac_tangential` for why.
-    w = fac_tangential * (4.0 * m * (1.0 - m)) ** 1.2
-    chi_p = (1.0 - w) * chi
-
-    sgn = 1.0 if suction_is_upper else -1.0
-    Dm = np.stack((-sgn * t_s * np.sin(chi), sgn * t_p * np.sin(chi_p)))
-    Dy = np.stack((sgn * t_s * np.cos(chi), -sgn * t_p * np.cos(chi_p)))
-    return Dm, Dy
-
-
 def to_xrrt(xrt):
     """Return `xrt` with its angle turned into a distance.
 
@@ -828,13 +777,27 @@ class Blade:
         camber, thickness = self._get_cam_thick(spf)
 
         dydm = camber.dydm(m)
-        (Dm_s, Dm_p), (Dy_s, Dy_p) = offset_surfaces(
-            camber,
-            thickness,
-            self.evaluate_fac_tangential(spf),
-            self._suction_is_upper,
-            m,
-        )
+        chi = np.arctan(dydm)
+
+        # Each surface carries its own thickness, the same number twice unless
+        # the distribution says otherwise, so the two are offset independently
+        # rather than one being the other reflected in the camber line.
+        t_s, t_p = thickness.thick_both(m)
+
+        # The camber normal (-sin chi, cos chi) points to the higher-angle
+        # side, and `sgn` turns it to point at the suction surface, which is
+        # the whole suction-first convention. The pressure surface offsets
+        # along that normal rotated by `w chi`, a unit direction that reduces
+        # to the perpendicular offset where `w` is zero, at both ends. See
+        # `SectionDesign.fac_tangential` for why.
+        w = self.evaluate_fac_tangential(spf) * (4.0 * m * (1.0 - m)) ** 1.2
+        chi_p = (1.0 - w) * chi
+
+        sgn = 1.0 if self._suction_is_upper else -1.0
+        Dm_s = -sgn * t_s * np.sin(chi)
+        Dm_p = sgn * t_p * np.sin(chi_p)
+        Dy_s = sgn * t_s * np.cos(chi)
+        Dy_p = -sgn * t_p * np.cos(chi_p)
 
         ms = m + Dm_s
         mp = m + Dm_p

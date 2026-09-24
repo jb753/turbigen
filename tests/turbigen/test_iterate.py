@@ -26,7 +26,6 @@ Test cases:
 - test_converge_reaches_the_answer: the loop, on an analytic error
 - test_converge_stops_on_a_diverged_march: a blown-up run measures nothing
 - test_converge_gives_up: and stops when it cannot
-- test_converge_prepares_once: an iterator's prepare runs before the first pass only
 - test_no_history_is_the_declared_gain: a first iteration is what it always was
 - test_a_coupled_system_converges_faster: the claim of Broyden, on a stage-like
   lower-triangular Jacobian
@@ -862,7 +861,9 @@ def test_mean_line_no_clip_stays_no_clip():
     """Zero is what the stepper reads as unbounded, so it must not be scaled."""
     config = dataclasses.replace(
         build(),
-        iterate=iterate.Iteration(correct=(iterate.MeanLine(variables=("Ys",)),)),
+        iterate=iterate.Iteration(
+            correct=(iterate.MeanLine(variables=("Ys",), clip=0.0),)
+        ),
     )
 
     assert set(config.iterate.correct[0].clips(config).values()) == {0.0}
@@ -1217,9 +1218,13 @@ def test_the_inherited_tolerance_is_ignored():
 #
 
 
-def test_the_whole_exit_profile_comes_round_by_default():
+def test_the_whole_exit_profile_comes_round_undamped():
     """A strictly repeating stage, which is what the loop meant before."""
-    assert iterate.Repeat().transfers() == {"DPo": 1.0, "DTo": 1.0, "DAlpha": 1.0}
+    assert iterate.Repeat(transfer_To=1.0).transfers() == {
+        "DPo": 1.0,
+        "DTo": 1.0,
+        "DAlpha": 1.0,
+    }
 
 
 def test_only_the_temperature_is_damped():
@@ -1262,7 +1267,10 @@ def test_a_damped_temperature_moves_the_fixed_point_not_the_path(monkeypatch):
 
     # And the undamped loop is not settled there: it wants the whole profile.
     undamped = dataclasses.replace(
-        settled, iterate=iterate.Iteration(correct=(iterate.Repeat(order=2),))
+        settled,
+        iterate=iterate.Iteration(
+            correct=(iterate.Repeat(order=2, transfer_To=1.0),)
+        ),
     )
     assert undamped.iterate.correct[0].error(undamped, result)[
         "inlet_profile.DTo[0]"
@@ -1875,78 +1883,19 @@ def test_clark_profile_does_not_learn(clark):
     assert learns[shape] is False
 
 
-@pytest.fixture
-def lopsided():
-    """A config whose first row is on a Clark camber, its pressure side thicker."""
-    thickness = {**CLARK_THICKNESS, "coeff": [[0.0, 0.0], [0.3, 0.3]]}
-    camber = {"type": "clark", "exponent": 2.5}
-    return dataclasses.replace(
-        build(
-            blades=[thickened(thickness, section={"camber": camber}), thickened()],
-            mean_line=CLARK_MEAN_LINE,
-        ),
-        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
-    )
-
-
-def test_clark_prepare_equalises_the_thickness(lopsided):
-    from turbigen.recentre import imbalance
-
-    prepared = lopsided.iterate.correct[0].prepare(lopsided)
-
-    for old, new in zip(lopsided.blades[0].sections, prepared.blades[0].sections):
-        assert new.camber.exponent != old.camber.exponent
-        assert new.dchi_LE != old.dchi_LE
-        assert imbalance(new.thickness) < 0.5 * imbalance(old.thickness)
-
-
-def test_clark_prepare_moves_only_what_it_declares(lopsided):
-    """A leaf `prepare` moves is not a design variable, so `paths` owns it."""
-    iterator = lopsided.iterate.correct[0]
-    before = node.flatten(lopsided)
-    after = node.flatten(iterator.prepare(lopsided))
-    moved = {path for path, value in before.items() if after[path] != value}
-
-    assert moved
-    assert moved <= iterator.paths(lopsided)
-    assert iterator.paths(lopsided) <= set(before)
-
-
-def test_clark_prepare_can_be_switched_off(lopsided):
-    iterator = iterate.ClarkProfile(recentre=False)
-
-    assert iterator.prepare(lopsided) is lopsided
-    assert not any("exponent" in path for path in iterator.paths(lopsided))
-
-
-def test_clark_prepare_leaves_other_cambers_alone(clark):
-    """The fixture's camber is quadratic, which has no exponent to move."""
-    assert clark.iterate.correct[0].prepare(clark) is clark
-
-
-class Preparing(Fixed):
-    """A stand-in that records each time it is prepared."""
-
-    def prepare(self, config):
-        PREPARED.append(float(config.mean_line.psi))
-        return config
-
-
-PREPARED = []
-"""What `Preparing.prepare` saw, once per call."""
-
-
-def test_converge_prepares_once():
-    """Before the first pass and never again, however many passes follow."""
-    PREPARED.clear()
+def test_recambers_do_not_learn(clark):
+    """A recamber's secant is noise from the rest of the machine, so the
+    incidence and deviation blocks keep the prior."""
     config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Preparing(target=3.0, gain=0.0),))
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.Incidence(), iterate.Deviation())
+        ),
     )
+    names = list(iterate.unknowns(config))
 
-    _, _, converged = iterate.converge(config, lambda c, i: Result(), max_iter=3)
-
-    assert not converged
-    assert PREPARED == [pytest.approx(config.mean_line.psi)]
+    assert names
+    assert not any(learning for _, learning in iterate._blocks(config, names))
 
 
 def test_clark_leading_edge_tolerance_defaults_wide(clark):
