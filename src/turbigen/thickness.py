@@ -64,7 +64,7 @@ class ThicknessDesign(Node):
         camber line is the suction one is a property of the camber, and a
         thickness has none --- so "suction first" is a promise the *blade*
         keeps when it hangs these two numbers off its camber line (see
-        :attr:`~turbigen.blade.Blade._suction_is_upper`), and a claim about
+        :attr:`~turbigen.blade.Blade.suction_is_upper`), and a claim about
         intent when it is written in a config file. Evaluated on its own, a
         distribution can only say that its first answer goes on whichever
         surface a blade would call suction.
@@ -74,6 +74,21 @@ class ThicknessDesign(Node):
         """
         t = self.thick(m)
         return t, t
+
+    def ramp_TE(self, m):
+        """Return the trailing edge ramp within each surface's half-thickness.
+
+        The part of :meth:`thick_both` that a blade always hangs perpendicular
+        to the camber line, the rest being blended toward circumferential on
+        the pressure surface --- see :mod:`turbigen.blade`. The same on both
+        surfaces, since a trailing edge thickness is split evenly between
+        them.
+
+        Zero unless a distribution says otherwise: one with no ramp of its own
+        has all of its thickness blended, which is still perpendicular at both
+        ends.
+        """
+        return np.zeros_like(np.asarray(m, dtype=float))
 
 
 class Taylor(ThicknessDesign):
@@ -228,6 +243,9 @@ class Taylor(ThicknessDesign):
         # domain, where checking here could only ever cover the samples given.
         return float(t.item()) if np.isscalar(m) else t
 
+    def ramp_TE(self, m):
+        return shapespace.ramp_TE(m, self.t_TE)
+
 
 class ClarkThickness(ThicknessDesign):
     """A Bernstein polynomial in shape space per surface, after Clark (2019).
@@ -274,7 +292,7 @@ class ClarkThickness(ThicknessDesign):
     Which side that is comes from the camber line, not from here: see
     :meth:`ThicknessDesign.thick_both` for why a thickness distribution cannot
     check its own row ordering, and
-    :attr:`~turbigen.blade.Blade._suction_is_upper` for where it is decided.
+    :attr:`~turbigen.blade.Blade.suction_is_upper` for where it is decided.
 
     The two rows are the same length, and that length sets the order of the
     curve --- `order - 1` interior coefficients, the two endpoint ones being
@@ -477,3 +495,6 @@ class ClarkThickness(ThicknessDesign):
         if np.isscalar(m):
             return tuple(float(side.item()) for side in t)
         return t
+
+    def ramp_TE(self, m):
+        return shapespace.ramp_TE(m, self.t_TE)

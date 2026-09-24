@@ -178,10 +178,16 @@ def control_m(order):
     **Where a coefficient moves the thickness, which is a proxy for where it
     moves the loading.** A thickness bump accelerates the flow over it, but a
     pressure field is not local, so the two peaks need not coincide exactly.
-    Checked against a finished section rather than against the formula alone:
+    Checked against a finished section rather than against the formula alone.
+    On the suction surface, offset perpendicular to the camber line,
     perturbing one coefficient displaces the surface most at this `m` to four
-    decimal places, so the annulus lift, the leading-to-trailing edge rescaling
-    and the perpendicular thickness offset do not move it.
+    decimal places, so the annulus lift and the leading-to-trailing edge
+    rescaling do not move it. The pressure surface puts most of its mid-chord
+    thickness on circumferentially (see :mod:`turbigen.blade`), and a
+    circumferential push moves a steeply staggered surface partly along itself
+    rather than off it, so the coefficients there displace the surface most a
+    little ahead of this `m`: by up to about four hundredths of surface
+    length.
 
     Parameters
     ----------
@@ -218,7 +224,27 @@ def thickness_from_tau(m, tau, t_TE):
 
     """
     m = np.asarray(m, dtype=float)
-    return np.sqrt(m) * (1.0 - m) * np.asarray(tau, dtype=float) + m * t_TE / 2.0
+    return np.sqrt(m) * (1.0 - m) * np.asarray(tau, dtype=float) + ramp_TE(m, t_TE)
+
+
+def ramp_TE(m, t_TE):
+    """Return the linear ramp that leaves half the trailing edge thickness.
+
+    The part of a :func:`thickness_from_tau` half-thickness that the class
+    function does not multiply. Separate because a blade hangs it off the
+    camber line differently from the rest --- always perpendicular, so that
+    the trailing edge is the thickness it says whatever the rest does; see
+    :mod:`turbigen.blade`.
+
+    Parameters
+    ----------
+    m : array_like
+        Normalised meridional positions.
+    t_TE : float
+        Trailing edge thickness, the total due to both sides [--].
+
+    """
+    return np.asarray(m, dtype=float) * t_TE / 2.0
 
 
 def tau_from_thickness(m, t, t_TE):
@@ -249,7 +275,7 @@ def tau_from_thickness(m, t, t_TE):
             "leading edge radius and the wedge angle instead."
         )
 
-    return (np.asarray(t, dtype=float) - m * t_TE / 2.0) / (np.sqrt(m) * (1.0 - m))
+    return (np.asarray(t, dtype=float) - ramp_TE(m, t_TE)) / (np.sqrt(m) * (1.0 - m))
 
 
 def tau_LE(R_LE):

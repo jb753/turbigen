@@ -72,9 +72,9 @@ THICKNESS = {
 }
 
 
-PERPENDICULAR = {"fac_tangential": 0.0}
-"""Section override for the plain perpendicular offset, which is what the
-package this replaces does and the only shape the two can be compared in."""
+def _all_perpendicular(m):
+    """A perpendicular fraction of one everywhere: the plain offset."""
+    return np.ones_like(np.asarray(m, dtype=float))
 
 
 def blade(dchi_LE=-8.0, dchi_TE=0.0, section=None, **kwargs):
@@ -121,14 +121,22 @@ def machine():
 
 
 @pytest.fixture
-def machine_perpendicular():
+def perpendicular(monkeypatch):
+    """Take the pressure-side blend off, leaving the plain perpendicular offset.
+
+    Which is what the package this replaces does and the only shape the two
+    can be compared in. Patched rather than configured: the blend is a fixed
+    part of how a surface is hung off its camber line, not a design choice, so
+    there is no field to turn it off with. The geometry is evaluated when it
+    is asked for, so the patch has to be in place for the whole test.
+    """
+    monkeypatch.setattr(turbigen.blade, "normal_fraction", _all_perpendicular)
+
+
+@pytest.fixture
+def machine_perpendicular(perpendicular):
     """The same machine with the offset left perpendicular to the camber line."""
-    return build(
-        blades=[
-            blade(section=PERPENDICULAR),
-            blade(dchi_LE=2.0, section=PERPENDICULAR),
-        ]
-    ).design()
+    return build().design()
 
 
 class OldRow:
@@ -568,11 +576,10 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
     `theta`, read off the arrays rather than assumed, so it says nothing about
     which convention is right --- only that the same two curves come out.
 
-    Compared with `fac_tangential` at zero, which is the plain perpendicular
-    offset the old package applies. The blend that this package now defaults to
-    is a deliberate departure --- see `SectionDesign.fac_tangential` --- so
-    holding it off here is what keeps this a test of the port rather than of
-    that decision.
+    Compared with the pressure-side blend taken off, leaving the plain
+    perpendicular offset the old package applies. The blend is a deliberate
+    departure --- see `turbigen.blade.normal_fraction` --- so holding it off
+    here is what keeps this a test of the port rather than of that decision.
     """
     machine = machine_perpendicular
     old = old_blade(machine, i_row, dchi_LE=dchi_LE)
@@ -628,15 +635,20 @@ def test_camber_line_lies_between_the_surfaces(machine):
         assert np.all(xrt[2, 1:-1] < xrtu[2, 1:-1])
 
 
-def test_camber_line_is_offset_by_the_thickness(machine):
+def test_camber_line_is_offset_by_the_thickness(machine_perpendicular):
     """Each surface stands off it by the thickness the section declares.
 
     Not exactly, and not claimed to be: the offset is applied normal to the
     camber line in the normalised meridional plane and then wrapped onto a
     radius, so an annulus that changes radius stretches it slightly. Within a
     thousandth of chord against a thickness a hundred times that.
+
+    With the pressure-side blend off. Sharing a thickness between two
+    directions that are not at right angles puts the surface less than that
+    thickness from the camber line, so the blend is a statement about where
+    the thickness goes, not about this distance.
     """
-    blade = machine.rows[0].blade
+    blade = machine_perpendicular.rows[0].blade
     m = turbigen.util.cluster_cosine(2001)
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
@@ -651,13 +663,14 @@ def test_camber_line_is_offset_by_the_thickness(machine):
             np.testing.assert_allclose(offset, expected, atol=2e-3 * chord)
 
 
-def test_camber_line_is_equidistant_from_a_symmetric_section(machine):
+def test_camber_line_is_equidistant_from_a_symmetric_section(machine_perpendicular):
     """The two surfaces stand off it equally, carrying equal thickness.
 
     Which is what makes it the *camber* line rather than any other curve
-    drawn down the middle of the aerofoil.
+    drawn down the middle of the aerofoil. With the pressure-side blend off,
+    for the reason `test_camber_line_is_offset_by_the_thickness` gives.
     """
-    blade = machine.rows[0].blade
+    blade = machine_perpendicular.rows[0].blade
     m = turbigen.util.cluster_cosine(2001)
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
@@ -707,10 +720,9 @@ def test_camber_line_is_near_the_mean_of_the_surfaces(machine):
 
     **The mean of the two surfaces is not the camber line.** It was within a
     thousandth of chord when both surfaces were offset perpendicular, and it
-    is three hundredths of chord at the `fac_tangential` the sections default
-    to, because only the pressure surface is rotated and nothing on the
-    suction side moves to cancel it. Three per cent of chord and rising with
-    `fac_tangential`: 1.2 per cent at 0.3, 2.9 at 0.7, 4.0 at 1.0.
+    is three and a half hundredths of chord with the pressure-side blend,
+    because only the pressure surface puts thickness on circumferentially and
+    nothing on the suction side moves to cancel it.
 
     Which matters outside this file. `turbigen.post` draws its meridional
     camber line as the mean of the two surfaces, and now carries that error;
@@ -806,6 +818,16 @@ def test_a_symmetric_thickness_answers_with_the_same_number_twice():
     np.testing.assert_array_equal(lower, thickness.thick(m))
 
 
+def test_a_taylor_thickness_carries_the_trailing_edge_ramp():
+    """Half the trailing edge at `m = 1`, and nothing else left there."""
+    thickness = Taylor(**{k: v for k, v in THICKNESS.items() if k != "type"})
+    m = np.linspace(0.0, 1.0, 101)
+
+    np.testing.assert_allclose(thickness.ramp_TE(m), m * THICKNESS["t_TE"] / 2.0)
+    rest = thickness.thick(1.0) - thickness.ramp_TE(1.0)
+    assert rest == pytest.approx(0.0, abs=1e-15)
+
+
 def test_each_surface_is_offset_by_its_own_thickness(machine):
     """The point of the pair: the two sides need not agree.
 
@@ -862,11 +884,13 @@ def test_a_lopsided_section_is_not_the_mean_of_its_surfaces(machine):
 
 
 #
-# THE TANGENTIAL BLEND
+# THE PRESSURE-SIDE BLEND
 #
-# The offset direction is the camber normal rotated toward the circumferential
-# one over mid-chord. These check the two things that buys -- a concave surface
-# that is not over-curved, and two ends left exactly where they were.
+# The pressure surface shares its thickness between the camber normal and the
+# circumferential direction, perpendicular at both ends and mostly
+# circumferential over mid-chord. These check what that buys -- a concave
+# surface that is neither over-curved nor folded -- and what it must not cost:
+# the suction surface, both ends and the nose radius.
 #
 
 
@@ -884,96 +908,146 @@ def _plane(blade, spf=0.5, n=8001):
     return [s / chord for s in surfaces]
 
 
-def _thick_blade(fac_tangential):
+def _plane_perpendicular(blade, monkeypatch):
+    """:func:`_plane` with the blend taken off for the one evaluation."""
+    with monkeypatch.context() as patch:
+        patch.setattr(turbigen.blade, "normal_fraction", _all_perpendicular)
+        return _plane(blade)
+
+
+def _thick_blade(t_max=0.30):
     """A section thick enough on a camber curved enough to over-curve.
 
     The failure needs `t * kappa` to approach one, which the default section is
-    nowhere near; this is the turning and the thickness that get there.
+    nowhere near; this is the turning and the thickness that get there. At the
+    default the perpendicular offset spikes, and by 0.4 it folds.
     """
-    section = {"fac_tangential": fac_tangential}
-    thickness = {**THICKNESS, "t_max": 0.30, "m_tmax": 0.35}
-    return build(
-        blades=[
-            blade(dchi_LE=-30.0, section={**section, "thickness": thickness}),
-            blade(dchi_LE=2.0, section=section),
-        ]
-    ).design()
+    thickness = {**THICKNESS, "t_max": t_max, "m_tmax": 0.35}
+    return (
+        build(
+            blades=[
+                blade(dchi_LE=-30.0, section={"thickness": thickness}),
+                blade(dchi_LE=2.0),
+            ]
+        )
+        .design()
+        .rows[0]
+        .blade
+    )
 
 
-def test_the_blend_takes_the_spike_out_of_the_concave_surface():
+def _peak_curvature(surface):
+    """Largest curvature magnitude over the middle of a surface.
+
+    Resampled on arc length, so the window is the same piece of blade whichever
+    way the offset moved the nodes. A magnitude, since which sign the spike
+    takes is the section's business, not the blend's.
+    """
+    z = np.linspace(0.0, 1.0, 4001)
+    s = np.concatenate(([0.0], np.cumsum(np.hypot(*np.diff(surface, axis=1)))))
+    resampled = np.stack([np.interp(z, s / s[-1], c) for c in surface])
+    mid = (z > 0.15) & (z < 0.60)
+    return np.abs(_curvature(resampled)[mid]).max()
+
+
+def test_the_perpendicular_fraction_is_one_at_both_ends():
+    np.testing.assert_allclose(turbigen.blade.normal_fraction([0.0, 1.0]), 1.0)
+
+
+def test_the_perpendicular_fraction_is_a_fraction():
+    f = turbigen.blade.normal_fraction(np.linspace(0.0, 1.0, 1001))
+    assert np.all(f >= 0.0) and np.all(f <= 1.0)
+
+
+def test_the_perpendicular_fraction_has_gone_by_mid_chord():
+    """Where the camber curvature peaks, which is where the offset folds."""
+    f = turbigen.blade.normal_fraction(np.linspace(0.3, 0.6, 31))
+    assert np.all(f < 0.15)
+
+
+def test_the_blend_takes_the_spike_out_of_the_concave_surface(monkeypatch):
     """What the blend is for: a perpendicular offset over-curves that side.
 
     An offset surface carries the camber's curvature amplified by
     `1 / (1 - t kappa)`, so a thick section on a curved camber line grows a
     curvature spike well before the offset folds at `t kappa = 1`, and the
-    Mach distribution kinks over it.
+    Mach distribution kinks over it. It falls by about seven times here.
     """
-    z = np.linspace(0.0, 1.0, 4001)
-    mid = (z > 0.15) & (z < 0.60)
-
-    def peak(fac):
-        # The concave surface, resampled on arc length so the window is the
-        # same piece of blade whichever way the offset moved the nodes.
-        surface = _plane(_thick_blade(fac).rows[0].blade)[1]
-        s = np.concatenate(([0.0], np.cumsum(np.hypot(*np.diff(surface, axis=1)))))
-        resampled = np.stack([np.interp(z, s / s[-1], c) for c in surface])
-        return np.abs(_curvature(resampled)[mid]).max()
-
-    # Which sign the spike takes is the section's business, not the blend's,
-    # so this is a magnitude. It falls by about three times on this section.
-    assert peak(0.3) < 0.5 * peak(0.0)
+    blade = _thick_blade()
+    blended = _peak_curvature(_plane(blade)[1])
+    plain = _peak_curvature(_plane_perpendicular(blade, monkeypatch)[1])
+    assert blended < 0.25 * plain
 
 
-def test_the_blend_leaves_the_convex_surface_alone():
-    """Only the pressure surface is rotated, and this is what says so.
+def test_the_blend_unfolds_a_section_the_offset_folds(monkeypatch):
+    """Past `t kappa = 1` the perpendicular offset runs backwards; this does not.
+
+    Measured as the pressure surface running backwards in `x` over the middle
+    nine tenths of its points, clear of the nose, where it wraps round.
+    """
+    blade = _thick_blade(t_max=0.45)
+
+    def least_step(surface):
+        x = surface[0]
+        inner = slice(len(x) // 20, -len(x) // 20)
+        return np.diff(x[inner]).min()
+
+    assert least_step(_plane_perpendicular(blade, monkeypatch)[1]) < 0.0
+    assert least_step(_plane(blade)[1]) > 0.0
+
+
+def test_the_blend_leaves_the_convex_surface_alone(monkeypatch):
+    """Only the pressure surface is blended, and this is what says so.
 
     The amplification is a concave-side effect --- the convex side has its
     curvature divided by `1 + t kappa` rather than multiplied --- so there is
-    nothing on the suction surface for the blend to take out, and rotating it
-    would only add the term in the weight's own gradient.
+    nothing on the suction surface for the blend to take out.
 
-    Not asserted bit-exact: the suction surface never reads `fac_tangential`,
-    but the aerofoil is rescaled onto the row by how far *either* surface
-    overhangs the camber line, so a section whose pressure surface sets that
-    overhang carries the blend across as a rescaling.
+    Exact, not just close. The aerofoil is rescaled onto the row by how far
+    either surface overhangs the camber line, which could carry the blend
+    across as a rescaling --- but the overhang is set at the ends, where the
+    blend is perpendicular.
     """
-    plain = _plane(_thick_blade(0.0).rows[0].blade)[0]
-    for fac in (0.3, 1.0):
-        np.testing.assert_allclose(
-            _plane(_thick_blade(fac).rows[0].blade)[0], plain, atol=1e-4
-        )
-
-
-def test_the_blend_leaves_both_ends_alone():
-    """The nose radius and the trailing edge are what they say they are.
-
-    The weight and its slope vanish at both ends, which is the whole reason
-    for a bump rather than Clark's ramp: a blade blended at the trailing edge
-    is cut off at constant axial position and its wedge angle stops meaning
-    anything.
-    """
-    plain = _plane(_thick_blade(0.0).rows[0].blade)
-    blended = _plane(_thick_blade(0.3).rows[0].blade)
-
-    # Not bit-exact: the aerofoil is rescaled onto the row by how far its
-    # surfaces overhang the camber line, and the blend moves that overhang a
-    # little. A ten-thousandth of chord, against the seven thousandths the
-    # middle of the same section moves, is the ends staying put.
-    for i_surface in (0, 1):
-        np.testing.assert_allclose(
-            blended[i_surface][:, (0, -1)],
-            plain[i_surface][:, (0, -1)],
-            atol=1e-4,
-        )
-
-    nose = slice(20, 120)
+    blade = _thick_blade()
     np.testing.assert_allclose(
-        _curvature(blended[0])[nose], _curvature(plain[0])[nose], rtol=2e-2
+        _plane(blade)[0], _plane_perpendicular(blade, monkeypatch)[0], atol=1e-12
     )
 
 
+def test_the_blend_leaves_both_ends_alone(monkeypatch):
+    """The trailing edge and the leading edge point are exactly the offset's.
+
+    Perpendicular at both ends, so the trailing edge is the thickness it says
+    and leaves symmetrically about the camber line, and the wedge angle keeps
+    its meaning.
+    """
+    blade = _thick_blade()
+    blended = _plane(blade)
+    plain = _plane_perpendicular(blade, monkeypatch)
+    for i_surface in (0, 1):
+        np.testing.assert_allclose(
+            blended[i_surface][:, (0, -1)], plain[i_surface][:, (0, -1)], atol=1e-12
+        )
+
+
+def test_the_blend_keeps_the_nose_radius(monkeypatch):
+    """The pressure side's curvature tends to the perpendicular offset's at the nose.
+
+    Only in the limit. The perpendicular fraction falls away from the leading
+    edge at once, so the pressure side's shoulder flattens a little sooner
+    than the plain offset's: by a per cent a hundred-thousandth of chord
+    behind the nose, five per cent at five ten-thousandths. The radius at the
+    leading edge itself, which is what `R_LE` states, is unchanged.
+    """
+    blade = _thick_blade()
+    blended = _curvature(_plane(blade)[1])
+    plain = _curvature(_plane_perpendicular(blade, monkeypatch)[1])
+    nose = slice(2, 20)
+    np.testing.assert_allclose(blended[nose], plain[nose], rtol=1e-2)
+
+
 def test_no_blend_is_the_perpendicular_offset(machine_perpendicular):
-    """Zero leaves the surfaces exactly where the plain offset puts them."""
+    """With the blend off, the surfaces are exactly where the plain offset puts them."""
     blade = machine_perpendicular.rows[0].blade
     m = turbigen.util.cluster_cosine(501)
 
@@ -984,35 +1058,6 @@ def test_no_blend_is_the_perpendicular_offset(machine_perpendicular):
     for surface, t in zip(blade.evaluate_section(0.5, m=m), thickness.thick_both(m)):
         offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(camber))
         np.testing.assert_allclose(offset, t * chord, atol=2e-3 * chord)
-
-
-def test_the_blend_is_interpolated_across_span():
-    """A per-section field, read where a section is asked for, as `dchi` is."""
-    blended = blade()
-    for section, fac in zip(blended["sections"], (0.0, 0.2, 0.4)):
-        section["fac_tangential"] = fac
-    row = build(blades=[blended, blade(dchi_LE=2.0)]).design().rows[0].blade
-
-    for spf, expected in zip(SPF, (0.0, 0.2, 0.4)):
-        assert row.evaluate_fac_tangential(spf) == pytest.approx(expected)
-
-    between = 0.5 * (SPF[0] + SPF[1])
-    assert 0.0 < row.evaluate_fac_tangential(between) < 0.2
-
-
-@pytest.mark.parametrize("fac_tangential", [-0.1, 1.5])
-def test_a_blend_off_the_end_of_its_range_is_rejected(fac_tangential):
-    with pytest.raises(ValueError, match="fac_tangential must satisfy"):
-        SectionDesign.from_dict(
-            {
-                "spf": 0.5,
-                "dchi_LE": 0.0,
-                "dchi_TE": 0.0,
-                "camber": CAMBER,
-                "thickness": THICKNESS,
-                "fac_tangential": fac_tangential,
-            }
-        )
 
 
 #
@@ -1093,7 +1138,7 @@ def test_a_flat_blade_keeps_a_stable_surface_order(machine):
     flat = dataclasses.replace(blade, dchi=dchi)
 
     assert abs(np.diff(flat.evaluate_chi(0.5)).item()) < turbigen.blade.FLAT_TURNING
-    assert flat._suction_is_upper
+    assert flat.suction_is_upper
 
 
 def test_arc_length_defaults_to_a_clustered_m(machine):

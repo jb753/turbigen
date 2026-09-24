@@ -10,7 +10,8 @@ blade built from one has to count, shape and mesh like any other.
 
 import numpy as np
 import pytest
-from test_blade import SPF, blade, build
+import turbigen.blade
+from test_blade import SPF, _all_perpendicular, blade, build
 
 from turbigen import ClarkThickness, ThicknessDesign, shapespace
 
@@ -80,6 +81,34 @@ def test_each_surface_carries_half_the_trailing_edge():
     upper, lower = design().thick_both(1.0)
     assert upper == pytest.approx(CLARK["t_TE"] / 2.0, abs=1e-15)
     assert lower == pytest.approx(CLARK["t_TE"] / 2.0, abs=1e-15)
+
+
+def test_the_trailing_edge_ramp_is_linear():
+    """Half the trailing edge at `m = 1`, nothing at the nose, straight between."""
+    np.testing.assert_allclose(design().ramp_TE(M), M * CLARK["t_TE"] / 2.0)
+
+
+def test_the_trailing_edge_ramp_is_all_that_is_left_at_the_trailing_edge():
+    """What the ramp does not cover closes there, on both surfaces.
+
+    So a blade that hangs the ramp perpendicular and blends the rest leaves
+    the trailing edge the thickness it says whatever the blend.
+    """
+    thickness = design()
+    for t in thickness.thick_both(M):
+        rest = t - thickness.ramp_TE(M)
+        assert rest[0] == pytest.approx(0.0, abs=1e-15)
+        assert rest[-1] == pytest.approx(0.0, abs=1e-15)
+
+
+def test_a_distribution_with_no_ramp_of_its_own_has_none():
+    """The base answer: all of its thickness is blended."""
+
+    class Plain(ThicknessDesign):
+        def thick(self, m):
+            return np.sqrt(m) * (1.0 - m)
+
+    np.testing.assert_array_equal(Plain().ramp_TE(M), np.zeros_like(M))
 
 
 def test_both_surfaces_share_the_nose_radius():
@@ -205,19 +234,17 @@ def test_round_trips_through_a_config_dict():
 #
 
 
-def test_a_clark_blade_is_shaped_and_counted():
+def test_a_clark_blade_is_shaped_and_counted(monkeypatch):
     """A row of these is a row like any other, as far as the rest goes.
 
     Built on the perpendicular offset, which is what leaves the lopsidedness
-    below a statement about the thickness. The blend the sections default to
-    rotates the pressure surface toward the circumferential direction and so
-    lengthens its `theta` departure without changing how thick that side is
-    --- see `turbigen.blade.SectionDesign.fac_tangential`.
+    below a statement about the thickness. The pressure-side blend puts most
+    of that side's thickness on circumferentially and so lengthens its `theta`
+    departure without changing how thick that side is --- see
+    `turbigen.blade.normal_fraction`.
     """
-    rows = blades()
-    for section in rows[0]["sections"]:
-        section["fac_tangential"] = 0.0
-    machine = build(blades=rows).design()
+    monkeypatch.setattr(turbigen.blade, "normal_fraction", _all_perpendicular)
+    machine = build(blades=blades()).design()
     row = machine.rows[0]
 
     assert row.n_blade > 0
@@ -249,6 +276,45 @@ def test_clark_sections_interpolate_over_the_span():
     # and the blade should read the same thing there.
     _, thickness = machine.rows[0].blade._get_cam_thick(SPF[1])
     assert thickness.coeff == ((0.4, 0.2), (0.2, 0.6))
+
+
+@pytest.mark.parametrize("i_surface", [0, 1])
+def test_each_coefficient_acts_where_it_is_sampled(i_surface):
+    """A coefficient moves its surface most near its own control point.
+
+    What `turbigen.iterate.ClarkProfile` relies on: it reads the loading at
+    `m_ctl`, mapped onto each surface's fraction of length, as the error for
+    the coefficient that acts there. Checked on a finished blade, so the
+    annulus lift, the leading-to-trailing edge rescaling and the pressure-side
+    blend are all in it. The blend is what moves the pressure side's peaks:
+    a circumferential push moves a staggered surface partly along itself, so
+    each peak sits a little ahead of its sample, three and a half hundredths
+    of surface length here against under a thousandth with the blend off.
+    """
+    order = design().order
+    m = np.linspace(0.0, 1.0, 4001)
+
+    def surface(coeff):
+        thickness = {**CLARK, "coeff": coeff}
+        blade = build(blades=blades([thickness] * len(SPF))).design().rows[0].blade
+        xrt = blade.evaluate_section(0.5, m=m)[i_surface]
+        return blade, np.stack((xrt[0], xrt[1] * xrt[2]))
+
+    blade, plain = surface(CLARK["coeff"])
+    _, s = blade.evaluate_arc_length(0.5, m=m)
+    z = s[i_surface] / s[i_surface][-1]
+
+    tangent = np.gradient(plain, axis=1)
+    normal = np.stack((-tangent[1], tangent[0])) / np.hypot(*tangent)
+
+    for k in range(1, order):
+        coeff = [list(row) for row in CLARK["coeff"]]
+        coeff[i_surface][k - 1] += 1e-3
+        _, moved = surface(coeff)
+        push = np.abs(np.sum((moved - plain) * normal, axis=0))
+        z_peak = z[np.argmax(push)]
+        z_ctl = np.interp(design().m_ctl[k], m, z)
+        assert abs(z_peak - z_ctl) < 0.05
 
 
 def test_a_clark_blade_meshes():

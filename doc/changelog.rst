@@ -4,7 +4,7 @@ Changelog
 v3.1.0
 ^^^^^^
 
-* Add ``fac_tangential`` to blend perpendicular and tangential thickness distributions
+* Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold
 * Improve H-meshing in pinched tips, and add experimental gridded tip
 * Add H-mesh setting to control aspect ratio at mixing planes
 * Add Bernstein and circluar-arc, camber lines

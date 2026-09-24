@@ -722,6 +722,36 @@ def test_an_unmeasurable_section_says_where_it_is(config, monkeypatch):
     assert "clearance gap" in str(raised.value)
 
 
+def test_an_incidence_target_is_onto_the_pressure_surface_on_every_row(
+    config, monkeypatch
+):
+    """One target, the same physical incidence on rows turning opposite ways.
+
+    The two rows here do: the metal angle rises through the first and falls
+    through the second. Flow arriving from the pressure side of the metal is
+    then below it on the first row and above it on the second, so a positive
+    target is met by flow less metal of opposite signs.
+    """
+    machine = config.design()
+    rows = machine.rows
+    assert not rows[0].blade.suction_is_upper
+    assert rows[1].blade.suction_is_upper
+
+    target = 5.0
+    onto_pressure = {0: -target, 1: target}
+    monkeypatch.setattr(turbigen.util, "cut_blade_surfs", lambda grid: [None, None])
+    monkeypatch.setattr(
+        iterate,
+        "_incidence",
+        lambda result, surface, i_row, *a, **k: onto_pressure[i_row],
+    )
+
+    result = Result(machine=machine, grid=object())
+    errors = iterate.Incidence(target=target).error(config, result)
+    assert errors
+    assert all(e == pytest.approx(0.0) for e in errors.values())
+
+
 def test_a_move_too_small_to_learn_from_is_ignored():
     """Below the threshold a secant reports noise, so the prior stands."""
     config = dataclasses.replace(

@@ -1213,6 +1213,16 @@ class Incidence(Iterator):
     with N sections has N independent leading-edge angles, and each should meet
     the flow it actually sees. Collapsing them to a mean nulls the incidence at
     one span and leaves the rest with whatever the starting distribution gave.
+
+    **Positive onto the pressure surface, on every row.** What the blade
+    measures is the flow angle less the metal angle, and that has the sign of
+    the angles rather than of the aerofoil: the same number is incidence onto
+    the pressure surface of a row whose metal angle falls and onto the suction
+    surface of one whose angle rises. So :attr:`target` is turned into that
+    frame row by row, by the blade's own reading of which side its pressure
+    surface is on (:attr:`~turbigen.blade.Blade.suction_is_upper`), and the
+    error stays in the frame the measurement and :attr:`gain` are in --- which
+    is what lets one negative gain serve rows turning either way.
     """
 
     type: ClassVar[str] = "incidence"
@@ -1227,7 +1237,12 @@ class Incidence(Iterator):
     """
 
     target: float = 0.0
-    """Incidence to aim for [deg]."""
+    """Incidence to aim for, positive onto the pressure surface [deg].
+
+    The same physical incidence on every row, whichever way it turns: a
+    positive target asks for flow arriving from the pressure side of the
+    metal angle, the side that demands more turning.
+    """
 
     # Negative because incidence falls as the recamber rises. Small because
     # the stagnation point moves several degrees for one degree of metal.
@@ -1303,9 +1318,25 @@ class Incidence(Iterator):
                     f"either the march is not a flow field, or the section sits "
                     f"in the gap and belongs below it."
                 )
-            measured[f"dchi_LE[{i_row}][{i_section}]"] = incidence - self.target
+            measured[f"dchi_LE[{i_row}][{i_section}]"] = (
+                incidence - self._target_measured(result, i_row)
+            )
 
         return measured
+
+    def _target_measured(self, result, i_row):
+        """Return :attr:`target` as the flow angle less the metal angle [deg].
+
+        Onto the pressure surface means flow arriving from the lower-angle side
+        of the metal where the angle rises through the row, and from the
+        higher-angle side where it falls, so the sign flips with the turning.
+        Read off the blade's own assignment of its surfaces rather than off
+        the turning at this section, so that "pressure surface" is the one the
+        pressure-side thickness was hung on even on a blade twisted enough for
+        a section to turn the other way.
+        """
+        blade = result.machine.rows[i_row].blade
+        return self.target if blade.suction_is_upper else -self.target
 
 
 def _incidence(result, surface, i_row, spf, tolerance=0.0):
@@ -1511,8 +1542,8 @@ class ClarkProfile(RowIterator):
     them by 0.05 to 0.1. Secants learned from that swung between +2.8 and
     -1.3 for one knob over two runs, and twice discharged as a full clip on
     every knob the wrong way. The slopes those runs measured were 0.2 to 1.5,
-    so a :attr:`gain` of one is within the factor of two a fixed
-    step needs to converge, and needs no improving.
+    so a fixed :attr:`gain` of a half converges with margin wherever those
+    slopes hold, and needs no improving.
 
     **`Co`**, because its error is in the units of the knob, so its slope is
     one by definition, which is what :attr:`gain_Co` asserts. What Broyden
@@ -1581,7 +1612,7 @@ class ClarkProfile(RowIterator):
     trailing edge value rather than about the inlet.
     """
 
-    gain: float | tuple[float, ...] = 1.0
+    gain: float | tuple[float, ...] = 0.5
     """How much of the error to subtract from each shape knob.
 
     **One number covers every shape knob**, which is the whole reason the knobs
@@ -1597,7 +1628,12 @@ class ClarkProfile(RowIterator):
     *size* is still a guess, and kept for the whole run: see :attr:`learns`.
     A step `-gain * e` converges while `gain` times the true slope is between
     zero and two, and the slopes measured are 0.2 to 1.5, so one is about as
-    large as it can safely be.
+    large as it can be in theory. **In practice it is too large, so a half.**
+    The margin from 1.5 to two is small beside the noise a restarted field and
+    a recamber add to each residual. At a gain of one, a turbine stator went
+    sixteen passes with its worst shape residual swinging between 2.5 and 11
+    tolerances and never settling. Restarted from its last design at a half,
+    that residual fell from 3.3 to 1.0 tolerances in two passes.
 
     :attr:`gain_Co` carries the level beside it. The two agree on sign; what
     keeps them apart is that a circulation coefficient and a shape-space

@@ -40,7 +40,6 @@ blades:
   - camber: &id001
       exponent: 2.5
       type: clark
-    fac_tangential: 0.8
     dchi_LE: -3.8269251283198993
     dchi_TE: -0.36185117890377577
     spf: 0.5
@@ -62,7 +61,6 @@ blades:
     type: Co
   sections:
   - camber: *id001
-    fac_tangential: 0.8
     dchi_LE: 3.8777820403154704
     dchi_TE: -1.2395593518273058
     spf: 0.5
