@@ -1305,7 +1305,30 @@ class ClarkProfile(RowIterator):
     with.
     """
 
+    ripple_penalty: float = 0.0
+    """Weight of a smoothness penalty on the interior coefficients [--].
+
+    PROTOTYPE. Zero for none. Adds `ripple_penalty * D'D c` to each interior
+    shape error, `D` the second difference along a surface's coefficients, so
+    the step is also a gradient step on `|D c|^2`. The loading barely sees a
+    coefficient that alternates against its neighbours, so without this such
+    a mode drifts one way every pass under a residual it cannot close.
+    """
+
+    ripple_filter: bool = False
+    """Whether to smooth the interior shape residual before using it [--].
+
+    PROTOTYPE. A (1, 2, 1)/4 filter along each surface's control stations, the
+    ends feeding their neighbours but kept as measured. Its null space is the
+    alternating mode, so a residual the thickness cannot close is neither
+    chased by the step nor counted against convergence.
+    """
+
     def __post_init__(self):
+        if not self.ripple_penalty >= 0.0:
+            raise ValueError(
+                f"ripple_penalty must be non-negative, got {self.ripple_penalty}."
+            )
         if not 0.0 < self.z_peak < 1.0:
             raise ValueError(
                 f"A loading peak sits on the surface, so z_peak must satisfy "
@@ -1515,6 +1538,28 @@ class ClarkProfile(RowIterator):
         loading_LE = float(shape[0][0] - shape[1][0])
         blade = result.machine.rows[self.i_row].blade
         sgn = -1.0 if blade.suction_is_upper else 1.0
+
+        if self.ripple_filter:
+            filtered = shape.copy()
+            filtered[:, 1:-1] = 0.25 * (
+                shape[:, :-2] + 2.0 * shape[:, 1:-1] + shape[:, 2:]
+            )
+            logger.info(
+                f"Row {self.i_row}'s ripple filter removed interior residuals "
+                f"{np.array2string(shape[:, 1:-1] - filtered[:, 1:-1], precision=4)}"
+            )
+            shape = filtered
+
+        if self.ripple_penalty:
+            c = self._coefficients(config)
+            D = np.diff(np.eye(c.shape[1]), 2, axis=0)
+            penalty = np.zeros_like(shape)
+            penalty[:, 1:-1] = self.ripple_penalty * (c @ D.T @ D)[:, 1:-1]
+            logger.info(
+                f"Row {self.i_row}'s ripple penalty adds "
+                f"{np.array2string(penalty[:, 1:-1], precision=4)}"
+            )
+            shape = shape + penalty
 
         errors = {f"Co[{self.i_row}]": level, self._dchi_name: sgn * loading_LE}
         errors |= dict(
