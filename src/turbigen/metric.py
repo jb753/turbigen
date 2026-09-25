@@ -341,3 +341,126 @@ class DiffusionFactor(Metric):
                 out["Co"][i_spf, i_row] = measured.Co
 
         return out
+
+
+class LossBreakdown(Metric):
+    r"""Profile and secondary entropy loss of each row.
+
+    The profile loss is what the stream surface through the middle of the span
+    generates, clear of the endwalls: the band carrying the central `band` of
+    the mass flow, found by mass fraction at the row's inlet and exit planes and
+    mixed out at each,
+
+    .. math::
+        \Delta s_\mathrm{mid} = s_\mathrm{mix}(\text{exit band})
+            - s_\mathrm{mix}(\text{inlet band}) \,.
+
+    The secondary loss is the rest of the row's loss, everything the endwalls,
+    their secondary flows and any tip clearance add to it,
+
+    .. math::
+        \Delta s_\mathrm{sec} = \Delta s_\mathrm{total} - \Delta s_\mathrm{mid} \,,
+
+    where :math:`\Delta s_\mathrm{total}` is the entropy rise across the row in
+    :attr:`~turbigen.result.Result.actual`. That is mixed out at both ends on
+    the same planes, which is why the bands are mixed out too: an average of
+    one against a mix-out of the other would count mixing in one term only.
+
+    **The band is matched by mass fraction, not traced.** The central tenth of
+    the flow at the exit is taken to be the central tenth at the inlet. Where
+    the flow migrates radially through a row it is not quite the same fluid,
+    and the split shifts accordingly.
+
+    **Two normalisations.** A loss coefficient is referred to the row itself,
+
+    .. math::
+        Y = \frac{T_\mathrm{out}\,\Delta s}{\tfrac{1}{2}V_\mathrm{rel}^2} \,,
+
+    with the static temperature at the row's exit and the relative dynamic head
+    at its characteristic station, as the spanwise plot draws :math:`Y_s`. A
+    lost efficiency is referred to the machine, after Denton (1993),
+
+    .. math::
+        \Delta\eta = \frac{T_\mathrm{exit}\,\Delta s}{|\Delta h_0|} \,,
+
+    with the static temperature at the machine exit and the machine's work.
+    The denominator is the same for every row, so lost efficiencies compare
+    across rows and add. Summed over the rows they fall a little short of the
+    machine's own :math:`T_\mathrm{exit}\,\Delta s/|\Delta h_0|`, because the
+    gaps between the rows belong to none of them.
+    """
+
+    type: ClassVar[str] = "loss_breakdown"
+
+    band: float = 0.1
+    """Fraction of the mass flow in the central stream surface [--]."""
+
+    def evaluate(self, config, result):
+        """Return the profile and secondary loss of each row.
+
+        Returns
+        -------
+        dict
+            ``Ys_mid``, ``Ys_sec``, ``Deta_mid`` and ``Deta_sec`` [--], each
+            shaped ``(n_row,)``. NaN for a row whose planes cannot be cut or
+            whose band cannot be mixed out, and the lost efficiencies are NaN
+            throughout on a machine with no rotating row, which does no work.
+        """
+        del config
+
+        grid, machine, actual = result.grid, result.machine, result.actual
+        if grid is None or machine is None or actual is None:
+            return {}
+        if result.history is not None and getattr(result.history, "diverged", False):
+            return {}
+
+        planes = machine.annulus.cut_planes()
+        lo, hi = 0.5 - 0.5 * self.band, 0.5 + 0.5 * self.band
+
+        n_row = len(grid.rows)
+        Ds_mid = np.full(n_row, np.nan)
+        for i_row in range(n_row):
+            try:
+                s_in, s_out = (
+                    _band_entropy(grid, planes[2 * i_row + i], lo, hi) for i in (0, 1)
+                )
+            except (ValueError, RuntimeError, AssertionError) as err:
+                logger.debug(f"Row {i_row} has no band loss to measure: {err}")
+                continue
+            Ds_mid[i_row] = s_out - s_in
+
+        Ds_total = np.asarray(actual.s[1] - actual.s[0], dtype=float)
+        Ds_sec = Ds_total - Ds_mid
+
+        # One dynamic head per row, for the row's own loss coefficient.
+        Y_per_Ds = np.array(
+            [
+                float(actual[:, i_row].T[-1])
+                / float(actual.get_characteristic_station(i_row).halfVsq_rel)
+                for i_row in range(n_row)
+            ]
+        )
+
+        # One work for the whole machine, so every row's lost efficiency is in
+        # the same currency. A machine that does not rotate does no work, and
+        # its enthalpy change is round-off that must not be divided by.
+        if all(float(blocks[0].Omega) == 0.0 for blocks in grid.rows):
+            eta_per_Ds = np.nan
+        else:
+            eta_per_Ds = float(actual.outlet.T) / abs(float(actual.Dho))
+
+        return {
+            "Ys_mid": Y_per_Ds * Ds_mid,
+            "Ys_sec": Y_per_Ds * Ds_sec,
+            "Deta_mid": eta_per_Ds * Ds_mid,
+            "Deta_sec": eta_per_Ds * Ds_sec,
+        }
+
+
+def _band_entropy(grid, xr, lo, hi):
+    """Return the mixed-out entropy of the band `lo..hi` of mass on a plane."""
+    cut = turbigen.util.cut_structured(grid, xr)
+    if cut is None:
+        raise ValueError(f"The plane at {np.asarray(xr).tolist()} misses the grid.")
+    band = ember.average.mass_band(cut, lo, hi, axis=0)
+    return float(ember.average.mix_out(band).s)

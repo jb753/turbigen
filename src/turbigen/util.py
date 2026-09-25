@@ -1026,6 +1026,42 @@ def cut_band(block, xr_cut, stride=SCAN_STRIDE, pad=BAND_PAD):
     )
 
 
+N_CUT_SPAN = 113
+"""Spanwise nodes a meridional cut is regridded onto by :func:`cut_structured`.
+
+Brute force: well beyond any practical mesh, so the regrid resolves whatever
+the solution holds rather than setting a resolution of its own.
+"""
+
+N_CUT_PITCH = 137
+"""Pitchwise nodes a meridional cut is regridded onto by :func:`cut_structured`."""
+
+
+def cut_structured(grid, xr_cut):
+    """Return the meridional cut of `grid` along `xr_cut`, regridded structured.
+
+    :func:`ember.cut.unstructured` then
+    :func:`ember.cut.interpolate_to_structured`, onto ``(N_CUT_SPAN,
+    N_CUT_PITCH)`` nodes: index 0 runs along the cut line, hub to casing, and
+    index 1 in theta over one pitch.
+
+    Returns
+    -------
+    ember.block.Block or None
+        The structured cut, or None if no block reaches the line.
+
+    Raises
+    ------
+    ValueError
+        If the cut cannot be regridded, as for a line between two rows of
+        different blade count, which has no single pitch to wrap theta by.
+    """
+    cut = ember.cut.unstructured(grid, xr_cut)
+    if cut is None:
+        return None
+    return ember.cut.interpolate_to_structured(cut, (N_CUT_SPAN, N_CUT_PITCH))
+
+
 def cut_spanwise(grid, xr_cut):
     """Return the constant-span cut of `grid` along the curve `xr_cut`.
 

@@ -32,7 +32,6 @@ from typing import ClassVar
 
 import ember.average
 import ember.block_util
-import ember.cut
 import ember.util
 import numpy as np
 
@@ -1040,30 +1039,20 @@ class SpanwisePlot(Post):
 
         figures = []
         for m in self.m_cut:
-            cut = ember.cut.unstructured(
-                result.grid, annulus.evaluate_xr(m, [0.0, 1.0]).T
-            )
-            if cut is None:
-                logger.info(f"No block reaches m={m}, skipping its spanwise plot.")
-                continue
-
-            i_row = _cut_row(m, annulus.n_row)
-
-            # Resolved at the mesh's own resolution rather than an invented
-            # one. A block is (streamwise, pitchwise, spanwise) and a cut is
-            # (meridional, theta), so the spanwise count leads.
-            # _, nj, nk = result.grid.rows[i_row][0].shape
-            nj = 137
-            nk = 113
+            xr = annulus.evaluate_xr(m, [0.0, 1.0]).T
             try:
-                structured = ember.cut.interpolate_to_structured(cut, (nk, nj))
+                structured = turbigen.util.cut_structured(result.grid, xr)
             except ValueError as err:
                 # A plane placed between two rows of different blade count has
                 # no single pitch to wrap theta by. That is a bad cut, not a
                 # broken report, so the other planes still get drawn.
                 logger.info(f"Could not interpolate the cut at m={m}: {err}")
                 continue
+            if structured is None:
+                logger.info(f"No block reaches m={m}, skipping its spanwise plot.")
+                continue
 
+            i_row = _cut_row(m, annulus.n_row)
             values, label = self._profile(structured, result.actual, i_row)
             figures.append(
                 self._draw(plt, values, _cut_spf(structured), label, m, i_row)

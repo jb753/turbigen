@@ -143,6 +143,10 @@ metrics:
   # edge, which says whether the blade count suits the loading.
   - type: diffusion_factor
     spf: [0.5]
+  # Each row's loss split into profile, from the stream surface carrying the
+  # central tenth of the mass flow, and secondary, the rest of it.
+  - type: loss_breakdown
+    band: 0.1
 
 batch:
   bounds:
