@@ -5,6 +5,8 @@ v3.1.0
 ^^^^^^
 
 * Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold
+* Step every iterator on its declared gain, and drop the Broyden update, which no iterator used
+* Let ``clark_profile`` recamber the leading edge against the difference in nose loading, in place of an ``incidence`` iterator
 * Improve H-meshing in pinched tips, and add experimental gridded tip
 * Add H-mesh setting to control aspect ratio at mixing planes
 * Add Bernstein and circluar-arc, camber lines

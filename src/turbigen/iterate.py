@@ -15,9 +15,10 @@ in :func:`step`, over a flat table assembled from all of them::
     dchi_LE[1]          +0.85    -0.12    -1.0   2.0   1.0
     mean_line.Ys[0]      0.05    -0.004    0.5    -    0.005
 
-After assembly the iterators disappear, so a better step rule --- a secant, or
-one warm-started from a fit over previous runs --- is a change to :func:`step`
-alone, and touches no iterator. That table is also what such a fit would
+After assembly the iterators disappear, and the step is ``u -= gain * e`` on
+every knob, clipped. A better step rule --- one warm-started from a fit over
+previous runs, say --- is a change to :func:`step` alone, and touches no
+iterator. That table is also what such a fit would
 consume, which is why every run records its errors whether or not anything is
 iterating.
 
@@ -28,7 +29,6 @@ Here an iterator returns a new config and owns no state at all.
 """
 
 import dataclasses
-import itertools
 import logging
 from typing import ClassVar
 
@@ -70,34 +70,6 @@ class MeasurementError(Exception):
 TINY = 1e-9
 """Below this a nominal value is treated as zero when something is relative to it."""
 
-DU_MIN = 0.25
-"""Smallest move, in tolerance-equivalent steps, that may update the Jacobian.
-
-The slope a secant infers has error of order `noise / du`, and the errors here
-are measured from a march that is only partly converged --- the same deviation
-slope read +1.27 from a 200-step solve and about +0.3 from a 50-step one. A
-quarter of a step is where an update stops saying more than the noise does.
-"""
-
-DU_PIN = 0.1
-"""Below this a knob counts as not having moved, in tolerance-equivalent steps.
-
-Per knob, where :data:`DU_MIN` is per block. A knob its geometry would not let
-move --- a nose against its ``R_LE_lim`` bound, a thickness the mesher refuses
---- sits here while the rest of its block strides on. Its secant row is then a
-frozen residual measured over someone else's move, which the update learns as
-real coupling, and its column is a near-singular direction that amplifies the
-block's Newton step. Held out of both until it moves again, it falls back to
-the decoupled prior-gain step the same way a singular block does.
-"""
-
-COND_MAX = 1e6
-"""Above this condition number the Jacobian is not trusted to be inverted."""
-
-FLAT = 0.1
-"""A diagonal below this fraction of its prior counts as a flat response."""
-
-
 class Iterator(Node):
     """Base for design iterators.
 
@@ -138,22 +110,19 @@ class Iterator(Node):
     rises declares a negative gain. Reciprocal of an assumed slope, so it is
     the crudest possible Newton step.
 
-    An input only. A run measures the real slopes and they live in the
-    Jacobian, which :func:`_jacobian` rebuilds from the history on every call;
-    nothing writes one back into a design. A gain written into a config would
-    be read against whatever knobs the *next* design has, and a sequence
-    measured on one blade means nothing on another --- see :meth:`_gain_each`,
-    which refuses the mismatch it can see and cannot see the rest.
+    Kept for the whole run: no step is fitted to the trajectory. Secants
+    learned from a few clipped moves on a partly converged march were
+    dominated by noise, and more than once came out with the wrong sign.
+    Every step is therefore the one the declared gain asserts, and the sign
+    has to follow from what the knob *is*.
 
     **One number or one per knob.** A scalar is a single declared prior, spread
     over every knob the iterator owns; a sequence carries them separately, in
     the order :meth:`unknowns` returns. A design is declared with the scalar,
     because a prior is a statement about a *kind* of knob and the count is
-    rarely known while writing a file; a run measures a slope for each knob and
-    writes back the sequence, because those are genuinely different numbers.
-    Reducing them to one would blend, say, the sensitivity of a recamber at
-    hub and casing, or of a camber coefficient at the front of a blade with one
-    at the back --- measurements of different constants, not repeats of one.
+    rarely known while writing a file. A sequence is matched to the knobs it
+    was written for --- see :meth:`_gain_each`, which refuses the mismatch it
+    can see and cannot see the rest.
     """
 
     clip: float = 0.0
@@ -236,48 +205,6 @@ class Iterator(Node):
         finding out. Reads the design alone: whatever needs a flow field is
         :meth:`error`'s business. Does nothing by default.
         """
-
-    learns: ClassVar[bool] = True
-    """Whether a run improves this iterator's sensitivities, or keeps them.
-
-    True by default: the declared :attr:`gain` is a guess, and the Broyden
-    update spends the run replacing it with what the trajectory measured.
-
-    False where the sensitivity is closer to a definition than to a guess,
-    and the loop is better off taking the step the gain asserts than a step
-    fitted to a handful of near-parallel moves. A block that does not learn
-    keeps `diag(sign(gain))`, and because the scaling folds `|gain|` into
-    `u_scale`, the Newton step on it is exactly `u -= gain * e` --- the step
-    the first iteration takes, kept for all of them.
-
-    **What it gives up.** Broyden recovers within a run from a gain declared
-    with the wrong sign; nothing here does. Only worth setting where the sign
-    follows from what the knob *is*.
-    """
-
-    def blocks(self, config):
-        """Return the Jacobian block each unknown belongs to, by name.
-
-        A block is learned as a unit, so this says what is worth learning
-        together. One block per iterator by default, which is the claim that
-        an iterator's knobs act on its own errors and not usefully on anyone
-        else's.
-
-        Overridden where that is wrong. A blade's recamber and its thickness
-        shape the same leading edge, so a run that moves one and measures the
-        other is measuring a coupling that exists --- and an iterator boundary
-        drawn between them is a claim that it does not.
-        """
-        return {name: id(self) for name in self.unknowns(config)}
-
-    def learning(self, config):
-        """Return whether each unknown's block learns, by name.
-
-        :attr:`learns` for every knob by default. Overridden where one knob's
-        sensitivity is a definition and its neighbours' are guesses; knobs
-        sharing a block have to agree, since a block is updated whole.
-        """
-        return {name: self.learns for name in self.unknowns(config)}
 
     def tolerances(self, config):
         """Return the tolerance on each unknown, by name."""
@@ -474,34 +401,28 @@ def properties(config):
     return gain, clip, tolerance
 
 
-@dataclasses.dataclass(frozen=True)
-class _Table:
-    """The flat table the module docstring draws, ready for arithmetic.
+def step(config, result):
+    """Return the config to try next, from the errors `result` reports.
 
-    Assembled once by :func:`_assembled` so that everything reading a run ---
-    the step it takes and the table it prints --- reads the same names, the
-    same scales and the same Jacobian, rather than two nearly identical
-    assemblies free to drift apart.
+    ``u -= gain * e`` on every knob, each clipped to its own :attr:`~Iterator.
+    clip`. The clip is the trust bound: what keeps a bad early step, taken on
+    a field that has not settled, from throwing the design somewhere it cannot
+    be meshed.
+
+    **Clipped per knob, not scaled as a whole.** Scaling the step until its
+    worst knob is inside its limit hands every knob to whichever one is
+    furthest over: one thickness coefficient marching against its clip every
+    pass once held a circulation coefficient to a fifth of its own step for a
+    whole run.
+
+    Parameters
+    ----------
+    config : Config
+        The design that was run.
+    result : Result
+        What running it achieved.
+
     """
-
-    names: list
-    values: dict
-    measured: dict
-    gain: dict
-    clip: dict
-    u_scale: np.ndarray
-    e_scale: np.ndarray
-    prior: np.ndarray
-    jacobian: np.ndarray
-    blocks: list
-    pinned: np.ndarray
-    """Per knob: did not move on the last iteration, so it is held out of the
-    coupled Newton solve and given the decoupled prior step instead. See
-    :data:`DU_PIN`."""
-
-
-def _assembled(config, result, history):
-    """Return the table for this run, or None when there is nothing to work on."""
     measured = measured_errors(config, result)
     values = unknowns(config)
     gain, clip, tolerance = properties(config)
@@ -520,191 +441,18 @@ def _assembled(config, result, history):
             f"table from a tolerant `errors(..., strict=False)`."
         )
 
-    names = [name for name in values if gain[name] and tolerance[name] > TINY]
-    if not names:
-        return None
+    moved = {}
+    for name in values:
+        if not gain[name] or not tolerance[name] > TINY:
+            continue
+        change = -gain[name] * measured[name]
+        if clip[name]:
+            change = float(np.clip(change, -clip[name], clip[name]))
+        moved[name] = values[name] + change
 
-    # Worked in units of each knob's own tolerance, which is the only scale
-    # declared for it. Degrees of recamber and a loss coefficient otherwise
-    # share one Euclidean norm in the Broyden update, and the update -- being
-    # least-change in that norm -- would spend itself entirely on whichever
-    # variable happened to carry the larger numbers.
-    u_scale = np.array([abs(gain[name]) * tolerance[name] for name in names])
-    e_scale = np.array([tolerance[name] for name in names])
-    prior = np.array([np.sign(gain[name]) for name in names])
-
-    blocks = _blocks(config, names)
-    jacobian = _jacobian(
-        names, prior, history, (values, measured), u_scale, e_scale, blocks
-    )
-    _report_flat(names, jacobian)
-    pinned = _pinned(names, values, history, u_scale)
-
-    return _Table(
-        names=names,
-        values=values,
-        measured=measured,
-        gain=gain,
-        clip=clip,
-        u_scale=u_scale,
-        e_scale=e_scale,
-        prior=prior,
-        jacobian=jacobian,
-        blocks=blocks,
-        pinned=pinned,
-    )
-
-
-def _pinned(names, values, history, u_scale):
-    """Return a mask of the knobs that did not move on the last iteration.
-
-    Read from the trajectory rather than reported by the iterators: the signal
-    is "was told to move and did not", whatever refused it --- an ``R_LE_lim``
-    bound, the meshability guard, a closed section. A knob that has simply
-    converged sits here too, and holding one that is already on its target
-    costs nothing; it rejoins its block the moment its error moves it again.
-    """
-    if not history:
-        return np.zeros(len(names), dtype=bool)
-
-    was = history[-1][0]
-    du = np.array([values[n] - was[n] if n in was else 0.0 for n in names]) / u_scale
-    return np.abs(du) < DU_PIN
-
-
-def _blocks(config, names):
-    """Return the indices into `names` each iterator owns, one array apiece.
-
-    The Jacobian is block-diagonal over these, which is the claim that what
-    the knobs in a block do to its errors is worth learning and what they do
-    to another block's is not. That is not because the cross terms are zero
-    --- a row's exit angle plainly sets the next row's inlet angle --- but
-    because they were never identifiable from the trajectory a run takes: see
-    :func:`step`.
-
-    A block is not an iterator, though it is one by default. Each knob says
-    which block it belongs to, so a coupling worth learning can cross an
-    iterator boundary without the two iterators having to become one --- see
-    :meth:`Iterator.blocks`.
-    """
-    seen, grouped, learns = {}, {}, {}
-    for iterator in config.iterate.correct:
-        learning = iterator.learning(config)
-        for name, key in iterator.blocks(config).items():
-            if name in seen and name in names:
-                raise ValueError(
-                    f"{name} is claimed by both {seen[name]} and "
-                    f"{type(iterator).__name__}, so it belongs to no one block."
-                )
-            seen[name] = type(iterator).__name__
-            grouped.setdefault(key, set()).add(name)
-
-            # Learning is a property of the block, the update being applied to
-            # it whole, so knobs sharing one have to agree. Refused rather
-            # than resolved: either rule -- the doubters win, or the learners
-            # do -- makes `learns` mean something different depending on what
-            # it sits beside, which is worse than a setting that will not load.
-            was = learns.setdefault(key, (learning[name], type(iterator).__name__))
-            if was[0] != learning[name]:
-                raise ValueError(
-                    f"{was[1]} and {type(iterator).__name__} share a Jacobian "
-                    f"block but disagree on whether it learns "
-                    f"({was[0]} against {learning[name]}). A block is updated "
-                    f"whole, so they must agree."
-                )
-
-    blocks = []
-    for key, own in grouped.items():
-        idx = np.array([i for i, name in enumerate(names) if name in own], dtype=int)
-        if idx.size:
-            blocks.append((idx, learns[key][0]))
-    return blocks
-
-
-def step(config, result, history=()):
-    """Return the config to try next, from the errors `result` reports.
-
-    A Newton step on an approximate Jacobian, `B dx = -e`, bounded by the
-    clips. `B` starts as the diagonal the declared gains imply and is improved
-    by a rank-one Broyden update for each previous move. With no history the
-    step is exactly ``u -= gain * e``.
-
-    The Jacobian is block-diagonal over :func:`_blocks`, and each block is
-    solved and bounded on its own.
-
-    **A knob that did not move last iteration is held out of its block**, for
-    example a nose against its ``R_LE_lim`` bound. In the coupled solve it
-    would be a near-singular direction that amplifies the other knobs' steps,
-    so it takes the decoupled prior-gain step instead until it moves again.
-    See :data:`DU_PIN`.
-
-    **Cross-block terms are not learned**, though they are not zero (one row's
-    exit angle sets the next row's incidence). A run has too few, too
-    correlated moves to identify them, and a poorly identified term is worse
-    than the prior.
-
-    Parameters
-    ----------
-    config : Config
-        The design that was run.
-    result : Result
-        What running it achieved.
-    history : sequence
-        Earlier ``(unknowns, errors)`` pairs from this run, oldest first.
-        Numbers only: a `Result` holds a live grid, and keeping one per
-        iteration would pin gigabytes to read a few dozen floats.
-
-    """
-    table = _assembled(config, result, history)
-    if table is None:
+    if not moved:
         logger.debug("Nothing measured to correct towards, so nothing moves.")
         return config
-
-    names, values, _gain, clip = table.names, table.values, table.gain, table.clip
-
-    error = np.array([table.measured[n] for n in names]) / table.e_scale
-
-    # The clip is the trust bound, and the reason a flat response degrades to
-    # the old behaviour rather than to a wild excursion.
-    limit = np.array(
-        [
-            clip[name] / scale if clip[name] else np.inf
-            for name, scale in zip(names, table.u_scale)
-        ]
-    )
-
-    # Solved a block at a time, because a block is meant to be answerable for
-    # itself, and bounded knob by knob --- see `_bounded`. Solving the assembled
-    # block-diagonal in one go is the same arithmetic but hands every knob to
-    # the worst-conditioned block, since `_newton` reads one condition number
-    # and falls back for everything.
-    change = np.zeros(len(names))
-    for idx, _ in table.blocks:
-        # A knob its geometry would not let move last time is held out of the
-        # coupled solve --- in the block it is a near-singular direction that
-        # amplifies everyone else's step --- and falls back to the decoupled
-        # prior-gain step, which the clip bounds. It rejoins the block the
-        # first iteration it moves. All of a block pinned is a singular block,
-        # which is the case `_newton` already degrades to the prior for.
-        held = table.pinned[idx]
-        active, stuck = idx[~held], idx[held]
-
-        if active.size:
-            step_now = _newton(
-                table.jacobian[np.ix_(active, active)],
-                error[active],
-                table.prior[active],
-            )
-            change[active] = _bounded(step_now, limit[active])
-
-        if stuck.size:
-            step_prior = -table.prior[stuck] * error[stuck]
-            change[stuck] = np.clip(step_prior, -limit[stuck], limit[stuck])
-
-    moved = {
-        name: values[name] + change[i] * table.u_scale[i]
-        for i, name in enumerate(names)
-    }
 
     for iterator in config.iterate.correct:
         mine = {
@@ -714,114 +462,6 @@ def step(config, result, history=()):
             config = iterator.with_unknowns(config, mine)
 
     return config
-
-
-def _jacobian(names, prior, history, current, u_scale, e_scale, blocks):
-    """Return the scaled Jacobian, from the prior and every informative move.
-
-    Block-diagonal over `blocks`, and each block carries its own secant
-    condition ``B_k du_k = de_k`` --- the rank-one update is applied to the
-    restricted vectors rather than applied whole and then masked, which would
-    leave a matrix satisfying nothing in particular.
-
-    **Both guards are per block, and that is the point of them being here.**
-    A move is worth learning from when the knobs doing the learning moved, not
-    when something elsewhere in the table did: a shared `DU_MIN` lets a block
-    that barely moved update itself off another block's stride, which is how
-    a Jacobian learns noise.
-
-    Rebuilt from the trajectory on every call rather than carried between
-    calls, so that `step` keeps no state and can be reasoned about one call at
-    a time. It costs a few matrix operations on a handful of numbers.
-    """
-    jacobian = np.diag(prior)
-
-    trajectory = list(history) + [current]
-    for (values, errs), (values_next, errs_next) in itertools.pairwise(trajectory):
-        du_all = np.array([values_next[n] - values[n] for n in names]) / u_scale
-        de_all = np.array([errs_next[n] - errs[n] for n in names]) / e_scale
-
-        for idx, learns in blocks:
-            if not learns:
-                continue
-
-            du, de = du_all[idx], de_all[idx]
-
-            if np.sqrt(du @ du) < DU_MIN:
-                logger.debug("A move too small to learn from, so the block stands.")
-                continue
-
-            # Only the knobs that actually moved carry secant information. One
-            # the geometry pinned has du ~ 0 while its block moved; its row is
-            # a frozen residual over someone else's stride, and learning it is
-            # learning noise as coupling. Restricted to the movers, the update
-            # is the same arithmetic on the sub-block they span.
-            moved = np.abs(du) >= DU_PIN
-            sub = idx[moved]
-            du_m, de_m = du[moved], de[moved]
-
-            length = float(du_m @ du_m)
-            if length == 0.0:
-                continue
-
-            block = jacobian[np.ix_(sub, sub)]
-            jacobian[np.ix_(sub, sub)] = (
-                block + np.outer(de_m - block @ du_m, du_m) / length
-            )
-
-    return jacobian
-
-
-def _bounded(change, limit):
-    """Return `change` with each knob clipped to its own limit.
-
-    **Clipped per knob, not scaled as a whole.** Scaling the step until its
-    worst knob is inside its limit keeps the Newton direction, but it hands
-    every knob in a block to whichever one is furthest over. An aerofoil block
-    carries a circulation coefficient, a recamber and eleven thickness
-    coefficients, and one thickness coefficient marching against its clip
-    every pass held the circulation to a fifth or less of the step its own
-    clip allowed, for the whole run.
-
-    The direction kept by scaling was also rarely worth keeping there: with no
-    history the Jacobian is diagonal, so each component is already its own
-    answer, and once Broyden has run, a Newton step many clips outside the box
-    is an extrapolation of a linear model far beyond where it was learned.
-
-    The price is the direction when the Jacobian is right. A step over the
-    limit in two coupled knobs at once is projected onto a corner of the box,
-    which keeps its sign pattern and none of its shape, and a two-knob loading
-    iterator once sat in a period-2 orbit doing exactly that.
-    """
-    return np.clip(change, -limit, limit)
-
-
-def _newton(jacobian, error, prior):
-    """Return the step solving `jacobian @ change = -error`, or the prior's."""
-    try:
-        if np.linalg.cond(jacobian) > COND_MAX:
-            raise np.linalg.LinAlgError("the Jacobian is ill-conditioned")
-        return np.linalg.solve(jacobian, -error)
-    except np.linalg.LinAlgError as err:
-        # Never propagate a NaN into a design: fall back to the step the gains
-        # alone would have taken, which the clip then bounds as usual.
-        logger.info(f"Stepping on the declared gains instead, because {err}.")
-        return -error * prior
-
-
-def _report_flat(names, jacobian):
-    """Say when a knob has stopped moving its own error.
-
-    Incidence against leading-edge recamber is known to go flat and then flip,
-    and a design variable that no longer changes what it is meant to control is
-    worth seeing in the log before it is worth acting on.
-    """
-    for i, name in enumerate(names):
-        if abs(jacobian[i, i]) < FLAT:
-            logger.info(
-                f"The response of {name} has gone flat "
-                f"(slope {jacobian[i, i]:.3g} of an expected 1)."
-            )
 
 
 def format_table(config, result):
@@ -864,10 +504,8 @@ def resolve(config, max_iter=10):
     Written as its own loop rather than as :func:`converge` with a designing
     `run`, which very nearly works. What does not carry over is the rest of
     what `converge` is: a divergence guard for a march there has not been, a
-    per-iteration log of directories that do not exist, and a history kept as
-    numbers because a `Result` pins a grid --- when here there is no grid at
-    all. Twelve lines that share every piece of arithmetic beat a callable that
-    has to pretend to solve.
+    per-iteration log of directories that do not exist. Ten lines that share
+    every piece of arithmetic beat a callable that has to pretend to solve.
 
     Parameters
     ----------
@@ -887,7 +525,6 @@ def resolve(config, max_iter=10):
     if not inner.iterate.correct:
         return config
 
-    history = []
     for _ in range(max_iter):
         # No solver, no grid, no output directory: designing is the whole run.
         result = Result(machine=inner.design())
@@ -899,9 +536,7 @@ def resolve(config, max_iter=10):
             # than one that has quietly lost the iterators it will need next.
             return dataclasses.replace(inner, iterate=config.iterate)
 
-        stepped = step(inner, result, history)
-        history.append((unknowns(inner), measured_errors(inner, result)))
-        inner = stepped
+        inner = step(inner, result)
 
     raise ValueError(
         f"The design-only knobs {sorted(unknowns(inner))} did not converge in "
@@ -937,12 +572,6 @@ def converge(config, run, max_iter=10):
     """
     result = None
 
-    # Numbers only. A Result holds the live grid it was measured from -- tens
-    # of megabytes for the smallest case here and gigabytes for a real machine
-    # -- and keeping one per iteration would stop any of them being freed to
-    # read the handful of floats the step actually uses.
-    history = []
-
     for i_iter in range(max_iter):
         result = run(config, i_iter)
 
@@ -960,11 +589,10 @@ def converge(config, run, max_iter=10):
 
         # Only the solution iterators are stepped here. A design-only knob is
         # already on its target -- `resolve` put it there inside the run that
-        # just finished -- so its error is ~0 while its *value* has moved,
-        # which is a zero slope. Fed to the Broyden update that is a flat
-        # response, and the least-change update spends itself explaining it
-        # rather than the knobs that genuinely need moving. `run` still gets
-        # the whole config, so the nested resolve still sees its own.
+        # just finished, on a copy -- so this config holds its old value
+        # beside an error measured after the move, and stepping the pair
+        # would move it somewhere neither describes. `run` still gets the
+        # whole config, so the nested resolve still sees its own.
         stepping = selected(config, from_solution=True)
 
         # Tabled from the same view, for the same reason and one more: the
@@ -978,15 +606,9 @@ def converge(config, run, max_iter=10):
             logger.info(f"Converged after {i_iter + 1} iteration(s).")
             return config, result, True
 
-        # Declared gains are never overwritten with measured slopes: those live
-        # in the Jacobian, rebuilt from the history each call, and a slope
-        # measured on one design means nothing for another. `iterate` is put
-        # back whole because `stepping` holds only the solution iterators.
-        stepped = dataclasses.replace(
-            step(stepping, result, history), iterate=config.iterate
-        )
-        history.append((unknowns(stepping), measured_errors(stepping, result)))
-        config = stepped
+        # `iterate` is put back whole because `stepping` holds only the
+        # solution iterators.
+        config = dataclasses.replace(step(stepping, result), iterate=config.iterate)
 
     logger.warning(f"Not converged after {max_iter} iteration(s).")
     return config, result, False
@@ -995,16 +617,6 @@ def converge(config, run, max_iter=10):
 #
 # THE ITERATORS
 #
-
-
-def _AEROFOIL_BLOCK(i_row):
-    """Return the Jacobian block that shapes row `i_row`'s aerofoil.
-
-    What :class:`ClarkProfile` answers with for its shape knobs. The
-    recambers of :class:`Incidence` and :class:`Deviation` are kept out of it:
-    see :meth:`Deviation.blocks`.
-    """
-    return ("aerofoil", int(i_row))
 
 
 GAP_HINT = (
@@ -1117,19 +729,6 @@ class Deviation(Iterator):
 
     type: ClassVar[str] = "deviation"
 
-    learns: ClassVar[bool] = False
-    """Every step is the prior's, `-gain * e`.
-
-    A row's exit angle moves with everything else in the machine --- the
-    other row's recamber, a blade count, the inlet profile --- by as much as
-    a clipped recamber moves it, and at exit angles near seventy degrees that
-    is a lot. The one-knob secant a run learns from that is noise, and twice
-    in one run it came out with the wrong sign: a full degree of recamber the
-    opposite way to the prior's step, tripling the error it was meant to
-    null. The prior's sign follows from what the knob is, and its size needs
-    only to be within a factor of two.
-    """
-
     gain: float = 0.5
     clip: float = 1.0
     """Largest recamber in one iteration [deg].
@@ -1143,26 +742,6 @@ class Deviation(Iterator):
 
     def unknowns(self, config):
         return _recamber_unknowns(config, "dchi_TE")
-
-    def blocks(self, config):
-        """Return a block of its own for each row's recamber.
-
-        **Not the aerofoil block** the thickness knobs of a
-        :class:`ClarkProfile` learn in, though the coupling between them is
-        real. A block of a dozen knobs of different units, learned from a
-        handful of clipped moves, fills its off-diagonal terms with noise: a
-        run discharged one as a full degree of recamber on a row whose exit
-        angle was already within tolerance, which moved its exit Mach number
-        by eight per cent and with it every loading residual measured against
-        that.
-
-        Keyed by row, because one row's recamber is not answerable for the
-        next row's exit angle in any way a run can identify.
-        """
-        return {
-            name: ("deviation", i_row)
-            for i_row, name in enumerate(_recamber_unknowns(config, "dchi_TE"))
-        }
 
     def with_unknowns(self, config, values):
         return _with_recamber(config, "dchi_TE", values)
@@ -1229,13 +808,6 @@ class Incidence(Iterator):
 
     targets: ClassVar[tuple[str, ...]] = ("target",)
 
-    learns: ClassVar[bool] = False
-    """Every step is the prior's, `-gain * e`, for the reason
-    :attr:`Deviation.learns` gives. Learned, one row's recamber stepped a full
-    degree against the prior's sign on alternate passes, with its error at
-    ten to thirty degrees throughout.
-    """
-
     target: float = 0.0
     """Incidence to aim for, positive onto the pressure surface [deg].
 
@@ -1262,18 +834,6 @@ class Incidence(Iterator):
         return {
             f"dchi_LE[{i_row}][{i_section}]": float(section.dchi_LE)
             for i_row, i_section, section in _sections(config)
-        }
-
-    def blocks(self, config):
-        """Return a block of its own for each row's recambers.
-
-        Kept out of the thickness knobs' aerofoil block for the reason
-        :meth:`Deviation.blocks` gives. Keyed by row, so the sections of one
-        row are learned together.
-        """
-        return {
-            f"dchi_LE[{i_row}][{i_section}]": ("incidence", i_row)
-            for i_row, i_section, _ in _sections(config)
         }
 
     def with_unknowns(self, config, values):
@@ -1499,8 +1059,8 @@ class ClarkProfile(RowIterator):
     """Shape a two-sided thickness to a Clark loading distribution.
 
     Drives a :class:`~turbigen.thickness.ClarkThickness` towards
-    :mod:`turbigen.clark` on both surfaces at once, with the camber line held
-    where the design put it.
+    :mod:`turbigen.clark` on both surfaces at once, with the leading-edge
+    recamber, and the camber line between, moved with it.
 
     **The knobs are shape-space coefficients**
     (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`): leading edge
@@ -1512,8 +1072,17 @@ class ClarkProfile(RowIterator):
 
     **Shared ends.** One nose radius and one wedge angle serve both surfaces,
     so each end's error is the mean of the two surfaces' residuals, the
-    least-squares move for one knob. The cost is that equal and opposite errors
-    at an end read as converged; per-surface control lives in the interior.
+    least-squares move for one knob. At the trailing edge the cost is that
+    equal and opposite errors read as converged; per-surface control lives in
+    the interior.
+
+    **The nose's other half belongs to the recamber.** Equal and opposite
+    errors at the nose are a leading-edge loading error, which no thickness
+    can remove and incidence can: `dchi_LE` is driven by the suction residual
+    less the pressure one at the first station. Every section of the row is
+    recambered together, as the thickness is, so this owns the row's
+    `dchi_LE` outright and refuses to sit beside an :class:`Incidence`
+    iterator, which would move the same leaves towards a different target.
 
     **The level belongs to the blade count.** Thickness redistributes
     circulation but cannot create it, so `Co` is driven by the circulation
@@ -1522,36 +1091,12 @@ class ClarkProfile(RowIterator):
     shape knobs see the residuals with that level removed.
 
     **Measured from the geometric leading edge**, not the stagnation point, so
-    the target does not move as the thickness does. An `incidence` iterator
-    shapes the same nose, but is learned in a block of its own
-    (:meth:`blocks`).
+    the target does not move as the thickness does.
     """
 
     type: ClassVar[str] = "clark_profile"
 
     targets: ClassVar[tuple[str, ...]] = ("Ma_peak", "z_peak", "Ma_LE", "Ma_PS")
-
-    learns: ClassVar[bool] = False
-    """Neither the shape knobs nor `Co` learn: every step is the prior's.
-
-    **The shape knobs**, because the noise in their residuals is as large as
-    the signal. The loading is measured over the trailing edge Mach number,
-    which the rest of the machine moves by three to eight per cent a pass
-    --- a recamber, a blade count, an inlet profile --- and that alone moves
-    every residual on the row by 0.03 to 0.08. A clipped step of 0.1 moves
-    them by 0.05 to 0.1. Secants learned from that swung between +2.8 and
-    -1.3 for one knob over two runs, and twice discharged as a full clip on
-    every knob the wrong way. The slopes those runs measured were 0.2 to 1.5,
-    so a fixed :attr:`gain` of a half converges with margin wherever those
-    slopes hold, and needs no improving.
-
-    **`Co`**, because its error is in the units of the knob, so its slope is
-    one by definition, which is what :attr:`gain_Co` asserts. What Broyden
-    would learn is the last secant, and over a small move that is the noise
-    in the level and whatever the shape knobs did to it: a run measured
-    slopes from -0.27 to 2.04 step to step, about one overall, and the -0.27
-    sent `Co` the wrong way.
-    """
 
     Ma_peak: float = 1.2
     """Target peak Mach number over the trailing edge value [--].
@@ -1625,7 +1170,7 @@ class ClarkProfile(RowIterator):
     slope is positive, since raising a coefficient thickens the surface,
     accelerates the flow over it and lifts the `fac` the error is measured in.
     A surface running faster than its target is therefore one to thin. The
-    *size* is still a guess, and kept for the whole run: see :attr:`learns`.
+    *size* is still a guess, and kept for the whole run.
     A step `-gain * e` converges while `gain` times the true slope is between
     zero and two, and the slopes measured are 0.2 to 1.5, so one is about as
     large as it can be in theory. **In practice it is too large, so a half.**
@@ -1643,7 +1188,7 @@ class ClarkProfile(RowIterator):
     clip: float = 0.1
     """Largest change in one shape-space coefficient per iteration [--]."""
 
-    tolerance: float = 0.03
+    tolerance: float = 0.02
     """Converged when every shape residual is within this [--]."""
 
     gain_Co: float = 0.5
@@ -1676,15 +1221,47 @@ class ClarkProfile(RowIterator):
     pass to pass with `Co` itself held still.
     """
 
-    tolerance_tau_LE: float = 0.05
+    tolerance_tau_LE: float = 0.02
     """Converged when the leading-edge shape residual is within this [--].
 
-    Declared apart from :attr:`tolerance`, and looser by default, because the
-    nose is the knob most often left short of its target: a loading that wants
-    a sharper leading edge than :attr:`R_LE_lim` allows holds ``tau_LE``
-    against that bound every pass, with a residual no step can clear. One shape
-    tolerance wider than the rest keeps a clamped nose from stalling a design
+    The same as :attr:`tolerance` by default, but declared apart from it,
+    because the nose is the knob most often left short of its target: a
+    loading that wants a sharper leading edge than :attr:`R_LE_lim` allows
+    holds ``tau_LE`` against that bound every pass, with a residual no step
+    can clear. Widening this one keeps a clamped nose from stalling a design
     the other knobs have converged, without slackening them.
+    """
+
+    gain_dchi_LE: float = 20.0
+    """How much of the leading-edge loading error to recamber by [deg].
+
+    **Positive**, because :meth:`error` turns the loading error into the frame
+    of the recamber, row by row: a nose loaded too heavily means flow arriving
+    too far onto the pressure surface, and which way `dchi_LE` moves to take
+    it off depends on which side the pressure surface is on
+    (:attr:`~turbigen.blade.Blade.suction_is_upper`). One positive gain then
+    serves rows turning either way, as one negative gain serves
+    :class:`Incidence`.
+
+    **The size is a guess**, from a stagnation point that moves several
+    degrees for one of metal and a first station a tenth of the way along the
+    surface: of order 0.05 in `fac` for a degree, so twenty is about the
+    full Newton step. :attr:`clip_dchi_LE` bounds what a wrong guess costs.
+
+    **Read only while :attr:`gain` is a scalar**, as :attr:`gain_Co` is.
+    """
+
+    clip_dchi_LE: float = 1.0
+    """Largest leading-edge recamber in one iteration [deg].
+
+    The clip :class:`Incidence` defaults to, for the same knob.
+    """
+
+    tolerance_dchi_LE: float = 0.02
+    """Converged when the leading-edge loading error is within this [--].
+
+    The difference of two residuals, so the same number is a tighter
+    criterion than :attr:`tolerance` on either one.
     """
 
     R_LE_lim: tuple[float, float] = (0.01, 0.2)
@@ -1706,13 +1283,11 @@ class ClarkProfile(RowIterator):
     error still in the table, which is where a knob that cannot get what it
     wants should be visible.
 
-    That costs the step its Newton direction for the pass, as any per-knob
-    truncation does --- see :func:`_bounded`, which truncates the same way.
-
     The loop is not made to converge by this. A radius that walks one way
-    without turning is a target the nose cannot reach, and the nose is where
-    :meth:`_flat_error` is blind by construction --- a shared end reports only
-    the mean of the two surfaces. What the bound buys is a design that stays
+    without turning is a target the nose cannot reach: a shared end reports
+    only the mean of the two surfaces, and a nose asked to be sharp on one
+    side and blunt on the other is asking for a recamber rather than a
+    radius. What the bound buys is a design that stays
     meshable and says so, rather than one that runs away and announces it as a
     divergence two iterations later. The default upper bound is wider than
     that run suggests, a guard against a runaway rather than a statement of a
@@ -1728,10 +1303,9 @@ class ClarkProfile(RowIterator):
         for name in ("Ma_peak", "Ma_peak_max", "Ma_LE", "Ma_PS"):
             if not getattr(self, name) > 0.0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
-        if not self.tolerance_tau_LE > 0.0:
-            raise ValueError(
-                f"tolerance_tau_LE must be positive, got {self.tolerance_tau_LE}."
-            )
+        for name in ("tolerance_tau_LE", "tolerance_dchi_LE"):
+            if not getattr(self, name) > 0.0:
+                raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
 
     #
     # THE PROTOCOL
@@ -1755,19 +1329,21 @@ class ClarkProfile(RowIterator):
             )
 
     def unknowns(self, config):
-        """Return the level first, then every shape-space coefficient.
+        """Return the level, the recamber, then every shape-space coefficient.
 
-        **`Co` leads, and the order is load-bearing.** A sequence :attr:`gain`
-        is matched to this order, and index zero is the one position that
-        cannot move when a blade changes order: last, a gain measured for a
-        circulation coefficient would silently be read as one for a shape knob.
+        **`Co` and `dchi_LE` lead, and the order is load-bearing.** A sequence
+        :attr:`gain` is matched to this order, and the first two positions are
+        the ones that cannot move when a blade changes order: after the shape
+        knobs, a gain written for a circulation coefficient would silently be
+        read as one for a thickness.
 
-        Each coefficient is the mean over the row's sections, as
-        :meth:`with_unknowns` shifts them all together.
+        The recamber and each coefficient are the mean over the row's
+        sections, as :meth:`with_unknowns` shifts them all together.
         """
         level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
+        recamber = {self._dchi_name: self._dchi_LE(config)}
         coefficients = self._flat_coeff(self._coefficients(config))
-        return level | {
+        return level | recamber | {
             name: float(value)
             for name, value in zip(self._names(self._order(config)), coefficients)
         }
@@ -1779,6 +1355,14 @@ class ClarkProfile(RowIterator):
         co_name = f"Co[{self.i_row}]"
         if moved[co_name] != current[co_name]:
             config = _with_circulation(config, self.i_row, moved[co_name])
+
+        recamber = moved[self._dchi_name] - current[self._dchi_name]
+        if recamber:
+            config = _with_sections(
+                config,
+                self.i_row,
+                lambda _, s: dataclasses.replace(s, dchi_LE=s.dchi_LE + recamber),
+            )
 
         order = self._order(config)
         names = self._names(order)
@@ -1853,6 +1437,7 @@ class ClarkProfile(RowIterator):
         order = self._order(config)
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
+            paths |= {f"blades[{self.i_row}].sections[{i_section}].dchi_LE"}
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
             paths |= {f"{stem}.tanwedge"}
@@ -1903,7 +1488,20 @@ class ClarkProfile(RowIterator):
         delta = level / (1.0 + measured.length_ratio)
         shape = residual - np.array([[delta], [-delta]])
 
-        errors = {f"Co[{self.i_row}]": level}
+        # What the recamber can answer for and a shared nose radius cannot: the
+        # suction surface running ahead of the pressure one at the first
+        # station, which is the nose loaded too heavily and the flow arriving
+        # too far onto the pressure surface. From `shape`, so the level --- a
+        # `+delta` on one surface and `-delta` on the other --- is not read as
+        # incidence. Turned into the recamber's frame as `Incidence` turns its
+        # target: a rising metal angle takes flow off the pressure surface
+        # where that surface is the lower one, and puts it on where it is the
+        # upper, so the sign flips with the turning. See `gain_dchi_LE`.
+        loading_LE = float(shape[0][0] - shape[1][0])
+        blade = result.machine.rows[self.i_row].blade
+        sgn = -1.0 if blade.suction_is_upper else 1.0
+
+        errors = {f"Co[{self.i_row}]": level, self._dchi_name: sgn * loading_LE}
         return errors | dict(
             zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
         )
@@ -1936,56 +1534,49 @@ class ClarkProfile(RowIterator):
     # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
     #
 
-    def blocks(self, config):
-        """Return this row's aerofoil block for every shape knob, and `Co` its own.
-
-        The recambers of :class:`Incidence` and :class:`Deviation` are not in
-        it, for the reason :meth:`Deviation.blocks` gives.
-
-        **`Co` is kept apart.** Its error has the shape's removed by
-        construction, and the shape knobs see the residuals with the level
-        taken off, so the coupling between them is meant to be nothing.
-        Neither block learns (:attr:`learns`), but they are kept apart so that
-        what is declared to be uncoupled stays so if one ever does.
-        """
-        blocks = {name: _AEROFOIL_BLOCK(self.i_row) for name in self.unknowns(config)}
-        blocks[f"Co[{self.i_row}]"] = ("circulation", int(self.i_row))
-        return blocks
-
-    def _by_knob(self, config, shape_value, level_value):
-        """Return `level_value` for `Co` and `shape_value` for every shape knob."""
-        values = {f"Co[{self.i_row}]": level_value}
+    def _by_knob(self, config, shape_value, level_value, recamber_value):
+        """Return a value for `Co`, one for `dchi_LE`, and one for every shape knob."""
+        values = {f"Co[{self.i_row}]": level_value, self._dchi_name: recamber_value}
         return values | {name: shape_value for name in self._names(self._order(config))}
 
     def gains(self, config):
         """Return the gain of each knob, with the level's declared separately.
 
         A scalar :attr:`gain` describes the *shape* knobs only, and
-        :attr:`gain_Co` supplies the level.
+        :attr:`gain_Co` and :attr:`gain_dchi_LE` supply the level and the
+        recamber.
 
-        The two agree on sign, both being positive; the reason is units. A gain is knob units per error unit, and `Co` is a
-        circulation coefficient where the others are shape-space coefficients,
-        so one number spread over both would be two different assumed slopes
-        wearing one value. :meth:`clips` splits for the same reason and has no
+        All three are positive; they are split because of units. A gain is
+        knob units per error unit, and `Co` is a circulation coefficient and
+        `dchi_LE` an angle where the others are shape-space coefficients, so
+        one number spread over them would be different assumed slopes wearing
+        one value. :meth:`clips` splits for the same reason and has no
         sequence form to fall back on. Only :meth:`tolerances` splits without
         needing to --- a level residual and a shape residual are both in `fac`
         --- and it splits so that the two can be converged to different
         criteria.
 
         A sequence :attr:`gain` declares every knob instead --- `Co` at index
-        zero, as :meth:`unknowns` orders them --- and then carries the level
-        itself, leaving `gain_Co` unread.
+        zero and `dchi_LE` at one, as :meth:`unknowns` orders them --- and
+        then carries both itself, leaving `gain_Co` and `gain_dchi_LE` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
-            return self._by_knob(config, float(self.gain), float(self.gain_Co))
+            return self._by_knob(
+                config,
+                float(self.gain),
+                float(self.gain_Co),
+                float(self.gain_dchi_LE),
+            )
         return dict(zip(names, self._gain_each(names)))
 
     def clips(self, config):
-        return self._by_knob(config, self.clip, self.clip_Co)
+        return self._by_knob(config, self.clip, self.clip_Co, self.clip_dchi_LE)
 
     def tolerances(self, config):
-        by_knob = self._by_knob(config, self.tolerance, self.tolerance_Co)
+        by_knob = self._by_knob(
+            config, self.tolerance, self.tolerance_Co, self.tolerance_dchi_LE
+        )
         by_knob[f"tau_LE[{self.i_row}]"] = self.tolerance_tau_LE
         return by_knob
 
@@ -2054,6 +1645,15 @@ class ClarkProfile(RowIterator):
     # WHAT THE CONFIG HAS TO PROVIDE
     #
 
+    @property
+    def _dchi_name(self):
+        """Return the table key of this row's leading-edge recamber."""
+        return f"dchi_LE[{self.i_row}]"
+
+    def _dchi_LE(self, config):
+        """Return the row's mean leading-edge recamber [deg]."""
+        return float(np.mean([s.dchi_LE for s in self._blade(config).sections]))
+
     def _order(self, config):
         """Return the Bernstein degree of this row's thickness curves."""
         return self._thickness(config).order
@@ -2100,8 +1700,18 @@ class ClarkProfile(RowIterator):
         return None
 
     def _check(self, config):
-        """Raise unless this row's thickness can carry the knobs."""
+        """Raise unless this row's thickness can carry the knobs, and its
+        recamber is this iterator's alone."""
         from turbigen.thickness import ClarkThickness
+
+        if any(isinstance(it, Incidence) for it in config.iterate.correct):
+            raise ValueError(
+                f"A clark_profile iterator on row {self.i_row} sets that row's "
+                f"leading-edge recamber from its loading, and an incidence "
+                f"iterator sets every row's from the stagnation point; the two "
+                f"would move the same dchi_LE towards different targets. Drop "
+                f"the incidence iterator."
+            )
 
         orders = set()
         for i_section, section in enumerate(self._blade(config).sections):
@@ -2145,16 +1755,6 @@ class MeanLine(Iterator):
     """
 
     type: ClassVar[str] = "mean_line"
-
-    learns: ClassVar[bool] = False
-    """A loss coefficient relaxed onto its own answer, which needs no fitting.
-
-    This does not correct a design against a target it might reach in several
-    ways: it moves a nominal value onto the one the CFD measured, so the error
-    *is* the distance left to travel and the sensitivity is one by
-    construction. A Broyden update here fits that constant to a few
-    near-parallel moves and gets something slightly wrong instead.
-    """
 
     variables: tuple[str, ...] = ()
     """Names of the design variables to relax, as the mean-line design spells
@@ -2577,15 +2177,6 @@ class Repeat(Iterator):
     """
 
     type: ClassVar[str] = "repeat"
-
-    learns: ClassVar[bool] = False
-    """A profile copied onto its own exit, which needs no fitting.
-
-    The error is the distance left to travel, so the sensitivity is one by
-    construction, as it is for :class:`MeanLine`. Kept rather than learned, the
-    step on every iteration is the relaxed copy ``u -= gain * e``, instead of a
-    Broyden step fitted to a few near-parallel moves.
-    """
 
     COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha")
     """The profile columns this iterator owns."""

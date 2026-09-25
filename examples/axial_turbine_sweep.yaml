@@ -92,10 +92,6 @@ iterate:
   - clip: 1.0
     tolerance: 0.5
     type: deviation
-  - clip: 0.5
-    gain: -0.05
-    tolerance: 8.0
-    type: incidence
   - clip: 0.2
     tolerance: 0.02
     type: mean_line
