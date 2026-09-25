@@ -1060,8 +1060,8 @@ class ClarkProfile(RowIterator):
     """Shape a two-sided thickness to a Clark loading distribution.
 
     Drives a :class:`~turbigen.thickness.ClarkThickness` towards
-    :mod:`turbigen.clark` on both surfaces at once, with the camber line left
-    where it was put.
+    :mod:`turbigen.clark` on both surfaces at once, with the leading-edge
+    recamber, and the camber line between, moved with it.
 
     **The knobs are shape-space coefficients**
     (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`): leading edge
@@ -1077,13 +1077,13 @@ class ClarkProfile(RowIterator):
     equal and opposite errors read as converged; per-surface control lives in
     the interior.
 
-    **The recamber is not a knob.** Equal and opposite errors at the nose are
-    left unanswered here, as they are at the trailing edge. `dchi_LE` used to
-    be driven by them, but the nose radius moves the same difference several
-    times harder than it moves the mean it is paired with, so the two knobs
-    fought along one direction until the radius reached a bound. An
-    :class:`Incidence` iterator beside this one sets the leading edge from the
-    stagnation point instead, or `dchi_LE` stays as written.
+    **The nose's other half belongs to the recamber.** Equal and opposite
+    errors at the nose are a leading-edge loading error, which no thickness
+    can remove and incidence can: `dchi_LE` is driven by the suction residual
+    less the pressure one at the first station. Every section of the row is
+    recambered together, as the thickness is, so this owns the row's
+    `dchi_LE` outright and refuses to sit beside an :class:`Incidence`
+    iterator, which would move the same leaves towards a different target.
 
     **The level belongs to the blade count.** Thickness redistributes
     circulation but cannot create it, so `Co` is driven by the circulation
@@ -1226,14 +1226,50 @@ class ClarkProfile(RowIterator):
     """Converged when the leading-edge shape residual is within this [--].
 
     The same as :attr:`tolerance` by default, but declared apart from it,
-    because the nose is the knob most often left short of its target: a
-    loading that wants a sharper leading edge than :attr:`R_LE_lim` allows
-    holds ``tau_LE`` against that bound every pass, with a residual no step
-    can clear. Widening this one keeps a clamped nose from stalling a design
-    the other knobs have converged, without slackening them.
+    because the nose is the knob most often left short of its target. A nose
+    held at :attr:`R_LE_lim` and still wanting to go further no longer needs
+    this widened to stop it stalling a design: :meth:`error` counts it as
+    converged, so this governs only a nose that is free to move.
     """
 
-    R_LE_lim: tuple[float, float] = (0.01, 0.2)
+    gain_dchi_LE: float = 25.0
+    """How much of the leading-edge loading error to recamber by [deg].
+
+    **Positive**, because :meth:`error` turns the loading error into the frame
+    of the recamber, row by row: a nose loaded too heavily means flow arriving
+    too far onto the pressure surface, and which way `dchi_LE` moves to take
+    it off depends on which side the pressure surface is on
+    (:attr:`~turbigen.blade.Blade.suction_is_upper`). One positive gain then
+    serves rows turning either way, as one negative gain serves
+    :class:`Incidence`.
+
+    **Short of the full step on purpose.** Measured on a converged stage by
+    recambering both rows two and four degrees either way, the loading error
+    moved 0.022 in `fac` per degree on the stator and 0.008 on the rotor,
+    linear to within a tenth over that range. Twenty-five is then a little
+    over half the Newton step on the stator and a fifth of it on the rotor:
+    a rotor recamber mostly moves mid-chord suction loading rather than the
+    first station, so its slope is the small one, and a gain sized for it
+    would overshoot the stator. :attr:`clip_dchi_LE` bounds what a wrong
+    guess costs.
+
+    **Read only while :attr:`gain` is a scalar**, as :attr:`gain_Co` is.
+    """
+
+    clip_dchi_LE: float = 2.0
+    """Largest leading-edge recamber in one iteration [deg].
+
+    The clip :class:`Incidence` defaults to, for the same knob.
+    """
+
+    tolerance_dchi_LE: float = 0.02
+    """Converged when the leading-edge loading error is within this [--].
+
+    The difference of two residuals, so the same number is a tighter
+    criterion than :attr:`tolerance` on either one.
+    """
+
+    R_LE_lim: tuple[float, float] = (0.01, 0.15)
     """Bounds on the leading edge radius, normalised by chord [--].
 
     **A bound on where the knob arrives, which no clip provides.** `clip`
@@ -1252,15 +1288,17 @@ class ClarkProfile(RowIterator):
     error still in the table, which is where a knob that cannot get what it
     wants should be visible.
 
-    The loop is not made to converge by this. A radius that walks one way
-    without turning is a target the nose cannot reach: a shared end reports
-    only the mean of the two surfaces, and a nose asked to be sharp on one
-    side and blunt on the other is asking for a recamber rather than a
-    radius. What the bound buys is a design that stays
-    meshable and says so, rather than one that runs away and announces it as a
-    divergence two iterations later. The default upper bound is wider than
-    that run suggests, a guard against a runaway rather than a statement of a
-    sensible nose.
+    **A nose held at a bound is converged.** A radius that walks one way
+    without turning is a target the nose cannot reach: measured on a
+    converged stage, the loading at the first station moves about two in
+    `fac` per unit `R_LE`, so a design asking for a hundredth less than the
+    lower bound is asking for no nose at all. Once held there with an error
+    that would carry it further, the nose has done all it may, and
+    :meth:`error` reports that knob as converged, logging the residual so the
+    shortfall is still on record. Both bounds are therefore statements of
+    what nose is acceptable, not guards against a runaway: the upper one is
+    the bluntest leading edge a converged design may be allowed to finish
+    with.
     """
 
     def __post_init__(self):
@@ -1272,10 +1310,9 @@ class ClarkProfile(RowIterator):
         for name in ("Ma_peak", "Ma_peak_max", "Ma_LE", "Ma_PS"):
             if not getattr(self, name) > 0.0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
-        if not self.tolerance_tau_LE > 0.0:
-            raise ValueError(
-                f"tolerance_tau_LE must be positive, got {self.tolerance_tau_LE}."
-            )
+        for name in ("tolerance_tau_LE", "tolerance_dchi_LE"):
+            if not getattr(self, name) > 0.0:
+                raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
 
     #
     # THE PROTOCOL
@@ -1299,21 +1336,23 @@ class ClarkProfile(RowIterator):
             )
 
     def unknowns(self, config):
-        """Return the level, then every shape-space coefficient.
+        """Return the level, the recamber, then every shape-space coefficient.
 
-        **`Co` leads, and the order is load-bearing.** A sequence :attr:`gain`
-        is matched to this order, and the first position is the one that
-        cannot move when a blade changes order: after the shape knobs, a gain
-        written for a circulation coefficient would silently be read as one
-        for a thickness.
+        **`Co` and `dchi_LE` lead, and the order is load-bearing.** A sequence
+        :attr:`gain` is matched to this order, and the first two positions are
+        the ones that cannot move when a blade changes order: after the shape
+        knobs, a gain written for a circulation coefficient would silently be
+        read as one for a thickness.
 
-        Each coefficient is the mean over the row's sections, as
-        :meth:`with_unknowns` shifts them all together.
+        The recamber and each coefficient are the mean over the row's
+        sections, as :meth:`with_unknowns` shifts them all together.
         """
         level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
+        recamber = {self._dchi_name: self._dchi_LE(config)}
         coefficients = self._flat_coeff(self._coefficients(config))
         return (
             level
+            | recamber
             | {
                 name: float(value)
                 for name, value in zip(self._names(self._order(config)), coefficients)
@@ -1327,6 +1366,14 @@ class ClarkProfile(RowIterator):
         co_name = f"Co[{self.i_row}]"
         if moved[co_name] != current[co_name]:
             config = _with_circulation(config, self.i_row, moved[co_name])
+
+        recamber = moved[self._dchi_name] - current[self._dchi_name]
+        if recamber:
+            config = _with_sections(
+                config,
+                self.i_row,
+                lambda _, s: dataclasses.replace(s, dchi_LE=s.dchi_LE + recamber),
+            )
 
         order = self._order(config)
         names = self._names(order)
@@ -1401,6 +1448,7 @@ class ClarkProfile(RowIterator):
         order = self._order(config)
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
+            paths |= {f"blades[{self.i_row}].sections[{i_section}].dchi_LE"}
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
             paths |= {f"{stem}.tanwedge"}
@@ -1451,10 +1499,70 @@ class ClarkProfile(RowIterator):
         delta = level / (1.0 + measured.length_ratio)
         shape = residual - np.array([[delta], [-delta]])
 
-        errors = {f"Co[{self.i_row}]": level}
-        return errors | dict(
+        # What the recamber can answer for and a shared nose radius cannot: the
+        # suction surface running ahead of the pressure one at the first
+        # station, which is the nose loaded too heavily and the flow arriving
+        # too far onto the pressure surface. From `shape`, so the level --- a
+        # `+delta` on one surface and `-delta` on the other --- is not read as
+        # incidence. Turned into the recamber's frame as `Incidence` turns its
+        # target: a rising metal angle takes flow off the pressure surface
+        # where that surface is the lower one, and puts it on where it is the
+        # upper, so the sign flips with the turning. See `gain_dchi_LE`.
+        loading_LE = float(shape[0][0] - shape[1][0])
+        blade = result.machine.rows[self.i_row].blade
+        sgn = -1.0 if blade.suction_is_upper else 1.0
+
+        errors = {f"Co[{self.i_row}]": level, self._dchi_name: sgn * loading_LE}
+        errors |= dict(
             zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
         )
+        return self._projected(config, errors)
+
+    def _projected(self, config, errors):
+        """Return `errors` with a nose error that only pushes into a bound nulled.
+
+        What converged means for a bounded knob: a nose held at
+        :attr:`R_LE_lim` whose step would carry it further out of bounds has
+        gone as far as it may, and what is left of its error is how hard the
+        bound is pushing back, not how far the loop still has to go. Reported
+        as zero so the rest of the row can converge around it; the residual
+        itself is logged every pass, so a design that could not meet its
+        leading-edge target says so. An error pointing back inside is left
+        whole, and the step it asks for takes the nose off the bound.
+        """
+        bound = self._nose_bound(config)
+        if bound is None:
+            return errors
+
+        name = f"tau_LE[{self.i_row}]"
+        step = -self.gains(config)[name] * errors[name]
+        if (bound == "lower" and step >= 0.0) or (bound == "upper" and step <= 0.0):
+            return errors
+
+        lo, hi = self.R_LE_lim
+        logger.info(
+            f"Row {self.i_row}'s nose is held at its {bound} bound, "
+            f"R_LE={lo if bound == 'lower' else hi:.4g}, and would go further; "
+            f"its leading-edge residual of {errors[name]:.4g} is the target "
+            f"the bound will not let it reach, counted as converged."
+        )
+        return errors | {name: 0.0}
+
+    def _nose_bound(self, config):
+        """Return which bound every section's nose is held at, or None.
+
+        Every section, because the knob is a uniform shift: a nose held at a
+        bound on one section and free on another can still move the free one.
+        """
+        lo, hi = self.R_LE_lim
+        R_LE = np.array(
+            [float(s.thickness.R_LE) for s in self._blade(config).sections]
+        )
+        if np.allclose(R_LE, lo, rtol=1e-9, atol=0.0):
+            return "lower"
+        if np.allclose(R_LE, hi, rtol=1e-9, atol=0.0):
+            return "upper"
+        return None
 
     def target(self, z, machine):
         """Return the Clark distribution on each surface at `z`, shape (2, n).
@@ -1484,40 +1592,49 @@ class ClarkProfile(RowIterator):
     # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
     #
 
-    def _by_knob(self, config, shape_value, level_value):
-        """Return a value for `Co` and one for every shape knob."""
-        values = {f"Co[{self.i_row}]": level_value}
+    def _by_knob(self, config, shape_value, level_value, recamber_value):
+        """Return a value for `Co`, one for `dchi_LE`, and one for every shape knob."""
+        values = {f"Co[{self.i_row}]": level_value, self._dchi_name: recamber_value}
         return values | {name: shape_value for name in self._names(self._order(config))}
 
     def gains(self, config):
         """Return the gain of each knob, with the level's declared separately.
 
         A scalar :attr:`gain` describes the *shape* knobs only, and
-        :attr:`gain_Co` supplies the level's.
+        :attr:`gain_Co` and :attr:`gain_dchi_LE` supply the level and the
+        recamber.
 
-        Both are positive; they are split because of units. A gain is knob
-        units per error unit, and `Co` is a circulation coefficient where the
-        others are shape-space coefficients, so one number spread over them
-        would be different assumed slopes wearing one value. :meth:`clips` splits for the same reason and has no
+        All three are positive; they are split because of units. A gain is
+        knob units per error unit, and `Co` is a circulation coefficient and
+        `dchi_LE` an angle where the others are shape-space coefficients, so
+        one number spread over them would be different assumed slopes wearing
+        one value. :meth:`clips` splits for the same reason and has no
         sequence form to fall back on. Only :meth:`tolerances` splits without
         needing to --- a level residual and a shape residual are both in `fac`
         --- and it splits so that the two can be converged to different
         criteria.
 
         A sequence :attr:`gain` declares every knob instead --- `Co` at index
-        zero, as :meth:`unknowns` orders them --- and then carries the level
-        itself, leaving `gain_Co` unread.
+        zero and `dchi_LE` at one, as :meth:`unknowns` orders them --- and
+        then carries both itself, leaving `gain_Co` and `gain_dchi_LE` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
-            return self._by_knob(config, float(self.gain), float(self.gain_Co))
+            return self._by_knob(
+                config,
+                float(self.gain),
+                float(self.gain_Co),
+                float(self.gain_dchi_LE),
+            )
         return dict(zip(names, self._gain_each(names)))
 
     def clips(self, config):
-        return self._by_knob(config, self.clip, self.clip_Co)
+        return self._by_knob(config, self.clip, self.clip_Co, self.clip_dchi_LE)
 
     def tolerances(self, config):
-        by_knob = self._by_knob(config, self.tolerance, self.tolerance_Co)
+        by_knob = self._by_knob(
+            config, self.tolerance, self.tolerance_Co, self.tolerance_dchi_LE
+        )
         by_knob[f"tau_LE[{self.i_row}]"] = self.tolerance_tau_LE
         return by_knob
 
@@ -1586,6 +1703,15 @@ class ClarkProfile(RowIterator):
     # WHAT THE CONFIG HAS TO PROVIDE
     #
 
+    @property
+    def _dchi_name(self):
+        """Return the table key of this row's leading-edge recamber."""
+        return f"dchi_LE[{self.i_row}]"
+
+    def _dchi_LE(self, config):
+        """Return the row's mean leading-edge recamber [deg]."""
+        return float(np.mean([s.dchi_LE for s in self._blade(config).sections]))
+
     def _order(self, config):
         """Return the Bernstein degree of this row's thickness curves."""
         return self._thickness(config).order
@@ -1632,8 +1758,18 @@ class ClarkProfile(RowIterator):
         return None
 
     def _check(self, config):
-        """Raise unless this row's thickness can carry the knobs."""
+        """Raise unless this row's thickness can carry the knobs, and its
+        recamber is this iterator's alone."""
         from turbigen.thickness import ClarkThickness
+
+        if any(isinstance(it, Incidence) for it in config.iterate.correct):
+            raise ValueError(
+                f"A clark_profile iterator on row {self.i_row} sets that row's "
+                f"leading-edge recamber from its loading, and an incidence "
+                f"iterator sets every row's from the stagnation point; the two "
+                f"would move the same dchi_LE towards different targets. Drop "
+                f"the incidence iterator."
+            )
 
         orders = set()
         for i_section, section in enumerate(self._blade(config).sections):
