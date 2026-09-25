@@ -1189,8 +1189,12 @@ class ClarkProfile(RowIterator):
     clip: float = 0.1
     """Largest change in one shape-space coefficient per iteration [--]."""
 
-    tolerance: float = 0.02
-    """Converged when every shape residual is within this [--]."""
+    tolerance: float = 0.025
+    """Converged when every shape residual is within this [--].
+
+    Covers the interior coefficients and the trailing edge; the nose has
+    :attr:`tolerance_tau_LE` of its own.
+    """
 
     gain_Co: float = 0.5
     """How much of the level error to subtract from `Co`, as a prior [--].
@@ -1225,7 +1229,7 @@ class ClarkProfile(RowIterator):
     tolerance_tau_LE: float = 0.02
     """Converged when the leading-edge shape residual is within this [--].
 
-    The same as :attr:`tolerance` by default, but declared apart from it,
+    Declared apart from :attr:`tolerance`, and tighter than it by default,
     because the nose is the knob most often left short of its target. A nose
     held at :attr:`R_LE_lim` and still wanting to go further no longer needs
     this widened to stop it stalling a design: :meth:`error` counts it as

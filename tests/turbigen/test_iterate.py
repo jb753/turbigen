@@ -1555,12 +1555,14 @@ def test_clark_leading_edge_tolerance_is_its_own(clark):
     assert tolerances["tau[0][0][1]"] == pytest.approx(0.01)
 
 
-def test_clark_tolerances_default_alike(clark):
-    """Every knob converges to the same 0.02 unless a config says otherwise."""
+def test_clark_tolerances_default(clark):
+    """Shape knobs converge to 0.025 and the rest to 0.02 unless a config says otherwise."""
     tolerances = clark.iterate.correct[0].tolerances(clark)
 
-    assert tolerances
-    assert all(value == pytest.approx(0.02) for value in tolerances.values())
+    shape = {name for name in tolerances if name.startswith(("tau[", "tau_TE["))}
+    assert shape
+    for name, value in tolerances.items():
+        assert value == pytest.approx(0.025 if name in shape else 0.02), name
 
 
 def test_clark_recambers_every_section_together(clark):
