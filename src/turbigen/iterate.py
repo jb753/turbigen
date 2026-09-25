@@ -1060,8 +1060,8 @@ class ClarkProfile(RowIterator):
     """Shape a two-sided thickness to a Clark loading distribution.
 
     Drives a :class:`~turbigen.thickness.ClarkThickness` towards
-    :mod:`turbigen.clark` on both surfaces at once, with the leading-edge
-    recamber, and the camber line between, moved with it.
+    :mod:`turbigen.clark` on both surfaces at once, with the camber line left
+    where it was put.
 
     **The knobs are shape-space coefficients**
     (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`): leading edge
@@ -1077,13 +1077,13 @@ class ClarkProfile(RowIterator):
     equal and opposite errors read as converged; per-surface control lives in
     the interior.
 
-    **The nose's other half belongs to the recamber.** Equal and opposite
-    errors at the nose are a leading-edge loading error, which no thickness
-    can remove and incidence can: `dchi_LE` is driven by the suction residual
-    less the pressure one at the first station. Every section of the row is
-    recambered together, as the thickness is, so this owns the row's
-    `dchi_LE` outright and refuses to sit beside an :class:`Incidence`
-    iterator, which would move the same leaves towards a different target.
+    **The recamber is not a knob.** Equal and opposite errors at the nose are
+    left unanswered here, as they are at the trailing edge. `dchi_LE` used to
+    be driven by them, but the nose radius moves the same difference several
+    times harder than it moves the mean it is paired with, so the two knobs
+    fought along one direction until the radius reached a bound. An
+    :class:`Incidence` iterator beside this one sets the leading edge from the
+    stagnation point instead, or `dchi_LE` stays as written.
 
     **The level belongs to the blade count.** Thickness redistributes
     circulation but cannot create it, so `Co` is driven by the circulation
@@ -1233,38 +1233,6 @@ class ClarkProfile(RowIterator):
     the other knobs have converged, without slackening them.
     """
 
-    gain_dchi_LE: float = 20.0
-    """How much of the leading-edge loading error to recamber by [deg].
-
-    **Positive**, because :meth:`error` turns the loading error into the frame
-    of the recamber, row by row: a nose loaded too heavily means flow arriving
-    too far onto the pressure surface, and which way `dchi_LE` moves to take
-    it off depends on which side the pressure surface is on
-    (:attr:`~turbigen.blade.Blade.suction_is_upper`). One positive gain then
-    serves rows turning either way, as one negative gain serves
-    :class:`Incidence`.
-
-    **The size is a guess**, from a stagnation point that moves several
-    degrees for one of metal and a first station a tenth of the way along the
-    surface: of order 0.05 in `fac` for a degree, so twenty is about the
-    full Newton step. :attr:`clip_dchi_LE` bounds what a wrong guess costs.
-
-    **Read only while :attr:`gain` is a scalar**, as :attr:`gain_Co` is.
-    """
-
-    clip_dchi_LE: float = 2.0
-    """Largest leading-edge recamber in one iteration [deg].
-
-    The clip :class:`Incidence` defaults to, for the same knob.
-    """
-
-    tolerance_dchi_LE: float = 0.02
-    """Converged when the leading-edge loading error is within this [--].
-
-    The difference of two residuals, so the same number is a tighter
-    criterion than :attr:`tolerance` on either one.
-    """
-
     R_LE_lim: tuple[float, float] = (0.01, 0.2)
     """Bounds on the leading edge radius, normalised by chord [--].
 
@@ -1304,9 +1272,10 @@ class ClarkProfile(RowIterator):
         for name in ("Ma_peak", "Ma_peak_max", "Ma_LE", "Ma_PS"):
             if not getattr(self, name) > 0.0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
-        for name in ("tolerance_tau_LE", "tolerance_dchi_LE"):
-            if not getattr(self, name) > 0.0:
-                raise ValueError(f"{name} must be positive, got {getattr(self, name)}.")
+        if not self.tolerance_tau_LE > 0.0:
+            raise ValueError(
+                f"tolerance_tau_LE must be positive, got {self.tolerance_tau_LE}."
+            )
 
     #
     # THE PROTOCOL
@@ -1330,23 +1299,21 @@ class ClarkProfile(RowIterator):
             )
 
     def unknowns(self, config):
-        """Return the level, the recamber, then every shape-space coefficient.
+        """Return the level, then every shape-space coefficient.
 
-        **`Co` and `dchi_LE` lead, and the order is load-bearing.** A sequence
-        :attr:`gain` is matched to this order, and the first two positions are
-        the ones that cannot move when a blade changes order: after the shape
-        knobs, a gain written for a circulation coefficient would silently be
-        read as one for a thickness.
+        **`Co` leads, and the order is load-bearing.** A sequence :attr:`gain`
+        is matched to this order, and the first position is the one that
+        cannot move when a blade changes order: after the shape knobs, a gain
+        written for a circulation coefficient would silently be read as one
+        for a thickness.
 
-        The recamber and each coefficient are the mean over the row's
-        sections, as :meth:`with_unknowns` shifts them all together.
+        Each coefficient is the mean over the row's sections, as
+        :meth:`with_unknowns` shifts them all together.
         """
         level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
-        recamber = {self._dchi_name: self._dchi_LE(config)}
         coefficients = self._flat_coeff(self._coefficients(config))
         return (
             level
-            | recamber
             | {
                 name: float(value)
                 for name, value in zip(self._names(self._order(config)), coefficients)
@@ -1360,14 +1327,6 @@ class ClarkProfile(RowIterator):
         co_name = f"Co[{self.i_row}]"
         if moved[co_name] != current[co_name]:
             config = _with_circulation(config, self.i_row, moved[co_name])
-
-        recamber = moved[self._dchi_name] - current[self._dchi_name]
-        if recamber:
-            config = _with_sections(
-                config,
-                self.i_row,
-                lambda _, s: dataclasses.replace(s, dchi_LE=s.dchi_LE + recamber),
-            )
 
         order = self._order(config)
         names = self._names(order)
@@ -1442,7 +1401,6 @@ class ClarkProfile(RowIterator):
         order = self._order(config)
         paths = {f"blades[{self.i_row}].count.Co"}
         for i_section in range(len(config.blades[self.i_row].sections)):
-            paths |= {f"blades[{self.i_row}].sections[{i_section}].dchi_LE"}
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
             paths |= {f"{stem}.tanwedge"}
@@ -1493,20 +1451,7 @@ class ClarkProfile(RowIterator):
         delta = level / (1.0 + measured.length_ratio)
         shape = residual - np.array([[delta], [-delta]])
 
-        # What the recamber can answer for and a shared nose radius cannot: the
-        # suction surface running ahead of the pressure one at the first
-        # station, which is the nose loaded too heavily and the flow arriving
-        # too far onto the pressure surface. From `shape`, so the level --- a
-        # `+delta` on one surface and `-delta` on the other --- is not read as
-        # incidence. Turned into the recamber's frame as `Incidence` turns its
-        # target: a rising metal angle takes flow off the pressure surface
-        # where that surface is the lower one, and puts it on where it is the
-        # upper, so the sign flips with the turning. See `gain_dchi_LE`.
-        loading_LE = float(shape[0][0] - shape[1][0])
-        blade = result.machine.rows[self.i_row].blade
-        sgn = -1.0 if blade.suction_is_upper else 1.0
-
-        errors = {f"Co[{self.i_row}]": level, self._dchi_name: sgn * loading_LE}
+        errors = {f"Co[{self.i_row}]": level}
         return errors | dict(
             zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
         )
@@ -1539,49 +1484,40 @@ class ClarkProfile(RowIterator):
     # A LEVEL AND A SHAPE, WHICH ARE NOT THE SAME KIND OF KNOB
     #
 
-    def _by_knob(self, config, shape_value, level_value, recamber_value):
-        """Return a value for `Co`, one for `dchi_LE`, and one for every shape knob."""
-        values = {f"Co[{self.i_row}]": level_value, self._dchi_name: recamber_value}
+    def _by_knob(self, config, shape_value, level_value):
+        """Return a value for `Co` and one for every shape knob."""
+        values = {f"Co[{self.i_row}]": level_value}
         return values | {name: shape_value for name in self._names(self._order(config))}
 
     def gains(self, config):
         """Return the gain of each knob, with the level's declared separately.
 
         A scalar :attr:`gain` describes the *shape* knobs only, and
-        :attr:`gain_Co` and :attr:`gain_dchi_LE` supply the level and the
-        recamber.
+        :attr:`gain_Co` supplies the level's.
 
-        All three are positive; they are split because of units. A gain is
-        knob units per error unit, and `Co` is a circulation coefficient and
-        `dchi_LE` an angle where the others are shape-space coefficients, so
-        one number spread over them would be different assumed slopes wearing
-        one value. :meth:`clips` splits for the same reason and has no
+        Both are positive; they are split because of units. A gain is knob
+        units per error unit, and `Co` is a circulation coefficient where the
+        others are shape-space coefficients, so one number spread over them
+        would be different assumed slopes wearing one value. :meth:`clips` splits for the same reason and has no
         sequence form to fall back on. Only :meth:`tolerances` splits without
         needing to --- a level residual and a shape residual are both in `fac`
         --- and it splits so that the two can be converged to different
         criteria.
 
         A sequence :attr:`gain` declares every knob instead --- `Co` at index
-        zero and `dchi_LE` at one, as :meth:`unknowns` orders them --- and
-        then carries both itself, leaving `gain_Co` and `gain_dchi_LE` unread.
+        zero, as :meth:`unknowns` orders them --- and then carries the level
+        itself, leaving `gain_Co` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
-            return self._by_knob(
-                config,
-                float(self.gain),
-                float(self.gain_Co),
-                float(self.gain_dchi_LE),
-            )
+            return self._by_knob(config, float(self.gain), float(self.gain_Co))
         return dict(zip(names, self._gain_each(names)))
 
     def clips(self, config):
-        return self._by_knob(config, self.clip, self.clip_Co, self.clip_dchi_LE)
+        return self._by_knob(config, self.clip, self.clip_Co)
 
     def tolerances(self, config):
-        by_knob = self._by_knob(
-            config, self.tolerance, self.tolerance_Co, self.tolerance_dchi_LE
-        )
+        by_knob = self._by_knob(config, self.tolerance, self.tolerance_Co)
         by_knob[f"tau_LE[{self.i_row}]"] = self.tolerance_tau_LE
         return by_knob
 
@@ -1650,15 +1586,6 @@ class ClarkProfile(RowIterator):
     # WHAT THE CONFIG HAS TO PROVIDE
     #
 
-    @property
-    def _dchi_name(self):
-        """Return the table key of this row's leading-edge recamber."""
-        return f"dchi_LE[{self.i_row}]"
-
-    def _dchi_LE(self, config):
-        """Return the row's mean leading-edge recamber [deg]."""
-        return float(np.mean([s.dchi_LE for s in self._blade(config).sections]))
-
     def _order(self, config):
         """Return the Bernstein degree of this row's thickness curves."""
         return self._thickness(config).order
@@ -1705,18 +1632,8 @@ class ClarkProfile(RowIterator):
         return None
 
     def _check(self, config):
-        """Raise unless this row's thickness can carry the knobs, and its
-        recamber is this iterator's alone."""
+        """Raise unless this row's thickness can carry the knobs."""
         from turbigen.thickness import ClarkThickness
-
-        if any(isinstance(it, Incidence) for it in config.iterate.correct):
-            raise ValueError(
-                f"A clark_profile iterator on row {self.i_row} sets that row's "
-                f"leading-edge recamber from its loading, and an incidence "
-                f"iterator sets every row's from the stagnation point; the two "
-                f"would move the same dchi_LE towards different targets. Drop "
-                f"the incidence iterator."
-            )
 
         orders = set()
         for i_section, section in enumerate(self._blade(config).sections):

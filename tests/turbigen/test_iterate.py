@@ -30,9 +30,8 @@ Test cases:
 - test_mean_line_error_is_zero_for_its_own_design: likewise, through backward()
 - test_mean_line_tolerance_scales_with_the_nominal: relative, per variable
 - test_mean_line_restores_a_scalar_as_a_scalar: shapes survive a round trip
-- test_clark_recamber_error_flips_with_the_turning: one gain for rows turning either way
-- test_clark_recambers_the_way_incidence_would: an over-loaded nose is pressure-side incidence
-- test_clark_refuses_to_share_the_recamber_with_incidence: one owner per leaf
+- test_clark_leaves_the_recamber_alone: the leading edge angle is not a knob
+- test_clark_sits_beside_an_incidence_iterator: which may set it instead
 """
 
 import dataclasses
@@ -1099,11 +1098,10 @@ def target_loop(iterator, machine, ratio):
     )
 
 
-def test_clark_owns_both_ends_both_surfaces_the_level_and_the_recamber(clark):
+def test_clark_owns_both_ends_both_surfaces_and_the_level(clark):
     """Order 3 gives four control points, of which only the ends are shared."""
     assert set(clark.iterate.correct[0].unknowns(clark)) == {
         "Co[0]",
-        "dchi_LE[0]",
         "tau_LE[0]",
         "tau_TE[0]",
         "tau[0][0][1]",
@@ -1116,14 +1114,13 @@ def test_clark_owns_both_ends_both_surfaces_the_level_and_the_recamber(clark):
 def test_clark_puts_the_level_first_and_the_ends_before_the_interior(clark):
     """The order a sequence `gain` is matched to, so it is load-bearing.
 
-    `Co` and the recamber first and the two ends next means none of them
-    moves when a design changes order --- only the interior grows, at the
-    tail. Written the other way round, a gain written for one design would be
-    read back against different knobs on the next.
+    `Co` first and the two ends next means none of them moves when a design
+    changes order --- only the interior grows, at the tail. Written the other
+    way round, a gain written for one design would be read back against
+    different knobs on the next.
     """
-    assert list(clark.iterate.correct[0].unknowns(clark))[:4] == [
+    assert list(clark.iterate.correct[0].unknowns(clark))[:3] == [
         "Co[0]",
-        "dchi_LE[0]",
         "tau_LE[0]",
         "tau_TE[0]",
     ]
@@ -1234,10 +1231,7 @@ def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
 
     assert error["Co[0]"] == pytest.approx(level)
     assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
-    # Row 0's metal angle rises, so its pressure surface is the upper one and
-    # the loading error is already in the recamber's frame.
-    assert not machine.rows[0].blade.suction_is_upper
-    assert error["dchi_LE[0]"] == pytest.approx(shape[0][0] - shape[1][0])
+    assert "dchi_LE[0]" not in error
     assert error["tau_TE[0]"] == pytest.approx(0.5 * (shape[0][-1] + shape[1][-1]))
     assert error["tau[0][0][1]"] == pytest.approx(shape[0][1])
     assert error["tau[0][1][2]"] == pytest.approx(shape[1][2])
@@ -1285,7 +1279,7 @@ def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
     assert errors[0]["Co[0]"] == pytest.approx(0.0, abs=1e-12)
 
     assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.3 * (1.0 + ratio))
-    for name in ("tau_LE[0]", "tau_TE[0]", "dchi_LE[0]"):
+    for name in ("tau_LE[0]", "tau_TE[0]"):
         assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
 
 
@@ -1327,12 +1321,10 @@ def test_clark_cannot_see_an_antisymmetric_trailing_edge_error(clark, monkeypatc
     # the mean of it, which is zero.
     assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
 
-    # Nor can the nose radius, one knob for two surfaces; but at the nose the
-    # recamber reads the difference: the skew twice over, less the part of it
-    # the level took off both surfaces (a half each, at equal lengths).
+    # Nor can the nose radius, one knob for two surfaces, and nothing here
+    # reads the difference at the nose either.
     assert errors["tau_LE[0]"] == pytest.approx(0.0, abs=1e-12)
-    assert errors["dchi_LE[0]"] == pytest.approx(0.2 - errors["Co[0]"])
-    assert errors["dchi_LE[0]"] != pytest.approx(0.0)
+    assert not any("dchi_LE" in name for name in errors)
 
 
 def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
@@ -1492,98 +1484,21 @@ def test_clark_tolerances_default_alike(clark):
     assert all(value == pytest.approx(0.02) for value in tolerances.values())
 
 
-def test_clark_recambers_every_section_together(clark):
-    """One span fraction is measured, so the recamber is a uniform shift too."""
+def test_clark_leaves_the_recamber_alone(clark):
+    """The leading edge angle is not a knob here: moving every knob keeps it."""
     iterator = clark.iterate.correct[0]
-    dchi = iterator.unknowns(clark)["dchi_LE[0]"]
-
-    moved = iterator.with_unknowns(clark, {"dchi_LE[0]": dchi + 0.7})
-
-    shifts = [
-        section.dchi_LE - original.dchi_LE
-        for section, original in zip(moved.blades[0].sections, clark.blades[0].sections)
-    ]
-    assert shifts == pytest.approx([0.7] * len(shifts))
-    assert moved.blades[1] == clark.blades[1]
-    for section, original in zip(moved.blades[0].sections, clark.blades[0].sections):
-        assert section.thickness == original.thickness
-
-
-def _nose_loading_error(clark, i_row, skew, monkeypatch):
-    """Return the `dchi_LE` error of row `i_row` for a nose skewed by `skew`."""
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
-    config = dataclasses.replace(
+    moved = iterator.with_unknowns(
         clark,
-        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(i_row=i_row),)),
-    )
-    iterator = config.iterate.correct[0]
-    machine = config.design()
-
-    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
-    fac = iterator.target(z, machine) + np.array(
-        [[skew, 0.0, 0.0, 0.0], [-skew, 0.0, 0.0, 0.0]]
-    )
-    # The target's own loop, so no level is taken off and the skew is read
-    # whole.
-    loop = target_loop(iterator, machine, 1.0)
-    monkeypatch.setattr(
-        turbigen.loading,
-        "measure_clark_profile",
-        lambda *a: measured_as(z, fac, Co=loop),
-    )
-    return iterator.error(config, Result(machine=machine, grid=object()))[
-        f"dchi_LE[{i_row}]"
-    ]
-
-
-def test_clark_recamber_error_flips_with_the_turning(clark, monkeypatch):
-    """The same over-loaded nose, on rows turning opposite ways.
-
-    A rising metal angle takes flow off the pressure surface where that is
-    the lower one and puts it on where it is the upper, so the one positive
-    gain needs the error turned into the recamber's frame row by row.
-    """
-    rows = clark.design().rows
-    assert rows[0].blade.suction_is_upper != rows[1].blade.suction_is_upper
-
-    first = _nose_loading_error(clark, 0, 0.1, monkeypatch)
-    second = _nose_loading_error(clark, 1, 0.1, monkeypatch)
-
-    assert abs(first) == pytest.approx(0.2)
-    assert second == pytest.approx(-first)
-
-
-@pytest.mark.parametrize("i_row", [0, 1])
-def test_clark_recambers_the_way_incidence_would(clark, monkeypatch, i_row):
-    """An over-loaded nose is flow too far onto the pressure surface.
-
-    So the recamber this takes for it has to have the sign the incidence
-    iterator takes for the same flow, on either row. Checked against that
-    iterator rather than against a sign written here, because its frame is the
-    one pinned to what a blade measures.
-    """
-    clark_step = -iterate.ClarkProfile().gain_dchi_LE * _nose_loading_error(
-        clark, i_row, 0.1, monkeypatch
+        {name: value + 0.01 for name, value in iterator.unknowns(clark).items()},
     )
 
-    # Flow onto the pressure surface, in the frame the incidence is measured
-    # in: positive where the suction surface is the upper one.
-    machine = clark.design()
-    onto_pressure = 5.0 if machine.rows[i_row].blade.suction_is_upper else -5.0
-    monkeypatch.setattr(turbigen.util, "cut_blade_surfs", lambda grid: [None, None])
-    monkeypatch.setattr(iterate, "_incidence", lambda *a, **k: onto_pressure)
-    config = dataclasses.replace(
-        clark, iterate=iterate.Iteration(correct=(iterate.Incidence(),))
-    )
-    incidence = iterate.Incidence()
-    errors = incidence.error(config, Result(machine=machine, grid=object()))
-    incidence_step = -incidence.gain * errors[f"dchi_LE[{i_row}][0]"]
-
-    assert np.sign(clark_step) == np.sign(incidence_step) != 0.0
+    for section, original in zip(moved.blades[0].sections, clark.blades[0].sections):
+        assert section.dchi_LE == original.dchi_LE
+    assert not any("dchi_LE" in path for path in iterator.paths(clark))
 
 
-def test_clark_refuses_to_share_the_recamber_with_incidence(clark):
-    """Two iterators moving one leaf towards different targets is a fight."""
+def test_clark_sits_beside_an_incidence_iterator(clark):
+    """With the recamber given up, the stagnation point may set it instead."""
     config = dataclasses.replace(
         clark,
         iterate=iterate.Iteration(
@@ -1591,20 +1506,9 @@ def test_clark_refuses_to_share_the_recamber_with_incidence(clark):
         ),
     )
 
-    with pytest.raises(ValueError, match="Drop the incidence iterator"):
-        iterate.unknowns(config)
-
-
-def test_clark_recamber_has_its_own_gain_clip_and_tolerance(clark):
-    """An angle against a loading error, so none of the shape knobs' numbers."""
-    iterator = iterate.ClarkProfile(
-        gain_dchi_LE=3.0, clip_dchi_LE=0.4, tolerance_dchi_LE=0.07
-    )
-
-    assert iterator.gains(clark)["dchi_LE[0]"] == pytest.approx(3.0)
-    assert iterator.clips(clark)["dchi_LE[0]"] == pytest.approx(0.4)
-    assert iterator.tolerances(clark)["dchi_LE[0]"] == pytest.approx(0.07)
-    assert iterator.gains(clark)["tau_LE[0]"] == pytest.approx(iterator.gain)
+    names = set(iterate.unknowns(config))
+    assert "tau_LE[0]" in names
+    assert "dchi_LE[0][0]" in names
 
 
 def test_clark_needs_a_two_sided_thickness():
