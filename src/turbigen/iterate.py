@@ -70,6 +70,7 @@ class MeasurementError(Exception):
 TINY = 1e-9
 """Below this a nominal value is treated as zero when something is relative to it."""
 
+
 class Iterator(Node):
     """Base for design iterators.
 
@@ -1251,7 +1252,7 @@ class ClarkProfile(RowIterator):
     **Read only while :attr:`gain` is a scalar**, as :attr:`gain_Co` is.
     """
 
-    clip_dchi_LE: float = 1.0
+    clip_dchi_LE: float = 2.0
     """Largest leading-edge recamber in one iteration [deg].
 
     The clip :class:`Incidence` defaults to, for the same knob.
@@ -1343,10 +1344,14 @@ class ClarkProfile(RowIterator):
         level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
         recamber = {self._dchi_name: self._dchi_LE(config)}
         coefficients = self._flat_coeff(self._coefficients(config))
-        return level | recamber | {
-            name: float(value)
-            for name, value in zip(self._names(self._order(config)), coefficients)
-        }
+        return (
+            level
+            | recamber
+            | {
+                name: float(value)
+                for name, value in zip(self._names(self._order(config)), coefficients)
+            }
+        )
 
     def with_unknowns(self, config, values):
         current = self.unknowns(config)
