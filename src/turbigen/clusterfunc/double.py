@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 
 import turbigen.clusterfunc.check
+import turbigen.clusterfunc.plateau
 import turbigen.clusterfunc.single
 import turbigen.clusterfunc.util
 from turbigen.clusterfunc.exceptions import ClusteringException
@@ -248,3 +249,97 @@ def _unit_free(dx0, dx1, dmax, ERmax, mult=8, rtol=1e-2):
         )
 
     return x
+
+
+def plateau_fixed(dx0, dx1, dmax, ERmax, N, x0=0.0, x1=1.0, width=None):
+    """Double-sided plateau clustering with fixed number of points.
+
+    Generate a grid vector x of length N, by default over the unit interval.
+    From the specified spacings at x0 and x1, grow geometrically and turn over
+    onto a uniform plateau at the maximum spacing. The expansion ratio is
+    lowered from its limit to fit the interval exactly. See
+    :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dx0 float
+        Boundary spacing at x0.
+    dx1 float
+        Boundary spacing at x1.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    N: int
+        Number of points in the grid vector.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    width: float
+        Turnover half-width as a fraction of each ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_fixed(
+        dx0 / Dxa, dx1 / Dxa, dmax / Dxa, ERmax, N, **kwargs
+    )
+
+
+def plateau_free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8, width=None):
+    """Double-sided plateau clustering with free number of points.
+
+    Generate a grid vector x from x0 to x1, with the fewest points, in a
+    multiple of `mult` cells, that meet the end spacings, the maximum spacing
+    and the expansion ratio limit. From each end the spacing grows
+    geometrically and turns over onto a uniform plateau at the maximum
+    spacing. See :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dx0 float
+        Boundary spacing at x0.
+    dx1 float
+        Boundary spacing at x1.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    mult: int
+        Choose a number of cells divisible by this factor.
+    width: float
+        Turnover half-width as a fraction of each ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_free(
+        dx0 / Dxa, dx1 / Dxa, dmax / Dxa, ERmax, mult, **kwargs
+    )
+
+
+def _interval(x0, x1):
+    """Return the signed length of the interval, refusing an empty one."""
+    if np.isclose(x0, x1):
+        raise ClusteringException(
+            "Cannot distribute points without distinct start and end points, "
+            f"got x0={x0} and x1={x1}"
+        )
+    return x1 - x0

@@ -1,1 +1,1 @@
-from . import double, single, symmetric
+from . import double, plateau, single, symmetric
