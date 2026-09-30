@@ -125,6 +125,28 @@ class H(Mesher):
     ER_span: float = 1.2
     """Expansion ratio of spanwise grid away from hub and casing."""
 
+    half_span: bool = False
+    """Cluster the spanwise grid at the hub only, not at both ends.
+
+    For a row that is a wall at one end of the span and a symmetry plane at the
+    other --- half of a linear cascade, say --- there is nothing at the casing
+    to resolve, and the default two-sided distribution spends points reaching a
+    spacing it was never asked for. Setting this uses a single-sided
+    distribution instead: geometric growth from :attr:`WallSpacing.hub` at
+    spacing :attr:`ER_span`, capped at :attr:`dspf_mid`, and flat from there to
+    the casing, where the casing spacing is ignored.
+
+    Passing the mid-span spacing as the casing spacing gets close to the same
+    grid, since a two-sided distribution whose two targets coincide has nothing
+    left to cluster towards. It is not the same grid: the expansion ratio still
+    comes out well under :attr:`ER_span` because the two-sided solve is
+    matching a spacing at each end rather than growing freely from one. On a
+    half-span cascade that was 97 spanwise points at an expansion ratio of 1.03
+    where this gives 49 at the 1.2 that was asked for.
+
+    Incompatible with a tip gap, which needs the casing clustering it asks for.
+    """
+
     dm_LE: float = 0.001
     """Streamwise grid spacing at LE, normalised by meridional chord."""
 
@@ -186,6 +208,15 @@ class H(Mesher):
     ni_cusp: int = 0
     """Number of streamwise points along the trailing edge cusp."""
 
+    ni_down_extra: int = 0
+    """Streamwise points added to each row's downstream gap, with a cusp.
+
+    The downstream gap is deliberately coarsened by eight points relative to
+    what the multigrid alignment alone would give; this adds points back.
+    Must be a multiple of eight, so the alignment still holds. The points are
+    spread by re-interpolating the whole gap, so it keeps its clustering.
+    """
+
     nk_tip: int = 0
     """Number of points across the blade thickness in a gridded tip block.
 
@@ -231,6 +262,11 @@ class H(Mesher):
     def __post_init__(self):
         if self.ni_cusp and self.dm_TE != 0.0:
             raise ValueError("ni_cusp requires dm_TE = 0.0")
+        if self.ni_down_extra % 8:
+            raise ValueError(
+                f"ni_down_extra={self.ni_down_extra} must be a "
+                f"multiple of eight to keep the multigrid alignment."
+            )
         if self.nk_tip and (self.nk_tip < 9 or (self.nk_tip - 1) % 8):
             raise ValueError(
                 f"nk_tip={self.nk_tip} is not a count a multigrid level can "
@@ -545,6 +581,10 @@ class H(Mesher):
 
         # 3. Theta limits from blade sections
         theta_lim = np.zeros((2, ni, nj))
+        # Slope d(theta)/dx of each surface into the TE corner, from the section
+        # rather than the grid; add_cusp extrapolates the corner-side surface
+        # along it. See _DM_TE_SLOPE.
+        dtdx_TE = np.zeros((2, nj))
         m = util.cluster_cosine(20000)
         for j in range(nj):
             xrt_u, xrt_l = _by_theta(blade, span_frac[j], m=m)
@@ -564,6 +604,11 @@ class H(Mesher):
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
+            if self.AR_cusp:
+                sf = tte_span[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
+                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, (0, 1))[:2])
+                x_sl = annulus.evaluate_xr(sf + geom.ist + 1.0, span_frac[j])[0]
+                dtdx_TE[:, j] = np.diff(theta_sl, axis=-1)[:, 0] / np.diff(x_sl)[0]
 
         # 4. Cusp insertion and tip pinching
         xrt_ul = np.stack(
@@ -574,7 +619,15 @@ class H(Mesher):
             )
         )
         if self.AR_cusp:
-            xrt_cusped = add_cusp(xrt_ul, ite, self.AR_cusp, self.ni_cusp, self.ni_TE)
+            xrt_cusped = add_cusp(
+                xrt_ul,
+                ite,
+                self.AR_cusp,
+                self.ni_cusp,
+                self.ni_TE,
+                resolution_factor=self.resolution_factor,
+                dtdx_TE=dtdx_TE,
+            )
             xr = xrt_cusped[:2, ...].mean(axis=-1)
             theta_lim = np.moveaxis(xrt_cusped[2, ...], -1, 0)
 
@@ -848,7 +901,16 @@ class H(Mesher):
     #
 
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
-        """Evaluate a spanwise grid vector given hub and casing spacings."""
+        """Evaluate a spanwise grid vector given hub and casing spacings.
+
+        ``dspf_casing`` is ignored when :attr:`half_span` is set.
+        """
+        if tip and self.half_span:
+            raise ValueError(
+                "half_span clusters at the hub only, but a tip gap needs "
+                "the casing clustering; set one or the other."
+            )
+
         if tip:
             Lmain = 1.0 - tip
 
@@ -882,8 +944,11 @@ class H(Mesher):
                     dspf_tip, dspf_tip, njtip_min, Lmain, 1.0
                 )
 
+            # Only the main passage takes the resolution factor. Resampling the
+            # tip gap with mult=8 rounded its four cells up to eight at any
+            # factor but one, halving the casing cell with it; left alone, the
+            # gap and the casing wall spacing hold across a resolution study.
             spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
-            spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
 
             # The two pieces share a node, and the total must be one more than a
             # multiple of eight for multigrid. The fallback above can give the
@@ -905,6 +970,13 @@ class H(Mesher):
             assert (spf >= tip).sum() >= njtip_min
 
             return spf
+
+        elif self.half_span:
+            return util.resample(
+                clusterfunc.single.free(dspf_hub, self.dspf_mid, self.ER_span),
+                self.resolution_factor,
+                mult=8,
+            )
 
         else:
             return util.resample(
@@ -1044,7 +1116,7 @@ class H(Mesher):
         # divisibility by 8.
         if ni_cusp:
             # Less 8 further points to coarsen grids downstream of cusp a bit
-            dn_deficit = (ni_cusp - len(t_downstream)) % 8 - 8
+            dn_deficit = (ni_cusp - len(t_downstream)) % 8 - 8 + self.ni_down_extra
             if dn_deficit:
                 t_downstream = np.interp(
                     np.linspace(0.0, 1.0, len(t_downstream) + dn_deficit),
@@ -1268,17 +1340,24 @@ def _theta_limits(
     return theta_u, theta_l, tte
 
 
-def _blend_te_corner(xrrt, iTE, ni_TE, k):
+# Meridional-chord fraction the TE slope is taken over, from two of these to
+# one of these upstream of the section's TE corner. Short enough to be the
+# tangent at any grid resolution, and stopping short of the corner, which is
+# located only to sub-sample accuracy on its own 500-point search.
+_DM_TE_SLOPE = 2e-3
+
+
+def _blend_te_corner(xrrt, iTE, n_blend, k):
     """Blend the corner-side surface towards a straight line approaching the cusp.
 
-    On the cusp corner side, the window [iTE-2*ni_TE, iTE] holds the original
+    On the cusp corner side, the window [iTE-n_blend, iTE] holds the original
     blade points (upstream half) and the new loaded points (downstream half).
     Draw one straight line between the two window endpoints and blend the
     interior points towards it, with weight ramping linearly from 0 at the
-    upstream end (iTE-2*ni_TE) to 1 at the cusp start (iTE). Endpoints are
+    upstream end (iTE-n_blend) to 1 at the cusp start (iTE). Endpoints are
     pinned; this removes the kink between the blade and the loaded cusp points.
     """
-    i0 = iTE - 2 * ni_TE
+    i0 = iTE - n_blend
     if i0 < 0:
         return
     n = iTE - i0  # number of intervals across the window
@@ -1298,16 +1377,32 @@ def _blend_te_corner(xrrt, iTE, ni_TE, k):
     xrrt[2, i0 : iTE + 1, :, k] = (1.0 - w) * t + w * line
 
 
-def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE):
+def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, resolution_factor=1.0, dtdx_TE=None):
     """Change block coordinates from square TE to cusped TE.
 
     This assumes that the trailing edge is located exactly
     at ni_TE points upstream of the zero-thickness point of the blade
     (achieve this by setting dm_TE to 0.0 and ni_TE > 0 in config.)
 
+    The corner search, the corner blend and the trailing-edge segment are
+    windows of streamwise points, and they change the blade's shape, not just
+    the grid on it. So they are scaled by `resolution_factor`, the mesher's, to
+    keep them the same physical length as the grid is refined; left fixed, a
+    resolution study meshes a different trailing edge at every level.
+
+    `dtdx_TE`, shaped [side, j], is each surface's d(theta)/dx into the corner,
+    taken from the section. The corner-side surface is extrapolated to the TE
+    along it. Without it, the slope is the secant of the grid segment into the
+    corner, which is a chord of a curved surface: its error, and the trailing
+    edge thickness with it, then goes with the streamwise grid spacing.
     """
 
     assert AR_cusp > 0.0
+
+    # Streamwise point counts of the windows, at a resolution factor of one.
+    n_look = int(round(12 * resolution_factor))
+    n_seg = int(round(10 * resolution_factor))
+    n_blend = int(round(2 * ni_TE * resolution_factor))
 
     nj = xrt.shape[2]
     jmid = nj // 2
@@ -1335,7 +1430,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE):
     # index with span, so a single midspan choice ties the re-squaring to the
     # spanwise node count -- at some resolutions the reused index overshoots
     # and collapses the hub TE to zero thickness (breaking the cusp below).
-    istlook = iTE - 12
+    istlook = iTE - n_look
     if plus_exit:
         # Turning point on the lower surface (side 0), per station.
         ilower = istlook + np.argmax(xrrt[2, istlook:iTE, :, 0], axis=0)
@@ -1343,18 +1438,21 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE):
         if is_axial:
             for j in range(nj):
                 il = int(ilower[j])
-                grad = (xrrt[2, il, j, 0] - xrrt[2, il - 1, j, 0]) / (
-                    xrrt[0, il, j, 0] - xrrt[0, il - 1, j, 0]
-                )
+                if dtdx_TE is not None:
+                    grad = rref * dtdx_TE[0, j]
+                else:
+                    grad = (xrrt[2, il, j, 0] - xrrt[2, il - 1, j, 0]) / (
+                        xrrt[0, il, j, 0] - xrrt[0, il - 1, j, 0]
+                    )
                 xrrt[2, il + 1 : iTE + 1, j, 0] = xrrt[2, il, j, 0] + grad * (
                     xrrt[0, il + 1 : iTE + 1, j, 0] - xrrt[0, il, j, 0]
                 )
-            _blend_te_corner(xrrt, iTE, ni_TE, 0)
+            _blend_te_corner(xrrt, iTE, n_blend, 0)
 
         else:
             raise NotImplementedError()
         logger.debug(f"ilower={ilower}, iTE={iTE}")
-        xrrt_TE = np.moveaxis(xrrt[:, iTE - 10 : iTE + 1, :, :], -1, 0)
+        xrrt_TE = np.moveaxis(xrrt[:, iTE - n_seg : iTE + 1, :, :], -1, 0)
     else:
         # Turning point on the upper surface (side -1), per station.
         ilower = istlook + np.argmin(xrrt[2, istlook:iTE, :, -1], axis=0)
@@ -1362,20 +1460,23 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE):
         if is_axial:
             for j in range(nj):
                 il = int(ilower[j])
-                grad = (xrrt[2, il, j, -1] - xrrt[2, il - 1, j, -1]) / (
-                    xrrt[0, il, j, -1] - xrrt[0, il - 1, j, -1]
-                )
+                if dtdx_TE is not None:
+                    grad = rref * dtdx_TE[-1, j]
+                else:
+                    grad = (xrrt[2, il, j, -1] - xrrt[2, il - 1, j, -1]) / (
+                        xrrt[0, il, j, -1] - xrrt[0, il - 1, j, -1]
+                    )
                 xrrt[2, il : iTE + 1, j, -1] = xrrt[2, il, j, -1] + grad * (
                     xrrt[0, il : iTE + 1, j, -1] - xrrt[0, il, j, -1]
                 )
-            _blend_te_corner(xrrt, iTE, ni_TE, -1)
+            _blend_te_corner(xrrt, iTE, n_blend, -1)
 
         else:
             raise NotImplementedError()
         xrrt_TE = np.stack(
             (
-                xrrt[:, iTE - 10 : iTE + 1, :, 0],
-                xrrt[:, iTE - 10 : iTE + 1, :, -1],
+                xrrt[:, iTE - n_seg : iTE + 1, :, 0],
+                xrrt[:, iTE - n_seg : iTE + 1, :, -1],
             )
         )
 

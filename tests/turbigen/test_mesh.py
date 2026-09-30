@@ -358,6 +358,13 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades):
     `test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio` pins
     what replaced it.
 
+    Nor is the cusp compared all the way down. This mesher takes the slope
+    into the trailing-edge corner from the section rather than from the grid,
+    and scales the corner windows with the resolution factor, so the trailing
+    edge it builds is deliberately not the old one. Upstream of the old
+    corner blend, which starts `2 * ni_TE` points before the cusp, nothing has
+    changed, and that part is still compared exactly.
+
     Rotating patches are compared separately, below. The old mesher places
     none: there, rotation arrives later from `Grid.apply_rotation` at
     boundary-condition time, which is the arrangement this deliberately
@@ -372,7 +379,14 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades):
 
     for block, block_ref in zip(grid, reference):
         assert block.shape == block_ref.shape
-        np.testing.assert_allclose(block.xrt, block_ref.xrt, rtol=1e-12, atol=1e-12)
+        ite = next(p.ist for p in block.patches if isinstance(p, ember.patch.CuspPatch))
+        i_blend = ite - 2 * config.mesh.ni_TE
+        np.testing.assert_allclose(
+            block.xrt[: i_blend + 1],
+            block_ref.xrt[: i_blend + 1],
+            rtol=1e-12,
+            atol=1e-12,
+        )
         shared = [
             p for p in block.patches if not isinstance(p, ember.patch.RotatingPatch)
         ]
@@ -400,6 +414,75 @@ def test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio(tip, njti
     ratio = joined[1:] / joined[:-1]
     assert np.maximum(ratio, 1.0 / ratio).max() <= mesher.ER_span
     assert len(gap) >= njtip_min - 1
+
+
+@pytest.mark.parametrize("resolution_factor", [0.5, 2.0])
+def test_the_tip_gap_does_not_scale_with_resolution(resolution_factor):
+    """Only the main passage takes the resolution factor.
+
+    Resampling the gap with a multigrid multiple rounded its cells up to eight
+    at any factor but one, halving the casing spacing with it, so a resolution
+    study meshed a different wall at every level.
+    """
+    tip, dspf_wall = 0.005, 3.4e-3
+    base = H().spanwise_grid(dspf_wall, dspf_wall, tip)
+    scaled = H(resolution_factor=resolution_factor).spanwise_grid(
+        dspf_wall, dspf_wall, tip
+    )
+
+    def gap(spf):
+        return spf[spf >= 1.0 - tip - 1e-12]
+
+    np.testing.assert_allclose(gap(scaled), gap(base))
+    assert (len(scaled) - 1) % 8 == 0
+
+
+def test_half_span_clusters_at_the_hub_only():
+    mesher = H(half_span=True)
+    dspf_hub = 1e-3
+
+    spf = mesher.spanwise_grid(dspf_hub, 1e-4, 0.0)
+
+    assert spf[0] == 0.0
+    assert np.isclose(spf[-1], 1.0)
+    assert (len(spf) - 1) % 8 == 0
+    ds = np.diff(spf)
+    assert (ds > 0.0).all()
+    assert ds[0] <= dspf_hub * 1.1
+    # Grows away from the hub and is never clustered again at the casing.
+    assert (ds[1:] / ds[:-1] <= mesher.ER_span * 1.01).all()
+    assert ds[-1] > 10.0 * dspf_hub
+    # The casing spacing is ignored.
+    np.testing.assert_array_equal(spf, mesher.spanwise_grid(dspf_hub, 1e-2, 0.0))
+
+
+def test_half_span_is_fewer_points_than_two_sided():
+    dspf_hub = 1e-3
+    one = H(half_span=True).spanwise_grid(dspf_hub, H().dspf_mid, 0.0)
+    two = H().spanwise_grid(dspf_hub, H().dspf_mid, 0.0)
+    assert len(one) < len(two)
+
+
+def test_half_span_refuses_a_tip_gap():
+    with pytest.raises(ValueError, match="half_span"):
+        H(half_span=True).spanwise_grid(1e-3, 1e-3, 0.01)
+
+
+def test_ni_down_extra_must_keep_the_multigrid_alignment():
+    with pytest.raises(ValueError, match="multiple of eight"):
+        H.from_dict({"type": "h", "ni_down_extra": 4})
+
+
+def test_ni_down_extra_adds_points_downstream_of_the_cusp():
+    machine = build(mesh=CUSP).design()
+    base = build(mesh=CUSP).mesh.mesh(machine)
+    extra = build(mesh={**CUSP, "ni_down_extra": 8}).mesh.mesh(machine)
+
+    for a, b in zip(extra, base):
+        assert a.shape == (b.shape[0] + 8, *b.shape[1:])
+        # Upstream of the cusp the grid is the same.
+        ite = next(p.ist for p in b.patches if isinstance(p, ember.patch.CuspPatch))
+        np.testing.assert_array_equal(a.xrt[: ite + 1], b.xrt[: ite + 1])
 
 
 def test_a_tip_gap_is_the_one_patch_the_old_mesher_does_not_place(machine):
