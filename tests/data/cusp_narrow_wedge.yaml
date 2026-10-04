@@ -1,0 +1,134 @@
+# The design of sweep sample 0004 at its third iteration, cut down to what the
+# mesher reads. Its stator trailing-edge wedge is narrow enough that a cusp of
+# nine points could be geometrically clustered from the trailing edge on one
+# side and not the other, which crossed the two surfaces over once both were
+# put back on one meridional position. See test_mesh.py.
+fluid:
+  Pr: 0.7
+  cp: 1100.0
+  gamma: 1.33
+  mu: 0.0001983
+  type: perfect
+mean_line:
+  Ma1_max: 0.7
+  Ma2: 0.7351540481671691
+  Ma3_rel_max: 0.9
+  Po1: 1600000.0
+  To1: 1600.0
+  Ys:
+  - 0.023422486462877715
+  - 0.06157106281156302
+  fac_Ma3_rel: 0.9740937244147062
+  mdot: 1900.0
+  phi2: 0.8691832467447966
+  psi: 1.2780563160777092
+  r_rms: 2.0
+  type: axial_turbine
+  zeta:
+  - 1.0282439630478621
+  - 1.0769492954015734
+annulus:
+  cx_gap:
+  - 0.1
+  - 0.06
+  - 0.15
+  cx_row:
+  - 0.1
+  - 0.1
+  merge_weight: 1.0
+  nozzle_ratio: 1.0
+  type: fixed_axial_chord
+blades:
+- count:
+    Co: 0.5721804464069217
+    spf: 0.5
+    type: Co
+  m_stack: 0.5
+  sections:
+  - camber:
+      exponent: 2.6
+      type: clark
+    dchi_LE: 0.17307487168010072
+    dchi_TE: -1.4968437783910804
+    spf: 0.5
+    thickness:
+      R_LE: 0.019637771551940637
+      coeff:
+      - - -0.01868592115168713
+        - 0.060604388045821744
+        - 0.015128324565905599
+        - 0.01874553613390753
+        - -0.024143187795439724
+      - - -0.034494875873323755
+        - 0.05815919864983088
+        - 0.044374321103915565
+        - 0.07773740001719073
+        - 0.0941293425337662
+      t_TE: 0.025
+      tanwedge: 0.12832569408570282
+      type: clark
+  theta_offset: 0.0
+  tip_chord: 0.0
+  tip_metre: 0.0
+  tip_span: 0.0
+  vortex_exponent: -0.6
+- count:
+    Co: 0.5813046524222882
+    spf: 0.5
+    type: Co
+  m_stack: 0.5
+  sections:
+  - camber:
+      exponent: 2.6
+      type: clark
+    dchi_LE: -0.12221795968452964
+    dchi_TE: -2.7562677258507433
+    spf: 0.5
+    thickness:
+      R_LE: 0.016986478519764297
+      coeff:
+      - - -0.04771507739820402
+        - 0.09546752790179558
+        - 0.029727054939395203
+        - 0.06654808539014126
+        - 0.02983846002690349
+      - - -0.04520659733928023
+        - 0.07712055200756301
+        - 0.05263973388354509
+        - 0.05253223709629082
+        - 0.09802406592657548
+      t_TE: 0.025
+      tanwedge: 0.1564854328626705
+      type: clark
+  theta_offset: 0.0
+  tip_chord: 0.03132468000985682
+  tip_metre: 0.0
+  tip_span: 0.0
+  vortex_exponent: -0.6
+mesh:
+  AR_cusp: 2.0
+  AR_merid: 1.0
+  AR_mix: 1.0
+  AR_passage: 1.0
+  AR_stream: 2.0
+  ER_pitch: 1.2
+  ER_span: 1.2
+  ER_stream: 1.2
+  deswirl: false
+  dm_LE: 0.001
+  dm_TE: 0.0
+  dspf_mid: 0.03
+  gap_contraction: 0.6
+  half_span: false
+  nchord_relax: 1.0
+  ni_TE: 9
+  ni_cusp: 9
+  ni_down_extra: 0
+  njtip_min: 9
+  nk_min: 37
+  nk_tip: 0
+  pinch_ramp: 1.0
+  resolution_factor: 1.0
+  skew_max: 45.0
+  type: h
+  yplus: 30.0

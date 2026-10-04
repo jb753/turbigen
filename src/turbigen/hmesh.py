@@ -931,7 +931,7 @@ class H(Mesher):
                 njtip_min = int(8 * np.ceil((njtip_min - 1) / 8)) + 1
             dspf_tip = np.minimum(dspf_casing, tip / (njtip_min - 1))
 
-            spf_main = clusterfunc.double.free(
+            spf_main = clusterfunc.double.plateau_free(
                 dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, Lmain
             )
 
@@ -973,14 +973,16 @@ class H(Mesher):
 
         elif self.half_span:
             return util.resample(
-                clusterfunc.single.free(dspf_hub, self.dspf_mid, self.ER_span),
+                clusterfunc.single.plateau_free(
+                    dspf_hub, self.dspf_mid, self.ER_span
+                ),
                 self.resolution_factor,
                 mult=8,
             )
 
         else:
             return util.resample(
-                clusterfunc.double.free(
+                clusterfunc.double.plateau_free(
                     dspf_hub, dspf_casing, self.dspf_mid, self.ER_span
                 ),
                 self.resolution_factor,
@@ -995,7 +997,7 @@ class H(Mesher):
             f"Free npts: drt_row={drt_row}, drt_mid={drt_mid}, ER={self.ER_pitch}"
         )
 
-        x = clusterfunc.symmetric.free(drt_row, drt_mid, self.ER_pitch)
+        x = clusterfunc.symmetric.plateau_free(drt_row, drt_mid, self.ER_pitch)
 
         dx = np.diff(x)
         assert np.isclose(x[0], 0.0)
@@ -1007,16 +1009,29 @@ class H(Mesher):
         assert np.isfinite(x).all()
 
         if resample:
-            x = util.resample(x, self.resolution_factor, mult=8)
+            x_free = x
+            x = util.resample(x_free, self.resolution_factor, mult=8)
             if len(x) < self.nk_min:
                 npts = int(8 * np.ceil((self.nk_min - 1) / 8)) + 1
-                x = clusterfunc.symmetric.fixed(drt_row, npts)
+                # More points than the plateau needs at full resolution can
+                # always be fitted, by ramping more gently. Fewer cannot, so a
+                # coarsened grid is resampled to the minimum count instead,
+                # coarsening the wall cell with it as the resolution factor
+                # does everywhere else.
+                try:
+                    x = clusterfunc.symmetric.plateau_fixed(
+                        drt_row, drt_mid, self.ER_pitch, npts
+                    )
+                except clusterfunc.exceptions.ClusteringException:
+                    x = util.resample_to(x_free, npts)
 
         return x
 
     def pitchwise_grid_fixed_npts(self, drt_row, pitch_chord, AR_row, npts):
         """Evaluate a pitchwise grid vector with a prescribed point count."""
-        x = clusterfunc.symmetric.fixed(drt_row, npts)
+        dm_mid = self.dspf_mid * AR_row / self.AR_merid
+        drt_mid = dm_mid / pitch_chord * self.AR_passage
+        x = clusterfunc.symmetric.plateau_fixed(drt_row, drt_mid, self.ER_pitch, npts)
 
         dx = np.diff(x)
         assert np.isclose(x[0], 0.0)
@@ -1525,34 +1540,20 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, resolution_factor=1.0, dtdx_TE=N
         cam_point = xrrt_cent + L_cusp * vec_cam
         xrrt_point[:, bad] = cam_point[:, bad]
 
-    # Now get the coordinates to be added. Distribute the ni_cusp points along
-    # the cusp so the first cell matches the blade's last cell at the TE, then
-    # expand smoothly towards the tip, avoiding a spacing jump at the join.
+    # Both surfaces are distributed on one meridional coordinate. The H-mesh
+    # keeps a single (x, r) per streamwise index, averaged over the two sides,
+    # so a side spaced on its own arc length is put back at the other's
+    # meridional position with its own theta. That shears the surface, and
+    # where the two spacings differ enough it crosses the surfaces over.
+    # Both sides share (x, r) at every index into the TE and meet at the cusp
+    # tip, so one set of meridional fractions keeps them at one position.
     xrrt_cusp = np.zeros((2, 3, ni_cusp, nj))
     for j in range(nj):
-        # Blade's last cell into the TE on this side (arc length)
-        dm_blade = util.cum_arc_length(xrrt_TE[0, :, -2:, j])[-1]
-        # Cusp length (straight tangent line from TE point to tip) on this side
-        for side in range(2):
-            L_side = util.vecnorm(xrrt_point[:, j] - xrrt_TE[side, :, -1, j])
-            try:
-                f = clusterfunc.single.fixed(
-                    dm_blade, L_side, 1.4, ni_cusp, 0.0, L_side
-                )
-            except clusterfunc.exceptions.ClusteringException:
-                f = np.linspace(0.0, L_side, ni_cusp)
-            f = (f / L_side).reshape(-1, 1)
-            xrrt_cusp[side, :, :, j] = (
-                f.T * xrrt_point[:, j, None]
-                + (1.0 - f.T) * xrrt_TE[side, :, -1, j, None]
-            )
-
-    # Now make the grid spacing at TE match
-    for j in range(nj):
-        m_TE = util.cum_arc_length(xrrt_TE[0, :, :, j])
+        # Make the grid spacing at TE match
+        m_TE = util.cum_arc_length(xrrt_TE[0, :2, :, j])
         dm_TE = np.diff(m_TE, axis=0)
-        dm_end = dm_TE[-2].mean()
-        dm_start = dm_TE[0].mean()
+        dm_end = dm_TE[-2]
+        dm_start = dm_TE[0]
         m_TE_new = clusterfunc.double.fixed(
             dm_start,
             dm_end,
@@ -1565,6 +1566,20 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, resolution_factor=1.0, dtdx_TE=N
                 xrrt[c, iTE - len(m_TE_new) + 1 : iTE + 1, j, k] = np.interp(
                     m_TE_new, m_TE, xrrt_TE[k, c, :, j]
                 )
+
+        # Distribute the ni_cusp points along the cusp so the first cell
+        # matches the blade's last cell at the TE, then expands towards the
+        # tip, avoiding a spacing jump at the join.
+        L_cusp_m = util.vecnorm(xrrt_point[:2, j] - xrrt_TE[0, :2, -1, j])
+        try:
+            f = clusterfunc.single.vinokur(dm_end / L_cusp_m, ni_cusp)
+        except clusterfunc.exceptions.ClusteringException:
+            f = np.linspace(0.0, 1.0, ni_cusp)
+        for side in range(2):
+            xrrt_cusp[side, :, :, j] = (
+                f * xrrt_point[:, j, None]
+                + (1.0 - f) * xrrt_TE[side, :, -1, j, None]
+            )
 
     xrrt_new = np.concatenate(
         (xrrt[:, : iTE + 1, :, :], np.moveaxis(xrrt_cusp, 0, -1)[:, 1:]), axis=1
