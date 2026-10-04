@@ -5,7 +5,7 @@ import itertools
 import numpy as np
 import pytest
 
-from turbigen.clusterfunc import double, plateau, symmetric
+from turbigen.clusterfunc import double, plateau, single, symmetric
 from turbigen.clusterfunc.exceptions import ClusteringException
 from turbigen.clusterfunc.util import ER
 
@@ -284,6 +284,137 @@ def test_double_reversed_interval():
     dx = -np.diff(x)
     assert dx[0] == pytest.approx(1e-3, rel=RTOL)
     assert dx[-1] == pytest.approx(1e-2, rel=RTOL)
+
+
+#
+# Single-sided
+#
+
+
+def check_unit_single(x, dmin, dmax, ERmax, mult=None):
+    """Assert a one-sided unit distribution obeys the limits."""
+    dx = np.diff(x)
+    M = len(dx)
+
+    assert x[0] == 0.0
+    assert x[-1] == 1.0
+    assert (dx > 0.0).all()
+    if mult is not None:
+        assert M % mult == 0
+    if M > 1:
+        assert ER(x).max() <= ERmax
+    assert dx.max() <= dmax * (1.0 + RTOL)
+
+    if M * dmin >= 1.0:
+        assert np.allclose(dx, 1.0 / M, rtol=RTOL)
+    else:
+        assert dx[0] == pytest.approx(dmin, rel=RTOL)
+
+    # Never shrinks away from the start
+    assert (np.diff(dx) >= -RTOL * dx.max()).all()
+
+
+SINGLE_GRID = [
+    (dmin, dmax, ERmax, mult)
+    for dmin, dmax, ERmax, mult in itertools.product(
+        [1e-5, 1e-4, 1e-3, 5e-3, 2e-2],
+        [0.02, 0.05, 0.2, 0.6, 2.0],
+        [1.05, 1.2, 1.5],
+        [1, 3, 8],
+    )
+    if dmin <= dmax
+]
+
+
+@pytest.mark.parametrize("dmin, dmax, ERmax, mult", SINGLE_GRID)
+def test_single_free_limits(dmin, dmax, ERmax, mult):
+    x = single.plateau_free(dmin, dmax, ERmax, mult=mult)
+    check_unit_single(x, dmin, dmax, ERmax, mult)
+
+
+@pytest.mark.parametrize("dmin, dmax, ERmax, mult", SINGLE_GRID)
+def test_single_free_minimal(dmin, dmax, ERmax, mult):
+    """One multiple fewer cells cannot meet the limits."""
+    x = single.plateau_free(dmin, dmax, ERmax, mult=mult)
+    N = len(x)
+    if (N - 1) * dmin >= 1.0 or N - mult < 2:
+        return
+    with pytest.raises(ClusteringException):
+        single.plateau_fixed(dmin, dmax, ERmax, N - mult)
+
+
+def test_single_free_plateau_runs_to_end():
+    """With room to spare, the last cells sit exactly at dmax, up to x1."""
+    dmax = 0.03
+    x = single.plateau_free(5e-4, dmax, 1.2)
+    dx = np.diff(x)
+    iflat = np.flatnonzero(np.isclose(dx, dmax, rtol=RTOL))
+    assert len(iflat) >= 8
+    assert np.all(np.diff(iflat) == 1)
+    assert iflat[0] > 0 and iflat[-1] == len(dx) - 1
+
+
+def test_single_free_matches_double_with_far_end_at_plateau():
+    """Where the ramp reaches the plateau, a far end at dmax changes nothing."""
+    x = single.plateau_free(1e-3, 0.05, 1.2)
+    xd = double.plateau_free(1e-3, 0.05, 0.05, 1.2)
+    assert np.allclose(x, xd, rtol=0.0, atol=1e-14)
+
+
+def test_single_free_no_more_points_than_geometric():
+    for dmin, dmax in HMESH_CASES:
+        assert len(single.plateau_free(dmin, dmax, 1.2)) <= len(
+            single.free(dmin, dmax, 1.2)
+        )
+
+
+def test_single_fixed_short_of_plateau():
+    """More points than the plateau needs: a gentler ramp, not an exception.
+
+    Unlike the double-sided case, nothing is asked of the far end, so the
+    ramp is free to stop short of the plateau.
+    """
+    x = single.plateau_fixed(1e-4, 0.2, 1.05, 131)
+    assert len(x) == 131
+    check_unit_single(x, 1e-4, 0.2, 1.05)
+    assert np.diff(x).max() < 0.2
+
+
+def test_single_fixed_more_points_lowers_ratio():
+    x1 = single.plateau_fixed(1e-3, 0.05, 1.2, 65)
+    x2 = single.plateau_fixed(1e-3, 0.05, 1.2, 97)
+    assert ER(x2).max() < ER(x1).max()
+
+
+def test_single_fixed_too_few_points():
+    with pytest.raises(ClusteringException):
+        single.plateau_fixed(1e-4, 0.05, 1.2, 9)
+
+
+def test_single_fixed_too_many_points_is_uniform():
+    x = single.plateau_fixed(0.02, 0.05, 1.2, 101)
+    assert np.allclose(np.diff(x), 0.01, rtol=RTOL)
+
+
+def test_single_scaled_and_reversed_interval():
+    x = single.plateau_free(2e-3, 0.1, 1.2, 2.0, 0.0)
+    xu = single.plateau_free(1e-3, 0.05, 1.2)
+    assert x[0] == 2.0 and x[-1] == 0.0
+    assert np.allclose(x, 2.0 * (1.0 - xu), rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(dmin=0.1, dmax=0.05, ERmax=1.2),
+        dict(dmin=0.0, dmax=0.05, ERmax=1.2),
+        dict(dmin=1e-3, dmax=0.05, ERmax=1.0),
+        dict(dmin=1e-3, dmax=0.05, ERmax=1.2, x0=0.5, x1=0.5),
+    ],
+)
+def test_single_bad_arguments(kwargs):
+    with pytest.raises(ClusteringException):
+        single.plateau_free(**kwargs)
 
 
 #

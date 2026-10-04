@@ -4,6 +4,8 @@ import numpy as np
 from scipy.optimize import root_scalar
 
 import turbigen.clusterfunc.check
+import turbigen.clusterfunc.double
+import turbigen.clusterfunc.plateau
 import turbigen.clusterfunc.util
 from turbigen.clusterfunc.exceptions import ClusteringException
 
@@ -97,6 +99,183 @@ def free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
     x = x0 + Dx * _unit_free(dmin / Dxa, dmax / Dxa, ERmax, mult)
 
     return x
+
+
+def plateau_fixed(dmin, dmax, ERmax, N, x0=0.0, x1=1.0, width=None):
+    """Single-sided plateau clustering with fixed number of points.
+
+    Generate a grid vector x of length N, by default over the unit interval.
+    From the specified spacing at x0, grow geometrically and turn over onto a
+    uniform plateau at the maximum spacing, which holds to x1. The expansion
+    ratio is lowered from its limit to fit the interval exactly, so with more
+    points than the plateau needs the ramp ends short of it. See
+    :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dmin: float
+        Boundary spacing at x0.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    N: int
+        Number of points in the grid vector.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    width: float
+        Turnover half-width as a fraction of the ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_fixed(
+        dmin / Dxa, None, dmax / Dxa, ERmax, N, **kwargs
+    )
+
+
+def plateau_free(dmin, dmax, ERmax, x0=0.0, x1=1.0, mult=8, width=None):
+    """Single-sided plateau clustering with free number of points.
+
+    Generate a grid vector x from x0 to x1, with the fewest points, in a
+    multiple of `mult` cells, that meet the start spacing, the maximum spacing
+    and the expansion ratio limit. From x0 the spacing grows geometrically and
+    turns over onto a uniform plateau at the maximum spacing, which holds to
+    x1. See :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dmin: float
+        Boundary spacing at x0.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    mult: int
+        Choose a number of cells divisible by this factor.
+    width: float
+        Turnover half-width as a fraction of the ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_free(
+        dmin / Dxa, None, dmax / Dxa, ERmax, mult, **kwargs
+    )
+
+
+def vinokur(dmin, N, x0=0.0, x1=1.0):
+    """Single-sided clustering with fixed number of points.
+
+    Generate a grid vector x of length N, by default over the unit interval.
+    Use Vinokur stretching from the specified spacing at x0, leaving the
+    spacing at x1 free. Expansion ratio and maximum spacing are not controlled,
+    so unlike :func:`fixed` this cannot fail for want of points: a start
+    spacing finer than uniform grows towards x1, and a coarser one shrinks.
+
+    Parameters
+    ----------
+    dmin: float
+        Boundary spacing at x0.
+    N: int
+        Number of points in the grid vector.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    assert isinstance(N, int)
+    Dx = _interval(x0, x1)
+    return x0 + Dx * _unit_vinokur(dmin / np.abs(Dx), N)
+
+
+def _vinokur(ds, N):
+    """One sided analytic clustering function after Vinokur.
+
+    The one-sided case of the two-sided function in
+    :func:`turbigen.clusterfunc.double._vinokur`: the start slope of `u` is
+    `1/B`, which fixes the start spacing, and nothing constrains the end.
+    """
+
+    B = 1.0 / (N - 1) / ds
+
+    xi = np.linspace(0.0, 1.0, N)
+
+    if np.abs(B - 1.0) < 0.001:
+        u = xi
+    elif B < 1.0:
+        # sin(D)/D = B
+        D = turbigen.clusterfunc.double._invert_sinx_x(B)
+        assert np.isclose(np.sin(D) / D, B, rtol=1e-1)
+        u = 1.0 + np.tan(0.5 * D * (xi - 1.0)) / np.tan(0.5 * D)
+    else:
+        # sinh(D)/D = B
+        D = turbigen.clusterfunc.double._invert_sinhx_x(B)
+        assert np.isclose(np.sinh(D) / D, B, rtol=1e-1)
+        u = 1.0 + np.tanh(0.5 * D * (xi - 1.0)) / np.tanh(0.5 * D)
+
+    # Force to unit interval
+    u -= u[0]
+    u /= u[-1]
+
+    return u
+
+
+def _unit_vinokur(dmin, N, rtol=1e-2):
+    """Single-sided Vinokur clustering on the unit interval, start spacing met.
+
+    The inverse of sinh(x)/x is approximate and the discrete first spacing is
+    not the continuous slope, so the target is corrected until the first
+    spacing comes out within `rtol`, as :func:`turbigen.clusterfunc.double.
+    _unit_fixed` does for both ends.
+    """
+    if N < 2:
+        raise ClusteringException(f"Need at least two points to cluster, N={N}")
+    if not 0.0 < dmin < 1.0:
+        raise ClusteringException(f"dmin={dmin} should be in (0, 1)")
+    maxiter = 100
+    ds_in = dmin
+    for _ in range(maxiter):
+        x = _vinokur(ds_in, N)
+        fac = (x[1] - x[0]) / dmin
+        if np.abs(fac - 1.0) < rtol:
+            break
+        ds_in /= fac
+    return x
+
+
+def _interval(x0, x1):
+    """Return the signed length of the interval, refusing an empty one."""
+    if np.isclose(x0, x1):
+        raise ClusteringException(
+            "Cannot distribute points without distinct start and end points, "
+            f"got x0={x0} and x1={x1}"
+        )
+    return x1 - x0
 
 
 def _unit_fixed(dmin, dmax, ERmax, N, check=True):

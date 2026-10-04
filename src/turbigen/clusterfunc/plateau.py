@@ -30,6 +30,11 @@ A requested end spacing coarser than a uniform distribution of the same
 number of cells cannot be met without shrinking cells towards the middle. A
 uniform distribution is returned instead, which is finer than asked for at
 both ends and satisfies the other limits.
+
+A far-end spacing of None makes the clustering one-sided: there is no ramp
+from that end, so the spacing grows from the start onto the plateau and stays
+there, or, given more cells than that needs, ramps more gently and ends short
+of the plateau. Nothing is asked of the last cell beyond the other limits.
 """
 
 import numpy as np
@@ -82,10 +87,15 @@ def _log_ramp(dx, dmax, log_ER, k, width):
 def _log_spacings(dx0, dx1, dmax, log_ER, M, width):
     """Log cell spacings for `M` cells: the smaller ramp from either end."""
     k = np.arange(M)
-    return np.minimum(
-        _log_ramp(dx0, dmax, log_ER, k, width),
-        _log_ramp(dx1, dmax, log_ER, k[::-1], width),
-    )
+    log_d = _log_ramp(dx0, dmax, log_ER, k, width)
+    if dx1 is None:
+        return log_d
+    return np.minimum(log_d, _log_ramp(dx1, dmax, log_ER, k[::-1], width))
+
+
+def _dx_end_min(dx0, dx1):
+    """The finer of the two end spacings, or the start one if one-sided."""
+    return dx0 if dx1 is None else min(dx0, dx1)
 
 
 def _length(dx0, dx1, dmax, log_ER, M, width):
@@ -101,14 +111,19 @@ def _ends_met(dx0, dx1, dmax, log_ER, M, width):
     the coarse end would be left with a finer cell than it asked for.
     """
     log_d = _log_spacings(dx0, dx1, dmax, log_ER, M, width)
-    return np.isclose(log_d[0], np.log(dx0), rtol=0.0, atol=RTOL_EQUAL) and np.isclose(
-        log_d[-1], np.log(dx1), rtol=0.0, atol=RTOL_EQUAL
-    )
+    start = np.isclose(log_d[0], np.log(dx0), rtol=0.0, atol=RTOL_EQUAL)
+    if dx1 is None:
+        return start
+    return start and np.isclose(log_d[-1], np.log(dx1), rtol=0.0, atol=RTOL_EQUAL)
 
 
 def _validate(dx0, dx1, dmax, ERmax, width):
-    """Check the arguments, and return the end spacings clipped to the plateau."""
-    for name, val in (("dx0", dx0), ("dx1", dx1), ("dmax", dmax)):
+    """Check the arguments, and return the end spacings clipped to the plateau.
+
+    A `dx1` of None, for one-sided clustering, is passed through as None.
+    """
+    ends = (("dx0", dx0),) if dx1 is None else (("dx0", dx0), ("dx1", dx1))
+    for name, val in ends + (("dmax", dmax),):
         if not (np.isfinite(val) and val > 0.0):
             raise ClusteringException(f"{name}={val} should be finite and > 0.")
 
@@ -121,14 +136,14 @@ def _validate(dx0, dx1, dmax, ERmax, width):
     # An end spacing equal to the plateau to within rounding is taken as equal,
     # so that a caller passing the same number twice is not refused
     out = []
-    for name, val in (("dx0", dx0), ("dx1", dx1)):
+    for name, val in ends:
         if val > dmax * (1.0 + RTOL_EQUAL):
             raise ClusteringException(
                 f"End spacing {name}={val} exceeds the maximum spacing dmax={dmax}."
             )
         out.append(min(val, dmax))
 
-    return out
+    return out if dx1 is not None else [out[0], None]
 
 
 def _uniform(M):
@@ -165,7 +180,7 @@ def unit_fixed(dx0, dx1, dmax, ERmax, N, width=WIDTH):
     Parameters
     ----------
     dx0, dx1 : float
-        Spacings at zero and one.
+        Spacings at zero and one; `dx1` None for one-sided clustering.
     dmax : float
         Plateau spacing, which no cell exceeds.
     ERmax : float
@@ -193,7 +208,7 @@ def unit_fixed(dx0, dx1, dmax, ERmax, N, width=WIDTH):
     M = int(N) - 1
 
     # Ends coarser than uniform: uniform is finer at both ends, within limits
-    if M * min(dx0, dx1) >= 1.0:
+    if M * _dx_end_min(dx0, dx1) >= 1.0:
         return _uniform(M)
 
     log_ER_max = np.log(ERmax) * (1.0 - MARGIN_LOG_ER)
@@ -223,7 +238,7 @@ def unit_free(dx0, dx1, dmax, ERmax, mult=8, width=WIDTH, ncell_max=NCELL_MAX):
     Parameters
     ----------
     dx0, dx1 : float
-        Spacings at zero and one.
+        Spacings at zero and one; `dx1` None for one-sided clustering.
     dmax : float
         Plateau spacing, which no cell exceeds.
     ERmax : float
@@ -283,7 +298,7 @@ def unit_free(dx0, dx1, dmax, ERmax, mult=8, width=WIDTH, ncell_max=NCELL_MAX):
 
     # Ends coarser than uniform at the fewest cells that reach unit length:
     # uniform is finer at both ends, and within the other limits
-    if n_len * mult * min(dx0, dx1) >= 1.0:
+    if n_len * mult * _dx_end_min(dx0, dx1) >= 1.0:
         return _uniform(n_len * mult)
 
     if not _ends_reachable(n_max):
@@ -300,7 +315,7 @@ def unit_free(dx0, dx1, dmax, ERmax, mult=8, width=WIDTH, ncell_max=NCELL_MAX):
     # asked for at the ends is not what a free distribution should return.
     for n in range(n_start, min(n_start + NSTEP_ENDS, n_max + 1)):
         M = n * mult
-        if M * min(dx0, dx1) >= 1.0:
+        if M * _dx_end_min(dx0, dx1) >= 1.0:
             break
         x = _solve(dx0, dx1, dmax, log_ER_max, M, width)
         if x is not None:
