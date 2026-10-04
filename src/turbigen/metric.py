@@ -336,7 +336,11 @@ class DiffusionFactor(Metric):
                     continue
 
                 i_peak = int(np.argmax(measured.ma[0]))
-                out["DF"][i_spf, i_row] = measured.ma[0][i_peak] / measured.ma_TE - 1.0
+                # In double precision: the cut is single, and a float32 scalar
+                # over a Python float stays float32
+                out["DF"][i_spf, i_row] = (
+                    float(measured.ma[0][i_peak]) / measured.ma_TE - 1.0
+                )
                 out["zeta_peak"][i_spf, i_row] = measured.z[0][i_peak]
                 out["Co"][i_spf, i_row] = measured.Co
 
