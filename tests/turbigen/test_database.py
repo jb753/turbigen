@@ -40,6 +40,9 @@ Test cases:
 - test_nearest_field_is_none_beyond_max_distance: too far, so the guess instead
 - test_max_distance_can_admit_a_far_field: the threshold is the config's
 - test_max_distance_is_not_skipped_past: a fieldless near run does not open the far ones
+- test_a_lone_sample_is_not_on_top_of_every_query: one run still has a distance
+- test_a_lone_sample_seeds_its_own_design: and is taken at zero
+- test_a_variable_the_samples_agree_on_still_separates_the_query: off every run
 - test_warm_start_reuses_preloaded_samples: one glob-and-parse for both
 - test_a_sample_in_other_modes_is_skipped: same knob names, different meaning
 """
@@ -478,6 +481,48 @@ def test_max_distance_is_not_skipped_past(tmp_path):
 
     config = query(1.55)
     samples = config.database.load_samples(config, tmp_path)
+
+    assert database.nearest_field(config, samples) is None
+
+
+def test_a_lone_sample_is_not_on_top_of_every_query(tmp_path):
+    """One finished run varies in nothing, but the query still differs from it.
+
+    Measured over the samples alone there would be no axis to be far along, and
+    every design would be seeded from the first run to finish, however far
+    from it. The query's difference counts as a whole unit instead.
+    """
+    solved(tmp_path / "runs" / "000", make(1.6, 6.0))
+
+    config = query(2.2)
+    samples = config.database.load_samples(config, tmp_path)
+
+    assert database.nearest_field(config, samples) is None
+
+
+def test_a_lone_sample_seeds_its_own_design(tmp_path):
+    """Nothing differs, so the distance is zero and the field is taken."""
+    solved(tmp_path / "runs" / "000", make(1.6, 6.0))
+
+    config = query(1.6)
+    samples = config.database.load_samples(config, tmp_path)
+
+    assert (
+        database.nearest_field(config, samples)
+        == (tmp_path / "runs" / "000" / "restart.npz").resolve()
+    )
+
+
+def test_a_variable_the_samples_agree_on_still_separates_the_query(solved_runs):
+    """psi 1.6 sits on a run, but the query's Ma2 is off every sample's."""
+    config = query(1.6)
+    config = dataclasses.replace(
+        config,
+        mean_line=dataclasses.replace(
+            config.mean_line, Ma2=config.mean_line.Ma2 + 0.05
+        ),
+    )
+    samples = config.database.load_samples(config, solved_runs)
 
     assert database.nearest_field(config, samples) is None
 

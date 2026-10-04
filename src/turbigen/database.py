@@ -232,13 +232,12 @@ def warm_start(config, anchor, exclude=(), samples=None):
     # the mean of what they converged to is the right answer -- which is the
     # same path a lone sample takes to being copied.
     variables = config.database.candidates(config, samples)
-    flat = [node.flatten(sample) for sample in samples]
 
-    X = np.array([[leaves[path] for path in variables] for leaves in flat], float)
+    X = gather(samples, variables)
     U = np.array(
         [[iterate.unknowns(s)[name] for name in names] for s in samples], float
     )
-    xq = np.array([node.flatten(config)[path] for path in variables], float)
+    xq = gather([config], variables)[0]
 
     lo, span = _scale(X)
     predicted = dict(
@@ -291,13 +290,15 @@ def nearest_field(config, samples):
     if config.database is None or not samples:
         return None
 
+    # The query is counted among what varies, unlike for the blend. A lone
+    # sample varies in nothing, so measured over the samples alone every query
+    # would sit on top of it and be seeded however far away it is.
     configs = [sample for _, sample, _ in samples]
-    variables = config.database.candidates(config, configs)
-    flat = [node.flatten(sample) for sample in configs]
+    variables = config.database.candidates(config, [*configs, config])
 
-    X = np.array([[leaves[path] for path in variables] for leaves in flat], float)
-    xq = np.array([node.flatten(config)[path] for path in variables], float)
-    lo, span = _scale(X)
+    X = gather(configs, variables)
+    xq = gather([config], variables)[0]
+    lo, span = _seed_scale(X, xq)
     distance = np.linalg.norm((X - lo) / span - (xq - lo) / span, axis=1)
 
     for idx in np.argsort(distance):
@@ -322,6 +323,18 @@ def nearest_field(config, samples):
             return field
 
     return None
+
+
+def gather(configs, paths):
+    """Return the leaves at `paths` of each config, as rows of an array.
+
+    How a set of samples becomes the matrix a blend or a fit is made over, one
+    row per config and one column per path. Shared by the warm start and by
+    :mod:`~turbigen.surrogate`, so that a design variable is read off a sample
+    the same way whichever of them is reading it.
+    """
+    flat = [node.flatten(config) for config in configs]
+    return np.array([[leaves[path] for path in paths] for leaves in flat], float)
 
 
 def _profile_identity(config):
@@ -397,6 +410,24 @@ def _scale(X):
     """
     lo = X.min(axis=0)
     span = X.max(axis=0) - lo
+    span[span == 0.0] = 1.0
+    return lo, span
+
+
+def _seed_scale(X, xq):
+    """Return the offset and divisor for measuring a field seed's distance.
+
+    The samples' range where they have one, as :func:`_scale`, so that a
+    distance means the same thing as the sweep fills in. A column every sample
+    agrees on has none, and there the query's own offset stands in: any
+    difference from the samples along it is then a whole unit, past any
+    sensible `max_distance`, rather than nothing. Only a column the query
+    agrees on too is left at one, where the distance along it is zero anyway.
+    """
+    lo = X.min(axis=0)
+    span = X.max(axis=0) - lo
+    agree = span == 0.0
+    span[agree] = np.abs(xq - lo)[agree]
     span[span == 0.0] = 1.0
     return lo, span
 
