@@ -1205,32 +1205,27 @@ def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
     """`error` builds the target and divides it; the rest is the measurement.
 
     The level is the circulation the blade drew less the one the target asks
-    for, and the shape is what is left once the surface offset that would
-    cause that level is taken back off --- `level / (1 + ratio)` on one side
-    and its negative on the other, which is a half each only when the two
-    surfaces are the same length. A ratio away from one here, so the weighting
-    is pinned rather than cancelling.
+    for, and the shape is what is left against the target morphed to the
+    circulation drawn. A ratio away from one here, so the weighting of the
+    two surfaces in the loop is pinned rather than cancelling.
     """
     ratio = 0.8
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
     z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    measured = measured_as(z, np.zeros((2, 4)), ratio, Co=0.5)
     monkeypatch.setattr(
-        turbigen.loading,
-        "measure_clark_profile",
-        lambda *a: measured_as(z, np.zeros((2, 4)), ratio),
+        turbigen.loading, "measure_clark_profile", lambda *a: measured
     )
 
     iterator = clark.iterate.correct[0]
     machine = clark.design()
     error = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # Everything measured zero, so each residual is minus its own target.
-    residual = -iterator.target(z, machine)
-    level = measured_as(z, np.zeros((2, 4)), ratio).Co - target_loop(
-        iterator, machine, ratio
-    )
-    delta = level / (1.0 + ratio)
-    shape = residual - np.array([[delta], [-delta]])
+    # Everything measured zero, so each residual is minus the morphed target.
+    level = measured.Co - target_loop(iterator, machine, ratio)
+    d = iterator.morph(machine, ratio, measured.Co)
+    assert d != pytest.approx(0.0)
+    shape = -iterator._target(z, machine, d)
 
     assert error["Co[0]"] == pytest.approx(level)
     assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
@@ -1243,50 +1238,70 @@ def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
     assert error["tau[0][1][2]"] == pytest.approx(shape[1][2])
 
 
-def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
-    """The property that leaves the loop determined.
+def test_clark_morph_meets_the_circulation_asked(clark, monkeypatch):
+    """The morph is closed form, so it lands on the loop exactly.
 
-    A shared end reports the *mean* of the two surfaces' residuals there, and
-    the offset is taken off one surface and added to the other --- so it
-    cancels exactly. The nose and the wedge answer only for the common mode at
-    their end, and can neither be moved by the blade count nor fight it.
-
-    A surface lifted by `d` and the other dropped by `d` opens the loop by
-    `d (1 + ratio)`, the two surfaces entering the circulation weighted by
-    their own lengths. The ratio is away from one here, so that weighting is
-    what the number below tests rather than something that cancels.
+    And it is what it says it is: the ramp up by `d` and the plateau down by
+    `d`, in plain `Ma / Ma_TE`, so a target written with the two parameters
+    moved by `d` times the Mach ratio each carries draws the same curve.
     """
     ratio = 0.8
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
-
-    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.5)
+    monkeypatch.setattr(turbigen.loading, "mach_ratio_axial", lambda *a: 2.0)
     iterator = clark.iterate.correct[0]
     machine = clark.design()
-    target = iterator.target(z, machine)
 
-    # Two measurements differing by a pure level: one surface lifted and the
-    # other dropped, which is what opening the loop does and nothing else. The
-    # circulation is stated rather than integrated from these four samples,
-    # which span only part of the surface -- the real one integrates the whole
-    # cut, so a uniform offset reaches it whole.
     base = target_loop(iterator, machine, ratio)
-    errors = []
-    for offset in (0.0, 0.3):
-        fac = target + np.array([[offset], [-offset]])
-        loop = base + offset * (1.0 + ratio)
-        monkeypatch.setattr(
-            turbigen.loading,
-            "measure_clark_profile",
-            lambda *a, f=fac, c=loop: measured_as(z, f, ratio, Co=c),
+    for Co in (base - 0.1, base + 0.05):
+        d = iterator.morph(machine, ratio, Co)
+        assert iterator._loop(machine, ratio, d) == pytest.approx(Co, abs=1e-10)
+
+        written = dataclasses.replace(
+            iterator, Ma_LE=iterator.Ma_LE + 1.5 * d, Ma_PS=iterator.Ma_PS - 2.0 * d
         )
-        errors.append(iterator.error(clark, Result(machine=machine, grid=object())))
+        z = np.tile(np.linspace(0.0, 1.0, 11), (2, 1))
+        assert iterator._target(z, machine, d) == pytest.approx(
+            written.target(z, machine)
+        )
 
-    # The first is the target's own loop, so it reports no circulation error.
-    assert errors[0]["Co[0]"] == pytest.approx(0.0, abs=1e-12)
+    assert iterator.morph(machine, ratio, base) == 0.0
 
-    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.3 * (1.0 + ratio))
-    for name in ("tau_LE[0]", "tau_TE[0]", "dchi_LE[0]"):
-        assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
+
+def test_clark_morph_leaves_the_peak_and_trailing_edge_alone(clark, monkeypatch):
+    """Where the level is taken off, and where it is not.
+
+    The suction surface from its peak back, and both surfaces at the trailing
+    edge, are the same whatever the morph: a level is carried on the ramp and
+    the plateau, which is where a change of blade count moves a Clark curve,
+    and not at a trailing edge every target pins to one.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+
+    z = np.linspace(iterator.z_peak, 1.0, 21)
+    zz = np.stack((z, z))
+    datum = iterator._target(zz, machine, 0.0)
+    for d in (-0.2, 0.2):
+        moved = iterator._target(zz, machine, d)
+        assert moved[0] == pytest.approx(datum[0], abs=1e-12)
+        assert moved[:, -1] == pytest.approx(datum[:, -1], abs=1e-12)
+        # The plateau did move, so this is not a morph that does nothing.
+        assert moved[1][0] != pytest.approx(datum[1][0])
+
+
+def test_clark_clamps_a_morph_the_curve_cannot_take(clark, monkeypatch):
+    """A level too large to morph is held at a valid curve, not refused."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+
+    lo, hi = iterator._morph_bounds(machine)
+    base = target_loop(iterator, machine, 1.0)
+    assert iterator.morph(machine, 1.0, base + 10.0) == pytest.approx(hi)
+    assert iterator.morph(machine, 1.0, base - 10.0) == pytest.approx(lo)
+    for d in (lo, hi):
+        iterator._target(np.zeros((2, 3)) + 0.5, machine, d)
 
 
 #
@@ -1311,51 +1326,45 @@ def test_clark_cannot_see_an_antisymmetric_trailing_edge_error(clark, monkeypatc
     machine = clark.design()
 
     # Right everywhere but the two ends, where the surfaces are wrong by the
-    # same amount in opposite directions.
+    # same amount in opposite directions. The target's own loop, so no morph
+    # is taken off and the skew is read whole.
     skew = np.array([[0.1, 0.0, 0.0, 0.1], [-0.1, 0.0, 0.0, -0.1]])
     fac = iterator.target(z, machine) + skew
+    loop = target_loop(iterator, machine, 1.0)
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
-        lambda *a: measured_as(z, fac),
+        lambda *a: measured_as(z, fac, Co=loop),
     )
     errors = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # Whatever the skew does to the level, the offset takes the same amount
-    # off one surface and adds it to the other --- so at the trailing edge the
-    # antisymmetric part survives untouched, and the one knob there reports
-    # the mean of it, which is zero.
+    # The one knob at the trailing edge reports the mean, which is zero.
     assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
 
     # Nor can the nose radius, one knob for two surfaces; but at the nose the
-    # recamber reads the difference: the skew twice over, less the part of it
-    # the level took off both surfaces (a half each, at equal lengths).
+    # recamber reads the difference, the skew twice over.
     assert errors["tau_LE[0]"] == pytest.approx(0.0, abs=1e-12)
-    assert errors["dchi_LE[0]"] == pytest.approx(0.2 - errors["Co[0]"])
-    assert errors["dchi_LE[0]"] != pytest.approx(0.0)
+    assert errors["dchi_LE[0]"] == pytest.approx(0.2)
 
 
 def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
-    """What the offset is for: the shape never sees the loop.
+    """What the morph is for: the shape never sees the loop.
 
     A circulation error is the blade count's alone, a thickness being able to
-    move loading about but not to create it. So the surface offset that would
-    have caused the measured level is taken back off before any coefficient
-    reads its own residual --- and at unequal surface lengths that offset is
-    `level / (1 + ratio)`, not half each.
+    move loading about but not to create it. A blade that draws exactly the
+    morphed target has the right shape at the wrong level, so the whole of
+    its error lands on the count and every shape knob reads zero.
     """
     ratio = 0.6
-    delta = 0.25
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
 
     z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
     iterator = clark.iterate.correct[0]
     machine = clark.design()
 
-    # On target everywhere, then lifted and dropped by a pure offset -- so
-    # every residual is the offset and nothing else.
-    fac = iterator.target(z, machine) + np.array([[delta], [-delta]])
-    loop = target_loop(iterator, machine, ratio) + delta * (1.0 + ratio)
+    d = 0.1
+    fac = iterator._target(z, machine, d)
+    loop = iterator._loop(machine, ratio, d)
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
@@ -1363,11 +1372,11 @@ def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
     )
     errors = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # The whole of it lands on the count, and every shape knob reads zero.
-    assert errors["Co[0]"] == pytest.approx(delta * (1.0 + ratio))
+    assert errors["Co[0]"] == pytest.approx(loop - target_loop(iterator, machine, ratio))
+    assert errors["Co[0]"] != pytest.approx(0.0)
     for name, value in errors.items():
         if name != "Co[0]":
-            assert value == pytest.approx(0.0, abs=1e-12), name
+            assert value == pytest.approx(0.0, abs=1e-9), name
 
 
 def test_clark_measures_a_level_the_curve_order_cannot_move(monkeypatch):

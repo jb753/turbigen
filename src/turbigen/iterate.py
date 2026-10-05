@@ -1089,7 +1089,10 @@ class ClarkProfile(RowIterator):
     circulation but cannot create it, so `Co` is driven by the circulation
     error, integrated over the whole cut by
     :class:`~turbigen.loading.ClarkMeasurement` in the same units as `Co`. The
-    shape knobs see the residuals with that level removed.
+    shape knobs see the residuals against a target morphed to the circulation
+    the blade drew, so the level is taken off where a Clark curve carries it
+    --- the leading-edge ramp and the pressure plateau --- and not at a
+    trailing edge every target pins to one. See :meth:`morph`.
 
     **Measured from the geometric leading edge**, not the stagnation point, so
     the target does not move as the thickness does.
@@ -1477,31 +1480,24 @@ class ClarkProfile(RowIterator):
                 f"spf={self.spf:.2f}, so its loading profile is unmeasured. "
                 f"{GAP_HINT}"
             )
-        residual = measured.fac - self.target(measured.z, result.machine)
-
         # What the blade count got wrong, as a circulation: the loop the blade
         # drew against the loop the target asks for, both as `Co`. The target's
         # is integrated from `target` itself on a dense grid rather than from a
         # closed form written here, for the reason `target` is public at all
         # --- a second opinion on the Clark curve would be free to contradict
         # the one the design is iterated against.
-        dense = np.linspace(0.0, 1.0, N_LOOP)
-        wanted = self.target(np.stack((dense, dense)), result.machine)
-        Co_target = float(
-            np.trapezoid(wanted[0], dense)
-            - measured.length_ratio * np.trapezoid(wanted[1], dense)
-        )
+        Co_target = self._loop(result.machine, measured.length_ratio)
         level = float(measured.Co - Co_target)
 
         # Taken back off the residuals, so what is left is the shape's alone: a
         # thickness redistributes circulation and cannot create it, and a
         # coefficient chasing the loop would push every knob one way for
-        # nothing. A uniform shift of `d` on one surface and `-d` on the other
-        # moves the loop by `d (1 + L_ps/L_ss)`, so that is what a level of
-        # this size stands on -- and at equal surface lengths it is the half
-        # each that the two surfaces being treated alike has always meant.
-        delta = level / (1.0 + measured.length_ratio)
-        shape = residual - np.array([[delta], [-delta]])
+        # nothing. Measured against the target morphed to the loop the blade
+        # drew, which carries the level where a Clark curve can: on the ramp
+        # and the plateau, with the peak and the trailing edge left alone. At
+        # a converged level the morph is nil and this is the plain target.
+        d = self.morph(result.machine, measured.length_ratio, measured.Co)
+        shape = measured.fac - self._target(measured.z, result.machine, d)
 
         # What the recamber can answer for and a shared nose radius cannot: the
         # suction surface running ahead of the pressure one at the first
@@ -1575,14 +1571,104 @@ class ClarkProfile(RowIterator):
         iterates against --- a report drawing a target of its own would be free
         to contradict the design it describes.
         """
-        # The one place the factors the two front parameters carry are taken
-        # back out; see the attributes. Everything past this line is plain
-        # `Ma / Ma_TE`. The two are not divided by the same thing: the ramp is
-        # referred to the velocity the blade meets and the plateau to the axial
-        # component of it, which agree at low swirl and part company as it
-        # rises.
-        Ma_LE = self.Ma_LE / turbigen.loading.mach_ratio(machine, self.i_row)
-        Ma_PS = self.Ma_PS / turbigen.loading.mach_ratio_axial(machine, self.i_row)
+        return self._target(z, machine, 0.0)
+
+    def morph(self, machine, length_ratio, Co):
+        """Return the morph `d` that gives the target a circulation of `Co` [--].
+
+        **The morph** raises the ramp's `Ma_LE` by `d` and lowers the
+        plateau's `Ma_PS` by as much, both in plain `Ma / Ma_TE`, holding
+        `Ma_peak` and `z_peak`. Plain rather than in the units the attributes
+        carry, so a morph of one size is the same change of shape whatever
+        the row's Mach ratios: those differ between the two parameters and
+        would otherwise tilt the split between the surfaces row by row.
+
+        **Why these two, in opposite senses.** They are the only parameters
+        that move the loop without moving the peak or the trailing edge, and
+        opposed they add: on a stage at midspan the loop moves about 0.3 in
+        `Co` per unit `Ma_LE` and 0.6 per unit `Ma_PS`, so about 0.9 per unit
+        `d`. Moved the same way they part cancel, and a level of a few
+        hundredths would need the plateau swung by a large fraction of itself.
+
+        **Closed form**, because both surfaces are linear in both parameters
+        and so the loop is linear in `d`: one step measures the slope exactly.
+
+        **Clamped** to keep the curve one :mod:`turbigen.clark` accepts: the
+        ramp line positive at the nose and the plateau positive. A level too
+        large for that is logged, and what the morph cannot carry is left in
+        the shape.
+        """
+        Co_0 = self._loop(machine, length_ratio)
+        if Co == Co_0:
+            return 0.0
+        h = 0.01
+        slope = (self._loop(machine, length_ratio, h) - Co_0) / h
+        d = (Co - Co_0) / slope
+
+        lo, hi = self._morph_bounds(machine)
+        if not lo < d < hi:
+            held = min(max(d, lo), hi)
+            logger.info(
+                f"Row {self.i_row}'s target would need a morph of d={d:.4g} to "
+                f"meet Co={Co:.4g}, outside the {lo:.4g} to {hi:.4g} that keeps "
+                f"a valid curve; holding it at {held:.4g}."
+            )
+            d = held
+        return float(d)
+
+    def _morph_bounds(self, machine):
+        """Return the open interval of morphs that keep the curve valid.
+
+        What :mod:`turbigen.clark` refuses, and no more, so that any target
+        the iterator was built with has a morph of nil inside the interval:
+        the ramp line positive at the nose, and the plateau positive. Pulled
+        in from each by a margin, so a clamped morph is safely inside rather
+        than on the boundary.
+        """
+        Ma_LE, Ma_PS = self._plain(machine)
+        margin = 0.01
+        lo, hi = -np.inf, Ma_PS - margin
+
+        # Ramp line positive at the nose: Ma_LE (1 + k) > k Ma_peak, with
+        # sigma linear in Ma_LE. A bound on Ma_LE from below for a peak behind
+        # the ramp's reference station, from above for one ahead of it.
+        k = turbigen.clark.C_RAMP * turbigen.clark.Z_LE / (
+            self.z_peak - turbigen.clark.Z_LE
+        )
+        bound = k * self.Ma_peak / (1.0 + k) - Ma_LE
+        if 1.0 + k > 0.0:
+            lo = bound + margin
+        else:
+            hi = min(hi, bound - margin)
+        return lo, hi
+
+    def _loop(self, machine, length_ratio, d=0.0):
+        """Return the circulation the target, morphed by `d`, asks for, as `Co`."""
+        dense = np.linspace(0.0, 1.0, N_LOOP)
+        wanted = self._target(np.stack((dense, dense)), machine, d)
+        return float(
+            np.trapezoid(wanted[0], dense)
+            - length_ratio * np.trapezoid(wanted[1], dense)
+        )
+
+    def _plain(self, machine):
+        """Return `Ma_LE` and `Ma_PS` in plain `Ma / Ma_TE`.
+
+        The one place the factors the two front parameters carry are taken
+        back out; see the attributes. The two are not divided by the same
+        thing: the ramp is referred to the velocity the blade meets and the
+        plateau to the axial component of it, which agree at low swirl and
+        part company as it rises.
+        """
+        return (
+            self.Ma_LE / turbigen.loading.mach_ratio(machine, self.i_row),
+            self.Ma_PS / turbigen.loading.mach_ratio_axial(machine, self.i_row),
+        )
+
+    def _target(self, z, machine, d):
+        """Return :meth:`target` morphed by `d`; see :meth:`morph`."""
+        Ma_LE, Ma_PS = self._plain(machine)
+        Ma_LE, Ma_PS = Ma_LE + d, Ma_PS - d
 
         z = np.asarray(z, dtype=float)
         return np.stack(
