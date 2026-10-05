@@ -665,7 +665,7 @@ def _draw_clark_profile(ax, config, result, i_row, spf, mas, color):
     if not ma_TE:
         return
 
-    thickness = config.blades[i_row].sections[0].thickness
+    thickness = profile._section(config).thickness
 
     # The target on its own abscissa, which is the surface fraction of each
     # side separately -- the two surfaces are not the same length, so one grid

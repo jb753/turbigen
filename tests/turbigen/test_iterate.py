@@ -1201,6 +1201,152 @@ def test_clark_keeps_one_nose_and_one_wedge(clark):
         assert c[0][0] == pytest.approx(unknowns["tau_LE[0]"] + 0.05)
 
 
+#
+# SEVERAL TO A ROW
+#
+
+
+@pytest.fixture
+def spans(clark):
+    """`clark` with its first row shaped at every section, midspan on the level."""
+    return dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.2, level=False),
+                iterate.ClarkProfile(spf=0.5),
+                iterate.ClarkProfile(spf=0.8, level=False),
+            )
+        ),
+    )
+
+
+def test_clark_names_its_knobs_by_section_beside_another(spans):
+    """Several on a row cannot share row-level names, so each adds its section.
+
+    `Co` alone stays named by the row, and only the one carrying the level
+    claims it. Merged, nothing collides.
+    """
+    hub, mid, tip = spans.iterate.correct
+    assert list(hub.unknowns(spans))[:3] == [
+        "dchi_LE[0][0]",
+        "tau_LE[0][0]",
+        "tau_TE[0][0]",
+    ]
+    assert list(mid.unknowns(spans))[:3] == ["Co[0]", "dchi_LE[0][1]", "tau_LE[0][1]"]
+    assert "tau[0][2][1][2]" in tip.unknowns(spans)
+
+    merged = iterate.unknowns(spans)
+    assert sum(len(it.unknowns(spans)) for it in spans.iterate.correct) == len(merged)
+
+
+def test_clark_moves_only_the_sections_nearest_it(spans):
+    """Each owns its own section, and `paths` says so."""
+    before = node.flatten(spans)
+    for i_section, iterator in enumerate(spans.iterate.correct):
+        moved = set()
+        for name, value in iterator.unknowns(spans).items():
+            after = node.flatten(iterator.with_unknowns(spans, {name: value + 0.02}))
+            moved |= {path for path in before if before[path] != after.get(path)}
+
+        assert moved == iterator.paths(spans)
+        others = {f"blades[0].sections[{j}]" for j in range(3) if j != i_section}
+        assert not any(path.startswith(tuple(others)) for path in moved)
+
+
+def test_clark_gives_a_tied_section_to_the_lower_span(clark):
+    """Two at the outer sections, and midspan halfway between them."""
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.8, level=False),
+                iterate.ClarkProfile(spf=0.2),
+            )
+        ),
+    )
+    tip, hub = config.iterate.correct
+    assert hub._owned(config) == (0, 1)
+    assert tip._owned(config) == (2,)
+
+
+def test_clark_lone_one_still_owns_the_whole_row(clark):
+    """A lone one away from midspan still moves every section."""
+    config = dataclasses.replace(
+        clark, iterate=iterate.Iteration(correct=(iterate.ClarkProfile(spf=0.8),))
+    )
+    assert config.iterate.correct[0]._owned(config) == (0, 1, 2)
+    assert "tau_LE[0]" in config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_measures_only_at_a_section(clark):
+    """A span between sections is refused, not interpolated."""
+    config = dataclasses.replace(
+        clark, iterate=iterate.Iteration(correct=(iterate.ClarkProfile(spf=0.4),))
+    )
+    with pytest.raises(ValueError, match="no section's"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_refuses_two_at_one_span(clark):
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.5),
+                iterate.ClarkProfile(spf=0.5, level=False, gain=0.3),
+            )
+        ),
+    )
+    with pytest.raises(ValueError, match="one span"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_refuses_two_levels_on_one_row(clark):
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(spf=0.2), iterate.ClarkProfile(spf=0.5))
+        ),
+    )
+    with pytest.raises(ValueError, match="level: false"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_off_the_level_still_takes_it_off_the_shape(spans, monkeypatch):
+    """No `Co` reported, but the shape is still read against the morphed target.
+
+    A blade drawing exactly the morphed target at the wrong level therefore
+    reads as converged in every knob it has, the level being another's.
+    """
+    ratio = 0.6
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    hub = spans.iterate.correct[0]
+    machine = spans.design()
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    d = 0.1
+    fac = hub._target(z, machine, d)
+    measured = measured_as(z, fac, ratio, hub._loop(machine, ratio, d))
+    monkeypatch.setattr(
+        turbigen.loading, "measure_clark_profile", lambda *a: measured
+    )
+    errors = hub.error(spans, Result(machine=machine, grid=object()))
+
+    assert "Co[0]" not in errors
+    assert set(errors) == set(hub.unknowns(spans))
+    for name, value in errors.items():
+        assert value == pytest.approx(0.0, abs=1e-9), name
+
+
+def test_clark_off_the_level_reads_a_sequence_gain_from_the_recamber(spans):
+    """Without `Co` the recamber leads a sequence `gain`."""
+    hub = dataclasses.replace(spans.iterate.correct[0], gain=tuple(range(1, 8)))
+    gains = hub.gains(spans)
+    assert list(gains) == list(hub.unknowns(spans))
+    assert gains["dchi_LE[0][0]"] == 1.0
+
+
 def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
     """`error` builds the target and divides it; the rest is the measurement.
 

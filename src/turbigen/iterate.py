@@ -1056,6 +1056,16 @@ def _with_circulation(config, i_row, Co):
     return _with_blade(config, i_row, count=dataclasses.replace(count, Co=Co))
 
 
+def _same_spf(a, b):
+    """Return whether two span fractions name the same section.
+
+    Exact to rounding, not to a tolerance a designer might lean on: a span
+    fraction is written in a config, so two that mean one section agree to
+    the last digit or two.
+    """
+    return bool(np.isclose(a, b, rtol=0.0, atol=1e-9))
+
+
 class ClarkProfile(RowIterator):
     """Shape a two-sided thickness to a Clark loading distribution.
 
@@ -1096,6 +1106,15 @@ class ClarkProfile(RowIterator):
 
     **Measured from the geometric leading edge**, not the stagnation point, so
     the target does not move as the thickness does.
+
+    **Several to a row, one per span.** Each measures at a section of its own,
+    :attr:`spf` matching that section's exactly, and moves the sections nearer
+    its span than any other's --- so a lone one moves the whole row, as one
+    measurement can justify no more, and several divide the row between them.
+    Only one may carry the :attr:`level`: the blade count sets the circulation
+    at every span at once, so a second reading of it would be a second opinion
+    on one knob. With more than one on a row, each knob but `Co` is named by
+    its section as well, ``tau_LE[0][2]`` for row zero's third.
     """
 
     type: ClassVar[str] = "clark_profile"
@@ -1216,6 +1235,15 @@ class ClarkProfile(RowIterator):
     Positive, because more circulation per blade is a bigger loop. **Read only while
     :attr:`gain` is a scalar**: declared as a sequence, `gain` carries every
     knob including this one.
+    """
+
+    level: bool = True
+    """Whether this one drives the row's circulation coefficient `Co`.
+
+    Off on all but one of several on a row --- usually the one at midspan.
+    One that does not still measures its level and logs it, and still morphs
+    its target to the circulation drawn, so its shape knobs never see a level
+    nothing here is correcting. Off on a lone one leaves `Co` as designed.
     """
 
     clip_Co: float = 0.05
@@ -1349,67 +1377,80 @@ class ClarkProfile(RowIterator):
         :attr:`gain` is matched to this order, and the first two positions are
         the ones that cannot move when a blade changes order: after the shape
         knobs, a gain written for a circulation coefficient would silently be
-        read as one for a thickness.
+        read as one for a thickness. Without the :attr:`level`, `Co` is absent
+        and the recamber leads alone.
 
-        The recamber and each coefficient are the mean over the row's
-        sections, as :meth:`with_unknowns` shifts them all together.
+        The recamber and each coefficient are the mean over the sections this
+        moves, as :meth:`with_unknowns` shifts them all together.
         """
-        level = {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
-        recamber = {self._dchi_name: self._dchi_LE(config)}
+        level = (
+            {f"Co[{self.i_row}]": float(_circulation_count(config, self.i_row).Co)}
+            if self.level
+            else {}
+        )
+        recamber = {self._dchi_name(config): self._dchi_LE(config)}
         coefficients = self._flat_coeff(self._coefficients(config))
         return (
             level
             | recamber
             | {
                 name: float(value)
-                for name, value in zip(self._names(self._order(config)), coefficients)
+                for name, value in zip(self._names(config), coefficients)
             }
         )
 
     def with_unknowns(self, config, values):
         current = self.unknowns(config)
         moved = _merged(current, values)
+        owned = self._owned(config)
 
         co_name = f"Co[{self.i_row}]"
-        if moved[co_name] != current[co_name]:
+        if self.level and moved[co_name] != current[co_name]:
             config = _with_circulation(config, self.i_row, moved[co_name])
 
-        recamber = moved[self._dchi_name] - current[self._dchi_name]
+        dchi_name = self._dchi_name(config)
+        recamber = moved[dchi_name] - current[dchi_name]
         if recamber:
             config = _with_sections(
                 config,
                 self.i_row,
-                lambda _, s: dataclasses.replace(s, dchi_LE=s.dchi_LE + recamber),
+                lambda i, s: (
+                    dataclasses.replace(s, dchi_LE=s.dchi_LE + recamber)
+                    if i in owned
+                    else s
+                ),
             )
 
         order = self._order(config)
-        names = self._names(order)
+        names = self._names(config)
         shift = self._unflat(
             np.array([moved[name] - current[name] for name in names]), order
         )
         if not np.any(shift):
             return config
 
-        # A uniform shift, for the reason `_with_sections` gives, but not
-        # through it: the moved sections are checked before being written.
+        # A uniform shift over the sections this owns, for the reason
+        # `_with_sections` gives, but not through it: the moved sections are
+        # checked before being written.
         #
         # Through `with_tau_coeff` rather than onto the config leaves, because
         # moving an end coefficient moves the straight line beneath the whole
         # curve and every interior perturbation has to be recomputed against
         # it --- see there.
-        sections = tuple(
-            dataclasses.replace(
-                section,
-                thickness=section.thickness.with_tau_coeff(
-                    section.thickness.tau_coeff + shift
-                ),
+        sections = config.blades[self.i_row].sections
+        shifted = self._within_R_LE(
+            tuple(
+                dataclasses.replace(
+                    sections[i],
+                    thickness=sections[i].thickness.with_tau_coeff(
+                        sections[i].thickness.tau_coeff + shift
+                    ),
+                )
+                for i in owned
             )
-            for section in config.blades[self.i_row].sections
         )
 
-        sections = self._within_R_LE(sections)
-
-        closed = self._too_thin(sections)
+        closed = self._too_thin(dict(zip(owned, shifted)))
         if closed is not None:
             logger.info(
                 f"Moving row {self.i_row}'s thickness this far would leave "
@@ -1418,7 +1459,10 @@ class ClarkProfile(RowIterator):
             )
             return config
 
-        return _with_blade(config, self.i_row, sections=sections)
+        sections = list(sections)
+        for i, section in zip(owned, shifted):
+            sections[i] = section
+        return _with_blade(config, self.i_row, sections=tuple(sections))
 
     def _within_R_LE(self, sections):
         """Return `sections` with any nose radius pulled back inside its bounds.
@@ -1453,8 +1497,8 @@ class ClarkProfile(RowIterator):
 
     def paths(self, config):
         order = self._order(config)
-        paths = {f"blades[{self.i_row}].count.Co"}
-        for i_section in range(len(config.blades[self.i_row].sections)):
+        paths = {f"blades[{self.i_row}].count.Co"} if self.level else set()
+        for i_section in self._owned(config):
             paths |= {f"blades[{self.i_row}].sections[{i_section}].dchi_LE"}
             stem = f"blades[{self.i_row}].sections[{i_section}].thickness"
             paths |= {f"{stem}.R_LE"}
@@ -1469,10 +1513,11 @@ class ClarkProfile(RowIterator):
     def error(self, config, result):
         _require_grid(result, f"the loading profile of row {self.i_row}")
         self._check(config)
-        _circulation_count(config, self.i_row)
+        if self.level:
+            _circulation_count(config, self.i_row)
 
         measured = turbigen.loading.measure_clark_profile(
-            result, self.i_row, self.spf, self._thickness(config).m_ctl
+            result, self.i_row, self.spf, self._section(config).thickness.m_ctl
         )
         if measured is None:
             raise MeasurementError(
@@ -1512,10 +1557,19 @@ class ClarkProfile(RowIterator):
         blade = result.machine.rows[self.i_row].blade
         sgn = -1.0 if blade.suction_is_upper else 1.0
 
-        errors = {f"Co[{self.i_row}]": level, self._dchi_name: sgn * loading_LE}
-        errors |= dict(
-            zip(self._names(self._order(config)), map(float, self._flat_error(shape)))
-        )
+        # A level nothing here corrects is still worth seeing: it is how far
+        # the morph has had to carry this span's target.
+        if self.level:
+            errors = {f"Co[{self.i_row}]": level}
+        else:
+            errors = {}
+            logger.info(
+                f"Row {self.i_row} at spf={self.spf:.2f} draws a circulation "
+                f"{level:+.4g} from its target's, left to the level at another "
+                f"span."
+            )
+        errors |= {self._dchi_name(config): sgn * loading_LE}
+        errors |= dict(zip(self._names(config), map(float, self._flat_error(shape))))
         return self._projected(config, errors)
 
     def _projected(self, config, errors):
@@ -1534,7 +1588,7 @@ class ClarkProfile(RowIterator):
         if bound is None:
             return errors
 
-        name = f"tau_LE[{self.i_row}]"
+        name = self._names(config)[0]
         step = -self.gains(config)[name] * errors[name]
         if (bound == "lower" and step >= 0.0) or (bound == "upper" and step <= 0.0):
             return errors
@@ -1549,14 +1603,15 @@ class ClarkProfile(RowIterator):
         return errors | {name: 0.0}
 
     def _nose_bound(self, config):
-        """Return which bound every section's nose is held at, or None.
+        """Return which bound every owned section's nose is held at, or None.
 
-        Every section, because the knob is a uniform shift: a nose held at a
-        bound on one section and free on another can still move the free one.
+        Every one, because the knob is a uniform shift: a nose held at a bound
+        on one section and free on another can still move the free one.
         """
         lo, hi = self.R_LE_lim
+        sections = self._blade(config).sections
         R_LE = np.array(
-            [float(s.thickness.R_LE) for s in self._blade(config).sections]
+            [float(sections[i].thickness.R_LE) for i in self._owned(config)]
         )
         if np.allclose(R_LE, lo, rtol=1e-9, atol=0.0):
             return "lower"
@@ -1684,8 +1739,9 @@ class ClarkProfile(RowIterator):
 
     def _by_knob(self, config, shape_value, level_value, recamber_value):
         """Return a value for `Co`, one for `dchi_LE`, and one for every shape knob."""
-        values = {f"Co[{self.i_row}]": level_value, self._dchi_name: recamber_value}
-        return values | {name: shape_value for name in self._names(self._order(config))}
+        values = {f"Co[{self.i_row}]": level_value} if self.level else {}
+        values |= {self._dchi_name(config): recamber_value}
+        return values | {name: shape_value for name in self._names(config)}
 
     def gains(self, config):
         """Return the gain of each knob, with the level's declared separately.
@@ -1705,8 +1761,9 @@ class ClarkProfile(RowIterator):
         criteria.
 
         A sequence :attr:`gain` declares every knob instead --- `Co` at index
-        zero and `dchi_LE` at one, as :meth:`unknowns` orders them --- and
-        then carries both itself, leaving `gain_Co` and `gain_dchi_LE` unread.
+        zero and `dchi_LE` at one, as :meth:`unknowns` orders them, or
+        `dchi_LE` at zero without the :attr:`level` --- and then carries both
+        itself, leaving `gain_Co` and `gain_dchi_LE` unread.
         """
         names = list(self.unknowns(config))
         if isinstance(self.gain, (int, float)):
@@ -1725,14 +1782,14 @@ class ClarkProfile(RowIterator):
         by_knob = self._by_knob(
             config, self.tolerance, self.tolerance_Co, self.tolerance_dchi_LE
         )
-        by_knob[f"tau_LE[{self.i_row}]"] = self.tolerance_tau_LE
+        by_knob[self._names(config)[0]] = self.tolerance_tau_LE
         return by_knob
 
     #
     # KNOBS, AS A FLAT TABLE AND AS A PAIR OF CURVES
     #
 
-    def _names(self, order):
+    def _names(self, config):
         """Return the table key of each shape knob, in a fixed order.
 
         `Co` is not among them: it is not a leaf of a thickness distribution,
@@ -1744,10 +1801,11 @@ class ClarkProfile(RowIterator):
         not move when a design changes order, which would otherwise read a nose
         sensitivity back as a mid-chord one.
         """
+        at, order = self._at(config), self._order(config)
         return [
-            f"tau_LE[{self.i_row}]",
-            f"tau_TE[{self.i_row}]",
-            *(f"tau[{self.i_row}][{i}][{k}]" for i in (0, 1) for k in range(1, order)),
+            f"tau_LE{at}",
+            f"tau_TE{at}",
+            *(f"tau{at}[{i}][{k}]" for i in (0, 1) for k in range(1, order)),
         ]
 
     def _flat_coeff(self, c):
@@ -1793,14 +1851,71 @@ class ClarkProfile(RowIterator):
     # WHAT THE CONFIG HAS TO PROVIDE
     #
 
-    @property
-    def _dchi_name(self):
-        """Return the table key of this row's leading-edge recamber."""
-        return f"dchi_LE[{self.i_row}]"
+    def _dchi_name(self, config):
+        """Return the table key of this iterator's leading-edge recamber."""
+        return f"dchi_LE{self._at(config)}"
 
     def _dchi_LE(self, config):
-        """Return the row's mean leading-edge recamber [deg]."""
-        return float(np.mean([s.dchi_LE for s in self._blade(config).sections]))
+        """Return the mean leading-edge recamber of the owned sections [deg]."""
+        sections = self._blade(config).sections
+        return float(np.mean([sections[i].dchi_LE for i in self._owned(config)]))
+
+    def _at(self, config):
+        """Return the index a knob is named by: the row, and the section too
+        once the row has more than one of these.
+
+        The row alone for a lone one, so a design that shapes one span is named
+        as it always was, and an archive of such designs still reads.
+        """
+        if len(self._siblings(config)) == 1:
+            return f"[{self.i_row}]"
+        return f"[{self.i_row}][{self._i_section(config)}]"
+
+    def _siblings(self, config):
+        """Return every `ClarkProfile` on this row, this one included, by span.
+
+        This one by value rather than as found in `config`, so that one asked
+        about a config it is not part of still owns what it would own there.
+        """
+        others = [
+            it
+            for it in config.iterate.correct
+            if isinstance(it, ClarkProfile)
+            and it.i_row == self.i_row
+            and not _same_spf(it.spf, self.spf)
+        ]
+        return sorted([self, *others], key=lambda it: it.spf)
+
+    def _i_section(self, config):
+        """Return the index of the section this measures at."""
+        for i, section in enumerate(self._blade(config).sections):
+            if _same_spf(section.spf, self.spf):
+                return i
+        raise ValueError(
+            f"A clark_profile on row {self.i_row} measures at spf={self.spf}, "
+            f"which is no section's: the row's are at "
+            f"{[float(s.spf) for s in self._blade(config).sections]}. Set spf "
+            f"to one of them, so that what is measured is a section that "
+            f"exists rather than one interpolated between them."
+        )
+
+    def _section(self, config):
+        """Return the section this measures at."""
+        return self._blade(config).sections[self._i_section(config)]
+
+    def _owned(self, config):
+        """Return the indices of the sections this moves, nearest its span.
+
+        Each section goes to whichever of the row's `ClarkProfile`s measures
+        nearest it, a tie to the one lower in span. A lone one owns the row.
+        """
+        siblings = self._siblings(config)
+        mine = siblings.index(self)
+        return tuple(
+            i
+            for i, section in enumerate(self._blade(config).sections)
+            if int(np.argmin([abs(section.spf - it.spf) for it in siblings])) == mine
+        )
 
     def _order(self, config):
         """Return the Bernstein degree of this row's thickness curves."""
@@ -1812,22 +1927,19 @@ class ClarkProfile(RowIterator):
         return config.blades[self.i_row].sections[0].thickness
 
     def _coefficients(self, config):
-        """Return the row's mean shape-space coefficients, `(2, order+1)`.
+        """Return the owned sections' mean shape-space coefficients, `(2, order+1)`.
 
-        Averaged over the sections because only one span fraction is measured
-        and :meth:`with_unknowns` moves them all together.
+        Averaged over them because only one span fraction is measured and
+        :meth:`with_unknowns` moves them all together.
         """
         self._check(config)
+        sections = config.blades[self.i_row].sections
         return np.mean(
-            [
-                section.thickness.tau_coeff
-                for section in config.blades[self.i_row].sections
-            ],
-            axis=0,
+            [sections[i].thickness.tau_coeff for i in self._owned(config)], axis=0
         )
 
     def _too_thin(self, sections):
-        """Return what is wrong with `sections`, or None if nothing is.
+        """Return what is wrong with `sections`, by index, or None if nothing is.
 
         A shape knob has no bound of its own that keeps an aerofoil closed:
         `clip` limits one step, not where a run of them arrives, and a
@@ -1837,7 +1949,7 @@ class ClarkProfile(RowIterator):
         hand.
         """
         m = np.linspace(0.0, 1.0, 201)[1:-1]
-        for i_section, section in enumerate(sections):
+        for i_section, section in sections.items():
             for i_surf, t in enumerate(section.thickness.thick_both(m)):
                 if np.any(t <= 0.0):
                     surface = ("suction", "pressure")[i_surf]
@@ -1848,9 +1960,29 @@ class ClarkProfile(RowIterator):
         return None
 
     def _check(self, config):
-        """Raise unless this row's thickness can carry the knobs, and its
-        recamber is this iterator's alone."""
+        """Raise unless this row's thickness can carry the knobs, its recamber
+        is this iterator's alone, and it shares the row properly."""
         from turbigen.thickness import ClarkThickness
+
+        self._i_section(config)
+        on_row = [
+            it
+            for it in config.iterate.correct
+            if isinstance(it, ClarkProfile) and it.i_row == self.i_row
+        ]
+        spans = sorted(float(it.spf) for it in on_row)
+        if any(_same_spf(a, b) for a, b in zip(spans, spans[1:])):
+            raise ValueError(
+                f"Row {self.i_row} has two clark_profile iterators measuring at "
+                f"one span, among spf={spans}; each section can answer to one "
+                f"target only."
+            )
+        if sum(it.level for it in on_row) > 1:
+            raise ValueError(
+                f"More than one clark_profile on row {self.i_row} drives the "
+                f"level, and the row has one blade count to drive. Set "
+                f"level: false on all but one of them."
+            )
 
         if any(isinstance(it, Incidence) for it in config.iterate.correct):
             raise ValueError(
