@@ -11,6 +11,7 @@ blade built from one has to count, shape and mesh like any other.
 import numpy as np
 import pytest
 import turbigen.blade
+import turbigen.util
 from test_blade import SPF, _all_perpendicular, blade, build
 
 from turbigen import ClarkThickness, ThicknessDesign, shapespace
@@ -209,6 +210,51 @@ def test_both_surfaces_need_the_same_number_of_coefficients():
 def test_the_nose_needs_a_positive_radius(R_LE):
     with pytest.raises(ValueError, match="must be positive"):
         design(R_LE=R_LE)
+
+
+@pytest.mark.parametrize("R_LE", (0.005, 0.2))
+def test_the_nose_is_refused_outside_its_bounds(R_LE):
+    """A config is checked against the bounds, not clamped to them."""
+    with pytest.raises(ValueError, match="outside its bounds"):
+        design(R_LE=R_LE)
+
+
+@pytest.mark.parametrize("R_LE_lim", ((0.0, 0.1), (0.1, 0.05)))
+def test_the_nose_bounds_must_be_ordered_and_positive(R_LE_lim):
+    with pytest.raises(ValueError, match="0 < lower < upper"):
+        design(R_LE=0.05, R_LE_lim=R_LE_lim)
+
+
+def test_an_interpolated_nose_is_held_inside_its_bounds():
+    """A spline through valid noses can dip below all of them; the blade
+    clamps the blended radius rather than refusing the section.
+
+    Three sections, the middle one blunt, so the natural cubic through them
+    undershoots between the two sharp ones near the hub.
+    """
+    lo, hi = 0.01, 0.15
+    sections = [design(R_LE=0.011), design(R_LE=0.01), design(R_LE=0.14)]
+    spf = np.array([0.0, 0.3, 1.0])
+
+    # The blend itself does dip, or this would test nothing.
+    raw = turbigen.util.interp1d_hold(spf, np.array([s.R_LE for s in sections]))
+    assert raw(np.linspace(0.0, 1.0, 101)).min() < lo
+
+    R_LE = [
+        turbigen.blade._interpolate(sections, spf, x).R_LE
+        for x in np.linspace(-0.5, 1.5, 81)
+    ]
+    assert min(R_LE) == pytest.approx(lo)
+    assert max(R_LE) <= hi
+
+
+def test_bounded_fields_clamps_only_the_nose():
+    fields = {**CLARK, "R_LE": -0.02}
+    bounded = ClarkThickness.bounded_fields(fields)
+    assert bounded["R_LE"] == ClarkThickness.R_LE_lim[0]
+    assert {k: v for k, v in bounded.items() if k != "R_LE"} == {
+        k: v for k, v in fields.items() if k != "R_LE"
+    }
 
 
 #

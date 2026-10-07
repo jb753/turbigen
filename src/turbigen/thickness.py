@@ -318,6 +318,23 @@ class ClarkThickness(ThicknessDesign):
     t_TE: float = 0.0
     """Trailing edge thickness, the total due to both sides [--]."""
 
+    R_LE_lim: tuple[float, float] = (0.01, 0.15)
+    """Bounds on the leading edge radius, normalised by meridional chord [--].
+
+    Carried by the thickness rather than by whatever moves it, so that every
+    route to a nose answers to the same numbers: a section written in a config
+    is refused outside them, an iterator stepping the nose clamps to them, and
+    a section interpolated between others is pulled back inside them by
+    :meth:`bounded_fields`. The last is the one no section-wise check can
+    cover, since a spline through three valid noses can dip below all of them.
+
+    **Why bounds at all.** A nose radius of a tenth of a chord is a cylinder
+    rather than a leading edge, and one of a hundredth or less is asking for
+    no nose at all; see
+    :class:`~turbigen.iterate.ClarkProfile` for the run that walked from one
+    towards the other.
+    """
+
     def __post_init__(self):
         if len(self.coeff) != 2:
             raise ValueError(
@@ -336,6 +353,37 @@ class ClarkThickness(ThicknessDesign):
             raise ValueError(
                 f"A leading edge radius must be positive, got R_LE={self.R_LE}."
             )
+
+        lo, hi = self.R_LE_lim
+        if not 0.0 < lo < hi:
+            raise ValueError(
+                f"Leading edge radius bounds must satisfy 0 < lower < upper, "
+                f"got R_LE_lim={self.R_LE_lim}."
+            )
+
+        # A relative slack, because a nose clamped in shape space comes back
+        # through a square root and need not land on the bound to the last bit.
+        if not lo * (1.0 - 1e-9) <= self.R_LE <= hi * (1.0 + 1e-9):
+            raise ValueError(
+                f"Leading edge radius R_LE={self.R_LE} is outside its bounds "
+                f"R_LE_lim={self.R_LE_lim}."
+            )
+
+    @classmethod
+    def bounded_fields(cls, fields):
+        """Return constructor `fields` with the nose radius clamped to its bounds.
+
+        For :func:`turbigen.blade._interpolate`, which builds a section from
+        fields blended between others and has no section to clamp until it is
+        built --- by which time a blended radius below zero has already been
+        refused. On the field rather than on the shape-space coefficient, which
+        leaves the interior perturbations as blended and moves only the
+        straight line under them, so the surfaces away from the nose barely
+        notice.
+        """
+        lo, hi = fields.get("R_LE_lim", cls.R_LE_lim)
+        R_LE = float(fields["R_LE"])
+        return fields | {"R_LE": min(max(R_LE, lo), hi)}
 
     @property
     def order(self):

@@ -90,7 +90,7 @@ Evaluating a blade
 
 A :class:`Blade` is addressed by span fraction, and every geometric quantity is
 read off it with an ``evaluate_`` method that interpolates the section designs
-field by field, extrapolating beyond the end sections. The metal angles are the
+field by field, holding the end sections' values beyond them. The metal angles are the
 exception: only the recamber is interpolated, and the flow angle it is added to
 is evaluated at the span fraction asked for.
 :meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
@@ -273,7 +273,13 @@ def _interpolate(nodes, spf_sections, spf):
 
     Every section must use the same design, because there is no meaning to
     blending a quadratic camber line into a quartic one. The parameters of one
-    design are interpolated linearly, extrapolating beyond the end sections.
+    design are interpolated between the sections, and held at the nearest end
+    section's values beyond them, so the endwalls see nothing no section said.
+
+    A design with a ``bounded_fields`` classmethod is handed the interpolated
+    fields before it is built, to pull back inside its bounds whatever the
+    spline between valid sections overshot to. A cubic through three noses can
+    dip below the smallest of them.
     """
     cls = type(nodes[0])
     if any(type(node) is not cls for node in nodes):
@@ -311,7 +317,7 @@ def _interpolate(nodes, spf_sections, spf):
     # type the field was declared with -- a Bernstein order is an integer, and
     # a float in its place is not a valid one.
     values = np.array([np.concatenate([part.ravel() for part in row]) for row in rows])
-    interpolated = turbigen.util.interp1d_linear_extrap(spf_sections, values)(spf)
+    interpolated = turbigen.util.interp1d_hold(spf_sections, values)(spf)
     interpolated = np.asarray(interpolated).reshape(-1)
 
     moved = {}
@@ -330,6 +336,10 @@ def _interpolate(nodes, spf_sections, spf):
             moved[name] = type(original)(_nested(chunk.reshape(shape)))
         else:
             moved[name] = chunk[0]
+
+    bounded_fields = getattr(cls, "bounded_fields", None)
+    if bounded_fields is not None:
+        moved = bounded_fields(moved)
 
     try:
         return cls(**moved)
@@ -662,8 +672,8 @@ class Blade:
     def _get_cam_thick(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
 
-        Interpolated linearly between the sections, extrapolating beyond the
-        end ones.
+        Interpolated between the sections, holding the end ones' values beyond
+        them.
         """
         camber = _interpolate(self.cambers, self.spf, spf)
         thickness = _interpolate(self.thicknesses, self.spf, spf)
@@ -683,7 +693,7 @@ class Blade:
         if self.n_section == 1:
             dchi = self.dchi[0]
         else:
-            dchi = turbigen.util.interp1d_linear_extrap(self.spf, self.dchi)(
+            dchi = turbigen.util.interp1d_hold(self.spf, self.dchi)(
                 spf
             ).reshape(-1)
 

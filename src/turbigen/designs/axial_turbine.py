@@ -51,8 +51,16 @@ class AxialTurbine(MeanLineDesign):
     r_rms: float
     """Mean radius, constant through the stage [m]."""
 
-    zeta: tuple[float, float] = (1.0, 1.0)
-    """Axial velocity at stage inlet and outlet, relative to rotor inlet [--]."""
+    dzeta: float = 0.0
+    """Axial velocity change through the stage, relative to rotor inlet [--].
+
+    Applied symmetrically about the rotor inlet: ``Vx1 = (1 - dzeta) Vx2`` and
+    ``Vx3 = (1 + dzeta) Vx2``, so positive accelerates the flow. One knob
+    rather than an inlet and an outlet ratio, because a box over two
+    independent ratios is mostly lopsided stages. Relative to `Vx2` rather
+    than the blade speed so that the same `dzeta` is the same shape of stage
+    at any `phi2`.
+    """
 
     Po1: float = 1e5
     """Inlet stagnation pressure [Pa]."""
@@ -111,20 +119,33 @@ class AxialTurbine(MeanLineDesign):
         """Flow coefficient at rotor inlet."""
         return ml.flat.Vx[2] / self.blade_speed(ml)
 
-    def velocity_ratios(self, ml):
-        """Axial velocity at inlet and outlet, relative to rotor inlet."""
+    def velocity_change(self, ml):
+        """Half the axial velocity rise through the stage, over rotor inlet's.
+
+        The inverse of :attr:`dzeta` for a symmetric stage. One that is not
+        returns the mean of its two halves, and fails the round trip.
+        """
         Vx = ml.flat.Vx
-        return Vx[(0, 3),] / Vx[2]
+        return 0.5 * (Vx[3] - Vx[0]) / Vx[2]
 
     #
     # DESIGN
     #
 
     def forward(self, fluid):
+        # Refused here rather than left to the solve, which would divide by a
+        # zero axial velocity and report it as a failure to converge.
+        if not abs(self.dzeta) < 1.0:
+            raise DesignError(
+                f"Mean-line type {self.type!r}: dzeta={self.dzeta} leaves no "
+                "axial velocity at the stage inlet or outlet; it must lie "
+                "strictly between -1 and 1."
+            )
+
         ml = self.allocate(fluid)
 
         Ys = np.asarray(self.Ys, dtype=float)
-        zeta = np.asarray(self.zeta, dtype=float)
+        zeta = np.array([1.0 - self.dzeta, 1.0 + self.dzeta])
         phi2, mdot, r_rms = self.phi2, self.mdot, self.r_rms
 
         # Reference state from the inlet stagnation conditions. This is the
@@ -254,7 +275,7 @@ class AxialTurbine(MeanLineDesign):
             "mdot": ml.inlet.mdot,
             "Ys": self.loss_coefficient(ml),
             "r_rms": ml.inlet.r,
-            "zeta": self.velocity_ratios(ml),
+            "dzeta": self.velocity_change(ml),
             "Po1": ml.inlet.Po,
             "To1": ml.inlet.To,
             # A limit on the design, not a variable of it: nothing about a

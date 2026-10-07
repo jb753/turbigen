@@ -235,6 +235,24 @@ def interp1d_linear_extrap(x, y, axis=0):
     return spline
 
 
+def interp1d_hold(x, y, axis=0):
+    """Return a spline through `x, y` that holds its end values beyond them.
+
+    The same curve as :func:`interp1d_linear_extrap` inside the data, and the
+    nearest end value outside it. What a blade's sections want: carrying the
+    end slopes on to the endwalls can drive a parameter somewhere no section
+    put it, such as a nose radius below zero, while holding the outermost
+    section claims nothing the design did not say.
+    """
+    spline = interp1d_linear_extrap(x, y, axis=axis)
+    lo, hi = np.min(x), np.max(x)
+
+    def held(xq):
+        return spline(np.clip(xq, lo, hi))
+
+    return held
+
+
 #
 # REPORTING
 #

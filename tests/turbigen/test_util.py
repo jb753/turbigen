@@ -600,3 +600,17 @@ def test_the_normal_yaw_moves_smoothly_between_nodes():
     # A cell is one node spacing of sweep, and it is traversed evenly.
     step = ARC[1] - ARC[0]
     np.testing.assert_allclose(yaw, yaw[0] + fractions * step, atol=1e-3)
+
+
+def test_interp1d_hold_holds_the_end_values_beyond_the_data():
+    """Inside, the same curve as the linear-extrapolating one; outside, flat."""
+    x = np.array([0.2, 0.5, 0.8])
+    y = np.array([[1.0, 0.0], [3.0, 1.0], [2.0, 4.0]])
+
+    held = util.interp1d_hold(x, y)
+    free = util.interp1d_linear_extrap(x, y)
+
+    inside = np.linspace(0.2, 0.8, 7)
+    np.testing.assert_allclose(held(inside), free(inside))
+    np.testing.assert_allclose(held(np.array([0.0, -1.0])), [y[0], y[0]])
+    np.testing.assert_allclose(held(np.array([1.0, 2.0])), [y[-1], y[-1]])

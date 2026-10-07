@@ -15,6 +15,7 @@ Test cases:
 - test_nan_runs_are_left_out_of_a_fit: a metric a run could not measure
 - test_too_few_runs_is_refused: nothing to fit
 - test_collect_reads_batch_runs: inputs from the box, outputs from the runs
+- test_collect_reads_a_tied_key: one column, read off the first leaf it names
 - test_collect_needs_batch_bounds: no box, no fit
 """
 
@@ -194,6 +195,18 @@ def test_collect_reads_batch_runs(tmp_path):
     np.testing.assert_allclose(got.y["dchi_TE[1]"], [d for _, d in SPREAD])
     assert "error.dchi_TE[0]" in got.y
     assert got.names("dchi_TE*") == ("dchi_TE[0]", "dchi_TE[1]")
+
+
+def test_collect_reads_a_tied_key(tmp_path):
+    for i_run, (psi, dchi_TE) in enumerate(SPREAD):
+        write(tmp_path / "runs" / f"{i_run:03d}", make(psi, dchi_TE))
+
+    key = "mean_line.psi,mean_line.phi2"
+    config = dataclasses.replace(datum(), batch=Batch(bounds={key: [1.2, 2.0]}))
+    got = surrogate.collect(config, "runs/*/config.yaml", tmp_path)
+
+    assert got.paths == (key,)
+    np.testing.assert_allclose(got.x[:, 0], [psi for psi, _ in SPREAD])
 
 
 def test_collect_needs_batch_bounds(tmp_path):

@@ -33,6 +33,11 @@ Test cases:
 - test_an_impossible_box_fails_loudly: rather than spinning
 - test_an_infeasible_grid_point_is_skipped_and_warned: you named it, so it is news
 - test_an_impossible_grid_fails_loudly
+- test_tied_paths_take_one_value: a comma-joined key writes every leaf it names
+- test_a_tie_is_one_dimension: the other variables draw as they did untied
+- test_a_tied_grid_takes_one_value
+- test_an_unknown_tied_path_is_refused: each member is checked, not the key
+- test_a_leaf_in_two_keys_is_refused: it cannot follow both
 - test_an_unknown_path_is_refused: before a batch of broken configs is written
 - test_an_unknown_grid_path_is_refused
 - test_an_integer_bound_is_refused: rounding makes duplicate designs
@@ -341,6 +346,51 @@ def test_an_infeasible_grid_point_is_skipped_and_warned(caplog):
 def test_an_impossible_grid_fails_loudly():
     with pytest.raises(ValueError, match="None of the"):
         batch.generate(make(values={"mean_line.Ma2": [25.0, 50.0]}))
+
+
+#
+# TIED PATHS
+#
+
+TIED = "mean_line.Ys[0],mean_line.Ys[1]"
+"""Two leaves varied as one, as the sections of a row are."""
+
+
+def test_tied_paths_take_one_value():
+    pairs = batch.generate(make({**BOX, TIED: [0.03, 0.07]}), 8)
+
+    first = values_of(pairs, "mean_line.Ys[0]")
+    assert first == values_of(pairs, "mean_line.Ys[1]")
+    assert len(set(first)) == 8
+    assert all(0.03 <= value <= 0.07 for value in first)
+
+
+def test_a_tie_is_one_dimension():
+    """Tying adds one column to the box, however many leaves it names."""
+    tied = batch.generate(make({**BOX, TIED: [0.03, 0.07]}), 8)
+    alone = batch.generate(make({**BOX, "mean_line.Ys[0]": [0.03, 0.07]}), 8)
+
+    for path in [*BOX, "mean_line.Ys[0]"]:
+        assert values_of(tied, path) == values_of(alone, path)
+
+
+def test_a_tied_grid_takes_one_value():
+    pairs = batch.generate(make(values={TIED: [0.03, 0.07]}))
+
+    assert values_of(pairs, "mean_line.Ys[0]") == [0.03, 0.07]
+    assert values_of(pairs, "mean_line.Ys[1]") == [0.03, 0.07]
+
+
+def test_an_unknown_tied_path_is_refused():
+    with pytest.raises(ValueError, match="'mean_line.Ys\\[2\\]' is not a leaf"):
+        batch.generate(make({"mean_line.Ys[0],mean_line.Ys[2]": [0.03, 0.07]}), 4)
+
+
+def test_a_leaf_in_two_keys_is_refused():
+    bounds = {TIED: [0.03, 0.07], "mean_line.Ys[1]": [0.03, 0.07]}
+
+    with pytest.raises(ValueError, match="more than one key"):
+        batch.generate(make(bounds), 4)
 
 
 #

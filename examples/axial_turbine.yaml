@@ -23,7 +23,7 @@ mean_line:
   phi2: 0.6
   Ma2: 0.7
   fac_Ma3_rel: 1.0
-  zeta: [1.0, 1.0]
+  dzeta: 0.0
   # Guessed loss, which the mean_line iterator below replaces with what the
   # CFD actually produces
   Ys: [0.02, 0.05]

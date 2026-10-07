@@ -24,9 +24,9 @@ mean_line:
   psi: 1.2780563160777092
   r_rms: 2.0
   type: axial_turbine
-  zeta:
-  - 1.0282439630478621
-  - 1.0769492954015734
+  # Was zeta [1.0282, 1.0769]. One symmetric knob cannot hold both, so this
+  # keeps the stator inlet ratio the test is about.
+  dzeta: -0.0282439630478621
 annulus:
   cx_gap:
   - 0.1

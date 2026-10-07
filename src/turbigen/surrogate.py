@@ -28,8 +28,9 @@ from pathlib import Path
 
 import numpy as np
 from numpy.polynomial import legendre
+from scipy.linalg import solve_triangular
 
-from turbigen import iterate, node
+from turbigen import batch, iterate, node
 from turbigen.database import Database, gather
 
 logger = logging.getLogger("turbigen.surrogate")
@@ -114,7 +115,9 @@ def collect(config, path, anchor="."):
 
     paths = config.batch.paths()
     lo, hi = config.batch.limits()
-    x = gather([sample for _, sample, _ in rows], paths)
+    # A tied key names several leaves holding one value; read the first.
+    leaves = [batch.members(path)[0] for path in paths]
+    x = gather([sample for _, sample, _ in rows], leaves)
 
     outputs = [_outputs(sample, result) for _, sample, result in rows]
     names = sorted(set().union(*outputs))
@@ -334,7 +337,7 @@ def fit(table, name, ladder=LADDER):
         Q, R = np.linalg.qr(A)
         if np.min(np.abs(np.diag(R))) < 1e-10 * np.max(np.abs(np.diag(R))):
             continue
-        coeff = np.linalg.solve(R, Q.T @ y)
+        coeff = solve_triangular(R, Q.T @ y)
 
         residual = y - A @ coeff
         leverage = np.sum(Q**2, axis=1)

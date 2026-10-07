@@ -1577,13 +1577,28 @@ def test_clark_holds_the_nose_inside_its_bounds(clark):
     other knob in the row because this one reached a limit.
     """
     iterator = clark.iterate.correct[0]
-    lo, hi = iterator.R_LE_lim
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
     tau = iterator.unknowns(clark)["tau_LE[0]"]
 
     for asked, bound in ((10.0, hi), (-tau + (2.0 * lo) ** 0.5 * 0.5, lo)):
         moved = iterator.with_unknowns(clark, {"tau_LE[0]": tau + asked})
         for section in moved.blades[0].sections:
             assert section.thickness.R_LE == pytest.approx(bound)
+
+
+def test_clark_refuses_a_deprecated_nose_bound_that_disagrees(clark):
+    """The bounds live on the thickness; one left here must agree with it,
+    or it would read as a bound in force when it is not."""
+    iterator = dataclasses.replace(clark.iterate.correct[0], R_LE_lim=(0.02, 0.1))
+    tau = iterator.unknowns(clark)["tau_LE[0]"]
+
+    with pytest.raises(ValueError, match="now live on the thickness"):
+        iterator.with_unknowns(clark, {"tau_LE[0]": tau + 0.01})
+
+    agrees = dataclasses.replace(
+        iterator, R_LE_lim=clark.blades[0].sections[0].thickness.R_LE_lim
+    )
+    agrees.with_unknowns(clark, {"tau_LE[0]": tau + 0.01})
 
 
 def test_clark_leaves_a_nose_inside_its_bounds_alone(clark):
@@ -1593,7 +1608,8 @@ def test_clark_leaves_a_nose_inside_its_bounds_alone(clark):
 
     # Half way between where it starts and the upper bound, so the move is
     # real but lands inside.
-    wanted = 0.5 * (clark.blades[0].sections[0].thickness.R_LE + iterator.R_LE_lim[1])
+    thickness = clark.blades[0].sections[0].thickness
+    wanted = 0.5 * (thickness.R_LE + thickness.R_LE_lim[1])
     moved = iterator.with_unknowns(clark, {"tau_LE[0]": (2.0 * wanted) ** 0.5})
 
     assert moved.blades[0].sections[0].thickness.R_LE == pytest.approx(wanted)
@@ -1652,7 +1668,7 @@ def test_clark_counts_a_nose_held_at_its_bound_as_converged(
 ):
     """A nose that may go no further has converged; one that can come back
     off the bound has not, and keeps the error that takes it there."""
-    lo, hi = clark.iterate.correct[0].R_LE_lim
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
     R_LE = lo if bound == "lower" else hi
 
     error = _nose_error_at(clark, R_LE, offset, monkeypatch)
@@ -1665,7 +1681,7 @@ def test_clark_counts_a_nose_held_at_its_bound_as_converged(
 
 def test_clark_reports_a_free_nose_whole(clark, monkeypatch):
     """Inside its bounds the nose error is the plain mean residual."""
-    lo, hi = clark.iterate.correct[0].R_LE_lim
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
     error = _nose_error_at(clark, 0.5 * (lo + hi), 0.05, monkeypatch)
 
     assert error == pytest.approx(0.05)

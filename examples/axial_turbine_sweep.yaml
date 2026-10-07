@@ -20,12 +20,9 @@ batch:
     mean_line.fac_Ma3_rel:
     - 0.85
     - 1.15
-    mean_line.zeta[0]:
-    - 0.9
-    - 1.1
-    mean_line.zeta[1]:
-    - 0.9
-    - 1.1
+    mean_line.dzeta:
+    - -0.1
+    - 0.1
     mean_line.Ma2:
     - 0.6
     - 0.8
@@ -153,9 +150,7 @@ mean_line:
   psi: 1.6
   r_rms: 2.0
   type: axial_turbine
-  zeta:
-  - 1.0
-  - 1.0
+  dzeta: 0.0
 mesh:
   AR_cusp: 2.0
   AR_mix: 1.0

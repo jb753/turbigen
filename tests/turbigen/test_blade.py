@@ -409,9 +409,11 @@ def test_a_parameter_of_rows_interpolates_element_by_element():
     middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5)
     assert middle.coeff == ((1.0, 2.0), (2.0, 4.0))
 
-    # Extrapolates beyond the end sections, as every other parameter does.
+    # Held at the nearest end section beyond them, as every other parameter is.
     beyond = _interpolate(ends, np.array([0.0, 1.0]), 2.0)
-    assert beyond.coeff == ((4.0, 8.0), (5.0, 7.0))
+    assert beyond.coeff == ((2.0, 4.0), (3.0, 5.0))
+    below = _interpolate(ends, np.array([0.0, 1.0]), -1.0)
+    assert below.coeff == ((0.0, 0.0), (1.0, 3.0))
 
 
 def test_an_interpolated_parameter_comes_back_as_tuples():

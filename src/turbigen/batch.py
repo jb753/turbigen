@@ -67,6 +67,11 @@ class Batch(Node):
     as `database.variables`, so a design variable is named identically wherever
     it appears.
 
+    A key may join several paths with commas, which ties them: one value is
+    drawn and written to every one of them. That is how a quantity spread
+    over several leaves --- the suction peak of each section of a row --- moves
+    as one variable, without a dimension of the box per leaf. See `members`.
+
     A mapping rather than a list of triples because this is the one section a
     user writes by hand and ``mean_line.psi: [1.2, 2.0]`` is the shortest
     honest spelling of it. The cost is that a `Config` holding one is no longer
@@ -145,23 +150,34 @@ class Batch(Node):
             )
 
         leaves = node.flatten(config)
+        seen = set()
 
         for path in self.paths():
-            if path not in leaves:
-                raise ValueError(
-                    f"The batch variable {path!r} is not a leaf of this config."
-                )
+            for leaf in members(path):
+                if leaf not in leaves:
+                    raise ValueError(
+                        f"The batch variable {leaf!r} is not a leaf of this config."
+                    )
+                # Named twice, the last key written would win and the other's
+                # column would no longer be what the design was run at.
+                if leaf in seen:
+                    raise ValueError(
+                        f"The batch variable {leaf!r} is named by more than "
+                        "one key, so it cannot follow both."
+                    )
+                seen.add(leaf)
+
+                if not self.is_grid():
+                    self._check_bounds(path, leaf, leaves[leaf])
 
             if self.is_grid():
                 self._check_values(path)
-            else:
-                self._check_bounds(path, leaves[path])
 
-    def _check_bounds(self, path, value):
-        """Raise unless `path` is something a continuous draw can move."""
+    def _check_bounds(self, path, leaf, value):
+        """Raise unless `leaf`, varied by `path`, can move continuously."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(
-                f"The batch bound {path!r} is {value!r}, which is not a "
+                f"The batch bound {leaf!r} is {value!r}, which is not a "
                 "number to move continuously."
             )
         if isinstance(value, int):
@@ -171,7 +187,7 @@ class Batch(Node):
             # mesh. Named values cannot collide this way, so `values:` allows
             # them.
             raise ValueError(
-                f"The batch bound {path!r} is a whole number, and whole "
+                f"The batch bound {leaf!r} is a whole number, and whole "
                 "numbers are not drawn: rounding a continuous draw makes "
                 "duplicate designs. Name the values with values: instead."
             )
@@ -208,6 +224,17 @@ class Batch(Node):
                 f"The batch variable {path!r} repeats a value, which would "
                 "run the same design twice."
             )
+
+
+def members(path):
+    """Return the leaves a batch variable `path` writes to, as a tuple.
+
+    One for a plain path, several for a comma-joined key that ties them. The
+    first is the one read back when a finished run is asked where it sat in
+    the box: the others hold the same value, so any would do, and the first is
+    the one a reader can see without splitting the key in their head.
+    """
+    return tuple(leaf.strip() for leaf in path.split(","))
 
 
 def generate(config, n=None, start=0, edges=None):
@@ -424,7 +451,10 @@ def _build(config, datum, paths, values):
         # float() rather than the value itself, so a drawn numpy scalar
         # serialises. A named whole number is left as it was typed: `values:`
         # allows integers, and a blade count must stay one.
-        node.set_by_path(data, path, value if isinstance(value, int) else float(value))
+        for leaf in members(path):
+            node.set_by_path(
+                data, leaf, value if isinstance(value, int) else float(value)
+            )
 
     # Screening probes bad points on purpose, so numeric warnings are expected.
     # Record them and log them below if the point survives. Not re-raised: a

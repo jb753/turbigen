@@ -62,7 +62,7 @@ def test_dump_includes_resolved_defaults():
     assert dumped["fluid"]["Pr"] == 0.7
     assert dumped["mean_line"]["Po1"] == 1e5
     assert dumped["mean_line"]["To1"] == 300.0
-    assert dumped["mean_line"]["zeta"] == [1.0, 1.0]
+    assert dumped["mean_line"]["dzeta"] == 0.0
 
 
 def test_sequences_round_trip_as_tuples():

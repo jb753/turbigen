@@ -1262,7 +1262,7 @@ class ClarkProfile(RowIterator):
 
     Declared apart from :attr:`tolerance`, and tighter than it by default,
     because the nose is the knob most often left short of its target. A nose
-    held at :attr:`R_LE_lim` and still wanting to go further no longer needs
+    held at its bounds and still wanting to go further no longer needs
     this widened to stop it stalling a design: :meth:`error` counts it as
     converged, so this governs only a nose that is free to move.
     """
@@ -1304,8 +1304,15 @@ class ClarkProfile(RowIterator):
     criterion than :attr:`tolerance` on either one.
     """
 
-    R_LE_lim: tuple[float, float] = (0.01, 0.15)
-    """Bounds on the leading edge radius, normalised by chord [--].
+    R_LE_lim: tuple[float, float] | None = None
+    """Deprecated: the bounds now live on the thickness [--].
+
+    See :attr:`turbigen.thickness.ClarkThickness.R_LE_lim`, which the blade
+    enforces between sections as well as at them, where a bound held here
+    could only reach the sections this iterator steps. Still accepted so that
+    configs written while it lived here load, but only if it agrees with the
+    thickness's: a different value would read as a bound in force when it is
+    not.
 
     **A bound on where the knob arrives, which no clip provides.** `clip`
     limits one step and not a run of them, so a nose can be thickened by a
@@ -1437,17 +1444,21 @@ class ClarkProfile(RowIterator):
         # moving an end coefficient moves the straight line beneath the whole
         # curve and every interior perturbation has to be recomputed against
         # it --- see there.
+        #
+        # Clamped in shape space before the thickness is rebuilt, since a
+        # thickness refuses a nose outside its bounds.
         sections = config.blades[self.i_row].sections
-        shifted = self._within_R_LE(
-            tuple(
-                dataclasses.replace(
-                    sections[i],
-                    thickness=sections[i].thickness.with_tau_coeff(
-                        sections[i].thickness.tau_coeff + shift
-                    ),
-                )
-                for i in owned
+        shifted = tuple(
+            dataclasses.replace(
+                sections[i],
+                thickness=sections[i].thickness.with_tau_coeff(
+                    self._within_R_LE(
+                        sections[i].thickness,
+                        sections[i].thickness.tau_coeff + shift,
+                    )
+                ),
             )
+            for i in owned
         )
 
         closed = self._too_thin(dict(zip(owned, shifted)))
@@ -1464,36 +1475,41 @@ class ClarkProfile(RowIterator):
             sections[i] = section
         return _with_blade(config, self.i_row, sections=tuple(sections))
 
-    def _within_R_LE(self, sections):
-        """Return `sections` with any nose radius pulled back inside its bounds.
+    def _within_R_LE(self, thickness, coeff):
+        """Return shape-space `coeff` with the nose pulled back inside its bounds.
 
-        Written on the radius rather than on the shape-space coefficient it
-        comes from, because the bound is a statement about the aerofoil: a
-        reader asking how blunt a nose is allowed to get should not have to
-        square a coefficient to find out.
+        The bounds are the thickness's own,
+        :attr:`~turbigen.thickness.ClarkThickness.R_LE_lim`, and are applied
+        to the coefficients rather than to a rebuilt thickness, which would
+        refuse a nose outside them before it could be clamped.
         """
-        lo, hi = self.R_LE_lim
-        held = []
-        for section in sections:
-            R_LE = float(section.thickness.R_LE)
-            bounded = min(max(R_LE, lo), hi)
-            if bounded == R_LE:
-                held.append(section)
-                continue
+        self._check_R_LE_lim(thickness)
+        lo, hi = thickness.R_LE_lim
+        R_LE = float(turbigen.shapespace.R_LE_from_tau(coeff[0, 0]))
+        bounded = min(max(R_LE, lo), hi)
+        if bounded == R_LE:
+            return coeff
 
-            logger.info(
-                f"Row {self.i_row}'s nose would go to R_LE={R_LE:.4g}, outside "
-                f"the {lo:.4g} to {hi:.4g} it is allowed; holding it at "
-                f"{bounded:.4g}."
+        logger.info(
+            f"Row {self.i_row}'s nose would go to R_LE={R_LE:.4g}, outside "
+            f"the {lo:.4g} to {hi:.4g} it is allowed; holding it at "
+            f"{bounded:.4g}."
+        )
+        coeff = coeff.copy()
+        coeff[:, 0] = turbigen.shapespace.tau_LE(bounded)
+        return coeff
+
+    def _check_R_LE_lim(self, thickness):
+        """Raise if the deprecated :attr:`R_LE_lim` disagrees with the thickness's."""
+        if self.R_LE_lim is None:
+            return
+        if not np.allclose(self.R_LE_lim, thickness.R_LE_lim, rtol=1e-12, atol=0.0):
+            raise ValueError(
+                f"Row {self.i_row}'s clark_profile sets R_LE_lim={self.R_LE_lim}, "
+                f"but the bounds now live on the thickness, which has "
+                f"R_LE_lim={thickness.R_LE_lim}; set them there and drop them "
+                f"here."
             )
-            coeff = section.thickness.tau_coeff.copy()
-            coeff[:, 0] = turbigen.shapespace.tau_LE(bounded)
-            held.append(
-                dataclasses.replace(
-                    section, thickness=section.thickness.with_tau_coeff(coeff)
-                )
-            )
-        return tuple(held)
 
     def paths(self, config):
         order = self._order(config)
@@ -1576,7 +1592,7 @@ class ClarkProfile(RowIterator):
         """Return `errors` with a nose error that only pushes into a bound nulled.
 
         What converged means for a bounded knob: a nose held at
-        :attr:`R_LE_lim` whose step would carry it further out of bounds has
+        its bounds whose step would carry it further out of them has
         gone as far as it may, and what is left of its error is how hard the
         bound is pushing back, not how far the loop still has to go. Reported
         as zero so the rest of the row can converge around it; the residual
@@ -1593,10 +1609,9 @@ class ClarkProfile(RowIterator):
         if (bound == "lower" and step >= 0.0) or (bound == "upper" and step <= 0.0):
             return errors
 
-        lo, hi = self.R_LE_lim
         logger.info(
-            f"Row {self.i_row}'s nose is held at its {bound} bound, "
-            f"R_LE={lo if bound == 'lower' else hi:.4g}, and would go further; "
+            f"Row {self.i_row}'s nose is held at its {bound} bound "
+            f"and would go further; "
             f"its leading-edge residual of {errors[name]:.4g} is the target "
             f"the bound will not let it reach, counted as converged."
         )
@@ -1608,14 +1623,20 @@ class ClarkProfile(RowIterator):
         Every one, because the knob is a uniform shift: a nose held at a bound
         on one section and free on another can still move the free one.
         """
-        lo, hi = self.R_LE_lim
         sections = self._blade(config).sections
-        R_LE = np.array(
-            [float(sections[i].thickness.R_LE) for i in self._owned(config)]
-        )
-        if np.allclose(R_LE, lo, rtol=1e-9, atol=0.0):
+        thicknesses = [sections[i].thickness for i in self._owned(config)]
+        for thickness in thicknesses:
+            self._check_R_LE_lim(thickness)
+
+        def at(end):
+            return all(
+                np.isclose(t.R_LE, t.R_LE_lim[end], rtol=1e-9, atol=0.0)
+                for t in thicknesses
+            )
+
+        if at(0):
             return "lower"
-        if np.allclose(R_LE, hi, rtol=1e-9, atol=0.0):
+        if at(1):
             return "upper"
         return None
 
