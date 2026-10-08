@@ -19,13 +19,16 @@ Test cases:
 - test_mixing_loss_has_the_shape_of_the_mean_line: one value per station
 - test_mixing_loss_is_a_real_entropy_rise: positive through the wake
 - test_mixing_loss_builds_through_the_row: exit lossier than inlet
+- test_mixing_loss_averages_the_cut_the_metrics_read: one regrid for both
 - test_a_cut_that_misses_the_grid_is_reported: names the station
 """
 
+import ember.average
+import ember.cut
 import numpy as np
 import pytest
 
-from turbigen import mixout, pipeline
+from turbigen import mixout, pipeline, util
 from turbigen.config import Config
 
 CASCADE = {
@@ -236,6 +239,28 @@ def test_mixing_loss_builds_through_the_row(solved):
     _, Ds_mix = mixout.mean_line(grid, machine)
 
     assert np.all(Ds_mix[1] > Ds_mix[0])
+
+
+def test_mixing_loss_averages_the_cut_the_metrics_read(solved):
+    """The mass-averaged entropy behind the mixing loss is that of
+    :func:`turbigen.util.cut_structured`, so band averages a metric takes on
+    the same plane add up to it rather than to a different regrid's."""
+    machine, grid = solved
+
+    _, Ds_mix = mixout.mean_line(grid, machine)
+
+    nominal = machine.mean_line.flat
+    for i_station, xr in enumerate(machine.annulus.cut_planes()):
+        # Mixed out to the same area as mixout does, so only the averages
+        # differ if the regrids do.
+        raw = ember.cut.unstructured(grid, xr)
+        A_cut = float(np.linalg.norm(ember.average.total_area(raw)[:2]) * raw.Nb)
+        mixed = ember.average.mix_out(raw, AR=float(nominal[i_station].Am) / A_cut)
+        cut = util.cut_structured(grid, xr)
+        s_cut = float(ember.average.mass_average(cut.s, cut))
+        assert float(mixed.s) - s_cut == pytest.approx(
+            Ds_mix.T.flat[i_station], rel=1e-6, abs=1e-9
+        )
 
 
 def test_a_cut_that_misses_the_grid_is_reported(solved):

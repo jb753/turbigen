@@ -31,6 +31,7 @@ import math
 import warnings
 
 import numpy as np
+import yaml
 from scipy.stats import qmc
 
 from turbigen import node
@@ -51,6 +52,14 @@ DEFAULT_NUMBER = 32
 
 A power of two, because that is where Sobol' balance properties hold. Nothing
 like it exists for a grid, whose count is the product of what it names.
+"""
+
+DRAWS_PER_POINT = 100
+"""Sequence points looked at per point wanted when filling the gaps between runs.
+
+Generous, because a point already covered by a run costs a distance calculation
+and nothing more; only the uncovered ones are designed, and those are capped by
+:data:`ATTEMPTS_PER_POINT` as a drawn batch is.
 """
 
 
@@ -237,7 +246,7 @@ def members(path):
     return tuple(leaf.strip() for leaf in path.split(","))
 
 
-def generate(config, n=None, start=0, edges=None):
+def generate(config, n=None, start=0, edges=None, taken=None):
     """Return the designs this config's `batch:` section asks for.
 
     Pairs of ``(index, config)``. The index is the point's position in the
@@ -262,6 +271,11 @@ def generate(config, n=None, start=0, edges=None):
         When set, ignore `n` and `start` and run the surface of the `bounds:`
         box instead of drawing from it: the `edges`-level grid over the box,
         keeping only the points with a coordinate at a bound. `bounds:` only.
+    taken : array or None
+        When set, the design variables of the runs already made, shape
+        ``(n_taken, n_var)`` in `Batch.paths` order, as :func:`taken_points`
+        reads them. The `n` designs are then drawn in sequence but only from
+        the gaps between them: see :func:`_fill`. `bounds:` only.
 
     """
     spec = config.batch
@@ -277,6 +291,14 @@ def generate(config, n=None, start=0, edges=None):
                 "section names its points with values:."
             )
         return _edges(config, spec, edges)
+
+    if taken is not None:
+        if spec.is_grid():
+            raise ValueError(
+                "--fill draws points from a bounds: box; this batch: section "
+                "names its points with values:. Give bounds: instead."
+            )
+        return _fill(config, spec, DEFAULT_NUMBER if n is None else n, start, taken)
 
     if spec.is_grid():
         return _grid(config, spec)
@@ -394,6 +416,145 @@ def _sequence(config, spec, n, start):
         )
 
     return drawn
+
+
+def _fill(config, spec, n, start, taken):
+    """Return `n` designs drawn from the part of the box the `taken` runs miss.
+
+    The sequence is walked from `start` as for a drawn batch, but a point within
+    a radius of any run already made is skipped as covered, the way a point that
+    does not design is. What is left is the sequence restricted to the gaps, so
+    it fills them as evenly as it would fill an empty box, at a density `n`
+    sets; the margin a widened bound adds is one such gap, a hole a screen kept
+    skipping is another.
+
+    The radius is the median distance from a run to its nearest neighbour, with
+    each variable scaled onto ``[0, 1]`` over its bound so that no one
+    variable's units decide what counts as near: the spacing the runs already
+    have, so a gap is a region they leave at least as open as they leave each
+    other. Fewer than two runs have no spacing, and cover nothing.
+
+    The picks are not kept apart from one another, only from the runs. Keeping
+    them apart too would place each in the largest gap left, and in many
+    variables the largest gap is nearly always on a face of the box, so the
+    picks would crowd the bounds of every variable, widened or not.
+    """
+    paths = spec.paths()
+    lo, hi = spec.limits()
+    # A power of two, which scipy asks of a draw from the start of the sequence.
+    draws = 1 << math.ceil(math.log2(n * DRAWS_PER_POINT))
+
+    engine = qmc.Sobol(d=len(paths), scramble=True, seed=spec.seed)
+    if start:
+        engine.fast_forward(start)
+    candidates = engine.random(draws)
+
+    runs = (np.asarray(taken, float).reshape(-1, len(paths)) - lo) / (hi - lo)
+    radius = _spacing(runs)
+    nearest = np.full(draws, np.inf)
+    for run in runs:
+        nearest = np.minimum(nearest, np.linalg.norm(candidates - run, axis=1))
+    open_ = nearest >= radius
+
+    # The fraction of the sequence left open is the fraction of the box, so
+    # the runs sit at len(runs) per covered fraction, and this many points
+    # would put the gaps at the same density.
+    share = np.mean(open_)
+    matching = len(runs) * share / max(1.0 - share, np.finfo(float).tiny)
+    logger.info(
+        f"Filling the gaps between {len(runs)} run(s) with {n} design(s), "
+        f"skipping points within {radius:.3g} of a run in the unit box, over "
+        f"{len(paths)} design variable(s):\n" + _format_bounds(spec)
+    )
+    logger.info(
+        f"The gaps are {share:.0%} of the box; about {matching:.0f} design(s) "
+        "would fill them as densely as the runs fill the rest."
+    )
+
+    datum = config.to_dict()
+    drawn = []
+    attempts = 0
+
+    for k in np.flatnonzero(open_):
+        if len(drawn) == n or attempts == n * ATTEMPTS_PER_POINT:
+            break
+        attempts += 1
+
+        index = start + int(k)
+        values = lo + (hi - lo) * candidates[k]
+        candidate, why = _build(config, datum, paths, values)
+
+        if candidate is None:
+            logger.info(
+                f"Point {index} ({_format_point(paths, values)}) does not "
+                f"design, so it is skipped: {why}"
+            )
+        else:
+            drawn.append((index, candidate))
+
+    if len(drawn) < n:
+        raise ValueError(
+            f"Only {len(drawn)} of {n} points designed in the gaps between "
+            f"the runs, from {draws} drawn and {attempts} designed. The gaps "
+            f"are probably mostly outside what this design can do:\n"
+            f"{_format_bounds(spec)}"
+        )
+
+    return drawn
+
+
+def _spacing(points):
+    """Return the median distance from each of `points` to its nearest other.
+
+    Zero for fewer than two points, which then cover nothing.
+    """
+    if len(points) < 2:
+        return 0.0
+    nearest = np.full(len(points), np.inf)
+    for i, point in enumerate(points):
+        distance = np.linalg.norm(points - point, axis=1)
+        distance[i] = np.inf
+        nearest[i] = distance.min()
+    return float(np.median(nearest))
+
+
+def taken_points(directories, spec):
+    """Return the design variables of every member of earlier batches.
+
+    Shape ``(n_member, n_var)``, in `Batch.paths` order, read from each
+    member's own config rather than from its answer: a member still queued or
+    one that never converged was a point chosen, and filling it again would
+    only choose it again. A tied key is read from its first leaf, as
+    :func:`members` says.
+
+    A member without one of the variables --- written from a datum with a
+    different `batch:` section, or not a member at all --- is skipped with a
+    warning rather than guessed at.
+    """
+    paths = spec.paths()
+    leaves = [members(path)[0] for path in paths]
+    rows = []
+
+    for directory in directories:
+        for member in sorted(directory.glob(f"*/{INPUT_NAME}")):
+            try:
+                int(member.parent.name)
+            except ValueError:
+                continue
+
+            flat = {}
+            node._leaves(yaml.safe_load(member.read_text()) or {}, "", flat)
+            missing = [leaf for leaf in leaves if leaf not in flat]
+            if missing:
+                logger.warning(
+                    f"{member} has no {', '.join(missing)}, so it is not "
+                    "counted as a point already run."
+                )
+                continue
+
+            rows.append([float(flat[leaf]) for leaf in leaves])
+
+    return np.array(rows, float).reshape(-1, len(paths))
 
 
 def _grid(config, spec):

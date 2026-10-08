@@ -93,12 +93,9 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
 
         # Mixing loss: entropy of the uniform state less the mass-averaged
         # entropy of the cut (the AR contraction is isentropic). `mass_average`
-        # needs a structured block, so interpolate onto the shape of the row's
-        # passage block, not a tip gap block that covers only part of the cut.
-        i_row = i_station // 2
-        passage, _ = turbigen.util.row_blocks(grid, i_row)
-        nj, nk = passage.shape[1:]
-        structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
+        # needs a structured block, so regrid the cut as the metrics do, for a
+        # band of this plane to average the same as the whole of it.
+        structured = turbigen.util.regrid_cut(cut)
         s_cut = float(ember.average.mass_average(structured.s, structured))
         Ds_mix_flat[i_station] = float(mixed.s) - s_cut
 

@@ -1074,20 +1074,26 @@ def cmd_batch(args):
     config.batch.check(config)
     _check_grid_options(args, config.batch)
     _check_edges_options(args, config.batch)
+    _check_fill_options(args, config.batch)
 
     # Scanned before the new batch directory exists, so it cannot count itself.
     # A batch is never written into, only beside, so nothing can be lost.
     datum_dir = paths[0].resolve().parent
 
     start = 0
-    if args.carry_on:
+    taken = None
+    if args.carry_on or args.fill:
         start = batch.next_index(existing_batches(datum_dir))
         batch.logger.info(f"Carrying on from index {start}.")
+    if args.fill:
+        taken = batch.taken_points(existing_batches(datum_dir), config.batch)
 
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in batch.generate(config, args.number, start, args.edges):
+    for index, member in batch.generate(
+        config, args.number, start, args.edges, taken
+    ):
         member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
@@ -1165,6 +1171,31 @@ def _check_edges_options(args, spec):
     if args.edges < 2:
         raise ValueError(
             f"--edges is {args.edges}; it takes at least 2, the two ends of each bound."
+        )
+
+
+def _check_fill_options(args, spec):
+    """Refuse ``--fill`` where it does not apply, before a number is burned.
+
+    Filling draws from the `bounds:` box, so it has nothing to draw from when
+    the section names its points with `values:`, and the surface of the box is
+    a different set of points altogether. It always
+    carries on past the batches already beside the datum, so ``--continue``
+    with it is allowed and changes nothing.
+    """
+    if not args.fill:
+        return
+
+    if spec.is_grid():
+        raise ValueError(
+            "--fill draws points from a bounds: box; this batch: section "
+            "names its points with values:. Give bounds: instead."
+        )
+
+    if args.edges is not None:
+        raise ValueError(
+            "--fill draws points between the runs already made, and --edges "
+            "runs the surface of the box. Choose one."
         )
 
 
@@ -1356,6 +1387,16 @@ def _make_parser():
             "instead of drawing from bounds:, run the surface of the box: the "
             "N-level grid over it, keeping only points with a coordinate at a "
             "bound. bounds: only, and not with -n or --continue"
+        ),
+    )
+    batch_.add_argument(
+        "--fill",
+        action="store_true",
+        help=(
+            "draw the next -n points in sequence, skipping those near a "
+            "member of the batches already beside the datum config, so the "
+            "gaps between them are filled, such as the margin a widened bound "
+            "adds; bounds: only, and implies --continue"
         ),
     )
     _add_queue_argument(batch_)

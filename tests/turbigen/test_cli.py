@@ -1962,6 +1962,30 @@ def test_batch_continue_is_the_tail_of_one_batch(tmp_path):
     assert psi(split.parent) == psi(whole.parent)
 
 
+def test_batch_fill_picks_the_margin_a_widened_bound_adds(batch_case):
+    """Runs over psi 1.4 to 1.8, then the bound widens to 2.2: fill the margin."""
+    from turbigen import Config
+
+    cli.main(["batch", str(batch_case), "-n", "8"])
+    batch_case.write_text(BATCH_CASE.replace("[1.4, 1.8]", "[1.4, 2.2]"))
+    assert cli.main(["batch", str(batch_case), "-n", "2", "--fill"]) == 0
+
+    datum = batch_case.parent
+    run = [Config.from_file(m).mean_line.psi for m in datum.glob("batch_0000/*/input.yaml")]
+    filled = sorted((datum / "batch_0001").glob("*/input.yaml"))
+    assert len(filled) == 2
+    for member in filled:
+        assert int(member.parent.name) >= 8
+        assert Config.from_file(member).mean_line.psi > max(run)
+
+
+def test_batch_fill_with_edges_is_refused(batch_case, capsys):
+    assert cli.main(["batch", str(batch_case), "--fill", "--edges", "2"]) == 1
+
+    assert "Choose one" in capsys.readouterr().err
+    assert not (batch_case.parent / "batch_0000").exists()
+
+
 def test_batch_without_a_batch_section_says_so(case, capsys):
     assert cli.main(["batch", str(case)]) == 1
 
