@@ -680,6 +680,36 @@ def row_blocks(grid, i_row):
     return passage[0], [block for block in row if block is not passage[0]]
 
 
+def span_blocks(grid, i_row):
+    """Split one row into the blocks that span it and those in a clearance.
+
+    The spanning blocks run from hub to casing; a block meshing a tip gap
+    runs from the tip of the blade to the casing, and so has fewer spanwise
+    points than the rest of its row. That holds whatever the blade-to-blade
+    topology, where :func:`row_blocks` needs exactly one block the flow passes
+    through and an O-H mesh has two in series, ahead of and behind the blade.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    i_row : int
+        Which row, in the order `grid.rows` gives them.
+
+    Returns
+    -------
+    tuple
+        A list of the blocks spanning the row, and a list of the rest, each in
+        the order the row holds them.
+
+    """
+    row = grid.rows[i_row]
+    nj = max(block.shape[1] for block in row)
+    full = [block for block in row if block.shape[1] == nj]
+    clearance = [block for block in row if block.shape[1] != nj]
+    return full, clearance
+
+
 def cut_blade_sides(grid, offset=0):
     """Return the pressure and suction side cuts of each row.
 
@@ -797,9 +827,13 @@ def _is_h_mesh(grid):
     Read off the first row's passage: an H passage carries the pitchwise
     periodics that bound it either side of the blade, on a k face and spanning
     the span. An O block has no such face, being wrapped around the blade
-    instead.
+    instead, and an O-H row has several blocks spanning it where an H row has
+    one.
     """
-    passage, _ = row_blocks(grid, 0)
+    full, _ = span_blocks(grid, 0)
+    if len(full) != 1:
+        return False
+    passage = full[0]
     return any(
         patch.const_dim == 2
         and np.allclose(patch.ijk_lim_abs[1], [0, passage.shape[1] - 1])
@@ -885,7 +919,8 @@ def cut_endwalls(grid, offset=0):
 
     How many faces that is depends on how the row is built. A pinched tip gap
     leaves one block spanning the whole annulus, so the two endwalls are two
-    faces. A gridded one puts a block in the clearance, and the casing is then
+    faces; an O-H row has several blocks spanning it, and a hub and casing
+    face for each, in pairs. A gridded one puts a block in the clearance, and the casing is then
     the passage's ``j = -1`` outside the blade and the tip block's inside it
     --- two pieces that tile it exactly once between them. So this returns a
     list per row of whatever length the mesh implies, and a caller that wants
@@ -917,10 +952,10 @@ def cut_endwalls(grid, offset=0):
     walls = []
 
     for i_row in range(len(grid.rows)):
-        passage, others = row_blocks(grid, i_row)
+        full, others = span_blocks(grid, i_row)
         walls.append([])
 
-        faces = [(passage, False), (passage, True)]
+        faces = [(block, at_end) for block in full for at_end in (False, True)]
         # A block inside the row reaches the casing and not the hub, its lower
         # face being the tip of the blade it sits on.
         faces += [(block, True) for block in others]
@@ -965,7 +1000,7 @@ def cut_blade_tips(grid, offset=0):
     tips = []
 
     for i_row in range(len(grid.rows)):
-        _, others = row_blocks(grid, i_row)
+        _, others = span_blocks(grid, i_row)
         tips.append([])
         for block in others:
             tip = block[:, offset, :].copy(keep_patches=False)

@@ -426,6 +426,65 @@ config --- but four things are dropped:
   statements commented out --- so it went too, and with it the `row_meta` that
   existed to feed it.
 
+### OH: AutoGrid's blocking, smoothed here
+
+`type: oh` replaces the old route of writing a geomTurbo file and running
+AutoGrid over ssh. It reads the same three things `h` does --- `evaluate_xr`,
+`evaluate_section`, `evaluate_camber` --- and nothing else, and it has no tip
+gap yet: a row with a clearance is refused rather than meshed as shrouded.
+
+**Seven blocks a row, in AutoGrid's O4H layout.** An O block round the blade,
+H blocks ahead, behind and either side of it, and an H block out to each
+boundary, so that the inlet, outlet and mixing planes are each one whole face.
+The O block wraps in `i`, cut at the middle of the trailing edge, with the
+blade on `k = 0`: the convention `util.cut_blade_surfs` already recognised.
+
+**Every plane is meshed in conformal coordinates.** A constant-`j` plane is a
+surface of constant span fraction of the annulus, the surface the section at
+that span lies on, and `dm' = dm / r` maps it to a plane without changing an
+angle. Orthogonal there is orthogonal on the stream surface, and a blade
+angle is `dtheta/dm' = tan(chi)` whatever the radius, so nothing about radial
+variation of the stream tube reaches the smoother. Nodes go back through the
+annulus itself, not an interpolant, so they lie exactly on it.
+
+**The smoother is its own module and knows nothing about blades.**
+`turbigen.elliptic` takes blocks, merges coincident and pitch-shifted nodes,
+and smooths the plane as one mesh, assembling each node's stencil from the four
+cells round it in whatever blocks they are. So block interfaces and periodic
+lines float with no special treatment, and a node with five cells round it ---
+the corners of the O block --- sits at the mean of its neighbours. That is
+what lets the same module take a tip-gap plane, of different topology, later.
+
+Four things were learned the hard way, and each is now a choice in the code:
+
+* **Sources are the Thomas--Middlecoff form, set by feedback.** With
+  `alpha (r_xixi + P r_xi) + ... + gamma (r_etaeta + Q r_eta) = 0`, `P` and `Q`
+  are dimensionless, where in Sorenson's `-J^2 (P r_xi + Q r_eta)` they scale
+  with the square of the resolution and no fixed limit means anything.
+  Sorenson's estimate of them at the wall settles a quarter short of the target
+  spacing, because the wall nodes are fixed and the sources act only from the
+  decayed first layer; correcting by the measured spacing and lean, after
+  Hilgenstock, has the target as its only fixed point.
+* **The O block keeps its own spacing.** Plain Winslow pulls the first node
+  hundreds of wall spacings off a blade; sources read off the algebraic O block
+  (tapered to nothing at its edge) keep its clustering. Applied everywhere they
+  carry the leading edge clustering out to the inlet as bands, so the H blocks
+  are left plain.
+* **A square trailing edge needs points.** With nine across it the smoothed
+  mesh folds at both corners; with twenty-five, clustered into the corners at
+  two wall spacings, it does not.
+* **The inlet and outlet are fixed, not sliding.** ember's non-reflecting
+  boundaries need one pitchwise distribution at every span, which a node free
+  to slide does not keep. The distribution is taken from mid-span.
+
+**Cost is in the wall control, and in planes.** Each smoothing iteration is a
+direct-factorisation solve, reused across iterations until it stops converging.
+About 150 iterations settle the wall feedback. So only `n_span_smooth` planes
+are smoothed, each from its own algebraic mesh and the wall control the last
+finished with, and the rest take the smoothing correction interpolated in span.
+The correction is zero on the blade and the boundaries, so the interpolated one
+keeps both. That gives about two and a half minutes for a cascade row.
+
 ## Rotation: placed by the mesher, valued by the boundary conditions
 
 Shaft speed divides in two, and the two halves belong to different stages.

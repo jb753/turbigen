@@ -19,6 +19,7 @@ import logging
 
 import ember.block
 import numpy as np
+from scipy.spatial import cKDTree
 
 logger = logging.getLogger("turbigen")
 
@@ -44,8 +45,66 @@ def apply(grid, machine):
 
     """
     guess = meridional(machine, grid[0].fluid)
-    grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR)
+    if any(_wraps(block) for block in grid):
+        # ember divides by zero aligning the flow with an O block's grid
+        # lines, and those values are about to be replaced.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR)
+        _fill_wrapped_blocks(grid)
+    else:
+        grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR)
     logger.debug(f"Applied a meridional guess from {guess.shape[0]} stations")
+
+
+def _wraps(block):
+    """Whether a block closes on itself in `i`, as one round a blade does."""
+    return np.allclose(block.xrt[0], block.xrt[-1])
+
+
+def _fill_wrapped_blocks(grid):
+    """Give a block wrapped round a blade the flow of the blocks round it.
+
+    ember aligns the guessed velocity with the `i` grid lines wherever a block
+    has a pressure difference across its `k` faces, which is right for a
+    passage whose `i` runs downstream. An O block's `i` runs round the blade
+    instead: upstream along one surface, and across the pitch at the edges,
+    where the meridional length of a grid line is zero and the alignment
+    divides by it. So a block that wraps on itself in `i` takes its flow from
+    the nearest node of the other blocks in its row, which do run downstream.
+    """
+    for row in grid.rows:
+        wrapped = [b for b in row if _wraps(b)]
+        others = [b for b in row if not any(b is w for w in wrapped)]
+        if not wrapped or not others:
+            continue
+
+        # Pitchwise as a length at a mean radius, and repeated a pitch either
+        # side, so the nearest node may be across a periodic boundary.
+        r_ref = np.mean([b.r.mean() for b in others])
+        pitch = others[0].pitch
+        pts, cons, mu = [], [], []
+        for b in others:
+            xrt = b.xrt.reshape(-1, 3)
+            for shift in (-1, 0, 1):
+                pts.append(
+                    np.stack(
+                        (xrt[:, 0], xrt[:, 1], (xrt[:, 2] + shift * pitch) * r_ref),
+                        axis=1,
+                    )
+                )
+                cons.append(b.conserved.reshape(-1, 5))
+                mu.append(b.mu_turb.reshape(-1))
+        tree = cKDTree(np.concatenate(pts))
+        cons = np.concatenate(cons)
+        mu = np.concatenate(mu)
+
+        for b in wrapped:
+            xrt = b.xrt.reshape(-1, 3)
+            _, near = tree.query(
+                np.stack((xrt[:, 0], xrt[:, 1], xrt[:, 2] * r_ref), axis=1)
+            )
+            b.set_conserved(cons[near].reshape(*b.shape, 5))
+            b.set_mu_turb(mu[near].reshape(b.shape))
 
 
 def meridional(machine, fluid):
