@@ -13,6 +13,9 @@ Test cases:
 - test_total_index_counts_interactions: main and total differ by the cross term
 - test_line_and_partial_residuals: the cut, and the runs moved onto it
 - test_nan_runs_are_left_out_of_a_fit: a metric a run could not measure
+- test_hull_masks_extrapolation: NaN off the runs, opt in, even inside the box
+- test_hull_certificates_agree_with_a_solve_per_point: a grid, both ways
+- test_swap_fits_against_a_measured_variable: a measured column for a set one
 - test_too_few_runs_is_refused: nothing to fit
 - test_collect_reads_batch_runs: inputs from the box, outputs from the runs
 - test_collect_reads_a_tied_key: one column, read off the first leaf it names
@@ -24,6 +27,7 @@ import math
 
 import numpy as np
 import pytest
+from scipy.optimize import linprog
 from test_database import SPREAD, make, write
 
 from turbigen import surrogate
@@ -160,6 +164,69 @@ def test_nan_runs_are_left_out_of_a_fit():
 
     assert fitted.n_sample == 9
     np.testing.assert_allclose(fitted(x[3]), 1.0 + x[3, 0])
+
+
+def test_hull_masks_extrapolation():
+    """Runs on the lower-left triangle of the square: the upper right is
+    inside the box but outside the hull."""
+    lo, hi = [0.0, 0.0], [1.0, 1.0]
+    corners = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    x = np.vstack((corners, 0.3 * uniform(10, lo, hi)))
+    f = 1.0 + x[:, 0] - x[:, 1]
+    fitted = surrogate.fit(table(x, lo, hi, f=f), "f")
+    points = np.array([[0.2, 0.2], [0.49, 0.49], [0.6, 0.6], [1.5, 0.0], [0.0, 0.0]])
+
+    assert fitted.inside(points).tolist() == [True, True, False, False, True]
+    assert np.all(np.isfinite(fitted(points)))
+    masked = fitted(points, hull=True)
+    assert np.isnan(masked[[2, 3]]).all()
+    np.testing.assert_allclose(masked[[0, 1, 4]], fitted(points)[[0, 1, 4]])
+    # Shape is kept for a grid of points.
+    assert fitted(points.reshape(5, 1, 2), hull=True).shape == (5, 1)
+
+
+def test_hull_certificates_agree_with_a_solve_per_point():
+    """A grid through a hull in four variables, most of it settled without a
+    solve of its own, checked against a feasibility solve at every point."""
+    lo, hi = [0.0] * 4, [1.0] * 4
+    x = uniform(40, lo, hi)
+    fitted = surrogate.fit(table(x, lo, hi, f=x.sum(axis=1)), "f")
+    g = np.linspace(-0.1, 1.1, 25)
+    grid = np.stack(np.meshgrid(g, g, 0.5, 0.4, indexing="ij"), axis=-1)
+    grid = grid.reshape(-1, 4)
+
+    A_eq = np.vstack((fitted.samples.T, np.ones(len(x))))
+    expected = [
+        linprog(
+            np.zeros(len(x)), A_eq=A_eq, b_eq=np.append(xn, 1.0), method="highs"
+        ).status
+        == 0
+        for xn in fitted.normalise(grid)
+    ]
+
+    inside = fitted.inside(grid)
+    assert 0 < inside.sum() < len(grid)
+    assert inside.tolist() == expected
+
+
+def test_swap_fits_against_a_measured_variable():
+    """f is linear in b = a**2, a one-to-one function of the sampled a over
+    the box; swapped for b, the fit is exact where in a it was not."""
+    lo, hi = [0.5, 0.0], [2.0, 1.0]
+    x = uniform(30, lo, hi)
+    b = x[:, 0] ** 2
+    b[4] = np.nan
+    f = 1.0 + 3.0 * b + x[:, 1]
+    swapped = table(x, lo, hi, f=f).swap("x0", "b", b)
+
+    assert swapped.paths == ("b", "x1")
+    assert len(swapped.x) == len(swapped.y["f"]) == 29
+    np.testing.assert_allclose(swapped.lo, [np.nanmin(b), 0.0])
+    np.testing.assert_allclose(swapped.hi, [np.nanmax(b), 1.0])
+    fitted = surrogate.fit(swapped, "f")
+    np.testing.assert_allclose(fitted([[2.0, 0.5]]), 7.5)
+    with pytest.raises(ValueError, match="already a design variable"):
+        table(x, lo, hi, f=f).swap("x0", "x1", b)
 
 
 def test_too_few_runs_is_refused():

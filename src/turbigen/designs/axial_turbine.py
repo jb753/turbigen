@@ -288,7 +288,8 @@ class AxialTurbine(MeanLineDesign):
             "Ma1": flat.Ma[0],
             "Alpha3": ml.outlet.Alpha,
             "Ma3_rel": flat.Ma_rel[3],
-            "Lam": (h[1] - h[0]) / (h[3] - h[0]),
+            # Reaction, the rotor's share of the static enthalpy drop
+            "Lam": (h[2] - h[3]) / (h[0] - h[3]),
             "PR_ts": ml.PR_ts,
             "PR_tt": ml.PR_tt,
             "eta_tt": ml.eta_tt,

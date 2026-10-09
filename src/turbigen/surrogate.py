@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 from numpy.polynomial import legendre
 from scipy.linalg import solve_triangular
+from scipy.optimize import linprog, nnls
 
 from turbigen import batch, iterate, node
 from turbigen.database import Database, gather
@@ -77,6 +78,53 @@ class Table:
         """Return the outputs whose names match a shell-style `pattern`, sorted."""
         return tuple(
             name for name in sorted(self.y) if fnmatch.fnmatchcase(name, pattern)
+        )
+
+    def swap(self, path, name, values):
+        """Return a copy with design variable `path` replaced by `values`.
+
+        For fitting against a quantity each run measured rather than one the
+        batch set, such as reaction where the box varies an exit Mach number.
+        The swap is only sound if `values` is a one-to-one function of `path`
+        with the other design variables held: the fit cannot tell two runs
+        apart that differ only in the variable it no longer sees.
+
+        `values` is per run, shape ``(n_run,)``; the column takes `name` in
+        :attr:`paths`, and its bounds become the range of `values`. Runs where
+        it is NaN are dropped, with their outputs, as a run without a position
+        cannot be fitted.
+
+        **The basis is no longer orthonormal in that variable.** The box filled
+        uniformly by the batch was over `path`; `values` are bunched however
+        the runs map them, so the Sobol' indices of :meth:`Fit.main` and
+        :meth:`Fit.total` become approximate. The fit itself, and its
+        leave-one-out error, are unaffected.
+        """
+        values = np.asarray(values, float)
+        if values.shape != (len(self.x),):
+            raise ValueError(
+                f"Swapping {path!r} needs one value per run, {len(self.x)}, "
+                f"got shape {values.shape}."
+            )
+        if name != path and name in self.paths:
+            raise ValueError(f"{name!r} is already a design variable.")
+
+        i = self.paths.index(path)
+        keep = np.isfinite(values)
+        if not keep.any():
+            raise ValueError(f"No run has a finite value to swap in for {path!r}.")
+        x = self.x[keep].copy()
+        x[:, i] = values[keep]
+        lo, hi = self.lo.copy(), self.hi.copy()
+        lo[i], hi[i] = values[keep].min(), values[keep].max()
+        return dataclasses.replace(
+            self,
+            paths=self.paths[:i] + (name,) + self.paths[i + 1 :],
+            lo=lo,
+            hi=hi,
+            x=x,
+            y={key: value[keep] for key, value in self.y.items()},
+            runs=tuple(r for r, k in zip(self.runs, keep) if k) if self.runs else (),
         )
 
 
@@ -228,6 +276,12 @@ class Fit:
     n_sample: int
     """Runs fitted."""
 
+    samples: np.ndarray
+    """Design variables of each run fitted, normalised, shape ``(n_sample, n_var)``.
+
+    Kept so that :meth:`inside` can say where the fit is interpolating.
+    """
+
     def normalise(self, x):
         """Return `x` mapped from the box onto ``[-1, 1]``."""
         return 2.0 * (np.asarray(x, float) - self.lo) / (self.hi - self.lo) - 1.0
@@ -237,12 +291,85 @@ class Fit:
         """Middle of the box."""
         return 0.5 * (self.lo + self.hi)
 
-    def __call__(self, x):
-        """Return the fit at `x`, shape ``(..., n_var)`` to ``(...)``."""
+    def __call__(self, x, hull=False):
+        """Return the fit at `x`, shape ``(..., n_var)`` to ``(...)``.
+
+        A polynomial evaluates anywhere, so by default this does too, box or no
+        box. With `hull` true, points outside the convex hull of the runs
+        fitted are NaN instead: see :meth:`inside`.
+        """
         x = np.asarray(x, float)
         shape = x.shape[:-1]
         xn = self.normalise(x.reshape(-1, len(self.paths)))
-        return (basis(xn, self.orders) @ self.coeff).reshape(shape)
+        y = basis(xn, self.orders) @ self.coeff
+        if hull:
+            y[~self.inside(x.reshape(-1, len(self.paths)))] = np.nan
+        return y.reshape(shape)
+
+    def inside(self, x, tol=1e-7):
+        """Return whether each point lies in the convex hull of the runs fitted.
+
+        Shape ``(..., n_var)`` to ``(...)``. Outside it the fit is
+        extrapolating, however well it scores on the runs themselves.
+
+        **The hull in every design variable at once**, not in the few a chart
+        happens to vary: a point in the middle of the phi--psi plane is still
+        outside if the runs near it all sit at one end of a third variable.
+
+        Tested as a linear programme, the distance from the point to the
+        nearest convex combination of the runs, rather than by building the
+        hull: in eight variables, 347 runs make a hull of 320 thousand facets
+        and a Delaunay triangulation of 2.8 million simplices, a minute to
+        build and half as long again to query a chart's worth of points.
+
+        **Each solve leaves a certificate that settles its neighbours**, so a
+        grid of points costs far fewer solves than it has points. One outside
+        the hull leaves the hyperplane separating it, read off the dual, with
+        every run on the other side: any later point beyond that plane is
+        outside too. One inside leaves the few runs it is a convex combination
+        of: any later point that is a non-negative combination of those, a
+        least-squares solve in a handful of unknowns, is inside too. Neither
+        is a heuristic, so the answer is the one a solve per point would give,
+        to within `tol` in normalised coordinates.
+        """
+        x = np.asarray(x, float)
+        shape = x.shape[:-1]
+        xn = self.normalise(x.reshape(-1, len(self.paths)))
+        n_sample, n_var = self.samples.shape
+        # Unknowns are the weights on the runs, then the slacks either way on
+        # each coordinate, whose sum is the distance minimised.
+        A_eq = np.vstack(
+            (
+                np.hstack((self.samples.T, np.eye(n_var), -np.eye(n_var))),
+                np.append(np.ones(n_sample), np.zeros(2 * n_var)),
+            )
+        )
+        c = np.append(np.zeros(n_sample), np.ones(2 * n_var))
+
+        planes = np.empty((0, n_var + 1))
+        simplex = None
+        out = np.zeros(len(xn), bool)
+        # The runs lie in the box, so a point outside it is outside the hull.
+        in_box = np.all(np.abs(xn) <= 1.0, axis=1)
+        for i in np.flatnonzero(in_box):
+            b = np.append(xn[i], 1.0)
+            if np.any(planes[:, :-1] @ xn[i] + planes[:, -1] > tol):
+                continue
+            if simplex is not None and nnls(simplex, b)[1] < tol:
+                out[i] = True
+                continue
+            lp = linprog(c, A_eq=A_eq, b_eq=b, bounds=(0.0, None), method="highs")
+            if lp.fun < tol:
+                out[i] = True
+                simplex = A_eq[:, np.flatnonzero(lp.x[:n_sample] > 0.0)]
+            else:
+                # The dual on the coordinates points away from the hull; the
+                # offset is set by the runs themselves, not taken from the dual.
+                normal = lp.eqlin.marginals[:n_var]
+                plane = np.append(normal, -np.max(self.samples @ normal))
+                if plane[:-1] @ xn[i] + plane[-1] > tol:
+                    planes = np.vstack((planes, plane))
+        return out.reshape(shape)
 
     @property
     def variance(self):
@@ -358,6 +485,7 @@ def fit(table, name, ladder=LADDER):
                 rmse=math.sqrt(np.mean(residual**2)),
                 loo=loo,
                 n_sample=n_sample,
+                samples=xn,
             )
 
     if best is None:
