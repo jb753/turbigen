@@ -172,6 +172,34 @@ def test_sliding_ends_can_keep_the_starting_angle():
     assert np.allclose(dy, dy.mean(), atol=1e-8)
 
 
+def test_sliding_ends_can_keep_a_fraction_of_the_starting_angle():
+    # As above, holding half the starting slope: the offsets from the lines
+    # inside the ends are half what they started at.
+    pitch = 0.5
+    xy = rectangle(17, 9, 0.0, 1.0, 0.0, pitch)
+    slide = np.zeros(xy.shape[1:], dtype=bool)
+    slide[(0, -1), :] = True
+    topo = elliptic.PlaneTopology([xy], pitch=pitch, slide=[slide])
+    sheared = xy.copy()
+    sheared[1] += 0.4 * sheared[0]
+
+    X, _, _ = elliptic.smooth(
+        topo,
+        topo.gather([sheared]),
+        scale=1.0 / 16,
+        tol=1e-10,
+        max_iter=500,
+        keep_slide_angle=0.5,
+    )
+    out = topo.scatter(X)[0]
+    for end, inside in ((0, 1), (-1, -2)):
+        held = (out[1, end] - out[1, inside]) / (out[0, end] - out[0, inside])
+        start = (sheared[1, end] - sheared[1, inside]) / (
+            sheared[0, end] - sheared[0, inside]
+        )
+        assert np.allclose(held, 0.5 * start, atol=1e-8)
+
+
 def annulus(ni, nk, r0, r1, spacing=None):
     """O block round a circle of radius `r0`, i clockwise, k outward."""
     phi = -np.linspace(0.0, 2.0 * np.pi, ni)

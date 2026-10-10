@@ -250,6 +250,19 @@ class PlaneMesher(Mesher):
     omega: float = 0.8
     """Under-relaxation of each smoothing iteration."""
 
+    end_shear: float = 1.0
+    """Fraction of their shear along the periodic line that the blocks at the
+    inlet and outlet keep, from one to zero.
+
+    At one their streamwise grid lines follow the periodic line, as the flow
+    does, and cross the pitchwise inlet or outlet at the angle it makes. At
+    zero they leave the inlet and outlet square, and are as far off the flow.
+    A cross-pitch line must start and end at the same `m'` to match its
+    periodic image, so it runs pitchwise on average, and the skew and the
+    turn off the flow add up to the periodic line's angle whatever is chosen
+    between them.
+    """
+
     #
     # THE STAGE
     #
@@ -283,6 +296,13 @@ class PlaneMesher(Mesher):
         grid = ember.grid.Grid([b for row in blocks for b in row])
         grid.connectivity.periodic.pair()
         return grid
+
+    def _check_end_shear(self):
+        """Raise unless :attr:`end_shear` is a fraction."""
+        if not 0.0 <= self.end_shear <= 1.0:
+            raise ValueError(
+                f"end_shear={self.end_shear} must be between zero and one."
+            )
 
     def spanwise_grid(self, dspf_hub, dspf_casing):
         """Return the spanwise grid vector given hub and casing spacings."""
@@ -325,7 +345,7 @@ class PlaneMesher(Mesher):
                 tol=self.tol,
                 max_iter=self.max_iter,
                 keep_spacing=True,
-                keep_slide_angle=True,
+                keep_slide_angle=self.end_shear,
             )
             X = self.polish(topo, X, X_tfi[j])
             correction[j] = X - X_tfi[j]
@@ -465,6 +485,7 @@ class OH(PlaneMesher):
     fraction of the way from the blade to the inlet, outlet or mixing plane."""
 
     def __post_init__(self):
+        self._check_end_shear()
         if self.ni_TE < 3 or not self.ni_TE % 2:
             raise ValueError(f"ni_TE={self.ni_TE} must be odd and at least three.")
         if not 0.0 < self.LE_split < self.TE_split < 1.0:

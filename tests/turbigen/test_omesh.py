@@ -197,7 +197,9 @@ def test_config_with_an_o_mesh_round_trips():
     assert config.to_dict()["mesh"]["type"] == "o"
 
 
-@pytest.mark.parametrize("kwargs", [{"ratio_LE": 0.0}, {"ER_surf": 1.0}, {"L_Z": 0.0}])
+@pytest.mark.parametrize(
+    "kwargs", [{"ratio_LE": 0.0}, {"ER_surf": 1.0}, {"L_Z": 0.0}, {"end_shear": 1.5}]
+)
 def test_inconsistent_settings_are_refused(kwargs):
     with pytest.raises(ValueError):
         OPeriodic.from_dict({"type": "o", **kwargs})

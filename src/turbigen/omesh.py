@@ -203,6 +203,7 @@ class OPeriodic(PlaneMesher):
     boundary that floats, 0.8 can run away."""
 
     def __post_init__(self):
+        self._check_end_shear()
         if not 0.0 < self.ratio_LE <= 1.0:
             raise ValueError(f"ratio_LE={self.ratio_LE} must be in (0, 1].")
         if self.ni_TE < 3 or not self.ni_TE % 2:

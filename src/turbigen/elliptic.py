@@ -495,10 +495,11 @@ def smooth(
         outer edge, rather than let the equations distribute points as they
         would on their own. Elsewhere the equations are left to themselves,
         which spreads out clustering carried in from the block's edges.
-    keep_slide_angle : bool
+    keep_slide_angle : bool or float
         Hold the first grid line off each sliding node at the angle it has in
         the starting mesh, rather than sit the node level with its neighbours
-        inside and meet the boundary square. The pitchwise offset from those
+        inside and meet the boundary square. A number between zero and one
+        holds that fraction of the starting slope. The pitchwise offset from those
         neighbours is their current distance in `x` times the starting slope,
         lagged by an iteration in `x`. Holding the offset itself would not do:
         the smoother is free to squeeze the first cell in `x`, and the same
@@ -531,7 +532,7 @@ def smooth(
 
     if keep_slide_angle:
         dx0, dy0 = _slide_offsets(topo, X0)
-        slide_slope = dy0 / dx0
+        slide_slope = float(keep_slide_angle) * dy0 / dx0
     slide_offset = 0.0
 
     lu = None
