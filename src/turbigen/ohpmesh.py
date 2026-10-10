@@ -43,6 +43,7 @@ import itertools
 import logging
 from typing import ClassVar
 
+import ember.elliptic
 import ember.patch
 import numpy as np
 import scipy.interpolate
@@ -86,6 +87,11 @@ POLISH_FINE_RINGS = 3
 
 HOLD_FINE = 3
 """Layers of cells off the blade the polish of the refined plane leaves be."""
+
+DTYPE = np.float32
+"""Precision the planes are held, swept, refined and polished in: the
+finished grid is stored in single precision, and the sweeps run faster in
+it. Only their geometry is worked out in double before."""
 
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
@@ -634,7 +640,7 @@ class OHPassage(PlaneMesher):
             assert np.isfinite(blk).all(), f"non-finite coordinates in {name}"
 
         return {
-            "xy": xy,
+            "xy": [blk.astype(DTYPE) for blk in xy],
             "cmap": cmap,
             "wall": g["wall"],
             "s_loop": g["s_loop"],
@@ -735,17 +741,27 @@ class OHPassage(PlaneMesher):
         return {k: np.array(v) for k, v in out.items()}
 
     def _sweeps(self, topo, X, plane, n_sweep):
-        """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations."""
+        """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
+
+        By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
+        singular nodes from their stencils, the inlet and outlet level with
+        the nodes inside, the nodes near the corners drawn in, and the blade
+        nodes slid along the blade to the foot of the perpendicular from the
+        node outside them.
+        """
         pitch = topo.pitch
-        g, s = topo.stencil_g, topo.stencil_s * pitch
-        W_irr, s_irr = topo.sweep_irr
-        W_sl, s_sl = topo.sweep_slide
+        W_irr, c_irr = topo.sweep_irr
+        W_sl, c_sl = topo.sweep_slide
         cp = topo.sweep_corner
-        wall = plane["wall"]
-        tree = cKDTree(wall.T)
-        s_wall = util.cum_arc_length(wall)
         gid, shift = topo.gid[0], topo.shift[0] * pitch
-        S = s_wall[-1]
+
+        # The blade as a closed line, and where on it each blade node and the
+        # node outside it start.
+        line = plane["wall"].T
+        s_line = util.cum_arc_length(plane["wall"])
+        tree = cKDTree(line[:-1])
+        w0 = topo._values(X, gid[:, 0], topo.shift[0][:, 0])
+        w1 = topo._values(X, gid[:, 1], topo.shift[0][:, 1])
 
         # The least gaps between blade nodes, a fraction of those the plane
         # was built with, so a run of nodes cannot gather onto one point.
@@ -754,60 +770,31 @@ class OHPassage(PlaneMesher):
         s_ref = np.interp(
             np.linspace(0, len(s_ref) - 1, n), np.arange(len(s_ref)), s_ref
         )
-        least = MIN_GAP * np.diff(s_ref) * s_wall[-1]
-        floor = np.concatenate(([0.0], np.cumsum(least)))
+        floor = np.concatenate(
+            ([0.0], np.cumsum(MIN_GAP * np.diff(s_ref) * s_line[-1]))
+        )
 
-        X = X.copy()
-        for _ in range(n_sweep):
-            # Stencil: node, +i, (+i, +k), +k, (-i, +k), -i, (-i, -k), -k, (+i, -k).
-            P = X[g]
-            P[..., 1] += s
-            di = 0.5 * (P[:, 1] - P[:, 5])
-            dk = 0.5 * (P[:, 3] - P[:, 7])
-            alpha = np.sum(dk * dk, axis=1)[:, None]
-            gamma = np.sum(di * di, axis=1)[:, None]
-            beta = np.sum(di * dk, axis=1)[:, None]
-            cross = P[:, 2] - P[:, 8] + P[:, 6] - P[:, 4]
-            new = (
-                alpha * (P[:, 1] + P[:, 5])
-                + gamma * (P[:, 3] + P[:, 7])
-                - 0.5 * beta * cross
-            ) / (2.0 * (alpha + gamma))
-            irr = W_irr @ X
-            irr[:, 1] += s_irr
-            X[topo.regular] = new
-            X[topo.irregular] = irr
-            X[topo.slide, 1] = W_sl @ X[:, 1] + s_sl
-
-            # Nodes near the corners drawn in towards them.
-            if len(cp["node"]):
-                Xc = X[cp["corner"]]
-                Xc[:, 1] += cp["shift"] * pitch
-                X[cp["node"]] = Xc + (X[cp["node"]] - Xc) * cp["f"][:, None]
-
-            # Blade nodes to the foot of the perpendicular from the next node
-            # out, no further than half way to either neighbour. The nodes
-            # close in a ring, the cut included, its two instances one turn
-            # of the blade apart.
-            w0 = X[gid[:, 0]]
-            w0[:, 1] += shift[:, 0]
-            w1 = X[gid[:, 1]]
-            w1[:, 1] += shift[:, 1]
-            s0 = _unwrap(_project(wall, s_wall, tree, w0), S)
-            s1 = _unwrap(_project(wall, s_wall, tree, w1), S)
-            s0[-1] = s0[0] + S
-            s1[-1] = s1[0] + S
-            before = np.concatenate(([s0[-2] - S], s0[:-1]))
-            after = np.concatenate((s0[1:], [s0[1] + S]))
-            s_new = np.clip(s1, 0.5 * (before + s0), 0.5 * (s0 + after))
-            # No gap below its least: pushed along from the cut, then back to
-            # it a turn on.
-            s_new = np.maximum.accumulate(s_new - floor) + floor
-            s_new[-1] = s_new[0] + S
-            s_new = np.minimum.accumulate((s_new - floor)[::-1])[::-1] + floor
-            foot = _at_arc(wall, np.mod(s_new, S)).T
-            foot[:, 1] -= shift[:, 0]
-            X[gid[:, 0]] = foot
+        X, _, _ = ember.elliptic.winslow_sweeps(
+            X,
+            topo.stencil_g,
+            topo.stencil_s,
+            pitch,
+            (topo.irregular, W_irr.indptr, W_irr.indices, W_irr.data, c_irr),
+            (topo.slide, W_sl.indptr, W_sl.indices, W_sl.data, c_sl),
+            (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
+            (
+                gid[:, 0],
+                gid[:, 1],
+                shift[:, 0],
+                shift[:, 1],
+                line,
+                s_line,
+                floor,
+                tree.query(w0)[1],
+                tree.query(w1)[1],
+            ),
+            n_sweep,
+        )
         return X
 
     def mesh_row(self, machine, i_row, spacing, spf):
@@ -851,7 +838,7 @@ class OHPassage(PlaneMesher):
                 if values[j] is None:
                     k = np.searchsorted(j_ctrl, j)
                     a, b = j_ctrl[k - 1], j_ctrl[k]
-                    w = (spf[j] - spf[a]) / (spf[b] - spf[a])
+                    w = float((spf[j] - spf[a]) / (spf[b] - spf[a]))
                     values[j] = (1.0 - w) * V[k - 1] + w * V[k]
             return values
 
@@ -961,7 +948,7 @@ class OHPassage(PlaneMesher):
         T = L[:, None] * clusterfunc.double.fixed_many(
             d_wall / L, np.minimum(lay.h, L / 2) / L, nk
         )
-        clustered = np.empty((2, O.shape[1], nk))
+        clustered = np.empty((2, O.shape[1], nk), dtype=O.dtype)
         for i in range(O.shape[1]):
             clustered[0, i] = np.interp(T[i], s[i], O[0, i])
             clustered[1, i] = np.interp(T[i], s[i], O[1, i])
@@ -1176,7 +1163,7 @@ def _refine_axis(B, axis, pieces):
         else:
             vals = scipy.interpolate.interp1d(x, seg, axis=-1)(a + u)
         parts.append(vals if j == 0 else vals[..., 1:])
-    return np.moveaxis(np.concatenate(parts, axis=-1), -1, axis)
+    return np.moveaxis(np.concatenate(parts, axis=-1), -1, axis).astype(B.dtype)
 
 
 def _cell_angles(B):

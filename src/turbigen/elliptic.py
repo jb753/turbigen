@@ -58,6 +58,11 @@ logger = logging.getLogger("turbigen")
 MERGE_RTOL = 1e-9
 """Distance below which two nodes are the same, as a fraction of the extent."""
 
+MERGE_ULP = 16
+"""Distance below which two nodes are the same, in units of the rounding of
+the coordinates' precision at their size, where that is the larger: in single
+precision, a node shifted by a pitch rounds off its partner by about one."""
+
 DECAY = 0.3
 """Rate at which the wall control functions decay away from the wall, per node."""
 
@@ -181,7 +186,10 @@ class PlaneTopology:
         instance of its node.
         """
         n = len(points)
-        tol = MERGE_RTOL * np.ptp(points, axis=0).max()
+        tol = max(
+            MERGE_RTOL * np.ptp(points, axis=0).max(),
+            MERGE_ULP * np.finfo(points.dtype).eps * np.abs(points).max(),
+        )
         tree = cKDTree(points)
 
         pairs = [tree.query_pairs(tol, output_type="ndarray")]
@@ -356,8 +364,9 @@ class PlaneTopology:
     #
 
     def gather(self, xy):
-        """Return node coordinates (n_node, 2) from per-block coordinates."""
-        X = np.empty((self.n_node, 2))
+        """Return node coordinates (n_node, 2) from per-block coordinates, in
+        their precision."""
+        X = np.empty((self.n_node, 2), dtype=np.result_type(*xy))
         for b, blk in enumerate(xy):
             pts = blk.reshape(2, -1).T.copy()
             if self.pitch:

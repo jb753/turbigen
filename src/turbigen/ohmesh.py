@@ -119,8 +119,13 @@ class ConformalMap:
         lies exactly on the surface it was meshed on.
         """
         mp = np.asarray(mp)
-        if mp.min() < self.mp[0] - 1e-9 or mp.max() > self.mp[-1] + 1e-9:
+        # Allowed past the ends by the rounding of its precision there, in
+        # which a node put on an end can come out a little beyond it.
+        eps = np.finfo(mp.dtype).eps if mp.dtype.kind == "f" else 0.0
+        tol = max(1e-9, 16 * eps * np.abs(self.mp).max())
+        if mp.min() < self.mp[0] - tol or mp.max() > self.mp[-1] + tol:
             raise ValueError("Conformal coordinate outside the mapped range.")
+        mp = np.clip(mp, self.mp[0], self.mp[-1])
         return self.annulus.evaluate_xr(self.m_from_mp(mp), self.spf)
 
     def mp_from_xr(self, xr):
@@ -463,7 +468,7 @@ class PlaneMesher(Mesher):
         blocks = []
         for b, name in enumerate(self.labels):
             ni, nk = per_plane[0][b].shape[1:]
-            xrt = np.empty((3, ni, nj, nk))
+            xrt = np.empty((3, ni, nj, nk), dtype=per_plane[0][b].dtype)
             for j, (plane, xy) in enumerate(zip(planes, per_plane)):
                 xrt[:2, :, j, :] = plane["cmap"].xr_from_mp(xy[b][0])
                 xrt[2, :, j, :] = xy[b][1]
