@@ -103,11 +103,15 @@ class _Layout:
     """Thickness of the O block, in conformal units."""
     h: float
     """Cell size next to the O block once refined, in conformal units."""
-    h_free: float
-    """Cell size of the coarse mesh, in conformal units."""
     n_wall: tuple
     """Coarse cells along each piece of the blade, from the middle of the
     trailing edge round the lower side, the leading edge and the upper side."""
+    f_wall: tuple
+    """Where the coarse nodes lie along each of those pieces, as fractions of
+    its length."""
+    corners: tuple
+    """Where the corners C3, C4, C1, C2 lie, as fractions of the way round the
+    blade from the middle of the trailing edge."""
     i_wall: tuple
     """Which ends of those pieces are the corners C3, C4, C1, C2."""
     n_O: int
@@ -233,14 +237,15 @@ class OHPassage(PlaneMesher):
     # GEOMETRY
     #
 
-    def _wall(self, blade, cmap, t_O):
+    def _wall(self, blade, cmap, t_O, corners=None):
         """Return the blade and where the corners of the O block sit on it.
 
         The blade as one closed line (2, N_WALL), evenly spaced in arc length,
         in the O block's order, from the middle of the trailing edge round the
         lower side; the arc lengths along it of the ends of its pieces, from
         the middle of the trailing edge through each corner of the O block;
-        and which of those ends are C3, C4, C1, C2.
+        and which of those ends are C3, C4, C1, C2. The corners at `corners`,
+        fractions of the way round, if given, else found from the bounding box.
         """
         upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
         s_te = util.cum_arc_length(te)
@@ -258,6 +263,8 @@ class OHPassage(PlaneMesher):
         s_lo, s_hi = half, S - half
         s = np.linspace(0.0, S, N_WALL)
         wall = _at_arc(wall, s)
+        if corners is not None:
+            return wall, np.array([0.0, *(np.asarray(corners) * S), S]), (1, 2, 3, 4)
 
         # The outline of the O block, turned by the stagger about the leading
         # edge; its corners are where it comes nearest those of its box.
@@ -294,15 +301,20 @@ class OHPassage(PlaneMesher):
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4)
 
-    def _geometry(self, blade, cmap, t_O, n_wall, h_free):
-        """Return the blade, its coarse nodes, and the O block outline."""
-        wall, marks, i_C = self._wall(blade, cmap, t_O)
+    def _geometry(self, blade, cmap, t_O, corners, f_wall):
+        """Return the blade, its coarse nodes, and the O block outline.
+
+        The corners of the O block at `corners`, fractions of the way round
+        the blade, and the nodes at fractions `f_wall` of each piece of it
+        between them, the same at every span.
+        """
+        wall, marks, i_C = self._wall(blade, cmap, t_O, corners)
         s = np.linspace(0.0, marks[-1], N_WALL)
-        density = _coarse_density(wall, h_free, np.radians(self.turn_max))
+        n_wall = [len(f) - 1 for f in f_wall]
         s_loop = np.concatenate(
             [
-                _by_density(s, density, a, b, k)[(0 if j == 0 else 1) :]
-                for j, (a, b, k) in enumerate(zip(marks[:-1], marks[1:], n_wall))
+                (a + f * (b - a))[(0 if j == 0 else 1) :]
+                for j, (a, b, f) in enumerate(zip(marks[:-1], marks[1:], f_wall))
             ]
         )
         loop = np.stack([np.interp(s_loop, s, c) for c in wall])
@@ -314,7 +326,6 @@ class OHPassage(PlaneMesher):
             "wall": wall,
             "marks": marks,
             "i_C": i_C,
-            "density": density,
             "s_loop": s_loop / marks[-1],
             "loop": loop,
             "outer": outer,
@@ -350,14 +361,26 @@ class OHPassage(PlaneMesher):
 
         # Coarse along the blade: the free stream size, or less where it
         # turns sharply; the two sides of the passage block alike.
+        # The corners found at mid-span, and kept as fractions of the way
+        # round at every span: found at each, the nearest point to a corner of
+        # the box can jump from one part of the blade to another between
+        # spans, and the planes either side no longer fit together.
         wall, marks, i_C = self._wall(blade, cmap, t_O)
         S = marks[-1]
+        corners = tuple(float(x) for x in marks[1:5] / S)
         s = np.linspace(0.0, S, N_WALL)
         density = _coarse_density(wall, H, np.radians(self.turn_max))
         i3, i4, i1, _ = i_C
         n = [max(1, round(_integral(s, density, a, b))) for a, b in _pairs(marks)]
         n[i3] = n[i1] = max(n[i3], n[i1])
-        geo = self._geometry(blade, cmap, t_O, n, H)
+        # Where the coarse nodes lie along each piece, by the curvature at
+        # mid-span, kept at every span so a correction carried between spans
+        # moves the same nodes.
+        f_wall = tuple(
+            (_by_density(s, density, a, b, k) - a) / (b - a)
+            for (a, b), k in zip(_pairs(marks), n)
+        )
+        geo = self._geometry(blade, cmap, t_O, corners, f_wall)
         s_nodes = geo["s_loop"] * S
         ends = np.cumsum((0, *n))
 
@@ -418,8 +441,9 @@ class OHPassage(PlaneMesher):
             d_wall=float(spacing.surface[i_row]),
             t_O=t_O,
             h=h,
-            h_free=H,
             n_wall=tuple(int(x) for x in n),
+            f_wall=f_wall,
+            corners=corners,
             i_wall=i_C,
             n_O=max(2, round(t_O / H)),
             n_P=n_P,
@@ -459,7 +483,7 @@ class OHPassage(PlaneMesher):
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
             [layout.m_in, layout.m_Zin, layout.m_Zout, layout.m_out]
         )
-        g = self._geometry(blade, cmap, layout.t_O, layout.n_wall, layout.h_free)
+        g = self._geometry(blade, cmap, layout.t_O, layout.corners, layout.f_wall)
         loop, outer = g["loop"], g["outer"]
         C1, C2, C3, C4 = (g[k] for k in ("C1", "C2", "C3", "C4"))
         i3, i4, i1, i2 = layout.i_corners_coarse()
@@ -744,18 +768,6 @@ class OHPassage(PlaneMesher):
             X[gid[:, 0]] = foot
         return X
 
-    @staticmethod
-    def _on_wall(xy, plane):
-        """Return blocks with the O block's blade nodes put back on the blade."""
-        O = xy[0].copy()
-        wall = plane["wall"]
-        s_wall = util.cum_arc_length(wall)
-        S = s_wall[-1]
-        s = _unwrap(_project(wall, s_wall, cKDTree(wall.T), O[:, :, 0].T), S)
-        s[-1] = s[0] + S
-        O[:, :, 0] = _at_arc(wall, np.mod(s, S))
-        return [O, *xy[1:]]
-
     def mesh_row(self, machine, i_row, spacing, spf):
         """Return the ember blocks of one row."""
         lay = self.layout(machine, i_row, spacing)
@@ -844,6 +856,22 @@ class OHPassage(PlaneMesher):
             "up": (None, across + shifted(front, n_P)),
             "dn": (None, across + shifted(rear, n_P)),
         }
+        # The O block's blade nodes refined through where they lie along the
+        # blade, monotonically, so they stay on it and in order round it.
+        wall = plane["wall"]
+        s_wall = util.cum_arc_length(wall)
+        S = s_wall[-1]
+        s_c = _unwrap(_project(wall, s_wall, cKDTree(wall.T), xy[0][:, :, 0].T), S)
+        s_c[-1] = s_c[0] + S
+        s_f = np.concatenate(
+            [
+                scipy.interpolate.PchipInterpolator(
+                    np.arange(a, b + 1), s_c[a : b + 1]
+                )(a + v)[(0 if j == 0 else 1) :]
+                for j, (a, b, v) in enumerate(O_i)
+            ]
+        )
+
         out = []
         for name, B in zip(LABELS, xy):
             along_i, along_k = plan[name]
@@ -854,7 +882,8 @@ class OHPassage(PlaneMesher):
             out.append(B)
 
         # The O block to the blade and clustered off it.
-        O = self._on_wall(out, plane)[0]
+        O = out[0]
+        O[:, :, 0] = _at_arc(wall, np.mod(s_f, S))
         nk = lay.nk_O
         d_wall = lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]
         seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
