@@ -104,6 +104,68 @@ def free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
     return x
 
 
+def fixed_many(dx0, dx1, N):
+    """Double-sided clustering of many unit intervals with a fixed number of points.
+
+    What :func:`fixed` does for one pair of end spacings, for arrays of them at
+    once, by the same Vinokur stretching and the same correction of its end
+    spacings, each interval to the same tolerance.
+
+    Parameters
+    ----------
+    dx0, dx1: array
+        Boundary spacings at the start and end of each unit interval, shape (m,).
+    N: int
+        Number of points in each grid vector.
+
+    Returns
+    -------
+    x: array
+        Grid vectors on the unit interval, shape (m, N).
+
+    """
+    dx = np.stack(np.broadcast_arrays(dx0, dx1), axis=1).astype(float)
+    dx_in = dx.copy()
+    out = np.empty((len(dx), N))
+    todo = np.ones(len(dx), dtype=bool)
+    for _ in range(100):
+        x = _vinokur_many(dx_in[todo], N)
+        fac = np.stack((x[:, 1] - x[:, 0], x[:, -1] - x[:, -2]), axis=1) / dx[todo]
+        done = (np.abs(fac - 1.0) < 1e-2).all(axis=1)
+        idx = np.flatnonzero(todo)
+        out[idx] = x
+        todo[idx[done]] = False
+        if not todo.any():
+            break
+        dx_in[idx[~done]] /= fac[~done]
+    return out
+
+
+def _vinokur_many(ds, N):
+    """Two sided analytic clustering after Vinokur, for many intervals (m, 2)."""
+    s0 = 1.0 / N / ds[:, 0]
+    s1 = N * ds[:, 1]
+    A = np.sqrt(s0 * s1)[:, None]
+    B = np.sqrt(s0 / s1)
+    xi = np.linspace(0.0, 1.0, N)[None, :]
+
+    near = np.abs(B - 1.0) < 0.001
+    below = (B < 1.0) & ~near
+    above = (B >= 1.0) & ~near
+    u = np.empty((len(B), N))
+    b = B[near][:, None]
+    u[near] = xi * (1.0 + 2.0 * (b - 1.0) * (xi - 0.5) * (1.0 - xi))
+    D = np.array([_invert_sinx_x(y) for y in B[below]])[:, None]
+    u[below] = 0.5 * (1.0 + np.tan(D * (xi - 0.5)) / np.tan(D / 2.0))
+    D = np.array([_invert_sinhx_x(y) for y in B[above]])[:, None]
+    u[above] = 0.5 * (1.0 + np.tanh(D * (xi - 0.5)) / np.tanh(D / 2.0))
+
+    t = u / (A + (1.0 - A) * u)
+    t -= t[:, :1]
+    t /= t[:, -1:]
+    return t
+
+
 def _vinokur(ds, N):
     """Two sided analytic clustering function after Vinokur."""
 
@@ -131,7 +193,7 @@ def _vinokur(ds, N):
         # Eqn. (47)
         u = 0.5 * (1.0 + np.tanh(Dy * (xi - 0.5)) / np.tanh(Dy / 2.0))
     else:
-        raise Exception(f"Unexpected B={B}, s0={s0}, s1={s1}")
+        raise ClusteringException(f"Unexpected B={B}, s0={s0}, s1={s1}")
 
     t = u / (A + (1.0 - A) * u)
 

@@ -843,23 +843,45 @@ class OHPassage(PlaneMesher):
             correction[j] = X - X_alg[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
 
-        C = np.stack([correction[j] for j in j_ctrl])
-        X_smooth = []
-        for j in range(len(spf)):
-            if correction[j] is None:
-                k = np.searchsorted(j_ctrl, j)
-                a, b = j_ctrl[k - 1], j_ctrl[k]
-                w = (spf[j] - spf[a]) / (spf[b] - spf[a])
-                correction[j] = (1.0 - w) * C[k - 1] + w * C[k]
-            X_smooth.append(X_alg[j] + correction[j])
+        def between(values):
+            """Fill in `values` at the planes between the control planes."""
+            V = np.stack([values[j] for j in j_ctrl])
+            for j in range(len(spf)):
+                if values[j] is None:
+                    k = np.searchsorted(j_ctrl, j)
+                    a, b = j_ctrl[k - 1], j_ctrl[k]
+                    w = (spf[j] - spf[a]) / (spf[b] - spf[a])
+                    values[j] = (1.0 - w) * V[k - 1] + w * V[k]
+            return values
 
-        # The refined planes share one topology, built when first needed.
+        correction = between(correction)
+        X_smooth = [X_alg[j] + correction[j] for j in range(len(spf))]
+
+        # The refined planes share one topology, built when first needed. The
+        # control planes are polished once refined, and how far that moves
+        # each node carried to the planes between, as the smoothing is.
         fine = {}
         for p in planes:
             p["fine"] = fine
+        if self.polish_below:
+            shift = [None] * len(spf)
+            for j in j_ctrl:
+                xy = self._refined(topo.scatter(X_smooth[j]), planes[j])
+                shift[j] = self._polish_shift(xy, planes[j])
+            for p, d in zip(planes, between(shift)):
+                p["polish_shift"] = d
         return self.assemble(machine, i_row, lay, planes, topo, X_smooth)
 
     def finish(self, xy, plane):
+        """Return the blocks of a smoothed coarse plane, refined, and moved by
+        the polish carried to it from the control planes."""
+        out = self._refined(xy, plane)
+        if "polish_shift" in plane:
+            topo = plane["fine"]["topo"]
+            out = topo.scatter(topo.gather(out) + plane["polish_shift"])
+        return out
+
+    def _refined(self, xy, plane):
         """Return the blocks of a smoothed coarse plane, refined.
 
         Each block refined along each of its directions on cubic splines
@@ -934,24 +956,24 @@ class OHPassage(PlaneMesher):
         d_wall = lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]
         seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
         s = np.concatenate((np.zeros((len(seg), 1)), np.cumsum(seg, axis=1)), axis=1)
+        L = s[:, -1]
+        T = L[:, None] * clusterfunc.double.fixed_many(
+            d_wall / L, np.minimum(lay.h, L / 2) / L, nk
+        )
         clustered = np.empty((2, O.shape[1], nk))
         for i in range(O.shape[1]):
-            L = s[i, -1]
-            t = L * clusterfunc.double.fixed(d_wall[i] / L, min(lay.h, L / 2) / L, nk)
-            clustered[0, i] = np.interp(t, s[i], O[0, i])
-            clustered[1, i] = np.interp(t, s[i], O[1, i])
+            clustered[0, i] = np.interp(T[i], s[i], O[0, i])
+            clustered[1, i] = np.interp(T[i], s[i], O[1, i])
         out[0] = clustered
-        if self.polish_below:
-            out = self._polish_fine(out, plane)
         return out
 
-    def _polish_fine(self, xy, plane):
-        """Return refined blocks with the nodes near poor cells polished.
+    def _polish_shift(self, xy, plane):
+        """Return how far polishing moves each node of refined blocks.
 
-        Within `POLISH_FINE_RINGS` cells of every cell whose worst corner is
-        under :attr:`polish_below`, against cells the size they are; the O
-        block's first `HOLD_FINE` layers of cells off the blade held, so its
-        spacing and squareness there stay as clustered.
+        The nodes within `POLISH_FINE_RINGS` cells of every cell whose worst
+        corner is under :attr:`polish_below`, against cells the size they
+        are; the O block's first `HOLD_FINE` layers of cells off the blade
+        held, so its spacing and squareness there stay as clustered.
         """
         fine = plane["fine"]
         pitch = plane["layout"].pitch
@@ -972,10 +994,10 @@ class OHPassage(PlaneMesher):
             for corner in (g[:-1, :-1], g[1:, :-1], g[1:, 1:], g[:-1, 1:]):
                 poor.append(corner[bad])
         poor = np.unique(np.concatenate(poor))
-        if not len(poor):
-            return xy
         X = topo.gather(xy)
-        X = elliptic.polish(
+        if not len(poor):
+            return np.zeros_like(X)
+        polished = elliptic.polish(
             topo,
             X,
             poor,
@@ -984,7 +1006,7 @@ class OHPassage(PlaneMesher):
             power=POLISH_POWER,
             hold=fine["hold"],
         )
-        return topo.scatter(X)
+        return polished - X
 
     #
     # BLOCKS
