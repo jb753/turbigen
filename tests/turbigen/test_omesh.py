@@ -154,6 +154,33 @@ def test_the_initial_guess_is_finite_round_the_blade(machine, grid):
 
 
 #
+# ROUND TRAILING EDGE
+#
+
+
+@pytest.fixture(scope="module")
+def round_grid():
+    from test_blade import ROUND
+
+    config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
+    machine = config.design()
+    return machine, config.mesh.wall_spacing(machine), config.mesh.mesh(machine)
+
+
+def test_a_round_trailing_edge_meshes_with_the_wall_square_all_round(round_grid):
+    machine, spacing, grid = round_grid
+    grid.connectivity.periodic.pair()
+    for i_row in range(len(machine.rows)):
+        O = blocks_of_row(grid, i_row)["O"]
+        assert (O.vol_nd > 0.0).all()
+        j = O.shape[1] // 2
+        height, lean = _wall_metrics(O, j, O.r[:, j, 0].mean())
+        # No trailing edge corners to leave alone: held everywhere.
+        assert lean.max() < 5.0
+        assert np.all(np.abs(height / spacing.surface[i_row] - 1.0) < 0.1)
+
+
+#
 # CONFIGURATION AND HELPERS
 #
 

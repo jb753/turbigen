@@ -202,6 +202,14 @@ def test_a_tip_gap_is_refused_rather_than_shrouded():
         config.mesh.mesh(config.design())
 
 
+def test_a_round_trailing_edge_is_refused():
+    from test_blade import ROUND
+
+    config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
+    with pytest.raises(ValueError, match="round trailing edge"):
+        config.mesh.mesh(config.design())
+
+
 def test_config_with_an_oh_mesh_round_trips():
     config = build(mesh=MESH)
     assert type(config).from_dict(config.to_dict()) == config

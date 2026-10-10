@@ -222,6 +222,11 @@ class PlaneMesher(Mesher):
     """Names of the blocks of a row, in the order :meth:`plane` returns them.
     Must include ``up`` and ``dn``, the blocks at a mixing plane."""
 
+    grids_round_TE: ClassVar[bool] = False
+    """Whether this mesher can grid a blade whose trailing edge is rounded
+    off, see :attr:`turbigen.thickness.ThicknessDesign.round_TE`, rather than
+    blunt."""
+
     dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
 
@@ -252,6 +257,12 @@ class PlaneMesher(Mesher):
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
         for i_row, row in enumerate(machine.rows):
+            if row.blade.round_TE and not self.grids_round_TE:
+                raise ValueError(
+                    f"Row {i_row} has a round trailing edge, which the "
+                    f"{type(self).__name__} mesher does not grid. Mesh it with "
+                    f"type: o, or leave it blunt."
+                )
             if row.tip_gap:
                 raise ValueError(
                     f"Row {i_row} has a tip gap of {row.tip_gap:.3g} m, and the "

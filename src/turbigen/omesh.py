@@ -46,6 +46,7 @@ import numpy as np
 from turbigen import elliptic, util
 from turbigen.ohmesh import (
     CORNER,
+    N_CHORD,
     ConformalMap,
     PlaneMesher,
     _outward_normals,
@@ -129,6 +130,8 @@ class OPeriodic(PlaneMesher):
     type: ClassVar[str] = "o"
 
     labels: ClassVar[tuple] = LABELS
+
+    grids_round_TE: ClassVar[bool] = True
 
     ds_mid: float = 0.0125
     """Spacing of nodes along the blade surface, as a fraction of chord. Also
@@ -236,7 +239,8 @@ class OPeriodic(PlaneMesher):
         # the leading edge and from the trailing edge corners, which are
         # approached at a few wall spacings so the O block turns them over
         # several cells, up to ds_mid, or less on the suction side. The step
-        # between the sides is blended in over blend_SS.
+        # between the sides is blended in over blend_SS. A round trailing edge
+        # has no corners, and is refined into its middle instead.
         S = util.arc_length(dense)
         ends = np.cumsum([0.0] + [util.arc_length(p) for p in pieces])
         # Sampled finer towards the ends of each piece, where the spacing is.
@@ -252,15 +256,22 @@ class OPeriodic(PlaneMesher):
         ind = 0.5 * (1.0 - np.tanh(s / w)) + 0.5 * (
             np.tanh((s - ends[2]) / w) - np.tanh((s - S) / w)
         )
-        t_TE = 2.0 * ends[1]
-        ds_TE = min(CORNER * dw, t_TE / 4.0)
-        d_corner = np.minimum(np.abs(s - ends[1]), np.abs(s - ends[3]))
         grow = self.ER_surf - 1.0
+        if blade.round_TE:
+            # No corners, so refined into the middle of the trailing edge as
+            # the leading edge is.
+            d_TE = np.minimum(s, S - s)
+            edge_TE = self.ratio_LE * h + grow * d_TE
+        else:
+            t_TE = 2.0 * ends[1]
+            ds_TE = min(CORNER * dw, t_TE / 4.0)
+            d_corner = np.minimum(np.abs(s - ends[1]), np.abs(s - ends[3]))
+            edge_TE = ds_TE + grow * d_corner
         ds = np.minimum.reduce(
             [
                 np.full_like(s, h) / (1.0 + self.extra_SS * ind),
                 self.ratio_LE * h + grow * np.abs(s - ends[2]),
-                ds_TE + grow * d_corner,
+                edge_TE,
             ]
         )
         density = 1.0 / ds
@@ -435,11 +446,13 @@ class OPeriodic(PlaneMesher):
         slide[2][-1, :] = True
 
         # Wall spacing in conformal units, against the local radius, left to
-        # itself at the trailing edge corners, which have no normal.
+        # itself at the trailing edge corners, which have no normal; a round
+        # trailing edge has a normal everywhere.
         weight = np.ones(ni)
-        for i_c in layout.i_te_corners:
-            weight[i_c] = 0.0
-            weight[i_c - 1] = weight[i_c + 1] = 0.5
+        if not blade.round_TE:
+            for i_c in layout.i_te_corners:
+                weight[i_c] = 0.0
+                weight[i_c - 1] = weight[i_c + 1] = 0.5
         weight[-1] = weight[0]
         control = elliptic.WallControl(block=0, spacing=dw, closed=True, weight=weight)
 
@@ -520,9 +533,24 @@ def _loop_pieces(blade, cmap):
 
     Mid trailing edge to its lower corner, lower surface to the leading edge,
     upper surface to its trailing edge corner, and back across the trailing
-    edge to its middle.
+    edge to its middle. On a round trailing edge, the middle is where the two
+    surfaces close and the corners are where each surface's arc begins, so
+    the first and last pieces are the two halves of the arc.
     """
     upper, lower = _surfaces(blade, cmap, cmap.spf)
+    caps = blade.evaluate_TE_cap(cmap.spf)
+    if caps is not None:
+        # Split each surface at its sample nearest where the arc begins; the
+        # samples are those `_surfaces` evaluates at.
+        m = util.cluster_cosine(N_CHORD)
+        m_upper, m_lower = caps if blade.suction_is_upper else caps[::-1]
+        i_u, i_l = (int(np.argmin(np.abs(m - m_cap))) for m_cap in (m_upper, m_lower))
+        return (
+            lower[:, i_l:][:, ::-1],
+            lower[:, : i_l + 1][:, ::-1],
+            upper[:, : i_u + 1],
+            upper[:, i_u:],
+        )
     mid = 0.5 * (upper[:, -1] + lower[:, -1])
     t = np.linspace(0.0, 1.0, 101)[None]
     return (

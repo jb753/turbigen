@@ -44,6 +44,26 @@ class ThicknessDesign(Node):
     The :doc:`/blade` page covers how a distribution is placed on a blade.
     """
 
+    round_TE: bool = False
+    """Close the trailing edge with a circular arc rather than leave it blunt.
+
+    The distribution itself is unchanged: it still arrives at the trailing
+    edge thickness and wedge it declares. The blade then replaces the last
+    part of each surface with the arc of a circle centred on the camber line,
+    tangent to the surface and closing at the camber line's end, so that
+    `t_TE` becomes, near enough, the diameter of the trailing edge circle. See
+    :mod:`turbigen.blade`. A blunt trailing edge is needed to round off, so
+    `t_TE` must be positive.
+    """
+
+    def _check_round_TE(self, t_TE):
+        """Raise if a round trailing edge is asked of a closed one."""
+        if self.round_TE and t_TE <= 0.0:
+            raise ValueError(
+                f"A round trailing edge closes a blunt one, so needs t_TE > 0, "
+                f"got t_TE={t_TE}."
+            )
+
     def thick(self, m):
         """Return half-thickness at normalised meridional distance `m`.
 
@@ -163,6 +183,7 @@ class Taylor(ThicknessDesign):
         return coeff_front, coeff_rear
 
     def __post_init__(self):
+        self._check_round_TE(self.t_TE)
         peak = self.peak()
         if peak > self.t_max + _PEAK_TOL:
             raise ValueError(
@@ -336,6 +357,7 @@ class ClarkThickness(ThicknessDesign):
     """
 
     def __post_init__(self):
+        self._check_round_TE(self.t_TE)
         if len(self.coeff) != 2:
             raise ValueError(
                 f"A two-sided thickness takes one row of coefficients per "

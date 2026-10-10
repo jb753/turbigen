@@ -1337,3 +1337,86 @@ def test_an_invalid_interpolated_section_names_the_span_fraction():
 
     with pytest.raises(ValueError, match=r"spf=0\.5"):
         _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+
+
+#
+# ROUND TRAILING EDGE
+#
+
+ROUND = {**THICKNESS, "round_TE": True}
+
+
+@pytest.fixture(scope="module")
+def round_machine():
+    return build(blades=[blade(section={"thickness": ROUND})] * 2).design()
+
+
+def _rtheta(surfaces):
+    """Both surfaces in (x, r theta) at their mean radius, suction first."""
+    r_ref = surfaces[0][1].mean()
+    return [np.stack((s[0], r_ref * s[2])) for s in surfaces]
+
+
+def test_a_blunt_trailing_edge_has_no_cap(machine):
+    assert not machine.rows[0].blade.round_TE
+    assert machine.rows[0].blade.evaluate_TE_cap(0.5) is None
+
+
+@pytest.mark.parametrize("spf", [0.0, 0.5, 1.0])
+def test_a_round_trailing_edge_closes_the_section(round_machine, spf):
+    b = round_machine.rows[0].blade
+    suction, pressure = _rtheta(b.evaluate_section(spf))
+    chord = b.evaluate_chord(spf)
+    assert np.linalg.norm(suction[:, -1] - pressure[:, -1]) < 1e-5 * chord
+
+
+def test_a_round_trailing_edge_is_a_circle_of_half_its_thickness(round_machine):
+    b = round_machine.rows[0].blade
+    m = turbigen.util.cluster_cosine(20001)
+    chord = b.evaluate_chord(0.5)
+    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5, m=m)), b.evaluate_TE_cap(0.5)):
+        # Radius of curvature over the middle of the arc, clear of its ends.
+        on = (m > m_t + 0.2 * (1.0 - m_t)) & (m < 1.0 - 0.2 * (1.0 - m_t))
+        d1 = np.gradient(surf, axis=1)
+        d2 = np.gradient(d1, axis=1)
+        kappa = (d1[0] * d2[1] - d1[1] * d2[0]) / np.linalg.norm(d1, axis=0) ** 3
+        R = 1.0 / np.abs(kappa[on]) / chord
+        assert R.max() / R.min() < 1.1
+        # Tangent to a surface that is still thinning, so a little more than
+        # half the blunt thickness.
+        assert 0.5 * THICKNESS["t_TE"] < np.median(R) < 0.8 * THICKNESS["t_TE"]
+
+
+def test_a_round_trailing_edge_meets_the_surface_without_a_kink(round_machine):
+    b = round_machine.rows[0].blade
+    m = turbigen.util.cluster_cosine(20001)
+    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5, m=m)), b.evaluate_TE_cap(0.5)):
+        d = np.diff(surf, axis=1)
+        turn = np.abs(np.diff(np.unwrap(np.arctan2(d[1], d[0]))))
+        i = int(np.searchsorted(m, m_t))
+        # The turn from one sample to the next at the tangent point is no
+        # bigger than its neighbours', where a corner would be a spike.
+        assert turn[i - 2 : i + 2].max() < 3.0 * turn[i - 20 : i + 20].mean()
+
+
+def test_a_round_trailing_edge_needs_a_blunt_one_to_round():
+    with pytest.raises(ValueError, match="t_TE"):
+        Taylor.from_dict({**ROUND, "t_TE": 0.0})
+
+
+def test_sections_must_agree_on_a_round_trailing_edge():
+    sections = [{**THICKNESS, "round_TE": spf > 0.5} for spf in SPF]
+    config = build(
+        blades=[
+            {
+                **blade(),
+                "sections": [
+                    {**sec, "thickness": t}
+                    for sec, t in zip(blade()["sections"], sections)
+                ],
+            },
+            blade(),
+        ]
+    )
+    with pytest.raises(ValueError, match="round_TE"):
+        config.design().rows[0].blade.evaluate_section(0.5)

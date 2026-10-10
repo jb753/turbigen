@@ -664,3 +664,11 @@ def test_a_narrow_trailing_edge_wedge_cusps_without_crossing():
         dm = np.hypot(np.diff(block.x[:, j, 0]), np.diff(block.r[:, j, 0]))
         # No spacing jump where the blade's last cell meets the cusp's first.
         assert dm[ite] == pytest.approx(dm[ite - 1], rel=0.02)
+
+
+def test_a_round_trailing_edge_is_refused():
+    from test_blade import ROUND
+
+    config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
+    with pytest.raises(ValueError, match="round trailing edge"):
+        config.mesh.mesh(config.design())

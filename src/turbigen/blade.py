@@ -113,6 +113,17 @@ on circumferentially, which cannot fold because it moves no point along the
 chord. The nose and the trailing edge are therefore exactly the perpendicular
 offset's.
 
+**A round trailing edge** is the blunt one closed off by the blade, not by
+the thickness distribution, which still arrives at the thickness and wedge it
+declares: :attr:`~turbigen.thickness.ThicknessDesign.round_TE` asks for it.
+Over the last per cent or so of chord each surface is scaled down onto the arc
+of a circle centred on the camber line, tangent to the surface and closing
+where the camber line ends --- a circle in the camber line's own frame, which
+needs the trailing edge metal angle, so the blade is where it can be drawn.
+The two arcs meet square to the camber line, and the section is rescaled onto
+the row with them as for a blunt one, so the aerofoil, cap included, spans the
+meridional chord.
+
 **Every pair of surfaces is ordered suction first**, and this is the only place
 that is said: :meth:`~Blade.evaluate_section`,
 :meth:`~Blade.evaluate_arc_length`, :meth:`~Blade.evaluate_surface_length` and
@@ -204,18 +215,15 @@ def normal_fraction(m):
     trailing edge ramp, goes on circumferentially.
 
     **A linear split, not a rotation.** The thickness is shared between two
-    fixed directions, the camber normal and the circumferential one, rather
-    than applied along a direction turned part of the way between them.
-    Turning the direction adds a term in its own rate of turn, which
-    re-curves the surface wherever the weight changes and can fold a thick
-    section as surely as the perpendicular offset does. Sharing between fixed
-    directions has no such term, and the circumferential share cannot fold at
-    all, since it moves no point along the chord.
+    fixed directions, the camber normal and the circumferential one. Turning
+    one direction part of the way instead adds a term in its rate of turn,
+    which re-curves the surface wherever the weight changes and can fold a
+    thick section; the circumferential share cannot fold, since it moves no
+    point along the chord.
 
     **Pressure surface only.** A perpendicular offset amplifies the camber
     curvature by ``1 / (1 - t kappa)`` on the concave side and divides it by
-    ``1 + t kappa`` on the convex one, so the suction surface has nothing to
-    remove and stays perpendicular throughout.
+    ``1 + t kappa`` on the convex one, which has nothing to remove.
 
     **Perpendicular at the leading edge,** so the nose is a circle of the
     radius the thickness asks for. The power there is steep so that the share
@@ -225,13 +233,10 @@ def normal_fraction(m):
     still folds the thick sections this exists for.
 
     **Perpendicular at the trailing edge,** unlike Clark's, which ends
-    circumferential. There the surfaces leave symmetrically about the camber
-    line, so the exit angle is the camber line's alone and the wedge angle
-    means what it says; a circumferential pressure side would lose most of its
-    share of the wedge on a staggered blade and turn the exit direction with
-    it. The return is no faster than fourth power, since a perpendicular share
-    arriving by 40 per cent of chord brings the fold back: squared it cusps and
-    linear it folds.
+    circumferential, so the surfaces leave symmetrically about the camber line
+    and the exit angle is the camber line's alone; a circumferential pressure
+    side would lose most of its share of the wedge on a staggered blade. The
+    return is no faster than fourth power: squared it cusps, linear it folds.
 
     Parameters
     ----------
@@ -241,6 +246,75 @@ def normal_fraction(m):
     """
     m = np.asarray(m, dtype=float)
     return (1.0 - m) ** NORMAL_EXPONENT_LE + m**NORMAL_EXPONENT_TE
+
+
+N_CAP = 20001
+"""Samples over the rear half of chord on which the round trailing edge is fitted."""
+
+
+def _TE_caps(thickness, tanchi_TE):
+    """Return the circle that rounds off each surface's trailing edge.
+
+    The surfaces near the trailing edge are offset perpendicular to a camber
+    line that is near enough straight, so in that line's own frame a circle
+    is `(s - s_c)^2 + t^2 = r^2`, with `s` arc length along the camber line,
+    `k = 1 / cos(chi_TE)` times `m`. For each surface the circle is centred on
+    the camber line, tangent to the blunt surface, and closes where the camber
+    line ends, `s_c + r = k`. A tangent point `m_t` on a surface `t(m)` puts the
+    centre where the normal there meets the camber line,
+
+        m_c = m_t + t t' / k^2,    r = t sqrt(1 + (t' / k)^2),
+
+    so the closing condition is one equation in `m_t`, solved by bracketing
+    on the rear half of chord, where the surface is still thinning.
+
+    Returns
+    -------
+    list of tuple
+        `(m_t, m_c, r)` for each surface, suction first: where the arc starts,
+        where its centre is, and its radius in units of meridional chord.
+
+    """
+    k = np.sqrt(1.0 + tanchi_TE**2)
+    m = np.linspace(0.5, 1.0, N_CAP)
+    caps = []
+    for t in thickness.thick_both(m):
+        dt = np.gradient(t, m)
+        r = t * np.sqrt(1.0 + (dt / k) ** 2)
+        miss = m + t * dt / k**2 + r / k - 1.0
+        # Positive at the trailing edge, where the blunt surface has not yet
+        # closed; the last sign change ahead of it is the tangent point.
+        below = np.flatnonzero(miss < 0.0)
+        if not len(below):
+            raise ValueError(
+                "No circle tangent to the surface closes the trailing edge "
+                "within the rear half of chord; the trailing edge is too thick "
+                "to round off."
+            )
+        i = below[-1]
+        w = miss[i] / (miss[i] - miss[i + 1])
+        m_t = m[i] + w * (m[i + 1] - m[i])
+        t_t = t[i] + w * (t[i + 1] - t[i])
+        dt_t = dt[i] + w * (dt[i + 1] - dt[i])
+        caps.append(
+            (m_t, m_t + t_t * dt_t / k**2, t_t * np.sqrt(1.0 + (dt_t / k) ** 2))
+        )
+    return caps
+
+
+def _round_factor(m, t, cap, tanchi_TE):
+    """Return the factor that takes a blunt surface `t(m)` onto its round cap.
+
+    One ahead of the tangent point, and the ratio of the circle to the blunt
+    surface behind it, falling to zero where the camber line ends.
+    """
+    m_t, m_c, r = cap
+    k2 = 1.0 + tanchi_TE**2
+    on = m > m_t
+    factor = np.ones_like(m)
+    circle = np.sqrt(np.clip(r**2 - k2 * (m[on] - m_c) ** 2, 0.0, None))
+    factor[on] = circle / t[on]
+    return factor
 
 
 def to_xrrt(xrt):
@@ -291,6 +365,19 @@ def _interpolate(nodes, spf_sections, spf):
     names = [field.name for field in dataclasses.fields(cls)]
     if len(nodes) == 1 or not names:
         return nodes[0]
+
+    # A switch has no value between on and off, so the sections must agree.
+    for name in names:
+        values = {
+            getattr(node, name)
+            for node in nodes
+            if isinstance(getattr(node, name), bool)
+        }
+        if len(values) > 1:
+            raise ValueError(
+                f"Every section must set {name} the same way to interpolate "
+                f"between, got both."
+            )
 
     # A parameter is not always one number: a Bernstein camber line carries a
     # tuple of coefficients and a two-sided thickness one row of them per
@@ -669,6 +756,27 @@ class Blade:
         """Number of sections this blade was defined by."""
         return len(self.spf)
 
+    @property
+    def round_TE(self):
+        """Whether the trailing edge is rounded off rather than blunt.
+
+        One answer for the whole blade: sections that disagree cannot be
+        interpolated between.
+        """
+        return any(thickness.round_TE for thickness in self.thicknesses)
+
+    def evaluate_TE_cap(self, spf):
+        """Return where each surface's round trailing edge begins, suction first.
+
+        As normalised chordwise positions along the camber line, the `m` that
+        :meth:`evaluate_section` takes, so a caller can split the surfaces
+        there. None if the trailing edge is blunt.
+        """
+        camber, thickness = self._get_cam_thick(spf)
+        if not thickness.round_TE:
+            return None
+        return tuple(cap[0] for cap in _TE_caps(thickness, camber.tanchi_TE))
+
     def _get_cam_thick(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
 
@@ -790,6 +898,16 @@ class Blade:
         # `normal_fraction` of the rest go on perpendicular, and what is left
         # circumferentially. See `normal_fraction` for why.
         ramp = thickness.ramp_TE(m)
+
+        # A round trailing edge scales each blunt surface down onto its circle
+        # over the last part of chord, the pressure side's ramp with it, so the
+        # share of it that goes on circumferentially closes too.
+        if thickness.round_TE:
+            caps = _TE_caps(thickness, camber.tanchi_TE)
+            f_s = _round_factor(m, t_s, caps[0], camber.tanchi_TE)
+            f_p = _round_factor(m, t_p, caps[1], camber.tanchi_TE)
+            t_s, t_p, ramp = t_s * f_s, t_p * f_p, ramp * f_p
+
         f_n = normal_fraction(m)
         t_normal = (t_p - ramp) * f_n + ramp
         t_circ = (t_p - ramp) * (1.0 - f_n)
