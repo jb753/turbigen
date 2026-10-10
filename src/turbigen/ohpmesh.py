@@ -58,6 +58,7 @@ from turbigen.ohmesh import (
     _periodic_line,
     _tfi,
 )
+from turbigen.omesh import POLISH_POWER
 
 logger = logging.getLogger("turbigen")
 
@@ -66,6 +67,10 @@ LABELS = ("O", "P", "LE", "Pin", "TE", "Pout", "up", "dn")
 
 N_WALL = 20001
 """Samples along the blade, which nodes on it are placed on."""
+
+CORNER_COS, CORNER_SIN = np.cos(np.pi / 3.0), np.sin(np.pi / 3.0)
+"""Direction of an edge out of a corner of the O block, against the O block's
+face and its outward normal there."""
 
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
@@ -154,6 +159,12 @@ class OHPassage(PlaneMesher):
     n_corner: int = 16
     """Nodes along each side of the patch drawn in towards a corner."""
 
+    polish_rings: int = 12
+    """How many cells out from each corner of the O block are polished once
+    the sweeps are done, by local target-matrix optimisation against the
+    worst cells there, short of the inner half of the O block. None if
+    zero."""
+
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
         for i_row, row in enumerate(machine.rows):
@@ -174,6 +185,8 @@ class OHPassage(PlaneMesher):
             raise ValueError("ds and t_O must be positive.")
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
+        if self.polish_rings < 0:
+            raise ValueError(f"polish_rings={self.polish_rings} must not be negative.")
 
     #
     # GEOMETRY
@@ -379,40 +392,67 @@ class OHPassage(PlaneMesher):
         Q_top, Q_mid = extend(C1, mp_Zin, slope_in), extend(C4, mp_Zin, slope_in)
         R_top, R_mid = extend(C2, mp_Zout, slope_out), extend(C3, mp_Zout, slope_out)
 
+        # The two edges out of each front corner leave it at a third and two
+        # thirds of the half turn outside the O block, so the three blocks
+        # there start with a third each rather than a sliver between an edge
+        # and the O block. Each bends round to where it is going: to its split
+        # line along the periodic line, or across the passage to the corner of
+        # the next O block, arriving there as it leaves that one. Behind the
+        # blade the edges stay straight: the smoothing pulls bent ones back
+        # against the O block there, and leaves worse cells than straight.
+        along = {}
+        for name, i in zip(("C4", "C1"), (i4, i1)):
+            t = outer[:, i + 1] - outer[:, i - 1]
+            t /= np.linalg.norm(t)
+            n = np.array([-t[1], t[0]])
+            along[name] = (t, n)
+
+        def leave(name, sense):
+            """Direction out of a corner, a third of the way round from its
+            O block face going forwards (`sense` 1) or backwards (-1)."""
+            t, n = along[name]
+            return sense * CORNER_COS * t + CORNER_SIN * n
+
+        to_in = np.array([-1.0, -slope_in]) / np.hypot(1.0, slope_in)
+        top_in = _bend(Q_top, -to_in, C1, -leave("C1", -1), layout.n_in)
+        mid_in = _bend(Q_mid, -to_in, C4, -leave("C4", 1), layout.n_in)
+        top_out = _line(C2, R_top, np.linspace(0.0, 1.0, layout.n_out + 1))
+        mid_out = _line(C3, R_mid, np.linspace(0.0, 1.0, layout.n_out + 1))
+        across_in = _bend(C1 - pJ, leave("C1", 1), C4, -leave("C4", -1), layout.n_P)
+        across_out = _line(C2 - pJ, C3, np.linspace(0.0, 1.0, layout.n_P + 1))
+
         f_O = uniform(layout.n_O)[None, None]
         O = loop[..., None] + f_O * (outer - loop)[..., None]
         f_P = uniform(layout.n_P)
         P = _tfi(
             outer[:, i1 : i2 + 1] - pJ[:, None],
             np.flip(outer[:, i3 : i4 + 1], axis=1),
-            _line(C1 - pJ, C4, f_P),
-            _line(C2 - pJ, C3, f_P),
+            across_in,
+            across_out,
         )
-        f_in = uniform(layout.n_in)
         front = outer[:, i4 : i1 + 1]
         LE = _tfi(
-            _line(Q_mid, C4, f_in),
-            _line(Q_top, C1, f_in),
+            mid_in,
+            top_in,
             _line(Q_mid, Q_top, _norm_arc(front)),
             front,
         )
         Pin = _tfi(
-            _line(Q_top - pJ, C1 - pJ, f_in),
-            _line(Q_mid, C4, f_in),
+            top_in - pJ[:, None],
+            mid_in,
             _line(Q_top - pJ, Q_mid, f_P),
             P[:, 0, :],
         )
-        f_out = uniform(layout.n_out)
         rear = np.concatenate((outer[:, i3::-1], outer[:, -2 : i2 - 1 : -1]), axis=1)
         TE = _tfi(
-            _line(C3, R_mid, f_out),
-            _line(C2, R_top, f_out),
+            mid_out,
+            top_out,
             rear,
             _line(R_mid, R_top, _norm_arc(rear)),
         )
         Pout = _tfi(
-            _line(C2 - pJ, R_top - pJ, f_out),
-            _line(C3, R_mid, f_out),
+            top_out - pJ[:, None],
+            mid_out,
             P[:, -1, :],
             _line(R_top - pJ, R_mid, f_P),
         )
@@ -665,6 +705,10 @@ class OHPassage(PlaneMesher):
         topo_c = self._topology(planes[j_mid]["xy"], lay.pitch)
         xy_alg = [self._on_wall(self._refine(p["xy"], r), p) for p in planes]
         topo_f = self._topology(xy_alg[j_mid], lay.pitch)
+        # The polish leaves the inner half of the O block alone, whose lines
+        # off the blade the clustering afterwards puts the first cells on.
+        nk_f = topo_f.gid[0].shape[1]
+        inner = topo_f.gid[0][:, : (nk_f + 1) // 2].ravel()
         X_alg = [topo_f.gather(xy) for xy in xy_alg]
 
         # Coarse then fine on the control planes, and the correction that
@@ -677,6 +721,16 @@ class OHPassage(PlaneMesher):
             xy = self._on_wall(self._refine(topo_c.scatter(X), r), planes[j])
             X = elliptic.untangle(topo_f, topo_f.gather(xy))
             X = self._sweeps(topo_f, X, planes[j], self.n_sweep_fine)
+            if self.polish_rings:
+                X = elliptic.polish(
+                    topo_f,
+                    X,
+                    topo_f.irregular,
+                    rings=self.polish_rings,
+                    X_target=X_alg[j],
+                    power=POLISH_POWER,
+                    hold=inner,
+                )
             correction[j] = X - X_alg[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
 
@@ -798,3 +852,17 @@ def _unwrap(s, S):
     s[:half] = np.where(s[:half] > 0.75 * S, s[:half] - S, s[:half])
     s[half:] = np.where(s[half:] < 0.25 * S, s[half:] + S, s[half:])
     return s
+
+
+def _bend(A, dA, B, dB, n):
+    """Return `n + 1` points (2, n + 1) on a cubic from `A` to `B`, leaving `A`
+    along `dA` and arriving at `B` along `dB`, evenly in its parameter."""
+    L = np.linalg.norm(B - A) / 3.0
+    t = np.linspace(0.0, 1.0, n + 1)[None]
+    P1, P2 = A + L * dA, B - L * dB
+    return (
+        (1 - t) ** 3 * A[:, None]
+        + 3 * (1 - t) ** 2 * t * P1[:, None]
+        + 3 * (1 - t) * t**2 * P2[:, None]
+        + t**3 * B[:, None]
+    )

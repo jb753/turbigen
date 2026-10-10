@@ -1001,6 +1001,7 @@ def polish(
     max_iter=500,
     X_target=None,
     power=1.0,
+    hold=None,
 ):
     """Return `X` with the nodes near `centres` moved to square up their cells.
 
@@ -1041,6 +1042,8 @@ def polish(
         Power each corner's shape term is raised to. Above one, the worst
         corners dominate the sum, so the optimiser works on them rather than
         trading them for small gains everywhere else.
+    hold : array_like of int, optional
+        Nodes to leave where they are, as well as the fixed ones.
 
     Returns
     -------
@@ -1074,6 +1077,8 @@ def polish(
     free[near] = True
     free[topo.fixed] = False
     free[topo.slide, 0] = False
+    if hold is not None:
+        free[np.asarray(hold, dtype=int)] = False
     if not free.any():
         return X
     cells = near[ids].any(axis=1)
