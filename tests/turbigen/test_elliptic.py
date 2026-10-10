@@ -261,3 +261,20 @@ def test_polish_squares_up_cells_near_a_node_and_leaves_the_rest():
     assert not moved[topo.fixed].any()
     window = (slice(None), slice(5, 12), slice(5, 12))
     assert _min_angle(topo.scatter(X)[0][window]) > _min_angle(bad[window]) + 10.0
+
+
+def test_a_higher_polish_power_works_on_the_worst_cell():
+    xy = rectangle(17, 17)
+    interior = ~edges(xy.shape[1:])
+    bad = disturb(xy, interior, 0.025, seed=1)
+    topo = elliptic.PlaneTopology([bad], fixed=[~interior])
+    X0 = topo.gather([bad])
+    target = topo.gather([xy])
+    centre = [topo.gid[0][8, 8]]
+    plain, worst_first = (
+        elliptic.polish(topo, X0, centre, rings=8, X_target=target, power=p)
+        for p in (1.0, 4.0)
+    )
+    assert _min_angle(topo.scatter(worst_first)[0]) >= _min_angle(
+        topo.scatter(plain)[0]
+    )

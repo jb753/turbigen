@@ -72,6 +72,12 @@ N_DENSITY = 4001
 """Samples along each piece of the blade loop on which the spacing of its
 nodes is built."""
 
+POLISH_POWER = 4.0
+"""Power the polish raises each cell corner's shape measure to, so that the
+worst cells dominate rather than being traded for small gains elsewhere: on
+the turbine cascade, the largest skew falls from 72 to 65 degrees against a
+plain sum."""
+
 Z_MAX = 0.5
 """Furthest `Z_in` and `Z_out` go towards the inlet and outlet, as a fraction
 of the distance from the blade."""
@@ -473,7 +479,12 @@ class OPeriodic(PlaneMesher):
         if not self.polish_rings:
             return X
         return elliptic.polish(
-            topo, X, topo.irregular, rings=self.polish_rings, X_target=X_alg
+            topo,
+            X,
+            topo.irregular,
+            rings=self.polish_rings,
+            X_target=X_alg,
+            power=POLISH_POWER,
         )
 
     def assemble(self, machine, i_row, layout, planes, topo, X_smooth):

@@ -940,7 +940,16 @@ POLISH_EPS = 1e-3
 has a finite, steep cost rather than none."""
 
 
-def polish(topo, X, centres, rings=4, w_size=1.0, max_iter=500, X_target=None):
+def polish(
+    topo,
+    X,
+    centres,
+    rings=4,
+    w_size=1.0,
+    max_iter=500,
+    X_target=None,
+    power=1.0,
+):
     """Return `X` with the nodes near `centres` moved to square up their cells.
 
     The elliptic equations leave poor cells round the singular points of a
@@ -976,6 +985,10 @@ def polish(topo, X, centres, rings=4, w_size=1.0, max_iter=500, X_target=None):
     X_target : ndarray, optional
         Mesh to read the target edge lengths off, shape (n_node, 2); `X` if
         not given.
+    power : float
+        Power each corner's shape term is raised to. Above one, the worst
+        corners dominate the sum, so the optimiser works on them rather than
+        trading them for small gains everywhere else.
 
     Returns
     -------
@@ -1053,10 +1066,16 @@ def polish(topo, X, centres, rings=4, w_size=1.0, max_iter=500, X_target=None):
             dreg = 0.5 * (det + root)
             dd = 0.5 * (1.0 + det / root)
             nrm2 = np.sum(ta**2, 1) + np.sum(tb**2, 1)
-            f += np.sum(nrm2 / (2.0 * dreg) + w_size * 0.5 * (dreg + 1.0 / dreg))
-            dF = (-nrm2 / (2.0 * dreg**2) + w_size * 0.5 * (1.0 - 1.0 / dreg**2)) * dd
-            ga = ta / dreg[:, None] + dF[:, None] * np.stack((tb[:, 1], -tb[:, 0]), 1)
-            gb = tb / dreg[:, None] + dF[:, None] * np.stack((-ta[:, 1], ta[:, 0]), 1)
+            mu = nrm2 / (2.0 * dreg)
+            dmu = power * mu ** (power - 1.0)
+            f += np.sum(mu**power + w_size * 0.5 * (dreg + 1.0 / dreg))
+            dF = (-dmu * mu / dreg + w_size * 0.5 * (1.0 - 1.0 / dreg**2)) * dd
+            ga = (dmu / dreg)[:, None] * ta + dF[:, None] * np.stack(
+                (tb[:, 1], -tb[:, 0]), 1
+            )
+            gb = (dmu / dreg)[:, None] * tb + dF[:, None] * np.stack(
+                (-ta[:, 1], ta[:, 0]), 1
+            )
             ga /= la[:, None]
             gb /= lb[:, None]
             G[:, pa] += ga
