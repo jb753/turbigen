@@ -928,13 +928,25 @@ class OHPassage(PlaneMesher):
             ]
         )
 
+        # Each block refined along each direction by a matrix, the splines'
+        # values for each coarse node alone, built once for the row: the
+        # refinement is linear in the coarse nodes, and its pieces fixed.
+        fine = plane["fine"]
+        if "refine" not in fine:
+            fine["refine"] = {
+                name: tuple(
+                    None if pieces is None else _refine_matrix(n, pieces, B.dtype)
+                    for n, pieces in zip(B.shape[1:], plan[name])
+                )
+                for name, B in zip(LABELS, xy)
+            }
         out = []
         for name, B in zip(LABELS, xy):
-            along_i, along_k = plan[name]
-            if along_i is not None:
-                B = _refine_axis(B, 1, along_i)
-            if along_k is not None:
-                B = _refine_axis(B, 2, along_k)
+            R_i, R_k = fine["refine"][name]
+            if R_i is not None:
+                B = R_i @ B
+            if R_k is not None:
+                B = B @ R_k.T
             out.append(B)
 
         # The O block to the blade and clustered off it.
@@ -948,11 +960,15 @@ class OHPassage(PlaneMesher):
         T = L[:, None] * clusterfunc.double.fixed_many(
             d_wall / L, np.minimum(lay.h, L / 2) / L, nk
         )
-        clustered = np.empty((2, O.shape[1], nk), dtype=O.dtype)
-        for i in range(O.shape[1]):
-            clustered[0, i] = np.interp(T[i], s[i], O[0, i])
-            clustered[1, i] = np.interp(T[i], s[i], O[1, i])
-        out[0] = clustered
+        # Every line at once: which coarse segment each new node falls in,
+        # and how far along it.
+        q = np.clip((T[:, :, None] >= s[:, None, 1:-1]).sum(axis=2), 0, len(s[0]) - 2)
+        s_lo = np.take_along_axis(s, q, axis=1)
+        s_hi = np.take_along_axis(s, q + 1, axis=1)
+        w = ((T - s_lo) / np.maximum(s_hi - s_lo, 1e-30)).astype(O.dtype)
+        lo = np.take_along_axis(O, q[None], axis=2)
+        hi = np.take_along_axis(O, q[None] + 1, axis=2)
+        out[0] = lo + w[None] * (hi - lo)
         return out
 
     def _polish_shift(self, xy, plane):
@@ -1144,26 +1160,26 @@ def _coarse_density(wall, h_free, turn):
     return np.maximum(kappa / turn, 1.0 / h_free)
 
 
-def _refine_axis(B, axis, pieces):
-    """Return block `B` (2, ni, nk) refined along `axis`, 1 or 2.
+def _refine_matrix(n, pieces, dtype):
+    """Return the matrix (n_fine, n) refining values at `n` coarse nodes.
 
     `pieces` are stretches `(a, b, u)` from coarse node `a` to `b`, and where
     the refined nodes lie in fractional indices from `a`; each on a cubic
     spline through its own coarse nodes only, so a stretch of edge comes out
-    the same in every block that shares it.
+    the same in every block that shares it. The matrix is the splines through
+    each coarse node alone, the refinement being linear in their values.
     """
-    V = np.moveaxis(B, axis, -1)
+    E = np.eye(n)
     parts = []
     for j, (a, b, u) in enumerate(pieces):
         x = np.arange(a, b + 1, dtype=float)
-        seg = V[..., a : b + 1]
-        kind = "cubic" if b - a >= 3 else "linear"
-        if kind == "cubic":
-            vals = scipy.interpolate.CubicSpline(x, seg, axis=-1)(a + u)
+        seg = E[a : b + 1]
+        if b - a >= 3:
+            vals = scipy.interpolate.CubicSpline(x, seg, axis=0)(a + u)
         else:
-            vals = scipy.interpolate.interp1d(x, seg, axis=-1)(a + u)
-        parts.append(vals if j == 0 else vals[..., 1:])
-    return np.moveaxis(np.concatenate(parts, axis=-1), -1, axis).astype(B.dtype)
+            vals = scipy.interpolate.interp1d(x, seg, axis=0)(a + u)
+        parts.append(vals if j == 0 else vals[1:])
+    return np.concatenate(parts).astype(dtype)
 
 
 def _cell_angles(B):

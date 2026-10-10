@@ -155,9 +155,9 @@ def _vinokur_many(ds, N):
     u = np.empty((len(B), N))
     b = B[near][:, None]
     u[near] = xi * (1.0 + 2.0 * (b - 1.0) * (xi - 0.5) * (1.0 - xi))
-    D = np.array([_invert_sinx_x(y) for y in B[below]])[:, None]
+    D = _invert_sinx_x(B[below])[:, None]
     u[below] = 0.5 * (1.0 + np.tan(D * (xi - 0.5)) / np.tan(D / 2.0))
-    D = np.array([_invert_sinhx_x(y) for y in B[above]])[:, None]
+    D = _invert_sinhx_x(B[above])[:, None]
     u[above] = 0.5 * (1.0 + np.tanh(D * (xi - 0.5)) / np.tanh(D / 2.0))
 
     t = u / (A + (1.0 - A) * u)
@@ -205,62 +205,62 @@ def _vinokur(ds, N):
 
 
 def _invert_sinhx_x(y):
-    """Return solution x for y = sinh(x)/x in Eqns. (62-67)."""
-
-    if y < 2.7829681:
-        y1 = y - 1.0
-        x2 = np.sqrt(6.0 * y1) * (
-            1.0
-            - 0.15 * y1
-            + 0.057321429 * y1**2.0
-            - 0.024907295 * y1**3.0
-            + 0.0077424461 * y1**4.0
-            - 0.0010794123 * y1**5.0
-        )
-    else:
-        v = np.log(y)
-        w = 1.0 / y - 0.028527431
-        x2 = (
-            v
-            + (1.0 + 1.0 / v) * np.log(2.0 * v)
-            - 0.02041793
-            + 0.24902722 * w
-            + 1.9496443 * w**2.0
-            - 2.6294547 * w**3.0
-            + 8.56795911 * w**4.0
-        )
-
-    # if not np.isclose(x, x2):
-    #     print(x, x2, y)
-    #     raise Exception('beans')
-
-    return x2
+    """Return solution x for y = sinh(x)/x in Eqns. (62-67), for a scalar or
+    an array of `y`, each branch on only the values it covers."""
+    scalar = np.ndim(y) == 0
+    y = np.atleast_1d(np.asarray(y, dtype=float))
+    x = np.empty_like(y)
+    near = y < 2.7829681
+    y1 = y[near] - 1.0
+    x[near] = np.sqrt(6.0 * y1) * (
+        1.0
+        - 0.15 * y1
+        + 0.057321429 * y1**2.0
+        - 0.024907295 * y1**3.0
+        + 0.0077424461 * y1**4.0
+        - 0.0010794123 * y1**5.0
+    )
+    v = np.log(y[~near])
+    w = 1.0 / y[~near] - 0.028527431
+    x[~near] = (
+        v
+        + (1.0 + 1.0 / v) * np.log(2.0 * v)
+        - 0.02041793
+        + 0.24902722 * w
+        + 1.9496443 * w**2.0
+        - 2.6294547 * w**3.0
+        + 8.56795911 * w**4.0
+    )
+    return float(x[0]) if scalar else x
 
 
 def _invert_sinx_x(y):
-    """Return solution x for y = sin(x)/x from Eqns. (68-71)."""
-    if y < 0.26938972:
-        x = np.pi * (
-            1.0
-            - y
-            + y**2.0
-            - (1.0 + np.pi**2.0 / 6.0) * y**3.0
-            + 6.794732 * y**4.0
-            - 13.205501 * y**5.0
-            + 11.726095 * y**6.0
-        )
-    else:
-        y1 = 1.0 - y
-        x = np.sqrt(6.0 * y1) * (
-            1.0
-            + 0.15 * y1
-            + 0.057321429 * y1**2.0
-            + 0.048774238 * y1**3.0
-            - 0.053337753 * y1**4.0
-            + 0.075845134 * y1**5.0
-        )
-
-    return x
+    """Return solution x for y = sin(x)/x from Eqns. (68-71), for a scalar or
+    an array of `y`, each branch on only the values it covers."""
+    scalar = np.ndim(y) == 0
+    y = np.atleast_1d(np.asarray(y, dtype=float))
+    x = np.empty_like(y)
+    low = y < 0.26938972
+    yl = y[low]
+    x[low] = np.pi * (
+        1.0
+        - yl
+        + yl**2.0
+        - (1.0 + np.pi**2.0 / 6.0) * yl**3.0
+        + 6.794732 * yl**4.0
+        - 13.205501 * yl**5.0
+        + 11.726095 * yl**6.0
+    )
+    y1 = 1.0 - y[~low]
+    x[~low] = np.sqrt(6.0 * y1) * (
+        1.0
+        + 0.15 * y1
+        + 0.057321429 * y1**2.0
+        + 0.048774238 * y1**3.0
+        - 0.053337753 * y1**4.0
+        + 0.075845134 * y1**5.0
+    )
+    return float(x[0]) if scalar else x
 
 
 def _unit_fixed(dx0, dx1, N, rtol=1e-2):
