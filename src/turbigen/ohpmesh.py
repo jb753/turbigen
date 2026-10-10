@@ -164,7 +164,7 @@ class OHPassage(PlaneMesher):
     """Cell size along the blade at the leading and trailing edges, as a
     fraction of meridional chord."""
 
-    ds_free: float = 0.04
+    ds_free: float = 0.03
     """Cell size in the free stream, and of the coarse mesh that is smoothed,
     as a fraction of meridional chord."""
 
@@ -237,7 +237,7 @@ class OHPassage(PlaneMesher):
     # GEOMETRY
     #
 
-    def _wall(self, blade, cmap, t_O, corners=None):
+    def _wall(self, blade, cmap, t_O, corners=None, pitch=None):
         """Return the blade and where the corners of the O block sit on it.
 
         The blade as one closed line (2, N_WALL), evenly spaced in arc length,
@@ -245,7 +245,10 @@ class OHPassage(PlaneMesher):
         lower side; the arc lengths along it of the ends of its pieces, from
         the middle of the trailing edge through each corner of the O block;
         and which of those ends are C3, C4, C1, C2. The corners at `corners`,
-        fractions of the way round, if given, else found from the bounding box.
+        fractions of the way round, if given; else C3 and C1 from the bounding
+        box, C2 at the throat, the point of the upper side's outline nearest
+        C3 on the next blade `pitch` above, and C4 where the normal out of C1
+        on the blade below lands on the lower side's.
         """
         upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
         s_te = util.cum_arc_length(te)
@@ -295,8 +298,28 @@ class OHPassage(PlaneMesher):
         s_LE = s[i_LE]
         s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_LE - 3 * gap)
         s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_LE - gap)
-        s_C["C2"] = np.clip(s_C["C2"], s_LE + 3 * gap, s_hi - gap)
+        # The passage block's rear edge, from C2 across to C3 on the next
+        # blade, leaves the O block square: on a staggered blade the box's
+        # corner can sit far up the upper side, its edge to C3 running along
+        # the blade, and the blocks round C2 starting as slivers.
+        upper = (s > s_LE + 3 * gap) & (s < s_hi - gap)
+        i_C3 = int(np.argmin(np.abs(s - s_C["C3"])))
+        to_C3 = outline - (outline[:, i_C3] + pitch * _J)[:, None]
+        s_C["C2"] = s[upper][np.argmin(np.hypot(*to_C3[:, upper]))]
         s_C["C1"] = np.clip(s_C["C1"], s_LE + gap, s_C["C2"] - gap)
+        # Likewise its front edge, from C1 on the blade below across to C4:
+        # C4 where the normal out of C1 lands on the lower side's outline, if
+        # it does, so the edge leaves C1 square too. The nearest point to C1
+        # instead can lie far back along a staggered blade's pressure side.
+        lower = (s > s_C["C3"] + gap) & (s < s_LE - gap)
+        i_C1 = int(np.argmin(np.abs(s - s_C["C1"])))
+        A = outline[:, i_C1] - pitch * _J
+        n = _outward_normals(wall)[:, i_C1]
+        rel = outline[:, lower] - A[:, None]
+        ahead = rel[0] * n[0] + rel[1] * n[1] > 0.0
+        off = np.abs(rel[0] * n[1] - rel[1] * n[0])
+        if ahead.any():
+            s_C["C4"] = s[lower][ahead][np.argmin(off[ahead])]
 
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4)
@@ -365,7 +388,7 @@ class OHPassage(PlaneMesher):
         # round at every span: found at each, the nearest point to a corner of
         # the box can jump from one part of the blade to another between
         # spans, and the planes either side no longer fit together.
-        wall, marks, i_C = self._wall(blade, cmap, t_O)
+        wall, marks, i_C = self._wall(blade, cmap, t_O, pitch=pitch)
         S = marks[-1]
         corners = tuple(float(x) for x in marks[1:5] / S)
         s = np.linspace(0.0, S, N_WALL)
@@ -513,7 +536,7 @@ class OHPassage(PlaneMesher):
         # blade the edges stay straight: the smoothing pulls bent ones back
         # against the O block there, and leaves worse cells than straight.
         along = {}
-        for name, i in zip(("C4", "C1"), (i4, i1)):
+        for name, i in zip(("C4", "C1", "C2"), (i4, i1, i2)):
             t = outer[:, i + 1] - outer[:, i - 1]
             t /= np.linalg.norm(t)
             n = np.array([-t[1], t[0]])
@@ -528,7 +551,11 @@ class OHPassage(PlaneMesher):
         to_in = np.array([-1.0, -slope_in]) / np.hypot(1.0, slope_in)
         top_in = _bend(Q_top, -to_in, C1, -leave("C1", -1), layout.n_in)
         mid_in = _bend(Q_mid, -to_in, C4, -leave("C4", 1), layout.n_in)
-        top_out = _line(C2, R_top, np.linspace(0.0, 1.0, layout.n_out + 1))
+        # Out of C2, the passage block's edge across to C3 leaves square, so
+        # the edge to the outlet takes half of what is left downstream.
+        t, n = along["C2"]
+        to_out = np.array([1.0, slope_out]) / np.hypot(1.0, slope_out)
+        top_out = _bend(C2, (t + n) / np.sqrt(2.0), R_top, to_out, layout.n_out)
         mid_out = _line(C3, R_mid, np.linspace(0.0, 1.0, layout.n_out + 1))
         across_in = _bend(C1 - pJ, leave("C1", 1), C4, -leave("C4", -1), layout.n_P)
         across_out = _line(C2 - pJ, C3, np.linspace(0.0, 1.0, layout.n_P + 1))
