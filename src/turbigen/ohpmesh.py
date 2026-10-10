@@ -51,11 +51,13 @@ from turbigen.ohmesh import (
     PlaneMesher,
     _at_arc,
     _blade_pieces,
+    _double,
     _line,
     _mult,
     _norm_arc,
     _outward_normals,
     _periodic_line,
+    _single,
     _tfi,
 )
 from turbigen.omesh import POLISH_POWER
@@ -108,6 +110,10 @@ class _Layout:
     outlet blocks."""
     nk_O: int
     """Nodes across the O block once clustered to the blade."""
+    f_stream: dict
+    """Normalised distributions along the inlet and outlet blocks, and the
+    blocks ahead of and behind the blade, they are respaced to after
+    smoothing, by block name."""
 
     def i_corners(self, refine=1):
         """O block `i` of the corners C3, C4, C1, C2, on the coarse mesh or
@@ -158,6 +164,13 @@ class OHPassage(PlaneMesher):
 
     n_corner: int = 16
     """Nodes along each side of the patch drawn in towards a corner."""
+
+    ER_stream: float = 1.2
+    """Expansion ratio of the cells along the inlet and outlet blocks, and
+    those ahead of and behind the blade, once respaced after smoothing."""
+
+    AR_stream: float = 4.0
+    """Largest cell length along those blocks, as a multiple of `ds`."""
 
     polish_rings: int = 12
     """How many cells out from each corner of the O block are polished once
@@ -349,6 +362,9 @@ class OHPassage(PlaneMesher):
             n_up=count(mp_Zin - mp_in),
             n_dn=count(mp_out - mp_Zout),
             nk_O=len(_mult(f_O, 8)),
+            f_stream=self._stream(
+                blade, cmap, pitch, h, (mp_in, mp_Zin, mp_Zout, mp_out), C1, C2, C3, C4
+            ),
         )
         logger.debug(
             f"Row {i_row} OH passage layout, coarse cells: blade {layout.n_wall}, "
@@ -357,6 +373,33 @@ class OHPassage(PlaneMesher):
             f"{self.refine}, O clustered to {layout.nk_O} nodes"
         )
         return layout
+
+    def _stream(self, blade, cmap, pitch, h, mp, C1, C2, C3, C4):
+        """Return the distributions the streamwise blocks are respaced to.
+
+        Cells of `h` at the split lines and the O block, growing at
+        `ER_stream` away from them up to `AR_stream` times `h`; along the
+        lines from the corners at the slope of the periodic line.
+        """
+        mp_in, mp_Zin, mp_Zout, mp_out = mp
+        periodic = _periodic_line(blade, cmap, pitch)
+        d = 1e-6 * (mp_out - mp_in)
+        stretch_in = np.hypot(1.0, (periodic(mp_Zin) - periodic(mp_Zin - d)) / d)
+        stretch_out = np.hypot(1.0, (periodic(mp_Zout + d) - periodic(mp_Zout)) / d)
+        h_max = self.AR_stream * h
+
+        def one(L):
+            return _mult(_single(h / L, h_max / L, self.ER_stream), 8)
+
+        def two(L):
+            return _mult(_double(h / L, h / L, h_max / L, self.ER_stream), 8)
+
+        return {
+            "up": 1.0 - np.flip(one((mp_Zin - mp_in) * stretch_in)),
+            "LE": two((min(C1[0], C4[0]) - mp_Zin) * stretch_in),
+            "TE": two((mp_Zout - max(C2[0], C3[0])) * stretch_out),
+            "dn": one((mp_out - mp_Zout) * stretch_out),
+        }
 
     #
     # ONE PLANE
@@ -487,6 +530,7 @@ class OHPassage(PlaneMesher):
             "control": None,
             "nk_O": layout.nk_O,
             "d_wall": layout.d_wall,
+            "f_stream": layout.f_stream,
         }
 
     #
@@ -747,11 +791,14 @@ class OHPassage(PlaneMesher):
         return self.assemble(machine, i_row, lay, planes, topo_f, X_smooth)
 
     def finish(self, xy, plane):
-        """Return the blocks of a smoothed plane, the O block clustered.
+        """Return the blocks of a smoothed plane, clustered where it matters.
 
         The blade nodes put back on the blade, and each line off it respaced
         along itself to the O block's full count of nodes, from the wall
         spacing at the blade to the length of its last cell at the outside.
+        The blocks ahead of and behind the blade, and at the inlet and outlet,
+        respaced along their streamwise lines to fewer nodes, growing away
+        from the blade and the split lines.
         """
         O = self._on_wall(xy, plane)[0]
         nk = plane["nk_O"]
@@ -764,7 +811,23 @@ class OHPassage(PlaneMesher):
             t = L * clusterfunc.double.fixed(d_wall[i] / L, seg[i, -1] / L, nk)
             out[0, i] = np.interp(t, s[i], O[0, i])
             out[1, i] = np.interp(t, s[i], O[1, i])
-        return [out, *xy[1:]]
+        xy = [out, *xy[1:]]
+
+        # The inlet and outlet blocks, and those ahead of and behind the
+        # blade, respaced along their streamwise lines; a block and the one
+        # beside it across the pitch alike, so their shared edges match.
+        f = plane["f_stream"]
+        for name, key in (
+            ("up", "up"),
+            ("LE", "LE"),
+            ("Pin", "LE"),
+            ("TE", "TE"),
+            ("Pout", "TE"),
+            ("dn", "dn"),
+        ):
+            b = LABELS.index(name)
+            xy[b] = _respace_i(xy[b], f[key])
+        return xy
 
     #
     # BLOCKS
@@ -866,3 +929,19 @@ def _bend(A, dA, B, dB, n):
         + 3 * (1 - t) * t**2 * P2[:, None]
         + t**3 * B[:, None]
     )
+
+
+def _respace_i(B, f):
+    """Return block `B` (2, ni, nk) respaced along `i` to normalised `f`.
+
+    In index rather than arc length: every line along `i` takes its new nodes
+    at the same fractional indices, `f` of the way along, between the nodes
+    it has. The block, smoothed to near even cells, is then spaced about as
+    `f` is, and each new line across it is a blend of two smoothed ones, so
+    lines of different length do not shear the lines across them.
+    """
+    ni = B.shape[1]
+    u = f * (ni - 1)
+    i0 = np.minimum(np.floor(u).astype(int), ni - 2)
+    w = (u - i0)[None, :, None]
+    return (1.0 - w) * B[:, i0, :] + w * B[:, i0 + 1, :]
