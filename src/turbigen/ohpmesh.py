@@ -81,6 +81,12 @@ CORNER_COS, CORNER_SIN = np.cos(np.pi / 3.0), np.sin(np.pi / 3.0)
 """Direction of an edge out of a corner of the O block, against the O block's
 face and its outward normal there."""
 
+POLISH_FINE_RINGS = 3
+"""How many cells out from each poor cell of the refined plane are polished."""
+
+HOLD_FINE = 3
+"""Layers of cells off the blade the polish of the refined plane leaves be."""
+
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
 they slide: only a guard against a run of them collapsing, the crowding the
@@ -207,6 +213,11 @@ class OHPassage(PlaneMesher):
     worst cells there, short of the inner half of the O block. None if
     zero."""
 
+    polish_below: float = 32.0
+    """Once refined, the nodes near any cell whose worst corner angle, folded
+    onto 0 to 90 degrees, is under this are polished: within three cells of
+    it, short of the O block's first layers. None if zero."""
+
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
         for i_row, row in enumerate(machine.rows):
@@ -232,6 +243,10 @@ class OHPassage(PlaneMesher):
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
         if self.polish_rings < 0:
             raise ValueError(f"polish_rings={self.polish_rings} must not be negative.")
+        if not 0.0 <= self.polish_below < 90.0:
+            raise ValueError(
+                f"polish_below={self.polish_below} must be from zero to 90 degrees."
+            )
 
     #
     # GEOMETRY
@@ -838,6 +853,10 @@ class OHPassage(PlaneMesher):
                 correction[j] = (1.0 - w) * C[k - 1] + w * C[k]
             X_smooth.append(X_alg[j] + correction[j])
 
+        # The refined planes share one topology, built when first needed.
+        fine = {}
+        for p in planes:
+            p["fine"] = fine
         return self.assemble(machine, i_row, lay, planes, topo, X_smooth)
 
     def finish(self, xy, plane):
@@ -922,7 +941,50 @@ class OHPassage(PlaneMesher):
             clustered[0, i] = np.interp(t, s[i], O[0, i])
             clustered[1, i] = np.interp(t, s[i], O[1, i])
         out[0] = clustered
+        if self.polish_below:
+            out = self._polish_fine(out, plane)
         return out
+
+    def _polish_fine(self, xy, plane):
+        """Return refined blocks with the nodes near poor cells polished.
+
+        Within `POLISH_FINE_RINGS` cells of every cell whose worst corner is
+        under :attr:`polish_below`, against cells the size they are; the O
+        block's first `HOLD_FINE` layers of cells off the blade held, so its
+        spacing and squareness there stay as clustered.
+        """
+        fine = plane["fine"]
+        pitch = plane["layout"].pitch
+        if "topo" not in fine:
+            shapes = [B.shape[1:] for B in xy]
+            fixed = [np.zeros(sh, dtype=bool) for sh in shapes]
+            slide = [np.zeros(sh, dtype=bool) for sh in shapes]
+            fixed[0][:, 0] = True
+            slide[6][0, :] = True
+            slide[7][-1, :] = True
+            topo = elliptic.PlaneTopology(xy, pitch=pitch, fixed=fixed, slide=slide)
+            fine["topo"] = topo
+            fine["hold"] = topo.gid[0][:, : HOLD_FINE + 1].ravel()
+        topo = fine["topo"]
+        poor = []
+        for B, g in zip(xy, topo.gid):
+            bad = _cell_angles(B) < self.polish_below
+            for corner in (g[:-1, :-1], g[1:, :-1], g[1:, 1:], g[:-1, 1:]):
+                poor.append(corner[bad])
+        poor = np.unique(np.concatenate(poor))
+        if not len(poor):
+            return xy
+        X = topo.gather(xy)
+        X = elliptic.polish(
+            topo,
+            X,
+            poor,
+            rings=POLISH_FINE_RINGS,
+            X_target=X,
+            power=POLISH_POWER,
+            hold=fine["hold"],
+        )
+        return topo.scatter(X)
 
     #
     # BLOCKS
@@ -1092,3 +1154,20 @@ def _refine_axis(B, axis, pieces):
             vals = scipy.interpolate.interp1d(x, seg, axis=-1)(a + u)
         parts.append(vals if j == 0 else vals[..., 1:])
     return np.moveaxis(np.concatenate(parts, axis=-1), -1, axis)
+
+
+def _cell_angles(B):
+    """Return the worst corner of each cell of a block (2, ni, nk), folded
+    onto 0 to 90 degrees, 90 square and 0 degenerate."""
+    p = B.transpose(1, 2, 0)
+    c = [p[:-1, :-1], p[1:, :-1], p[1:, 1:], p[:-1, 1:]]
+    out = np.full(p[:-1, :-1, 0].shape, 90.0)
+    for a in range(4):
+        u = c[(a + 1) % 4] - c[a]
+        v = c[(a - 1) % 4] - c[a]
+        cos = np.sum(u * v, -1) / np.maximum(
+            np.linalg.norm(u, axis=-1) * np.linalg.norm(v, axis=-1), 1e-300
+        )
+        ang = np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))
+        out = np.minimum(out, 90.0 - np.abs(90.0 - ang))
+    return out
