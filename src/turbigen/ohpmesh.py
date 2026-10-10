@@ -207,11 +207,11 @@ class OHPassage(PlaneMesher):
     n_corner: int = 16
     """Nodes along each side of the patch drawn in towards a corner."""
 
-    polish_rings: int = 4
+    polish_rings: int = 0
     """How many coarse cells out from each corner of the O block are polished
     once the sweeps are done, by local target-matrix optimisation against the
-    worst cells there, short of the inner half of the O block. None if
-    zero."""
+    worst cells there, short of the inner half of the O block. None if zero,
+    the default: the polish of the refined plane does better, and sooner."""
 
     polish_below: float = 32.0
     """Once refined, the nodes near any cell whose worst corner angle, folded
@@ -828,8 +828,9 @@ class OHPassage(PlaneMesher):
         j_ctrl = np.union1d(self.control_planes(spf), [j_mid])
         correction = [None] * len(spf)
         for j in j_ctrl:
-            X = elliptic.untangle(topo, X_alg[j])
-            X = self._sweeps(topo, X, planes[j], self.n_sweep)
+            # Started from the algebraic plane as it is: the sweeps unfold
+            # what folds in it without untangling first.
+            X = self._sweeps(topo, X_alg[j], planes[j], self.n_sweep)
             if self.polish_rings:
                 X = elliptic.polish(
                     topo,
