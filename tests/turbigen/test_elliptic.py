@@ -229,3 +229,35 @@ def test_wall_control_sets_spacing_and_angle_on_a_cylinder():
     assert angle.max() < 2.0
 
     assert pq.shape == (2, ni)
+
+
+def _min_angle(blk):
+    """Smallest corner angle of any cell, degrees."""
+    p = blk.transpose(1, 2, 0)
+    c = [p[:-1, :-1], p[1:, :-1], p[1:, 1:], p[:-1, 1:]]
+    out = 180.0
+    for a in range(4):
+        u = c[(a + 1) % 4] - c[a]
+        v = c[(a - 1) % 4] - c[a]
+        cs = np.sum(u * v, -1) / np.linalg.norm(u, axis=-1) / np.linalg.norm(v, axis=-1)
+        out = min(out, np.degrees(np.arccos(np.clip(cs, -1, 1))).min())
+    return out
+
+
+def test_polish_squares_up_cells_near_a_node_and_leaves_the_rest():
+    xy = rectangle(17, 17)
+    interior = ~edges(xy.shape[1:])
+    bad = disturb(xy, interior, 0.025)
+    topo = elliptic.PlaneTopology([bad], fixed=[~interior])
+    X0 = topo.gather([bad])
+    centre = topo.gid[0][8, 8]
+    # Targets from the uniform mesh, as the algebraic mesh is in a mesher.
+    X = elliptic.polish(topo, X0, [centre], rings=3, X_target=topo.gather([xy]))
+    moved = np.abs(X - X0).max(axis=1) > 0.0
+    near = np.zeros(xy.shape[1:], dtype=bool)
+    near[5:12, 5:12] = True
+    # Only nodes within three cells of the centre move, and none fixed.
+    assert not moved[topo.gid[0][~near]].any()
+    assert not moved[topo.fixed].any()
+    window = (slice(None), slice(5, 12), slice(5, 12))
+    assert _min_angle(topo.scatter(X)[0][window]) > _min_angle(bad[window]) + 10.0

@@ -208,10 +208,19 @@ class _Layout:
         return self.n_te_half, self.ni_O - 1 - self.n_te_half
 
 
-class OH(Mesher):
-    """Generate a mesh with an O block round each blade, in H blocks."""
+class PlaneMesher(Mesher):
+    """Base for meshers that grid each row on planes of constant span fraction.
 
-    type: ClassVar[str] = "oh"
+    A subclass lays out a row once, at mid-span, with :meth:`layout`; builds
+    the algebraic blocks of one plane with :meth:`plane`; and turns the
+    smoothed planes into ember blocks with :meth:`assemble`. The rest --- the
+    spanwise grid, which planes are smoothed, and carrying the smoothing from
+    those to every other plane --- is shared here.
+    """
+
+    labels: ClassVar[tuple] = ()
+    """Names of the blocks of a row, in the order :meth:`plane` returns them.
+    Must include ``up`` and ``dn``, the blocks at a mixing plane."""
 
     dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
@@ -221,6 +230,180 @@ class OH(Mesher):
 
     resolution_factor: float = 1.0
     """Multiply the number of points in each direction, keeping relative spacings."""
+
+    n_span_smooth: int = 9
+    """Number of spanwise planes to smooth, hub and casing included. The rest
+    are interpolated between them. Zero smooths every plane."""
+
+    max_iter: int = 150
+    """Most smoothing iterations on each plane."""
+
+    tol: float = 1e-3
+    """Smoothing converges when no node moves more than this fraction of the
+    wall spacing in an iteration."""
+
+    omega: float = 0.8
+    """Under-relaxation of each smoothing iteration."""
+
+    #
+    # THE STAGE
+    #
+
+    def forward(self, machine, spacing):
+        """Generate a Grid for a designed machine."""
+        for i_row, row in enumerate(machine.rows):
+            if row.tip_gap:
+                raise ValueError(
+                    f"Row {i_row} has a tip gap of {row.tip_gap:.3g} m, and the "
+                    f"{type(self).__name__} mesher does not yet grid clearances. Mesh it with "
+                    f"type: h, or set the clearance to zero."
+                )
+
+        span_ref = machine.annulus.evaluate_span(1)
+        spf = self.spanwise_grid(spacing.hub / span_ref, spacing.casing / span_ref)
+        logger.debug(f"{type(self).__name__} spanwise points: {len(spf)}")
+
+        n_row = len(machine.rows)
+        blocks = []
+        for i_row in range(n_row):
+            blocks.append(self.mesh_row(machine, i_row, spacing, spf))
+
+        _stitch_mixing_planes(blocks, self.labels)
+        grid = ember.grid.Grid([b for row in blocks for b in row])
+        grid.connectivity.periodic.pair()
+        return grid
+
+    def spanwise_grid(self, dspf_hub, dspf_casing):
+        """Return the spanwise grid vector given hub and casing spacings."""
+        return util.resample(
+            clusterfunc.double.free(dspf_hub, dspf_casing, self.dspf_mid, self.ER_span),
+            self.resolution_factor,
+            mult=8,
+        )
+
+    #
+    # ONE ROW
+    #
+
+    def mesh_row(self, machine, i_row, spacing, spf):
+        """Return the ember blocks of one row."""
+        layout = self.layout(machine, i_row, spacing)
+        planes = [self.plane(machine, i_row, layout, s) for s in spf]
+        j_mid = int(np.argmin(np.abs(spf - 0.5)))
+
+        topo = elliptic.PlaneTopology(
+            planes[j_mid]["xy"],
+            pitch=layout.pitch,
+            fixed=planes[j_mid]["fixed"],
+            slide=planes[j_mid]["slide"],
+            control=planes[j_mid]["control"],
+        )
+
+        X_tfi = [topo.gather(p["xy"]) for p in planes]
+        correction = [None] * len(spf)
+
+        def smooth_plane(j, pq):
+            control = planes[j]["control"]
+            topo.control = control
+            X, pq, n_iter = elliptic.smooth(
+                topo,
+                X_tfi[j],
+                pq=pq,
+                scale=control.spacing.min(),
+                omega=self.omega,
+                tol=self.tol,
+                max_iter=self.max_iter,
+                keep_spacing=True,
+                keep_slide_angle=True,
+            )
+            X = self.polish(topo, X, X_tfi[j])
+            correction[j] = X - X_tfi[j]
+            logger.debug(f"Row {i_row} spf={spf[j]:.3f}: {n_iter} iterations")
+            return pq
+
+        # Smoothed from mid-span outwards, each control plane starting from its
+        # own algebraic mesh and the wall control the last one finished with.
+        # The control is what takes the iterations to settle, and it varies
+        # little between neighbouring planes. Starting the mesh itself from the
+        # neighbour's is no faster and ends worse: the sources that keep the
+        # spacing are best read off the algebraic mesh they were built into.
+        j_ctrl = self.control_planes(spf)
+        above = j_ctrl[j_ctrl > j_mid]
+        below = j_ctrl[j_ctrl < j_mid][::-1]
+        pq_mid = smooth_plane(j_mid, None)
+        for chain in (above, below):
+            pq = pq_mid
+            for j in chain:
+                pq = smooth_plane(j, pq)
+
+        # Every other plane takes its own algebraic mesh plus the smoothing
+        # correction interpolated from the control planes either side. The
+        # correction is zero on the blade, and has no streamwise part on the
+        # inlet and outlet, so the interpolated one leaves the blade where it
+        # is and moves the inlet and outlet only along the pitch.
+        j_all = np.sort(np.append(j_ctrl, j_mid))
+        C = np.stack([correction[j] for j in j_all])
+        X_smooth = []
+        for j in range(len(spf)):
+            if correction[j] is None:
+                k = np.searchsorted(j_all, j)
+                w = (spf[j] - spf[j_all[k - 1]]) / (spf[j_all[k]] - spf[j_all[k - 1]])
+                correction[j] = (1.0 - w) * C[k - 1] + w * C[k]
+            X_smooth.append(X_tfi[j] + correction[j])
+
+        return self.assemble(machine, i_row, layout, planes, topo, X_smooth)
+
+    def polish(self, topo, X, X_alg):
+        """Return a smoothed plane `X` after any final local improvement.
+
+        None here; a subclass may override, given the algebraic plane `X_alg`
+        it was smoothed from.
+        """
+        return X
+
+    def control_planes(self, spf):
+        """Return the indices of the spanwise planes that are smoothed.
+
+        Evenly spaced in index, so following the spanwise clustering, and
+        always including the hub and the casing. Every plane if
+        :attr:`n_span_smooth` is zero.
+        """
+        nj = len(spf)
+        if not self.n_span_smooth or self.n_span_smooth >= nj:
+            return np.arange(nj)
+        return np.unique(
+            np.round(np.linspace(0, nj - 1, self.n_span_smooth)).astype(int)
+        )
+
+    def blocks(self, machine, i_row, planes, topo, X_smooth):
+        """Return bare ember blocks, without patches, from the smoothed planes."""
+        nj = len(planes)
+        per_plane = [topo.scatter(X) for X in X_smooth]
+        blocks = []
+        for b, name in enumerate(self.labels):
+            ni, nk = per_plane[0][b].shape[1:]
+            xrt = np.empty((3, ni, nj, nk))
+            for j, (plane, xy) in enumerate(zip(planes, per_plane)):
+                xrt[:2, :, j, :] = plane["cmap"].xr_from_mp(xy[b][0])
+                xrt[2, :, j, :] = xy[b][1]
+            block = ember.block.Block(shape=(ni, nj, nk))
+            block.set_label(f"row{i_row}_{name}")
+            block.set_Nb(machine.rows[i_row].n_blade)
+            block.set_x(xrt[0])
+            block.set_r(xrt[1])
+            block.set_t(xrt[2])
+            for dim, n in zip("ijk", block.shape):
+                assert not (n - 1) % 8, f"{name}: n{dim}-1={n - 1} not divisible by 8"
+            blocks.append(block)
+        return blocks
+
+
+class OH(PlaneMesher):
+    """Generate a mesh with an O block round each blade, in H blocks."""
+
+    type: ClassVar[str] = "oh"
+
+    labels: ClassVar[tuple] = LABELS
 
     ds_LE: float = 0.002
     """Surface grid spacing at the leading edge, as a fraction of meridional chord."""
@@ -270,20 +453,6 @@ class OH(Mesher):
     """Where the blocks ahead of and behind the O block are split, as a
     fraction of the way from the blade to the inlet, outlet or mixing plane."""
 
-    n_span_smooth: int = 9
-    """Number of spanwise planes to smooth, hub and casing included. The rest
-    are interpolated between them. Zero smooths every plane."""
-
-    max_iter: int = 150
-    """Most smoothing iterations on each plane."""
-
-    tol: float = 1e-3
-    """Smoothing converges when no node moves more than this fraction of the
-    wall spacing in an iteration."""
-
-    omega: float = 0.8
-    """Under-relaxation of each smoothing iteration."""
-
     def __post_init__(self):
         if self.ni_TE < 3 or not self.ni_TE % 2:
             raise ValueError(f"ni_TE={self.ni_TE} must be odd and at least three.")
@@ -294,127 +463,6 @@ class OH(Mesher):
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
-
-    #
-    # THE STAGE
-    #
-
-    def forward(self, machine, spacing):
-        """Generate a Grid for a designed machine."""
-        for i_row, row in enumerate(machine.rows):
-            if row.tip_gap:
-                raise ValueError(
-                    f"Row {i_row} has a tip gap of {row.tip_gap:.3g} m, and the "
-                    f"OH mesher does not yet grid clearances. Mesh it with "
-                    f"type: h, or set the clearance to zero."
-                )
-
-        span_ref = machine.annulus.evaluate_span(1)
-        spf = self.spanwise_grid(spacing.hub / span_ref, spacing.casing / span_ref)
-        logger.debug(f"OH spanwise points: {len(spf)}")
-
-        n_row = len(machine.rows)
-        blocks = []
-        for i_row in range(n_row):
-            blocks.append(self.mesh_row(machine, i_row, spacing, spf))
-
-        _stitch_mixing_planes(blocks)
-        grid = ember.grid.Grid([b for row in blocks for b in row])
-        grid.connectivity.periodic.pair()
-        return grid
-
-    def spanwise_grid(self, dspf_hub, dspf_casing):
-        """Return the spanwise grid vector given hub and casing spacings."""
-        return util.resample(
-            clusterfunc.double.free(dspf_hub, dspf_casing, self.dspf_mid, self.ER_span),
-            self.resolution_factor,
-            mult=8,
-        )
-
-    #
-    # ONE ROW
-    #
-
-    def mesh_row(self, machine, i_row, spacing, spf):
-        """Return the seven ember blocks of one row."""
-        layout = self.layout(machine, i_row, spacing)
-        planes = [self.plane(machine, i_row, layout, s) for s in spf]
-        j_mid = int(np.argmin(np.abs(spf - 0.5)))
-
-        topo = elliptic.PlaneTopology(
-            planes[j_mid]["xy"],
-            pitch=layout.pitch,
-            fixed=planes[j_mid]["fixed"],
-            slide=planes[j_mid]["slide"],
-            control=planes[j_mid]["control"],
-        )
-
-        X_tfi = [topo.gather(p["xy"]) for p in planes]
-        correction = [None] * len(spf)
-
-        def smooth_plane(j, pq):
-            control = planes[j]["control"]
-            topo.control = control
-            X, pq, n_iter = elliptic.smooth(
-                topo,
-                X_tfi[j],
-                pq=pq,
-                scale=control.spacing.min(),
-                omega=self.omega,
-                tol=self.tol,
-                max_iter=self.max_iter,
-                keep_spacing=True,
-                keep_slide_angle=True,
-            )
-            correction[j] = X - X_tfi[j]
-            logger.debug(f"Row {i_row} spf={spf[j]:.3f}: {n_iter} iterations")
-            return pq
-
-        # Smoothed from mid-span outwards, each control plane starting from its
-        # own algebraic mesh and the wall control the last one finished with.
-        # The control is what takes the iterations to settle, and it varies
-        # little between neighbouring planes. Starting the mesh itself from the
-        # neighbour's is no faster and ends worse: the sources that keep the
-        # spacing are best read off the algebraic mesh they were built into.
-        j_ctrl = self.control_planes(spf)
-        above = j_ctrl[j_ctrl > j_mid]
-        below = j_ctrl[j_ctrl < j_mid][::-1]
-        pq_mid = smooth_plane(j_mid, None)
-        for chain in (above, below):
-            pq = pq_mid
-            for j in chain:
-                pq = smooth_plane(j, pq)
-
-        # Every other plane takes its own algebraic mesh plus the smoothing
-        # correction interpolated from the control planes either side. The
-        # correction is zero on the blade, and has no streamwise part on the
-        # inlet and outlet, so the interpolated one leaves the blade where it
-        # is and moves the inlet and outlet only along the pitch.
-        j_all = np.sort(np.append(j_ctrl, j_mid))
-        C = np.stack([correction[j] for j in j_all])
-        X_smooth = []
-        for j in range(len(spf)):
-            if correction[j] is None:
-                k = np.searchsorted(j_all, j)
-                w = (spf[j] - spf[j_all[k - 1]]) / (spf[j_all[k]] - spf[j_all[k - 1]])
-                correction[j] = (1.0 - w) * C[k - 1] + w * C[k]
-            X_smooth.append(X_tfi[j] + correction[j])
-
-        return self.assemble(machine, i_row, layout, planes, topo, X_smooth)
-
-    def control_planes(self, spf):
-        """Return the indices of the spanwise planes that are smoothed.
-
-        Evenly spaced in index, so following the spanwise clustering, and
-        always including the hub and the casing. Every plane if
-        :attr:`n_span_smooth` is zero.
-        """
-        nj = len(spf)
-        if not self.n_span_smooth or self.n_span_smooth >= nj:
-            return np.arange(nj)
-        return np.unique(
-            np.round(np.linspace(0, nj - 1, self.n_span_smooth)).astype(int)
-        )
 
     def layout(self, machine, i_row, spacing):
         """Fix the counts and distributions of one row, at mid-span."""
@@ -740,26 +788,7 @@ class OH(Mesher):
     def assemble(self, machine, i_row, layout, planes, topo, X_smooth):
         """Return ember blocks from the smoothed planes of a row."""
         n_row = len(machine.rows)
-        nj = len(planes)
-        per_plane = [topo.scatter(X) for X in X_smooth]
-
-        blocks = []
-        for b, name in enumerate(LABELS):
-            ni, nk = per_plane[0][b].shape[1:]
-            xrt = np.empty((3, ni, nj, nk))
-            for j, (plane, xy) in enumerate(zip(planes, per_plane)):
-                xrt[:2, :, j, :] = plane["cmap"].xr_from_mp(xy[b][0])
-                xrt[2, :, j, :] = xy[b][1]
-            block = ember.block.Block(shape=(ni, nj, nk))
-            block.set_label(f"row{i_row}_{name}")
-            block.set_Nb(machine.rows[i_row].n_blade)
-            block.set_x(xrt[0])
-            block.set_r(xrt[1])
-            block.set_t(xrt[2])
-            for dim, n in zip("ijk", block.shape):
-                assert not (n - 1) % 8, f"{name}: n{dim}-1={n - 1} not divisible by 8"
-            blocks.append(block)
-
+        blocks = self.blocks(machine, i_row, planes, topo, X_smooth)
         O, Hup, Hdown, Hin, Hout, up, dn = blocks
         i3, i4, i1, i2 = layout.i_corners
         nkd = Hdown.shape[2] - 1
@@ -1016,11 +1045,11 @@ def _double(d0, d1, dmax, ER):
         return clusterfunc.double.fixed(d0, d1, n)
 
 
-def _stitch_mixing_planes(rows):
+def _stitch_mixing_planes(rows, labels=LABELS):
     """Force xr coordinates to match exactly at mixing planes."""
     for i_row in range(len(rows) - 1):
-        dn = rows[i_row][LABELS.index("dn")]
-        up = rows[i_row + 1][LABELS.index("up")]
+        dn = rows[i_row][labels.index("dn")]
+        up = rows[i_row + 1][labels.index("up")]
         x = 0.5 * (dn.x[-1, :, 0] + up.x[0, :, 0])[:, None]
         r = 0.5 * (dn.r[-1, :, 0] + up.r[0, :, 0])[:, None]
         dn[-1].set_x(x)

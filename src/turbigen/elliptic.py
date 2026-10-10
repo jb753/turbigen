@@ -47,6 +47,7 @@ import logging
 
 import ember.elliptic
 import numpy as np
+import scipy.optimize
 import scipy.sparse
 import scipy.sparse.csgraph
 import scipy.sparse.linalg
@@ -288,7 +289,9 @@ class PlaneTopology:
                 continue
 
             if is_slide[node]:
-                inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
+                inward = _crossing(nxt, prv, is_slide)
+                if not inward:
+                    inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
                 if not inward:
                     raise ValueError(f"Sliding node {node} has no neighbour inside.")
                 slide_nodes.append(node)
@@ -304,7 +307,7 @@ class PlaneTopology:
 
             if len(e) != 4:
                 irregular.append(node)
-                irregular_nb.append(edge_nb)
+                irregular_nb.append(_parallelogram(e))
                 continue
 
             # Walk round the node counter-clockwise from the starting cell.
@@ -383,6 +386,59 @@ class PlaneTopology:
 def control_owns(control, block):
     """Whether `block` is the one whose wall is controlled."""
     return control is not None and control.block == block
+
+
+def _crossing(nxt, prv, is_slide):
+    """Return the neighbours on the middle grid line(s) into a boundary node.
+
+    The cells round a node on the edge of the mesh form an open fan, from the
+    boundary on one side to the boundary on the other. The edges between
+    consecutive cells are the grid lines that come into the node from inside;
+    the middle one of them, or the middle two, are those that would meet the
+    boundary square were the cells equal. Taking only these, rather than every
+    neighbour off the boundary, keeps a node where the boundary has a corner
+    from being pulled along the grid lines that run beside it. Empty, leaving
+    the node to every neighbour off the boundary, unless at least two grid
+    lines come in: an ordinary boundary node has one, and next to a fixed node
+    the fixed neighbour is what holds the first cell open. Also empty when the
+    middle line leads to another sliding node.
+    """
+    # The successor of a cell, going counter-clockwise, is the one whose next
+    # corner is its previous corner. The fan starts at the cell with none
+    # before it.
+    n = len(nxt)
+    order = [next(a for a in range(n) if nxt[a] not in prv)]
+    while prv[order[-1]] in nxt and len(order) < n:
+        order.append(nxt.index(prv[order[-1]]))
+    lines = [prv[a] for a in order[:-1]]
+    if len(lines) < 2:
+        return []
+    mid = len(lines) // 2
+    pick = [lines[mid]] if len(lines) % 2 else lines[mid - 1 : mid + 1]
+    if any(is_slide[g] for g, _ in pick):
+        return []
+    return pick
+
+
+def _parallelogram(e):
+    """Return the weighted neighbours (g, shift, w) of a singular point.
+
+    Each cell round the point would put it at the sum of its two edge
+    neighbours less the opposite corner, were the cell a parallelogram; the
+    point sits at the mean of those. For n cells that tends to corners of 360/n
+    degrees, where the mean of the neighbours alone would pull the point
+    towards whichever of them lie furthest away.
+    """
+    m = len(e)
+    w = {}
+    for row in e:
+        for g, s, sign in (
+            (row[1], row[4], 1.0),
+            (row[3], row[6], 1.0),
+            (row[2], row[5], -1.0),
+        ):
+            w[(g, s)] = w.get((g, s), 0.0) + sign / m
+    return [(g, s, wt) for (g, s), wt in sorted(w.items())]
 
 
 #
@@ -633,13 +689,13 @@ def _static(topo):
     rows, cols, vals = [], [], []
     shift_rhs = np.zeros(topo.n_node)
 
-    # Singular points sit at the mean of their neighbours.
+    # Singular points sit at the mean of where each cell round them would put
+    # them, were it a parallelogram.
     for node, nbs in zip(topo.irregular, topo.irregular_nb):
-        m = len(nbs)
-        rows.append(np.full(m + 1, node))
-        cols.append(np.array([node] + [g for g, _ in nbs]))
-        vals.append(np.array([1.0] + [-1.0 / m] * m))
-        shift_rhs[node] = sum(s for _, s in nbs) * pitch / m
+        rows.append(np.full(len(nbs) + 1, node))
+        cols.append(np.array([node] + [g for g, _, _ in nbs]))
+        vals.append(np.array([1.0] + [-w for _, _, w in nbs]))
+        shift_rhs[node] = sum(s * w for _, s, w in nbs) * pitch
 
     # Fixed nodes stay put.
     rows.append(topo.fixed)
@@ -873,3 +929,155 @@ def _update_control(topo, X, pq):
     if ctrl.closed:
         pq[:, -1] = pq[:, 0]
     return pq
+
+
+#
+# LOCAL OPTIMISATION
+#
+
+POLISH_EPS = 1e-3
+"""Regularisation of the corner Jacobian in :func:`polish`, so a folded cell
+has a finite, steep cost rather than none."""
+
+
+def polish(topo, X, centres, rings=4, w_size=1.0, max_iter=500, X_target=None):
+    """Return `X` with the nodes near `centres` moved to square up their cells.
+
+    The elliptic equations leave poor cells round the singular points of a
+    multi-block mesh, where more or fewer than four cells meet and no
+    neighbour stencil can be satisfied by right angles. Here the nodes within
+    `rings` cells of each centre are moved to minimise, over every cell they
+    touch, a measure of each cell corner against a target --- the
+    target-matrix optimisation of Knupp, a discrete form of Brackbill and
+    Saltzman's variational grid generation. At a corner with edges `a` along
+    `i` and `b` along `k`, and target lengths `la` and `lb` read off the mesh
+    as it is, `T = [a / la, b / lb]`; the shape term `|T|^2 / (2 det T)` is
+    least for edges square to each other in the target ratio, and the size
+    term `(det T + 1 / det T) / 2` for the target area. Only the shape of the
+    cells changes, then, not the spacing the mesh was built with.
+
+    Fixed nodes stay put and sliding nodes move only in `y`. The rest of the
+    mesh is untouched, so the elliptic solution elsewhere is kept exactly.
+
+    Parameters
+    ----------
+    topo : PlaneTopology
+        Structure of the plane.
+    X : ndarray
+        Node coordinates, shape (n_node, 2).
+    centres : array_like of int
+        Nodes to polish round, typically ``topo.irregular``.
+    rings : int
+        How many cells out from each centre nodes are moved.
+    w_size : float
+        Weight of the size term against the shape term.
+    max_iter : int
+        Most iterations of the optimiser.
+    X_target : ndarray, optional
+        Mesh to read the target edge lengths off, shape (n_node, 2); `X` if
+        not given.
+
+    Returns
+    -------
+    ndarray
+        Polished node coordinates, shape (n_node, 2).
+
+    """
+    pitch = topo.pitch or 0.0
+
+    # Every cell as its four corner nodes and their periodic shifts, in the
+    # order (i, k), (i + 1, k), (i + 1, k + 1), (i, k + 1).
+    ids, shifts = [], []
+    for g, s in zip(topo.gid, topo.shift):
+        corners = [
+            (slice(None, -1), slice(None, -1)),
+            (slice(1, None), slice(None, -1)),
+            (slice(1, None), slice(1, None)),
+            (slice(None, -1), slice(1, None)),
+        ]
+        ids.append(np.stack([g[c].ravel() for c in corners], axis=1))
+        shifts.append(np.stack([s[c].ravel() for c in corners], axis=1))
+    ids = np.concatenate(ids)
+    shifts = np.concatenate(shifts).astype(float) * pitch
+
+    # Nodes within `rings` cells of a centre, by growing through the cells.
+    near = np.zeros(topo.n_node, dtype=bool)
+    near[np.asarray(centres, dtype=int)] = True
+    for _ in range(rings):
+        near[ids[near[ids].any(axis=1)].ravel()] = True
+    free = np.zeros((topo.n_node, 2), dtype=bool)
+    free[near] = True
+    free[topo.fixed] = False
+    free[topo.slide, 0] = False
+    if not free.any():
+        return X
+    cells = near[ids].any(axis=1)
+    ids, shifts = ids[cells], shifts[cells]
+
+    def corners(Xc):
+        P = Xc[ids].copy()  # (n_cell, 4, 2)
+        P[..., 1] += shifts
+        # (node, along i, along k) at each corner, as offsets
+        return [
+            (P[:, 1] - P[:, 0], P[:, 3] - P[:, 0]),
+            (P[:, 1] - P[:, 0], P[:, 2] - P[:, 1]),
+            (P[:, 2] - P[:, 3], P[:, 2] - P[:, 1]),
+            (P[:, 2] - P[:, 3], P[:, 3] - P[:, 0]),
+        ]
+
+    # Edge lengths of the mesh as it is, the mean of the cell's two edges in
+    # each direction, as the targets.
+    a0 = corners(X if X_target is None else X_target)
+    la = 0.5 * (np.linalg.norm(a0[0][0], axis=1) + np.linalg.norm(a0[2][0], axis=1))
+    lb = 0.5 * (np.linalg.norm(a0[0][1], axis=1) + np.linalg.norm(a0[1][1], axis=1))
+    scale = np.sqrt(np.mean(la * lb))
+    # Which nodes each corner's edges run between, for the gradient.
+    edge_nodes = [
+        ((1, 0), (3, 0)),
+        ((1, 0), (2, 1)),
+        ((2, 3), (2, 1)),
+        ((2, 3), (3, 0)),
+    ]
+    n_corner = 4.0 * len(ids)
+    X0 = X.copy()
+
+    def fun(z):
+        Xc = X0.copy()
+        Xc[free] = z * scale
+        f = 0.0
+        G = np.zeros((len(ids), 4, 2))
+        for (a, b), ((pa, ma), (pb, mb)) in zip(corners(Xc), edge_nodes):
+            ta, tb = a / la[:, None], b / lb[:, None]
+            det = ta[:, 0] * tb[:, 1] - ta[:, 1] * tb[:, 0]
+            root = np.sqrt(det**2 + POLISH_EPS**2)
+            dreg = 0.5 * (det + root)
+            dd = 0.5 * (1.0 + det / root)
+            nrm2 = np.sum(ta**2, 1) + np.sum(tb**2, 1)
+            f += np.sum(nrm2 / (2.0 * dreg) + w_size * 0.5 * (dreg + 1.0 / dreg))
+            dF = (-nrm2 / (2.0 * dreg**2) + w_size * 0.5 * (1.0 - 1.0 / dreg**2)) * dd
+            ga = ta / dreg[:, None] + dF[:, None] * np.stack((tb[:, 1], -tb[:, 0]), 1)
+            gb = tb / dreg[:, None] + dF[:, None] * np.stack((-ta[:, 1], ta[:, 0]), 1)
+            ga /= la[:, None]
+            gb /= lb[:, None]
+            G[:, pa] += ga
+            G[:, ma] -= ga
+            G[:, pb] += gb
+            G[:, mb] -= gb
+        g = np.zeros_like(X)
+        np.add.at(g, ids.ravel(), G.reshape(-1, 2))
+        return f / n_corner, g[free] * scale / n_corner
+
+    res = scipy.optimize.minimize(
+        fun,
+        X0[free] / scale,
+        jac=True,
+        method="L-BFGS-B",
+        options={"maxiter": max_iter, "gtol": 1e-10, "ftol": 0.0},
+    )
+    out = X0.copy()
+    out[free] = res.x * scale
+    logger.debug(
+        f"Polished {free.any(axis=1).sum()} nodes in {res.nit} iterations: "
+        f"{fun(X0[free] / scale)[0]:.4g} to {res.fun:.4g}, {res.message}"
+    )
+    return out
