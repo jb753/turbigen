@@ -166,6 +166,29 @@ def test_the_wall_has_the_spacing_and_angle_asked_for(config, machine, grid, spf
         assert np.mean(lean < 5.0) > 0.95
 
 
+def test_a_round_trailing_edge_meshes_with_the_wall_square_all_round():
+    from test_blade import ROUND
+
+    config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
+    machine = config.design()
+    spacing = config.mesh.wall_spacing(machine)
+    grid = config.mesh.mesh(machine)
+    grid.connectivity.periodic.pair()
+    for i_row in range(len(machine.rows)):
+        O = blocks_of_row(grid, i_row)["O"]
+        assert (O.vol_nd > 0.0).all()
+        j = O.shape[1] // 2
+        height, lean = _wall_metrics(O, j, O.r[:, j, 0].mean())
+        ratio = height / spacing.surface[i_row]
+        # No trailing edge corners to leave alone: held round the arc too.
+        i_lo, i_hi = config.mesh.layout(machine, i_row, spacing).i_te_corners
+        arc = np.r_[: i_lo + 1, i_hi : len(lean)]
+        assert lean[arc].max() < 5.0
+        assert np.all(np.abs(ratio[arc] - 1.0) < 0.1)
+        assert np.mean(lean < 5.0) > 0.95
+        assert np.mean(np.abs(ratio - 1.0) < 0.1) > 0.95
+
+
 #
 # POST-PROCESSING
 #
@@ -199,14 +222,6 @@ def test_the_initial_guess_is_finite_round_the_blade(machine, grid):
 def test_a_tip_gap_is_refused_rather_than_shrouded():
     config = build(blades=[blade(), blade(tip_span=0.02)], mesh=MESH)
     with pytest.raises(ValueError, match="tip gap"):
-        config.mesh.mesh(config.design())
-
-
-def test_a_round_trailing_edge_is_refused():
-    from test_blade import ROUND
-
-    config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
-    with pytest.raises(ValueError, match="round trailing edge"):
         config.mesh.mesh(config.design())
 
 

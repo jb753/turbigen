@@ -941,6 +941,57 @@ POLISH_EPS = 1e-3
 has a finite, steep cost rather than none."""
 
 
+def folded(topo, X):
+    """Return the nodes of every cell of a plane that is folded or flat.
+
+    Parameters
+    ----------
+    topo : PlaneTopology
+        Structure of the plane.
+    X : ndarray
+        Node coordinates, shape (n_node, 2).
+
+    Returns
+    -------
+    ndarray
+        Sorted node indices.
+
+    """
+    pitch = topo.pitch or 0.0
+    nodes = []
+    for g, s in zip(topo.gid, topo.shift):
+        P = X[g].copy()
+        P[..., 1] += s * pitch
+        a, b, c, d = P[:-1, :-1], P[1:, :-1], P[1:, 1:], P[:-1, 1:]
+        cross = (c[..., 0] - a[..., 0]) * (d[..., 1] - b[..., 1]) - (
+            c[..., 1] - a[..., 1]
+        ) * (d[..., 0] - b[..., 0])
+        bad = cross <= 0.0
+        for corner in (g[:-1, :-1], g[1:, :-1], g[1:, 1:], g[:-1, 1:]):
+            nodes.append(corner[bad])
+    return np.unique(np.concatenate(nodes))
+
+
+def untangle(topo, X, rings=2):
+    """Return `X` with any folded cells unfolded.
+
+    An algebraic mesh folds where a face doubles back on itself or bulges
+    into the block; the elliptic equations, started from it, can then
+    diverge. The nodes within `rings` cells of every folded cell are moved
+    by :func:`polish`, whose cost is finite and steep for a folded cell, so
+    the optimiser pulls it inside out; the targets are the mesh as it is, so
+    the spacing is kept. A mesh with no folds is returned as it is.
+    """
+    nodes = folded(topo, X)
+    if not len(nodes):
+        return X
+    X = polish(topo, X, nodes, rings=rings, X_target=X)
+    left = folded(topo, X)
+    if len(left):
+        logger.warning(f"{len(left)} nodes of folded cells left after untangling.")
+    return X
+
+
 def polish(
     topo,
     X,

@@ -37,6 +37,7 @@ run `i` downstream and `k` in the direction of increasing `theta`.
 """
 
 import dataclasses
+import itertools
 import logging
 from typing import ClassVar
 
@@ -44,6 +45,8 @@ import ember.block
 import ember.grid
 import ember.patch
 import numpy as np
+import scipy.sparse
+import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 from turbigen import clusterfunc, elliptic, util
@@ -68,6 +71,10 @@ blade, being the tangent of 45 degrees. Only a starting guess: the line floats."
 
 CORNER = 2.0
 """Grid spacing into the trailing edge corners, as a multiple of wall spacing."""
+
+N_RAY = 2001
+"""Samples along a ray from a corner of the O block, to find where it meets
+the periodic line."""
 
 LABELS = ("O", "Hup", "Hdown", "Hin", "Hout", "up", "dn")
 """Block names, in the order blocks are held."""
@@ -153,8 +160,11 @@ class _Layout:
     """Wall spacing [m]."""
     f_front: np.ndarray
     """Leading edge to corner of the O block, on each surface."""
-    f_side: np.ndarray
-    """Corner to corner of the O block, along each side."""
+    f_side_u: np.ndarray
+    """Corner to corner of the O block, along the upper side."""
+    f_side_l: np.ndarray
+    """Corner to corner of the O block, along the lower side, which may have
+    a different count from the upper."""
     f_rear: np.ndarray
     """Rear corner of the O block to the trailing edge corner."""
     f_te: np.ndarray
@@ -175,6 +185,9 @@ class _Layout:
     of the O block."""
     t_O: float
     """Thickness of the O block, in conformal units."""
+    s_f: int
+    """Cells along the periodic line by which the lower side's H block starts
+    downstream of the upper side's; negative if upstream."""
 
     @property
     def n_te_half(self):
@@ -191,16 +204,31 @@ class _Layout:
 
     @property
     def ni_O(self):
-        return 2 * self.n_rear + 2 * len(self.f_side) + self.n_front - 4
+        return (
+            2 * self.n_rear + len(self.f_side_u) + len(self.f_side_l) + self.n_front - 4
+        )
 
     @property
     def i_corners(self):
         """O block `i` of the corners C3, C4, C1, C2, in increasing order."""
         i3 = self.n_rear - 1
-        i4 = i3 + len(self.f_side) - 1
+        i4 = i3 + len(self.f_side_l) - 1
         i1 = i4 + self.n_front - 1
-        i2 = i1 + len(self.f_side) - 1
+        i2 = i1 + len(self.f_side_u) - 1
         return i3, i4, i1, i2
+
+    @property
+    def i_per(self):
+        """Where the H blocks either side of the blade meet the periodic line.
+
+        Counted in cells along the stretch of it between the inlet and outlet
+        H blocks: the start and end of the upper side's H block on the upper
+        line, the same for the lower side's on the lower line, and the length
+        of the stretch.
+        """
+        n_u, n_l = len(self.f_side_u) - 1, len(self.f_side_l) - 1
+        iu0, il0 = max(-self.s_f, 0), max(self.s_f, 0)
+        return iu0, iu0 + n_u, il0, il0 + n_l, max(iu0 + n_u, il0 + n_l)
 
     @property
     def i_te_corners(self):
@@ -334,20 +362,13 @@ class PlaneMesher(Mesher):
         correction = [None] * len(spf)
 
         def smooth_plane(j, pq):
-            control = planes[j]["control"]
-            topo.control = control
-            X, pq, n_iter = elliptic.smooth(
-                topo,
-                X_tfi[j],
-                pq=pq,
-                scale=control.spacing.min(),
-                omega=self.omega,
-                tol=self.tol,
-                max_iter=self.max_iter,
-                keep_spacing=True,
-                keep_slide_angle=self.end_shear,
-            )
-            X = self.polish(topo, X, X_tfi[j])
+            topo.control = planes[j]["control"]
+            # Unfolded first, so the smoothing starts from a valid mesh and
+            # reads its spacing off one. The correction is from the algebraic
+            # mesh as it was, so the planes between take the unfolding too.
+            X_alg = elliptic.untangle(topo, X_tfi[j])
+            X, pq, n_iter = self.smooth(topo, X_alg, planes[j], pq)
+            X = self.polish(topo, X, X_alg)
             correction[j] = X - X_tfi[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f}: {n_iter} iterations")
             return pq
@@ -384,6 +405,33 @@ class PlaneMesher(Mesher):
 
         return self.assemble(machine, i_row, layout, planes, topo, X_smooth)
 
+    def smooth(self, topo, X, plane, pq):
+        """Return a plane smoothed from its algebraic mesh `X`.
+
+        With the wall control functions it finished with, to start the next
+        plane from given `pq` from the last, and the iterations taken. Here,
+        elliptic smoothing with the wall held by control functions and the
+        algebraic spacing kept by inherent sources.
+        """
+        return elliptic.smooth(
+            topo,
+            X,
+            pq=pq,
+            scale=plane["control"].spacing.min(),
+            omega=self.omega,
+            tol=self.tol,
+            max_iter=self.max_iter,
+            keep_spacing=True,
+            keep_slide_angle=self.end_shear,
+        )
+
+    def finish(self, xy, plane):
+        """Return the blocks (2, ni, nk) of a smoothed plane as they are kept.
+
+        As smoothed here; a subclass may change them, given the `plane`.
+        """
+        return xy
+
     def polish(self, topo, X, X_alg):
         """Return a smoothed plane `X` after any final local improvement.
 
@@ -409,7 +457,9 @@ class PlaneMesher(Mesher):
     def blocks(self, machine, i_row, planes, topo, X_smooth):
         """Return bare ember blocks, without patches, from the smoothed planes."""
         nj = len(planes)
-        per_plane = [topo.scatter(X) for X in X_smooth]
+        per_plane = [
+            self.finish(topo.scatter(X), plane) for X, plane in zip(X_smooth, planes)
+        ]
         blocks = []
         for b, name in enumerate(self.labels):
             ni, nk = per_plane[0][b].shape[1:]
@@ -435,6 +485,8 @@ class OH(PlaneMesher):
     type: ClassVar[str] = "oh"
 
     labels: ClassVar[tuple] = LABELS
+
+    grids_round_TE: ClassVar[bool] = True
 
     ds_LE: float = 0.002
     """Surface grid spacing at the leading edge, as a fraction of meridional chord."""
@@ -484,6 +536,19 @@ class OH(PlaneMesher):
     """Where the blocks ahead of and behind the O block are split, as a
     fraction of the way from the blade to the inlet, outlet or mixing plane."""
 
+    shift: float = 0.0
+    """How far the H blocks either side of the blade meet the periodic line
+    from level with each other, from zero to one.
+
+    At zero, the two sides have the same count of nodes, and the blocks on
+    each meet the inlet and outlet H blocks at the same `m'`, so the grid
+    lines across the passage run pitchwise on average whatever the stagger.
+    At one, each meets the periodic line where the O block's normal at its
+    corner lands, the two sides' counts differing by the cells between, and
+    those cells taken up along the periodic line by the faces of the inlet
+    and outlet H blocks.
+    """
+
     def __post_init__(self):
         self._check_end_shear()
         if self.ni_TE < 3 or not self.ni_TE % 2:
@@ -495,6 +560,8 @@ class OH(PlaneMesher):
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
+        if not 0.0 <= self.shift <= 1.0:
+            raise ValueError(f"shift={self.shift} must be between zero and one.")
 
     def layout(self, machine, i_row, spacing):
         """Fix the counts and distributions of one row, at mid-span."""
@@ -514,7 +581,7 @@ class OH(PlaneMesher):
         m_Zout = m_TE + self.frac_Z * L_dn
 
         cmap = ConformalMap(annulus, 0.5, m_in, m_out)
-        upper, lower = _surfaces(blade, cmap, 0.5)
+        upper, lower, te = _blade_pieces(blade, cmap, 0.5)
         S = np.array([util.arc_length(upper), util.arc_length(lower)])
 
         # Spacings in conformal units, scaled from physical at the mean radius.
@@ -523,12 +590,16 @@ class OH(PlaneMesher):
         to_c = chord / r_ref
         ds_LE = self.ds_LE * to_c
         ds_mid = self.ds_mid * to_c
-        t_TE = float(np.linalg.norm(upper[:, -1] - lower[:, -1]))
+        t_TE = util.arc_length(te)
         n_te = int(self.ni_TE)
         d_wall = float(spacing.surface[i_row])
         # Into the trailing edge corners, a few wall spacings, so the O block
-        # turns the corner over several cells rather than one node.
-        ds_TE = min(CORNER * d_wall / r_ref, t_TE / (n_te - 1))
+        # turns the corner over several cells rather than one node. A round
+        # trailing edge has no corners, and is evenly spaced round its arc.
+        if blade.round_TE:
+            ds_TE = t_TE / (n_te - 1)
+        else:
+            ds_TE = min(CORNER * d_wall / r_ref, t_TE / (n_te - 1))
 
         # Along the blade, one distribution from leading edge to trailing edge
         # corner over the mean of the two surfaces, cut at the nodes nearest the
@@ -555,7 +626,10 @@ class OH(PlaneMesher):
         n_te_half = (n_te - 1) // 2
         n_cell = len(f_rear) - 1 + n_te_half
         f_rear = util.resample_to(f_rear, len(f_rear) + (-n_cell) % 8)
-        f_te = clusterfunc.symmetric.fixed(ds_TE / t_TE, n_te)
+        if blade.round_TE:
+            f_te = np.linspace(0.0, 1.0, n_te)
+        else:
+            f_te = clusterfunc.symmetric.fixed(ds_TE / t_TE, n_te)
 
         # Away from the wall, to cells along-surface sized at the outside.
         t_O = self.t_O * pitch
@@ -566,17 +640,37 @@ class OH(PlaneMesher):
         f_O = _mult(util.resample(f_O, self.resolution_factor), 8)
         dk_O = (f_O[-1] - f_O[-2]) * t_O
 
-        # The H blocks either side, from the O block out to the periodic line.
+        # Where the H blocks either side meet the periodic line, in whole
+        # multigrid steps of the mean spacing along it, which fixes how many
+        # more nodes the upper side has than the lower.
+        mp_Z = cmap.mp_from_m([m_Zin, m_Zout])
         geom = self._plane_geometry(
-            blade, cmap, pitch, split, f_front, f_side, f_rear, f_te, t_O
+            blade, cmap, pitch, split, f_front, f_side, f_side, f_rear, f_te, t_O, mp_Z
         )
+        P1u, P1d, P2u, P2d = (geom[k][0] for k in ("P1u", "P1d", "P2u", "P2d"))
+        ds_per = 0.5 * (P2u - P1u + P2d - P1d) / (len(f_side) - 1)
+        s_f = 8 * round((P1d - P1u) / ds_per / 8)
+        s_r = 8 * round((P2u - P2d) / ds_per / 8)
+        n_u = len(f_side) - 1 + 8 * round((s_f + s_r) / 16)
+        n_l = n_u - s_f - s_r
+        if min(n_u, n_l) < 8:
+            raise ValueError(
+                f"Row {i_row}: the H blocks either side of the blade meet the "
+                f"periodic line {s_f} and {s_r} cells apart at the front and "
+                f"rear, more than the {len(f_side) - 1} along a side; reduce "
+                f"shift={self.shift}."
+            )
+        f_side_u = util.resample_to(f_side, n_u + 1)
+        f_side_l = util.resample_to(f_side, n_l + 1)
+
+        # The H blocks either side, from the O block out to the periodic line.
         h_up = max(
-            np.linalg.norm(geom["P1"] - geom["C1"]),
-            np.linalg.norm(geom["P2"] - geom["C2"]),
+            np.linalg.norm(geom["P1u"] - geom["C1"]),
+            np.linalg.norm(geom["P2u"] - geom["C2"]),
         )
         h_dn = max(
-            np.linalg.norm(geom["P1"] - pitch * _J - geom["C4"]),
-            np.linalg.norm(geom["P2"] - pitch * _J - geom["C3"]),
+            np.linalg.norm(geom["P1d"] - geom["C4"]),
+            np.linalg.norm(geom["P2d"] - geom["C3"]),
         )
         f_Hup = _single(dk_O / h_up, ds_mid / h_up, self.ER_O)
         f_Hdown = _single(dk_O / h_dn, ds_mid / h_dn, self.ER_O)
@@ -586,11 +680,10 @@ class OH(PlaneMesher):
         # Streamwise, from the largest cells in the passage at the split lines,
         # rather than the mean pitchwise spacing, which the clustering round
         # the leading edge makes far finer than the flow there needs.
-        nk_in = len(f_Hup) + len(f_Hdown) + 2 * len(f_front) - 1 - 2
         d_pitch = ds_mid
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m([m_in, m_Zin, m_Zout, m_out])
-        L_Hin = geom["P1"][0] - mp_Zin
-        L_Hout = mp_Zout - geom["P2"][0]
+        L_Hin = min(P1u, P1d) - mp_Zin
+        L_Hout = mp_Zout - max(P2u, P2d)
         if L_Hin <= 0.0 or L_Hout <= 0.0:
             raise ValueError(
                 f"Row {i_row}: the O block reaches past the split at "
@@ -623,7 +716,8 @@ class OH(PlaneMesher):
             m_out=m_out,
             d_wall=d_wall,
             f_front=f_front,
-            f_side=f_side,
+            f_side_u=f_side_u,
+            f_side_l=f_side_l,
             f_rear=f_rear,
             f_te=f_te,
             f_O=f_O,
@@ -635,36 +729,63 @@ class OH(PlaneMesher):
             f_dn=f_dn,
             split=split,
             t_O=t_O,
+            s_f=s_f,
         )
         logger.debug(
             f"Row {i_row} OH layout: O {layout.ni_O}x{len(f_O)}, "
-            f"H_up {len(f_side)}x{len(f_Hup)}, H_down {len(f_side)}x{len(f_Hdown)}, "
-            f"H_in {len(f_Hin)}x{nk_in}, H_out {len(f_Hout)}x"
-            f"{len(f_Hup) + len(f_Hdown) + 2 * layout.n_rear - 1 - 2}, "
-            f"up {len(f_up)}, dn {len(f_dn)}"
+            f"H_up {n_u + 1}x{len(f_Hup)}, H_down {n_l + 1}x{len(f_Hdown)}, "
+            f"junctions {s_f} and {s_r} cells apart at the front and rear, "
+            f"H_in {len(f_Hin)}, H_out {len(f_Hout)}, up {len(f_up)}, dn {len(f_dn)}"
         )
         return layout
 
     def _plane_geometry(
-        self, blade, cmap, pitch, split, f_front, f_side, f_rear, f_te, t_O
+        self,
+        blade,
+        cmap,
+        pitch,
+        split,
+        f_front,
+        f_side_u,
+        f_side_l,
+        f_rear,
+        f_te,
+        t_O,
+        mp_Z,
     ):
-        """Return the blade loop, O block outline and corner points of a plane."""
-        upper, lower = _surfaces(blade, cmap, cmap.spf)
-        loop = _blade_loop(upper, lower, *split, f_front, f_side, f_rear, f_te)
+        """Return the blade loop, O block outline and corner points of a plane.
+
+        With where the H blocks either side would meet the periodic line, at
+        :attr:`shift` of the way from level with each other to where the O
+        block's normals at its corners land: `P1u` and `P2u` on the upper
+        line, `P1d` and `P2d` on the lower. Never more than half way from
+        level to the split lines at `mp_Z`, so the inlet and outlet H blocks
+        keep some length.
+        """
+        upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
+        loop = _blade_loop(
+            upper, lower, te, *split, f_front, f_side_u, f_side_l, f_rear, f_te
+        )
         normal = _outward_normals(loop)
         outer = loop + t_O * normal
 
         n_rear = len(f_rear) + (len(f_te) - 1) // 2
         i3 = n_rear - 1
-        i4 = i3 + len(f_side) - 1
+        i4 = i3 + len(f_side_l) - 1
         i1 = i4 + 2 * len(f_front) - 2
-        i2 = i1 + len(f_side) - 1
+        i2 = i1 + len(f_side_u) - 1
 
         periodic = _periodic_line(blade, cmap, pitch)
         mp_P1 = 0.5 * (outer[0, i1] + outer[0, i4])
         mp_P2 = 0.5 * (outer[0, i2] + outer[0, i3])
-        P1 = np.array([mp_P1, periodic(mp_P1)])
-        P2 = np.array([mp_P2, periodic(mp_P2)])
+
+        lo = mp_P1 - 0.5 * (mp_P1 - mp_Z[0])
+        hi = mp_P2 + 0.5 * (mp_Z[1] - mp_P2)
+
+        def meet(i, offset, mp_level):
+            mp = _landing(outer[:, i], normal[:, i], periodic, offset, pitch)
+            mp = np.clip(mp_level + self.shift * (mp - mp_level), lo, hi)
+            return np.array([mp, periodic(mp) + offset])
 
         return {
             "loop": loop,
@@ -674,8 +795,10 @@ class OH(PlaneMesher):
             "C2": outer[:, i2],
             "C3": outer[:, i3],
             "C4": outer[:, i4],
-            "P1": P1,
-            "P2": P2,
+            "P1u": meet(i1, 0.0, mp_P1),
+            "P1d": meet(i4, -pitch, mp_P1),
+            "P2u": meet(i2, 0.0, mp_P2),
+            "P2d": meet(i3, -pitch, mp_P2),
         }
 
     def plane(self, machine, i_row, layout, spf):
@@ -691,47 +814,64 @@ class OH(PlaneMesher):
             pitch,
             layout.split,
             layout.f_front,
-            layout.f_side,
+            layout.f_side_u,
+            layout.f_side_l,
             layout.f_rear,
             layout.f_te,
             layout.t_O,
+            cmap.mp_from_m([layout.m_Zin, layout.m_Zout]),
         )
         loop, outer, periodic = g["loop"], g["outer"], g["periodic"]
-        C1, C2, C3, C4, P1, P2 = (g[k] for k in ("C1", "C2", "C3", "C4", "P1", "P2"))
+        C1, C2, C3, C4 = (g[k] for k in ("C1", "C2", "C3", "C4"))
         i3, i4, i1, i2 = layout.i_corners
-        P1d = P1 - pitch * _J
-        P2d = P2 - pitch * _J
+        iu0, iu1, il0, il1, n_per = layout.i_per
 
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
             [layout.m_in, layout.m_Zin, layout.m_Zout, layout.m_out]
         )
 
+        def upper_line(mp):
+            return np.stack((mp, periodic(mp)))
+
+        def lower_line(mp):
+            return np.stack((mp, periodic(mp) - pitch))
+
         def along_periodic(mp0, mp1, f):
-            mp = mp0 + f * (mp1 - mp0)
-            pts = np.stack((mp, periodic(mp)))
-            return pts
+            return upper_line(mp0 + f * (mp1 - mp0))
 
         # O block: straight lines from the blade out along the normals.
         fO = layout.f_O.reshape(1, 1, -1)
         O = loop[..., None] + fO * (outer - loop)[..., None]
 
-        # Either side, from the O block to the periodic line.
-        f_per = 0.5 * (
-            _norm_arc(outer[:, i1 : i2 + 1]) + _norm_arc(outer[:, i3 : i4 + 1][:, ::-1])
+        # The stretch of periodic line between the inlet and outlet H blocks.
+        # Each side's H block spaces its part as the O block face it faces,
+        # and where both lie on the same cells, the two are averaged.
+        mp_u = g["P1u"][0] + _norm_arc(outer[:, i1 : i2 + 1]) * (
+            g["P2u"][0] - g["P1u"][0]
         )
-        top_up = along_periodic(P1[0], P2[0], f_per)
-        top_up[:, 0], top_up[:, -1] = P1, P2
-        bot_dn = top_up - pitch * _J[:, None]
+        mp_l = g["P1d"][0] + _norm_arc(outer[:, i3 : i4 + 1][:, ::-1]) * (
+            g["P2d"][0] - g["P1d"][0]
+        )
+        mp_per = np.zeros(n_per + 1)
+        count = np.zeros(n_per + 1)
+        mp_per[iu0 : iu1 + 1] += mp_u
+        count[iu0 : iu1 + 1] += 1.0
+        mp_per[il0 : il1 + 1] += mp_l
+        count[il0 : il1 + 1] += 1.0
+        mp_per = np.maximum.accumulate(mp_per / count)
+        P1u, P2u = upper_line(mp_per[[iu0, iu1]]).T
+        P1d, P2d = lower_line(mp_per[[il0, il1]]).T
 
+        # Either side, from the O block to the periodic line.
         Hup = _tfi(
             outer[:, i1 : i2 + 1],
-            top_up,
-            _line(C1, P1, layout.f_Hup),
-            _line(C2, P2, layout.f_Hup),
+            upper_line(mp_per[iu0 : iu1 + 1]),
+            _line(C1, P1u, layout.f_Hup),
+            _line(C2, P2u, layout.f_Hup),
         )
         g_dn = 1.0 - np.flip(layout.f_Hdown)
         Hdown = _tfi(
-            bot_dn,
+            lower_line(mp_per[il0 : il1 + 1]),
             outer[:, i3 : i4 + 1][:, ::-1],
             _line(P1d, C4, g_dn),
             _line(P2d, C3, g_dn),
@@ -739,31 +879,51 @@ class OH(PlaneMesher):
 
         # Ahead of the blade: the face it shares with the blocks round the O
         # block, running up the pitch, and a split line with the same spacing.
+        # Whichever side's H block starts further downstream, the face runs
+        # along the periodic line to it first.
         right_in = np.concatenate(
-            (Hdown[:, 0, :], O[:, i4 : i1 + 1, -1][:, 1:], Hup[:, 0, 1:]), axis=1
+            (
+                lower_line(mp_per[: il0 + 1])[:, :-1],
+                Hdown[:, 0, :],
+                O[:, i4 : i1 + 1, -1][:, 1:],
+                Hup[:, 0, 1:],
+                upper_line(mp_per[iu0::-1])[:, 1:],
+            ),
+            axis=1,
         )
         f_k_in = _norm_arc(right_in)
         Q1 = np.array([mp_Zin, periodic(mp_Zin)])
         Zin = np.stack((np.full_like(f_k_in, mp_Zin), Q1[1] - pitch + pitch * f_k_in))
-        top_in = along_periodic(mp_Zin, P1[0], layout.f_Hin)
-        top_in[:, -1] = P1
+        top_in = along_periodic(mp_Zin, mp_per[0], layout.f_Hin)
+        top_in[:, -1] = right_in[:, -1]
         Hin = _tfi(top_in - pitch * _J[:, None], top_in, Zin, right_in)
-        Hin[:, -1, 0] = P1d
-        Hin[:, -1, -1] = P1
+        Hin[:, -1, 0] = right_in[:, 0]
+        Hin[:, -1, -1] = right_in[:, -1]
+        if iu0 or il0:
+            Hin = _laplace(Hin)
 
         # Behind the blade, the same.
         rear = np.concatenate((O[:, i3::-1, -1], O[:, -2 : i2 - 1 : -1, -1]), axis=1)
         left_out = np.concatenate(
-            (Hdown[:, -1, :], rear[:, 1:], Hup[:, -1, 1:]), axis=1
+            (
+                lower_line(mp_per[il1:][::-1])[:, :-1],
+                Hdown[:, -1, :],
+                rear[:, 1:],
+                Hup[:, -1, 1:],
+                upper_line(mp_per[iu1:])[:, 1:],
+            ),
+            axis=1,
         )
         f_k_out = _norm_arc(left_out)
         Q2 = np.array([mp_Zout, periodic(mp_Zout)])
         Zout = np.stack(
             (np.full_like(f_k_out, mp_Zout), Q2[1] - pitch + pitch * f_k_out)
         )
-        top_out = along_periodic(P2[0], mp_Zout, layout.f_Hout)
-        top_out[:, 0] = P2
+        top_out = along_periodic(mp_per[-1], mp_Zout, layout.f_Hout)
+        top_out[:, 0] = left_out[:, -1]
         Hout = _tfi(top_out - pitch * _J[:, None], top_out, left_out, Zout)
+        if iu1 < n_per or il1 < n_per:
+            Hout = _laplace(Hout)
 
         # Out to the boundaries.
         Q0 = np.array([mp_in, periodic(mp_in)])
@@ -801,10 +961,13 @@ class OH(PlaneMesher):
 
         # Wall spacing in conformal units, against the local radius.
         r_wall = cmap.xr_from_mp(loop[0])[1]
+        # Left to itself at the trailing edge corners, which have no normal; a
+        # round trailing edge has a normal everywhere.
         weight = np.ones(layout.ni_O)
-        for i_c in layout.i_te_corners:
-            weight[i_c] = 0.0
-            weight[i_c - 1] = weight[i_c + 1] = 0.5
+        if not blade.round_TE:
+            for i_c in layout.i_te_corners:
+                weight[i_c] = 0.0
+                weight[i_c - 1] = weight[i_c + 1] = 0.5
         control = elliptic.WallControl(
             block=0, spacing=layout.d_wall / r_wall, closed=True, weight=weight
         )
@@ -823,8 +986,11 @@ class OH(PlaneMesher):
         blocks = self.blocks(machine, i_row, planes, topo, X_smooth)
         O, Hup, Hdown, Hin, Hout, up, dn = blocks
         i3, i4, i1, i2 = layout.i_corners
+        iu0, iu1, il0, il1, n_per = layout.i_per
         nkd = Hdown.shape[2] - 1
         nku = Hup.shape[2] - 1
+        nk_in = Hin.shape[2] - 1
+        nk_out = Hout.shape[2] - 1
         n_front = layout.n_front - 1
         n_rear = layout.n_rear - 1
         Per = ember.patch.PeriodicPatch
@@ -840,31 +1006,47 @@ class OH(PlaneMesher):
                 Per(i=(i2, -1), k=-1, label="rear_upper"),
             ]
         )
-        Hup.patches.extend([Per(k=0), Per(k=-1), Per(i=0), Per(i=-1)])
-        Hdown.patches.extend([Per(k=0), Per(k=-1), Per(i=0), Per(i=-1)])
+        Hup.patches.extend([Per(k=0), Per(i=0), Per(i=-1)])
+        Hdown.patches.extend([Per(k=-1), Per(i=0), Per(i=-1)])
+        k = np.cumsum([il0, nkd, n_front, nku])
+        assert k[-1] + iu0 == nk_in
         Hin.patches.extend(
-            [
-                Per(i=0),
-                Per(k=0),
-                Per(k=-1),
-                Per(i=-1, k=(0, nkd)),
-                Per(i=-1, k=(nkd, nkd + n_front)),
-                Per(i=-1, k=(nkd + n_front, -1)),
-            ]
+            [Per(i=0), Per(k=0), Per(k=-1)]
+            + [Per(i=-1, k=(a, b)) for a, b in itertools.pairwise(k)]
         )
-        assert nkd + n_front + nku == Hin.shape[2] - 1
+        k = np.cumsum([n_per - il1, nkd, n_rear, n_rear, nku])
+        assert k[-1] + n_per - iu1 == nk_out
         Hout.patches.extend(
-            [
-                Per(i=-1),
-                Per(k=0),
-                Per(k=-1),
-                Per(i=0, k=(0, nkd)),
-                Per(i=0, k=(nkd, nkd + n_rear)),
-                Per(i=0, k=(nkd + n_rear, nkd + 2 * n_rear)),
-                Per(i=0, k=(nkd + 2 * n_rear, -1)),
-            ]
+            [Per(i=-1), Per(k=0), Per(k=-1)]
+            + [Per(i=0, k=(a, b)) for a, b in itertools.pairwise(k)]
         )
-        assert nkd + 2 * n_rear + nku == Hout.shape[2] - 1
+
+        # Along the periodic line between the inlet and outlet H blocks, each
+        # face on one line split where a face on the other begins or ends, so
+        # every patch has one partner. Each face as its cells along the line,
+        # and the patch over cells `a` to `b` of it.
+        upper = [
+            (0, iu0, lambda a, b: Per(i=-1, k=(nk_in - b, nk_in - a)), Hin),
+            (iu0, iu1, lambda a, b: Per(i=(a - iu0, b - iu0), k=-1), Hup),
+            (
+                iu1,
+                n_per,
+                lambda a, b: Per(i=0, k=(nk_out - n_per + a, nk_out - n_per + b)),
+                Hout,
+            ),
+        ]
+        lower = [
+            (0, il0, lambda a, b: Per(i=-1, k=(a, b)), Hin),
+            (il0, il1, lambda a, b: Per(i=(a - il0, b - il0), k=0), Hdown),
+            (il1, n_per, lambda a, b: Per(i=0, k=(n_per - b, n_per - a)), Hout),
+        ]
+        breaks = sorted({0, iu0, iu1, il0, il1, n_per})
+        for a, b in itertools.pairwise(breaks):
+            for faces in (upper, lower):
+                for lo, hi, patch, block in faces:
+                    if lo <= a and b <= hi:
+                        block.patches.append(patch(a, b))
+
         up.patches.extend(
             [
                 ember.patch.InletPatch(i=0)
@@ -905,6 +1087,28 @@ def _surfaces(blade, cmap, spf):
     return tuple(np.stack((cmap.mp_from_xr(s[:2]), s[2])) for s in (upper, lower))
 
 
+def _blade_pieces(blade, cmap, spf):
+    """Return the two surfaces and the trailing edge in conformal coordinates.
+
+    Each surface (2, n) from the leading edge to its trailing edge corner,
+    higher-theta first, and the trailing edge (2, n) from the upper corner to
+    the lower. On a round trailing edge, the corners are where each surface's
+    arc begins, and the trailing edge is the arc.
+    """
+    upper, lower = _surfaces(blade, cmap, spf)
+    caps = blade.evaluate_TE_cap(spf)
+    if caps is None:
+        t = np.linspace(0.0, 1.0, 101)[None]
+        return upper, lower, upper[:, -1:] + t * (lower[:, -1:] - upper[:, -1:])
+    # Split each surface at its sample nearest where the arc begins; the
+    # samples are those `_surfaces` evaluates at.
+    m = util.cluster_cosine(N_CHORD)
+    m_upper, m_lower = caps if blade.suction_is_upper else caps[::-1]
+    i_u, i_l = (int(np.argmin(np.abs(m - m_cap))) for m_cap in (m_upper, m_lower))
+    te = np.concatenate((upper[:, i_u:], lower[:, i_l:][:, ::-1][:, 1:]), axis=1)
+    return upper[:, : i_u + 1], lower[:, : i_l + 1], te
+
+
 def _at_arc(curve, s):
     """Return points on a polyline (2, n) at arc lengths `s` from its start."""
     s_curve = util.cum_arc_length(curve)
@@ -917,7 +1121,9 @@ def _norm_arc(curve):
     return s / s[-1]
 
 
-def _blade_loop(upper, lower, LE_split, TE_split, f_front, f_side, f_rear, f_te):
+def _blade_loop(
+    upper, lower, te, LE_split, TE_split, f_front, f_side_u, f_side_l, f_rear, f_te
+):
     """Return the nodes round the blade, clockwise from mid trailing edge.
 
     Clockwise in `(m', theta)`, so that with `k` outward the O block has the
@@ -931,14 +1137,14 @@ def _blade_loop(upper, lower, LE_split, TE_split, f_front, f_side, f_rear, f_te)
 
     # Each surface from its leading edge to its trailing edge corner.
     u_front = piece(upper, S_u, 0.0, LE_split, f_front)
-    u_side = piece(upper, S_u, LE_split, TE_split, f_side)
+    u_side = piece(upper, S_u, LE_split, TE_split, f_side_u)
     u_rear = piece(upper, S_u, TE_split, 1.0, f_rear)
     l_front = piece(lower, S_l, 0.0, LE_split, f_front)
-    l_side = piece(lower, S_l, LE_split, TE_split, f_side)
+    l_side = piece(lower, S_l, LE_split, TE_split, f_side_l)
     l_rear = piece(lower, S_l, TE_split, 1.0, f_rear)
 
     # Across the trailing edge, upper corner to lower.
-    te = upper[:, -1:] + f_te * (lower[:, -1:] - upper[:, -1:])
+    te = _at_arc(te, util.arc_length(te) * f_te)
     n_half = (len(f_te) - 1) // 2
 
     return np.concatenate(
@@ -966,6 +1172,23 @@ def _outward_normals(loop):
         n = 0.25 * np.roll(n, 1, axis=1) + 0.5 * n + 0.25 * np.roll(n, -1, axis=1)
         n /= np.linalg.norm(n, axis=0)
     return np.concatenate((n, n[:, :1]), axis=1)
+
+
+def _landing(point, normal, periodic, offset, pitch):
+    """Return `m'` where a ray from `point` along `normal` meets a periodic line.
+
+    The line `theta = periodic(m') + offset`. Where the ray misses it within
+    two pitches, the `m'` of the point.
+    """
+    s = np.linspace(0.0, 2.0 * pitch, N_RAY)
+    pts = point[:, None] + s[None] * normal[:, None]
+    gap = pts[1] - periodic(pts[0]) - offset
+    k = np.flatnonzero(np.sign(gap[1:]) != np.sign(gap[:-1]))
+    if not len(k):
+        return float(point[0])
+    k = k[0]
+    w = gap[k] / (gap[k] - gap[k + 1])
+    return float(pts[0, k] + w * (pts[0, k + 1] - pts[0, k]))
 
 
 def _periodic_line(blade, cmap, pitch):
@@ -1036,6 +1259,39 @@ def _tfi(bottom, top, left, right):
     xy[:, :, 0], xy[:, :, -1] = bottom, top
     xy[:, 0, :], xy[:, -1, :] = left, right
     return xy
+
+
+def _laplace(blk):
+    """Return a block (2, ni, nk) with its inside nodes each the mean of their
+    four neighbours, its edges as they are.
+
+    Where a face doubles back along the edge next to it, the interpolation
+    between opposite faces folds; this does not, the boundary being near
+    enough convex.
+    """
+    ni, nk = blk.shape[1:]
+    idx = np.arange((ni - 2) * (nk - 2)).reshape(ni - 2, nk - 2)
+    rows, cols = [idx.ravel()], [idx.ravel()]
+    vals = [np.full(idx.size, 4.0)]
+    rhs = np.zeros((2, idx.size))
+    for di, dk in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        i = np.arange(1, ni - 1)[:, None] + di
+        k = np.arange(1, nk - 1)[None, :] + dk
+        i, k = np.broadcast_arrays(i, k)
+        inside = (i > 0) & (i < ni - 1) & (k > 0) & (k < nk - 1)
+        rows.append(idx[inside])
+        cols.append(idx[i[inside] - 1, k[inside] - 1])
+        vals.append(-np.ones(inside.sum()))
+        np.add.at(rhs, (slice(None), idx[~inside]), blk[:, i[~inside], k[~inside]])
+    A = scipy.sparse.csc_matrix(
+        (np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+        shape=(idx.size, idx.size),
+    )
+    solve = scipy.sparse.linalg.factorized(A)
+    out = blk.copy()
+    for c in range(2):
+        out[c, 1:-1, 1:-1] = solve(rhs[c]).reshape(ni - 2, nk - 2)
+    return out
 
 
 def _mult(x, mult):

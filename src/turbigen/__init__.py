@@ -62,6 +62,7 @@ from turbigen.mesh import Mesher, WallSpacing
 from turbigen.metric import LossBreakdown, Metric, SurfaceDissipation
 from turbigen.node import Node
 from turbigen.ohmesh import OH
+from turbigen.ohpmesh import OHPassage
 from turbigen.omesh import OPeriodic
 from turbigen.post import (
     AnnulusPlot,
@@ -133,6 +134,7 @@ __all__ = [
     "Metric",
     "Modal",
     "Node",
+    "OHPassage",
     "OPeriodic",
     "OperatingPoint",
     "PchipAnnulus",
