@@ -67,9 +67,10 @@ LABELS = ("O", "P", "LE", "Pin", "TE", "Pout", "up", "dn")
 N_WALL = 20001
 """Samples along the blade, which nodes on it are placed on."""
 
-MIN_GAP = 0.5
+MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
-they slide."""
+they slide: only a guard against a run of them collapsing, the crowding the
+sliding wants at the trailing edge being well above it."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -438,15 +439,10 @@ class OHPassage(PlaneMesher):
         for name, blk in zip(LABELS, xy):
             assert np.isfinite(blk).all(), f"non-finite coordinates in {name}"
 
-        # Nodes on the blade that stay put when the rest slide along it, by
-        # their fraction of the way round: the cut.
-        held = [0.0, 1.0]
-
         return {
             "xy": xy,
             "cmap": cmap,
             "wall": g["wall"],
-            "held": np.array(held),
             "s_loop": g["s_loop"],
             "control": None,
             "nk_O": layout.nk_O,
@@ -556,7 +552,7 @@ class OHPassage(PlaneMesher):
         tree = cKDTree(wall.T)
         s_wall = util.cum_arc_length(wall)
         gid, shift = topo.gid[0], topo.shift[0] * pitch
-        held = np.round(plane["held"] * (gid.shape[0] - 1)).astype(int)
+        S = s_wall[-1]
 
         # The least gaps between blade nodes, a fraction of those the plane
         # was built with, so a run of nodes cannot gather onto one point.
@@ -597,25 +593,26 @@ class OHPassage(PlaneMesher):
                 X[cp["node"]] = Xc + (X[cp["node"]] - Xc) * cp["f"][:, None]
 
             # Blade nodes to the foot of the perpendicular from the next node
-            # out, no further than half way to either neighbour.
+            # out, no further than half way to either neighbour. The nodes
+            # close in a ring, the cut included, its two instances one turn
+            # of the blade apart.
             w0 = X[gid[:, 0]]
             w0[:, 1] += shift[:, 0]
             w1 = X[gid[:, 1]]
             w1[:, 1] += shift[:, 1]
-            s0 = _unwrap(_project(wall, s_wall, tree, w0), s_wall[-1])
-            s0[0], s0[-1] = 0.0, s_wall[-1]
-            s1 = _unwrap(_project(wall, s_wall, tree, w1), s_wall[-1])
-            lo = np.concatenate(([s0[0]], 0.5 * (s0[:-2] + s0[1:-1]), [s0[-1]]))
-            hi = np.concatenate(([s0[0]], 0.5 * (s0[1:-1] + s0[2:]), [s0[-1]]))
-            s_new = np.clip(s1, lo, hi)
-            s_new[held] = s0[held]
-            # No gap below its least: pushed along from the start, then back
-            # from the end, each end where it is held.
+            s0 = _unwrap(_project(wall, s_wall, tree, w0), S)
+            s1 = _unwrap(_project(wall, s_wall, tree, w1), S)
+            s0[-1] = s0[0] + S
+            s1[-1] = s1[0] + S
+            before = np.concatenate(([s0[-2] - S], s0[:-1]))
+            after = np.concatenate((s0[1:], [s0[1] + S]))
+            s_new = np.clip(s1, 0.5 * (before + s0), 0.5 * (s0 + after))
+            # No gap below its least: pushed along from the cut, then back to
+            # it a turn on.
             s_new = np.maximum.accumulate(s_new - floor) + floor
-            s_new[-1] = s0[-1]
+            s_new[-1] = s_new[0] + S
             s_new = np.minimum.accumulate((s_new - floor)[::-1])[::-1] + floor
-            s_new[0] = s0[0]
-            foot = _at_arc(wall, s_new).T
+            foot = _at_arc(wall, np.mod(s_new, S)).T
             foot[:, 1] -= shift[:, 0]
             X[gid[:, 0]] = foot
         return X
@@ -652,10 +649,10 @@ class OHPassage(PlaneMesher):
         O = xy[0].copy()
         wall = plane["wall"]
         s_wall = util.cum_arc_length(wall)
-        s = _project(wall, s_wall, cKDTree(wall.T), O[:, :, 0].T)
-        s = np.clip(_unwrap(s, s_wall[-1]), 0.0, s_wall[-1])
-        s[0], s[-1] = 0.0, s_wall[-1]
-        O[:, :, 0] = _at_arc(wall, s)
+        S = s_wall[-1]
+        s = _unwrap(_project(wall, s_wall, cKDTree(wall.T), O[:, :, 0].T), S)
+        s[-1] = s[0] + S
+        O[:, :, 0] = _at_arc(wall, np.mod(s, S))
         return [O, *xy[1:]]
 
     def mesh_row(self, machine, i_row, spacing, spf):
