@@ -61,10 +61,15 @@ class PlaneTopology:
         Per block, a boolean mask (ni, nk) of nodes on a boundary of constant
         `x`, which move in `y` only, to sit level with their neighbour inside
         the mesh.
+    stencils : bool, optional
+        Whether to classify the nodes and assemble the stencils the sweeps
+        need. Without them, the topology numbers the nodes and flags the
+        fixed and sliding ones, which is all :func:`polish` needs, much
+        sooner.
 
     """
 
-    def __init__(self, xy, pitch=None, fixed=None, slide=None):
+    def __init__(self, xy, pitch=None, fixed=None, slide=None, stencils=True):
         self.shapes = [blk.shape[1:] for blk in xy]
         self.pitch = pitch
 
@@ -79,7 +84,11 @@ class PlaneTopology:
         is_fixed = self._flag(fixed)
         is_slide = self._flag(slide) & ~is_fixed
 
-        self._build_stencils(is_fixed, is_slide)
+        if stencils:
+            self._build_stencils(is_fixed, is_slide)
+        else:
+            self.fixed = np.flatnonzero(is_fixed)
+            self.slide = np.flatnonzero(is_slide)
 
     #
     # SETUP

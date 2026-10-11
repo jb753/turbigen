@@ -251,6 +251,10 @@ def normal_fraction(m):
 N_CAP = 20001
 """Samples over the rear half of chord on which the round trailing edge is fitted."""
 
+N_SPF_KEPT = 1024
+"""Span fractions a blade keeps its sections' parameters at, before it forgets
+them all: a mesh of a few hundred spanwise planes fits."""
+
 
 def _TE_caps(thickness, tanchi_TE):
     """Return the circle that rounds off each surface's trailing edge.
@@ -772,10 +776,10 @@ class Blade:
         :meth:`evaluate_section` takes, so a caller can split the surfaces
         there. None if the trailing edge is blunt.
         """
-        camber, thickness = self._get_cam_thick(spf)
-        if not thickness.round_TE:
+        caps = self._at_spf(spf)[2]
+        if caps is None:
             return None
-        return tuple(cap[0] for cap in _TE_caps(thickness, camber.tanchi_TE))
+        return tuple(cap[0] for cap in caps)
 
     def _get_cam_thick(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
@@ -783,12 +787,35 @@ class Blade:
         Interpolated between the sections, holding the end ones' values beyond
         them.
         """
-        camber = _interpolate(self.cambers, self.spf, spf)
-        thickness = _interpolate(self.thicknesses, self.spf, spf)
+        return self._at_spf(spf)[:2]
 
-        return CamberLine(
-            camber, *turbigen.util.tand(self.evaluate_chi(spf))
-        ), thickness
+    @functools.cached_property
+    def _by_spf(self):
+        """What :meth:`_at_spf` has worked out, by span fraction."""
+        return {}
+
+    def _at_spf(self, spf):
+        """Return the camber line, thickness and round trailing edge caps,
+        None if blunt, at span fraction `spf`.
+
+        Kept once worked out, as a mesher asks for the same span again and
+        again, for the surfaces, their trailing edge, and the camber line;
+        safe to keep because a blade is frozen, as for
+        :attr:`suction_is_upper`. Keyed by precision as well as value, which
+        the interpolation is carried out in.
+        """
+        key = (np.asarray(spf).dtype.str, float(spf))
+        if key not in self._by_spf:
+            if len(self._by_spf) >= N_SPF_KEPT:
+                self._by_spf.clear()
+            camber = _interpolate(self.cambers, self.spf, spf)
+            thickness = _interpolate(self.thicknesses, self.spf, spf)
+            camber = CamberLine(camber, *turbigen.util.tand(self.evaluate_chi(spf)))
+            caps = None
+            if thickness.round_TE:
+                caps = _TE_caps(thickness, camber.tanchi_TE)
+            self._by_spf[key] = (camber, thickness, caps)
+        return self._by_spf[key]
 
     def evaluate_chi(self, spf):
         """Return the metal angles at the leading and trailing edges [deg].
@@ -880,7 +907,7 @@ class Blade:
             Meridional length of the camber line [m].
 
         """
-        camber, thickness = self._get_cam_thick(spf)
+        camber, thickness, caps = self._at_spf(spf)
 
         dydm = camber.dydm(m)
         chi = np.arctan(dydm)
@@ -903,7 +930,6 @@ class Blade:
         # over the last part of chord, the pressure side's ramp with it, so the
         # share of it that goes on circumferentially closes too.
         if thickness.round_TE:
-            caps = _TE_caps(thickness, camber.tanchi_TE)
             f_s = _round_factor(m, t_s, caps[0], camber.tanchi_TE)
             f_p = _round_factor(m, t_p, caps[1], camber.tanchi_TE)
             t_s, t_p, ramp = t_s * f_s, t_p * f_p, ramp * f_p

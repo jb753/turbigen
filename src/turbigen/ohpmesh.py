@@ -1088,7 +1088,7 @@ class OHPassage(Mesher):
         # The control planes are polished once refined, and how far that
         # moves each node carried to the planes between, as the smoothing is.
         if self.polish_below:
-            fine = _plane_topology(per_plane[j_mid], lay.pitch)
+            fine = _plane_topology(per_plane[j_mid], lay.pitch, stencils=False)
             hold = fine.gid[0][:, : HOLD_FINE + 1].ravel()
             shift = [None] * len(spf)
             for j in j_ctrl:
@@ -1609,16 +1609,19 @@ class OHPassage(Mesher):
         return blocks
 
 
-def _plane_topology(xy, pitch):
+def _plane_topology(xy, pitch, stencils=True):
     """Return the topology of a plane of a row's main blocks `xy`, coarse or
-    refined: the O block's blade nodes fixed, the inlet and outlet sliding."""
+    refined: the O block's blade nodes fixed, the inlet and outlet sliding;
+    with the sweeps' `stencils`, or only what the polish needs."""
     shapes = [B.shape[1:] for B in xy]
     fixed = [np.zeros(sh, dtype=bool) for sh in shapes]
     slide = [np.zeros(sh, dtype=bool) for sh in shapes]
     fixed[0][:, 0] = True
     slide[6][0, :] = True
     slide[7][-1, :] = True
-    return elliptic.PlaneTopology(xy, pitch=pitch, fixed=fixed, slide=slide)
+    return elliptic.PlaneTopology(
+        xy, pitch=pitch, fixed=fixed, slide=slide, stencils=stencils
+    )
 
 
 def _project(wall, s_wall, tree, pts):
