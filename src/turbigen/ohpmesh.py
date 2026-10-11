@@ -118,6 +118,14 @@ DTYPE = np.float32
 finished grid is stored in single precision, and the sweeps run faster in
 it. Only their geometry is worked out in double before."""
 
+N_MINIMAX = 20
+
+S_MAX = 20.0
+"""Logarithm of the largest step between cells the O block's lines are
+searched to."""
+"""Bisections for each line's least worst step, and for the blend that fills
+it, in spacing the O block's lines off the blade."""
+
 GAP_PAIR_MIX = 0.1
 """Share of the fraction of each side's length mixed into the chordwise
 parameter the nodes either side of a tip gap are paired by, so that it keeps
@@ -1293,7 +1301,8 @@ class OHPassage(Mesher):
         through the coarse nodes, one between each pair of block junctions,
         by the matrices `refine`; the O block's blade nodes put back on the
         blade, and each line off it respaced along itself from the wall
-        spacing at the blade to `h` at the outside.
+        spacing at the blade to the first cell of the block beyond it, with
+        the least worst step between. See :func:`_minimax_many`.
         """
         # The O block's blade nodes refined through where they lie along the
         # blade, monotonically, so they stay on it and in order round it.
@@ -1324,7 +1333,8 @@ class OHPassage(Mesher):
                 B = B @ R_k.T
             out.append(B)
 
-        # The O block to the blade and clustered off it.
+        # The O block to the blade and clustered off it, its last cells as
+        # long as the first ones beyond them.
         O = out[0]
         O[:, :, 0] = _at_arc(wall, np.mod(s_f, S))
         nk = lay.nk_O
@@ -1332,9 +1342,7 @@ class OHPassage(Mesher):
         seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
         s = np.concatenate((np.zeros((len(seg), 1)), np.cumsum(seg, axis=1)), axis=1)
         L = s[:, -1]
-        T = L[:, None] * clusterfunc.double.fixed_many(
-            d_wall / L, _outer_spacing(d_wall, lay.h, L, nk) / L, nk
-        )
+        T = _minimax_many(d_wall, _beyond_O(out, lay), L, nk)
         # Every line at once: which coarse segment each new node falls in,
         # and how far along it.
         q = np.clip((T[:, :, None] >= s[:, None, 1:-1]).sum(axis=2), 0, len(s[0]) - 2)
@@ -1883,30 +1891,108 @@ def _gap_plane(W, corners, frac, nk_O):
     return [O, H]
 
 
-def _outer_spacing(d_wall, h, L, n):
-    """Return the spacing at the outside of lines of length `L` (m,) and
-    `n` nodes, `d_wall` (m,) at their other ends, for cells `h` beyond them.
+def _beyond_O(out, lay):
+    """Return the length of the first cell beyond each node of the O block's
+    outer face, in the refined blocks `out` of a plane.
 
-    `h` where a line is long enough to grow to it smoothly; on a shorter
-    line, the geometric mean of `h` and the spacing a geometric
-    progression from `d_wall` reaches over the line. Holding `h` there
-    squeezes the cells before it below the wall spacing and steps up by
-    several times into the last; growing only as the progression does
-    moves the whole step to the next block. The mean shares it between
-    the two.
+    Taken from the passage block on the sides of the blade, the block ahead
+    of the leading edge round the front, and the one behind the trailing
+    edge round the rear; at a corner, the mean of the two blocks that meet
+    there. Not `h`: those blocks are refined as fractions of their lengths
+    set at mid-span, and on a swept plane their first cells differ from it
+    by up to twice either way.
+    """
+    O, P, LE, _, TE = out[:5]
+    n = O.shape[1]
+    i3, i4, i1, i2 = lay.i_corners()
+    total = np.zeros(n)
+    count = np.zeros(n)
+    rear = np.concatenate((np.arange(i3, -1, -1), np.arange(n - 2, i2 - 1, -1)))
+    for idx, face, next_ in (
+        (np.arange(i1, i2 + 1), P[:, :, 0], P[:, :, 1]),
+        (np.arange(i4, i3 - 1, -1), P[:, :, -1], P[:, :, -2]),
+        (np.arange(i4, i1 + 1), LE[:, -1, :], LE[:, -2, :]),
+        (rear, TE[:, 0, :], TE[:, 1, :]),
+    ):
+        assert len(idx) == face.shape[1], "O block outer face out of step"
+        total[idx] += np.linalg.norm(next_ - face, axis=0)
+        count[idx] += 1
+    count[-1], total[-1] = count[0], total[0]
+    return total / count
+
+
+def _minimax_many(d, h, L, n):
+    """Return `n` nodes (m, n) along lines of length `L` (m,), from first
+    cells `d` (m,) to last cells `h`, with the least worst step between
+    cells.
+
+    In the logarithm of cell length, a line from `log d` to `log h` whose
+    slope never exceeds `s`, the logarithm of the worst step: the least `s`
+    for which the tent rising from both ends at slope `s` holds at least
+    `L` and the valley falling from both does not hold more; then the cells
+    a blend of the two in the logarithm, which keeps every slope within `s`,
+    weighted to fill `L`. A long line grows from the wall and shrinks to `h`,
+    a short one shrinks and grows. Vinokur's stretching between the same
+    end spacings puts its steepest steps at the ends, up to four times on
+    an O block whose thickness varies sixfold round the blade.
     """
     N = n - 1
-    lo = np.ones_like(L)
-    hi = np.full_like(L, 2.0)
-    # Bisect for the ratio q of the progression, d_wall (q^N - 1)/(q - 1) = L.
-    for _ in range(60):
-        q = 0.5 * (lo + hi)
-        total = d_wall * np.where(q > 1.0, (q**N - 1.0) / np.maximum(q - 1.0, 1e-30), N)
-        long = total < L
-        lo = np.where(long, q, lo)
-        hi = np.where(long, hi, q)
-    d_geo = np.where(L > N * d_wall, d_wall * lo ** (N - 1), L / N)
-    return np.minimum(np.minimum(h, np.sqrt(h * d_geo)), L / 2)
+    k = np.arange(N)[None]
+    l0 = np.log(np.asarray(d, dtype=float))[:, None]
+    le = np.log(np.broadcast_to(np.asarray(h, dtype=float), np.shape(d)))[:, None]
+    L = np.asarray(L, dtype=float)
+
+    def tent_valley(s):
+        s = s[:, None]
+        U = np.minimum(l0 + k * s, le + (N - 1 - k) * s)
+        D = np.maximum(l0 - k * s, le - (N - 1 - k) * s)
+        return U, D
+
+    A, B = np.exp(l0[:, 0]), np.exp(le[:, 0])
+    dl = le[:, 0] - l0[:, 0]
+
+    def runs(s, n):
+        """Sum of `n` cells growing at ratio exp(s) from one, n where s = 0."""
+        small = np.abs(s) < 1e-12
+        safe = np.where(small, 1.0, s)
+        return np.where(small, n, np.expm1(n * safe) / np.expm1(safe))
+
+    def fits(s):
+        # The tent and the valley are each two geometric runs, which meet
+        # where the run from either end overtakes the other.
+        safe = np.maximum(s, 1e-300)
+        kt = np.clip(np.floor((dl + (N - 1) * s) / (2.0 * safe)), -1, N - 1)
+        tent = A * runs(s, kt + 1) + B * runs(s, N - 1 - kt)
+        kv = np.clip(np.floor((-dl + (N - 1) * s) / (2.0 * safe)), -1, N - 1)
+        valley = A * runs(-s, kv + 1) + B * runs(-s, N - 1 - kv)
+        return (valley <= L) & (tent >= L)
+
+    lo = np.abs(le - l0)[:, 0] / max(N - 1, 1)
+    # Widened until every line fits, up to steps of exp(S_MAX): a line shorter
+    # than its two end cells fits none, and takes the valley there, rescaled.
+    hi = lo + 1.0
+    for _ in range(8):
+        short = ~fits(hi) & (hi < S_MAX)
+        if not short.any():
+            break
+        hi = np.where(short, np.minimum(2.0 * hi, S_MAX), hi)
+    ok = fits(lo)
+    for _ in range(N_MINIMAX):
+        mid = 0.5 * (lo + hi)
+        good = fits(mid)
+        hi = np.where(good, mid, hi)
+        lo = np.where(good, lo, mid)
+    s = np.where(ok, lo, hi)
+    U, D = tent_valley(s)
+    a, b = np.zeros(len(L)), np.ones(len(L))
+    for _ in range(N_MINIMAX):
+        mid = 0.5 * (a + b)
+        under = np.exp(D + mid[:, None] * (U - D)).sum(axis=1) < L
+        a = np.where(under, mid, a)
+        b = np.where(under, b, mid)
+    cells = np.exp(D + a[:, None] * (U - D))
+    cells *= (L / cells.sum(axis=1))[:, None]
+    return np.concatenate((np.zeros((len(L), 1)), np.cumsum(cells, axis=1)), axis=1)
 
 
 def _respace_gap_O(O, d_wall):
