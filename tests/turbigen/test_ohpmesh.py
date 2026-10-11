@@ -5,14 +5,17 @@ the tests run in reasonable time. The gap is two blocks inside the outline the
 blade would have had, an O block and an H block, so these check that they fit
 the rest of the mesh node for node, that the blade surface and endwalls are
 read off it as they would be off an H mesh's gridded tip, and that the cells
-in the gap are fit to solve on.
+in the gap are fit to solve on. The rest guard what has gone wrong before:
+steps in spacing along the blade and across the O block, poor cells in the
+main blocks, and a guessed flow turned the wrong way in the blocks whose `i`
+does not run downstream.
 """
 
 import numpy as np
 import pytest
 from test_blade import ROUND, blade, build
 
-from turbigen import OHPassage, util
+from turbigen import OHPassage, guess, util
 from turbigen.ohpmesh import _cell_angles
 
 MESH = {
@@ -171,3 +174,63 @@ def test_rows_with_different_clearances_are_refused():
 def test_inconsistent_tip_settings_are_refused(kwargs):
     with pytest.raises(ValueError):
         OHPassage.from_dict({"type": "ohp", **kwargs})
+
+
+def _cartesian(block):
+    xrt = block.xrt.astype(float)
+    r, t = xrt[..., 1], xrt[..., 2]
+    return np.stack((xrt[..., 0], r * np.cos(t), r * np.sin(t)), axis=-1)
+
+
+def _steps(d, axis):
+    """Ratio of each cell length `d` to the next along `axis`, either way up."""
+    n = d.shape[axis]
+    r = np.take(d, range(1, n), axis) / np.take(d, range(n - 1), axis)
+    return np.maximum(r, 1.0 / r)
+
+
+def test_the_spacing_along_the_blade_does_not_step(grid):
+    # Up to four times where a round trailing edge met the surfaces, once.
+    for i_row in (0, 1):
+        wall = _cartesian(blocks_of_row(grid, i_row)["O"])[:, :, 0]
+        d = np.linalg.norm(np.diff(wall, axis=0), axis=-1)
+        d = np.concatenate((d[-1:], d, d[:1]))  # round the cut
+        assert _steps(d, 0).max() < 2.0, i_row
+
+
+def test_no_block_steps_sharply_along_i_or_k(grid):
+    # Across the O block on short lines, and where the blocks behind the
+    # blade meet the passage's, up to four times once. Spanwise is left out:
+    # the clearance's spacing meets the main span's there.
+    for block in grid:
+        xyz = _cartesian(block)
+        for axis in (0, 2):
+            d = np.linalg.norm(np.diff(xyz, axis=axis), axis=-1)
+            assert _steps(d, axis).max() < 3.0, (block.label, "ik"[axis // 2])
+
+
+def test_the_cells_in_the_main_blocks_are_not_badly_skewed(grid):
+    for block in grid:
+        if "tip" in block.label:
+            continue
+        rt = block.r * block.t
+        worst = min(
+            _cell_angles(np.stack((block.x[:, j, :], rt[:, j, :]))).min()
+            for j in range(block.shape[1])
+        )
+        assert worst > 25.0, block.label
+
+
+def test_the_guess_follows_the_mean_line_in_every_block(machine, grid):
+    # Aligned with the grid lines of blocks whose `i` runs across the pitch
+    # or round the blade, the guess once took its tangential velocity of
+    # either sign there, and started the rotor supersonic.
+    guess.apply(grid, machine)
+    Vt = guess.meridional(machine, grid[0].fluid).Vt
+    lo, hi = Vt.min(), Vt.max()
+    slack = 0.15 * (hi - lo)
+    for block in grid:
+        assert lo - slack < block.Vt.min(), block.label
+        assert block.Vt.max() < hi + slack, block.label
+        W = np.sqrt(block.Vx**2 + block.Vr**2 + (block.Vt - block.U) ** 2)
+        assert (W / block.a).max() < 1.05, block.label
