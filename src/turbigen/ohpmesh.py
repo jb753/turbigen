@@ -18,8 +18,14 @@ the passage, and the edges of the inlet and outlet H blocks. The corners are
 the points of the O block's outline nearest the corners of its bounding box,
 the box turned to the stagger of the blade, up to a limit.
 
-Each constant-`j` plane is a surface of constant span fraction meshed in its
-conformal coordinates `(m', theta)`, as in :mod:`turbigen.ohmesh`. It is built
+Every block runs from hub to casing in `j`, and every constant-`j` plane is a
+surface of constant span fraction of the annulus --- the surface the blade
+section at that span fraction lies on. Each is meshed in its conformal
+coordinates `(m', theta)`, `dm' = dm / r`, in which the surface of revolution
+is a plane and angles are angles on the surface: a mesh orthogonal there is
+orthogonal on the stream surface, and the blade and its metal angles appear
+undistorted, `dtheta/dm' = tan(chi)`, at any radius. Node counts are fixed
+once per row, at mid-span, and reused at every span. A plane is built
 and smoothed coarse, with cells the size of those the free stream needs, and
 fewer only where the blade turns too sharply for them. It is smoothed by
 point-Jacobi sweeps of Winslow's equations. Each sweep, the corners take the
@@ -36,6 +42,12 @@ nodes go at fractional indices of the coarse ones, on cubic splines through
 them, each spline running only between the junctions of blocks, so blocks
 that share a stretch of edge still match. The O block is clustered to the
 wall spacing at the blade, respaced along its smoothed lines.
+
+A row with a tip gap has two more blocks, from a spanwise node at the top of
+the blade to the casing, inside the outline the blade would have had: an O
+block, whose outer face is the O block's inner one over the gap, renoded and
+joined to it by a non-matching interface, and an H block filling it from the
+leading edge to the trailing edge. See :meth:`OHPassage._tip_gap`.
 """
 
 import dataclasses
@@ -43,7 +55,9 @@ import itertools
 import logging
 from typing import ClassVar
 
+import ember.block
 import ember.elliptic
+import ember.grid
 import ember.patch
 import numpy as np
 import scipy.interpolate
@@ -53,27 +67,30 @@ from scipy.spatial import cKDTree
 
 from turbigen import clusterfunc, elliptic, util
 from turbigen.hmesh import _by_theta
-from turbigen.ohmesh import (
-    _J,
-    ConformalMap,
-    PlaneMesher,
-    _at_arc,
-    _blade_pieces,
-    _double,
-    _line,
-    _mult,
-    _norm_arc,
-    _outward_normals,
-    _periodic_line,
-    _single,
-    _tfi,
-)
-from turbigen.omesh import POLISH_POWER
+from turbigen.mesh import Mesher
 
 logger = logging.getLogger("turbigen")
 
 LABELS = ("O", "P", "LE", "Pin", "TE", "Pout", "up", "dn")
 """Block names, in the order blocks are held."""
+
+N_MERID = 4001
+"""Samples along a span line from which its conformal coordinate is integrated."""
+
+N_CHORD = 4000
+"""Chordwise samples of a blade surface, which nodes are interpolated along."""
+
+N_SMOOTH_NORMAL = 10
+"""Passes of a three-point average over the blade normals the O block is
+extruded along, so they fan round corners rather than cross."""
+
+SLOPE_MAX = 1.0
+"""Largest `dtheta/dm'` the initial periodic line is extended at beyond the
+blade, being the tangent of 45 degrees. Only a starting guess: the line floats."""
+
+POLISH_POWER = 4.0
+"""Power the polish raises each cell corner's shape measure to, so that the
+worst cells dominate rather than being traded for small gains elsewhere."""
 
 N_WALL = 20001
 """Samples along the blade, which nodes on it are placed on."""
@@ -97,6 +114,78 @@ MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
 they slide: only a guard against a run of them collapsing, the crowding the
 sliding wants at the trailing edge being well above it."""
+
+
+class ConformalMap:
+    """Conformal coordinates on one surface of constant span fraction.
+
+    Parameters
+    ----------
+    annulus : Annulus
+        The annulus the surface is in.
+    spf : float
+        Span fraction of the surface.
+    m_lo, m_hi : float
+        Range of annulus meridional coordinate to cover.
+
+    """
+
+    def __init__(self, annulus, spf, m_lo, m_hi):
+        self.annulus = annulus
+        self.spf = spf
+        self.m = np.linspace(m_lo, m_hi, N_MERID)
+        self.xr = annulus.evaluate_xr(self.m, spf)
+        ds = np.linalg.norm(np.diff(self.xr, axis=1), axis=0)
+        r_mid = 0.5 * (self.xr[1, 1:] + self.xr[1, :-1])
+        self.mp = np.concatenate(([0.0], np.cumsum(ds / r_mid)))
+        self._tree = cKDTree(self.xr.T)
+
+    def m_from_mp(self, mp):
+        """Return annulus meridional coordinate at conformal coordinate `mp`."""
+        return np.interp(mp, self.mp, self.m)
+
+    def mp_from_m(self, m):
+        """Return conformal coordinate at annulus meridional coordinate `m`."""
+        return np.interp(m, self.m, self.mp)
+
+    def xr_from_mp(self, mp):
+        """Return axial and radial coordinates (2, ...) on the surface at `mp`.
+
+        Evaluated on the annulus itself rather than interpolated, so every node
+        lies exactly on the surface it was meshed on.
+        """
+        mp = np.asarray(mp)
+        # Allowed past the ends by the rounding of its precision there, in
+        # which a node put on an end can come out a little beyond it.
+        eps = np.finfo(mp.dtype).eps if mp.dtype.kind == "f" else 0.0
+        tol = max(1e-9, 16 * eps * np.abs(self.mp).max())
+        if mp.min() < self.mp[0] - tol or mp.max() > self.mp[-1] + tol:
+            raise ValueError("Conformal coordinate outside the mapped range.")
+        mp = np.clip(mp, self.mp[0], self.mp[-1])
+        return self.annulus.evaluate_xr(self.m_from_mp(mp), self.spf)
+
+    def mp_from_xr(self, xr):
+        """Return the conformal coordinate of points (2, n) on the surface.
+
+        Each point is projected onto the nearer of the two sampled segments
+        either side of its nearest sample.
+        """
+        pts = np.reshape(xr, (2, -1)).T
+        _, near = self._tree.query(pts)
+        n = len(self.m)
+        best_mp = np.zeros(len(pts))
+        best_d = np.full(len(pts), np.inf)
+        for seg in (near - 1, near):
+            seg = np.clip(seg, 0, n - 2)
+            a = self.xr[:, seg].T
+            ab = self.xr[:, seg + 1].T - a
+            t = np.clip(np.sum((pts - a) * ab, 1) / np.sum(ab**2, 1), 0.0, 1.0)
+            d = np.linalg.norm(a + t[:, None] * ab - pts, axis=1)
+            better = d < best_d
+            best_d[better] = d[better]
+            mp = self.mp[seg] + t * (self.mp[seg + 1] - self.mp[seg])
+            best_mp[better] = mp[better]
+        return best_mp.reshape(np.shape(xr)[1:])
 
 
 @dataclasses.dataclass(frozen=True)
@@ -158,15 +247,27 @@ class _Layout:
         return i3, i3 + n[1], i3 + n[1] + n[2], i3 + n[1] + n[2] + n[3]
 
 
-class OHPassage(PlaneMesher):
+class OHPassage(Mesher):
     """Generate a mesh with an O block round each blade and a passage block
     between neighbouring O blocks, smoothed coarse and refined where needed."""
 
     type: ClassVar[str] = "ohp"
 
     labels: ClassVar[tuple] = LABELS
+    """Names of the blocks of a row, in the order :meth:`plane` returns them."""
 
-    grids_round_TE: ClassVar[bool] = True
+    dspf_mid: float = 0.03
+    """Spanwise grid spacing at midspan, as a fraction of span."""
+
+    ER_span: float = 1.2
+    """Expansion ratio of spanwise grid away from hub and casing."""
+
+    resolution_factor: float = 1.0
+    """Multiply the number of points in each direction, keeping relative spacings."""
+
+    n_span_smooth: int = 9
+    """Number of spanwise planes to smooth, hub and casing included. The rest
+    are interpolated between them. Zero smooths every plane."""
 
     ds: float = 0.01
     """Cell size along the blade between its edges, next to the O block and
@@ -224,20 +325,28 @@ class OHPassage(PlaneMesher):
     onto 0 to 90 degrees, is under this are polished: within three cells of
     it, short of the O block's first layers. None if zero."""
 
-    def forward(self, machine, spacing):
-        """Generate a Grid for a designed machine."""
-        for i_row, row in enumerate(machine.rows):
-            if not row.blade.round_TE:
-                raise ValueError(
-                    f"Row {i_row} has a blunt trailing edge, which the "
-                    f"{type(self).__name__} mesher does not grid: its blade nodes "
-                    f"slide along the blade, and would gather at the corners. "
-                    f"Round it off with round_TE: true."
-                )
-        return super().forward(machine, spacing)
+    njtip_min: int = 9
+    """Least number of spanwise nodes across a tip gap, one more than a
+    multiple of eight."""
+
+    nk_tip: int = 9
+    """Least number of nodes across the H block of a tip gap, from one side
+    of the blade to the other, one more than a multiple of eight. More if the
+    blade has more nodes on one side than the other: see :meth:`_tip_gap`."""
+
+    nk_tip_O: int = 9
+    """Nodes across the O block of a tip gap, from the H block to the outline
+    of the blade, one more than a multiple of eight."""
+
+    t_tip_O: float = 0.25
+    """Thickness of the O block of a tip gap before it is polished, as a
+    fraction of the local thickness of the blade."""
+
+    n_polish_tip: int = 1000
+    """Iterations of the target-matrix optimisation that squares up the
+    cells of a tip gap."""
 
     def __post_init__(self):
-        self._check_end_shear()
         if min(self.ds, self.ds_LE, self.ds_free, self.t_O) <= 0.0:
             raise ValueError("ds, ds_LE, ds_free and t_O must be positive.")
         if not self.ds_LE <= self.ds <= self.ds_free:
@@ -253,6 +362,142 @@ class OHPassage(PlaneMesher):
             raise ValueError(
                 f"polish_below={self.polish_below} must be from zero to 90 degrees."
             )
+        for name in ("njtip_min", "nk_tip", "nk_tip_O"):
+            n = getattr(self, name)
+            if n < 9 or (n - 1) % 8:
+                raise ValueError(
+                    f"{name}={n} is not a count a multigrid level can halve; "
+                    f"give it nine or more, one above a multiple of eight."
+                )
+        if not 0.0 < self.t_tip_O < 0.5:
+            raise ValueError(f"t_tip_O={self.t_tip_O} must be between zero and 0.5.")
+
+    #
+    # THE STAGE
+    #
+
+    def forward(self, machine, spacing):
+        """Generate a Grid for a designed machine."""
+        for i_row, row in enumerate(machine.rows):
+            if not row.blade.round_TE:
+                raise ValueError(
+                    f"Row {i_row} has a blunt trailing edge, which the "
+                    f"{type(self).__name__} mesher does not grid: its blade nodes "
+                    f"slide along the blade, and would gather at the corners. "
+                    f"Round it off with round_TE: true."
+                )
+            if row.tip_gap < 0.0:
+                raise ValueError(
+                    f"Row {i_row} has a negative tip gap of {row.tip_gap:.3g} m; "
+                    f"the {type(self).__name__} mesher grids casing clearances only."
+                )
+
+        tip = self._tip_fraction(machine)
+        span_ref = machine.annulus.evaluate_span(1)
+        spf = self.spanwise_grid(spacing.hub / span_ref, spacing.casing / span_ref, tip)
+        logger.debug(f"{type(self).__name__} spanwise points: {len(spf)}")
+
+        # The node at the top of the blade, which the blocks in a clearance
+        # start from. Found by value rather than counted out of
+        # `spanwise_grid`, which puts it there exactly.
+        jtip = None
+        if tip:
+            jtip = int(np.argmin(np.abs(spf - (1.0 - tip))))
+            assert spf[jtip] == 1.0 - tip, f"spf={spf[jtip]} against {1.0 - tip}"
+
+        blocks = []
+        for i_row, row in enumerate(machine.rows):
+            j = jtip if row.tip_gap else None
+            blocks.append(self.mesh_row(machine, i_row, spacing, spf, j))
+
+        _stitch_mixing_planes([row[: len(self.labels)] for row in blocks], self.labels)
+        grid = ember.grid.Grid([b for row in blocks for b in row])
+        grid.connectivity.periodic.pair()
+        return grid
+
+    def _tip_fraction(self, machine):
+        """Return the tip gap of the rows that have one, as a fraction of span.
+
+        Every row is meshed on one spanwise grid, because a mixing plane
+        matches its two sides span for span, and the blocks in a clearance
+        meet the rest at a node at the top of the blade. So the rows that
+        have a gap must have the same one as a fraction of span, the span of
+        a row being its mean over its leading and trailing edges, as the blade
+        has it when its clearance is given as a fraction of span.
+        """
+        annulus = machine.annulus
+        frac = np.array(
+            [
+                row.tip_gap / np.mean(annulus.evaluate_span([2 * i + 1, 2 * i + 2]))
+                for i, row in enumerate(machine.rows)
+            ]
+        )
+        gaps = frac[frac > 0.0]
+        if not gaps.size:
+            return 0.0
+        if not np.allclose(gaps, gaps[0], rtol=1e-6):
+            raise ValueError(
+                f"The {type(self).__name__} mesher puts a grid line at the top "
+                f"of the blade, and every row is meshed on one spanwise grid, so "
+                f"the rows that have a clearance must have the same one as a "
+                f"fraction of span. This machine has {frac}."
+            )
+        return float(gaps[0])
+
+    def spanwise_grid(self, dspf_hub, dspf_casing, tip=0.0):
+        """Return the spanwise grid vector given hub and casing spacings.
+
+        With a tip gap, a fraction `tip` of span, two pieces joined at a node
+        at the top of the blade: the main span, and at least
+        :attr:`njtip_min` nodes across the gap, spaced at the casing spacing
+        or finer.
+        """
+        if not tip:
+            return util.resample(
+                clusterfunc.double.free(
+                    dspf_hub, dspf_casing, self.dspf_mid, self.ER_span
+                ),
+                self.resolution_factor,
+                mult=8,
+            )
+
+        L_main = 1.0 - tip
+        dspf_tip = min(dspf_casing, tip / (self.njtip_min - 1))
+        spf_main = clusterfunc.double.free(
+            dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, L_main
+        )
+        try:
+            spf_tip = clusterfunc.double.free(
+                dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span, L_main, 1.0
+            )
+        except clusterfunc.exceptions.ClusteringException:
+            spf_tip = clusterfunc.double.fixed(
+                dspf_tip, dspf_tip, self.njtip_min, L_main, 1.0
+            )
+        spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
+        spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
+        # Each piece is a block's span in the clearance, so each a count a
+        # multigrid level can halve, and the gap no fewer than asked.
+        spf_tip = util.resample_to(
+            spf_tip, max(_up8(len(spf_tip) - 1) + 1, self.njtip_min)
+        )
+        spf_main = util.resample_to(spf_main, _up8(len(spf_main) - 1) + 1)
+        spf_main[-1] = spf_tip[0] = L_main
+        return np.concatenate((spf_main[:-1], spf_tip))
+
+    def control_planes(self, spf):
+        """Return the indices of the spanwise planes that are smoothed.
+
+        Evenly spaced in index, so following the spanwise clustering, and
+        always including the hub and the casing. Every plane if
+        :attr:`n_span_smooth` is zero.
+        """
+        nj = len(spf)
+        if not self.n_span_smooth or self.n_span_smooth >= nj:
+            return np.arange(nj)
+        return np.unique(
+            np.round(np.linspace(0, nj - 1, self.n_span_smooth)).astype(int)
+        )
 
     #
     # GEOMETRY
@@ -445,6 +690,10 @@ class OHPassage(PlaneMesher):
         nf_rl = max(nf[0], 2)
         nf_ru = max(nf[4], 2)
         nf_ru += -(nf_rl + nf_ru) % 8
+        # The H block of a tip gap takes half the cells round the blade along
+        # each side, and its counts must halve under multigrid too.
+        if row.tip_gap:
+            nf_ru += -(nf_rl + nf_ru + 2 * nf_side + nf_front) % 16
 
         def along(j, m):
             """Fractional coarse indices of `m` refined cells along piece `j`."""
@@ -797,8 +1046,8 @@ class OHPassage(PlaneMesher):
         )
         return X
 
-    def mesh_row(self, machine, i_row, spacing, spf):
-        """Return the ember blocks of one row."""
+    def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
+        """Return the ember blocks of one row, with a tip gap from `jtip`."""
         lay = self.layout(machine, i_row, spacing)
         planes = [self.plane(machine, i_row, lay, s) for s in spf]
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
@@ -858,7 +1107,7 @@ class OHPassage(PlaneMesher):
                 shift[j] = self._polish_shift(xy, planes[j])
             for p, d in zip(planes, between(shift)):
                 p["polish_shift"] = d
-        return self.assemble(machine, i_row, lay, planes, topo, X_smooth)
+        return self.assemble(machine, i_row, lay, planes, topo, X_smooth, jtip)
 
     def finish(self, xy, plane):
         """Return the blocks of a smoothed coarse plane, refined, and moved by
@@ -1013,13 +1262,127 @@ class OHPassage(PlaneMesher):
         return polished - X
 
     #
+    # TIP GAP
+    #
+
+    def _tip_gap(self, layout, planes, per_plane):
+        """Return the blocks of a tip gap on each plane, and where they meet.
+
+        Two blocks, inside the outline the blade would have had: an O block
+        whose outer face is the O block round the blade's inner one, node for
+        node, and an H block filling the O block, running `i` from the
+        leading edge to the trailing edge and `k` from the lower side of the
+        blade to the upper. The corners of the H block are where its edges
+        meet the O block's inner face, at `i` of it `iA` and `iB` along the
+        lower side, `iC` and `iD` along the upper.
+
+        The O block round the blade has more nodes along one side than the
+        other where the passage block meets it further back along the upper
+        side than the lower, and they do not line up chordwise, so the gap does
+        not take its nodes. Its outline is that face renoded, the same number
+        of nodes in all, half along each side of the blade at the same
+        fractions of each side's length, and joined to the O block round the
+        blade by a non-matching interface. The H block then runs straight
+        across the blade, its ends :attr:`nk_tip` across. Each plane is
+        built algebraically, the plane at the tip of the blade then squared
+        up by target-matrix optimisation, and the correction that made
+        carried to the planes above, whose outline barely changes. Last, each
+        line of the gap's O block is respaced to the wall spacing at the
+        outline, so its cells there match those of the O block round the
+        blade.
+
+        Parameters
+        ----------
+        layout : _Layout
+            The row's layout.
+        planes : list of dict
+            The planes in the gap, from the tip of the blade to the casing.
+        per_plane : list of list
+            The finished blocks (2, ni, nk) of each of `planes`.
+
+        Returns
+        -------
+        gap : list of list
+            The O and H blocks (2, ni, nk) of each plane.
+        corners : tuple of int
+            `iA`, `iB`, `iC`, `iD`.
+
+        """
+        walls = [np.asarray(xy[0][:, :, 0], dtype=float) for xy in per_plane]
+        frac = _gap_fractions(walls[0])
+        walls = [_gap_outline(W, frac) for W in walls]
+        corners = _gap_corners(walls[0], self.nk_tip)
+        alg = [_gap_plane(W, corners, self.t_tip_O, self.nk_tip_O) for W in walls]
+
+        fixed = [np.zeros(B.shape[1:], dtype=bool) for B in alg[0]]
+        fixed[0][:, -1] = True
+        topo = elliptic.PlaneTopology(alg[0], fixed=fixed)
+        X0 = topo.gather(alg[0])
+        X = elliptic.polish(
+            topo,
+            X0,
+            np.arange(topo.n_node),
+            rings=0,
+            max_iter=self.n_polish_tip,
+            power=POLISH_POWER,
+        )
+        dX = X - X0
+
+        gap = []
+        for xy, W, plane in zip(alg, walls, planes):
+            tO, tH = topo.scatter(topo.gather(xy) + dX)
+            d_wall = layout.d_wall / plane["cmap"].xr_from_mp(W[0])[1]
+            tO = _respace_gap_O(tO, d_wall)
+            tO = tO.astype(DTYPE)
+            tO[:, :, -1] = W
+            gap.append([tO, tH.astype(DTYPE)])
+            for B in gap[-1]:
+                assert np.isfinite(B).all(), "non-finite coordinates in tip gap"
+
+        worst = min(_cell_angles(B).min() for B in gap[0])
+        logger.debug(
+            f"Tip gap: O {gap[0][0].shape[1:]}, H {gap[0][1].shape[1:]}, "
+            f"corners {corners}, worst cell corner {worst:.1f} deg"
+        )
+        return gap, corners
+
+    #
     # BLOCKS
     #
 
-    def assemble(self, machine, i_row, layout, planes, topo, X_smooth):
-        """Return ember blocks from the smoothed planes of a row."""
+    def blocks(self, machine, i_row, planes, per_plane, labels):
+        """Return bare ember blocks, without patches, from finished planes.
+
+        `per_plane` holds the blocks (2, ni, nk) of each of `planes` in its
+        conformal coordinates, in the order `labels` names them.
+        """
+        nj = len(planes)
+        blocks = []
+        for b, name in enumerate(labels):
+            ni, nk = per_plane[0][b].shape[1:]
+            xrt = np.empty((3, ni, nj, nk), dtype=per_plane[0][b].dtype)
+            for j, (plane, xy) in enumerate(zip(planes, per_plane)):
+                xrt[:2, :, j, :] = plane["cmap"].xr_from_mp(xy[b][0])
+                xrt[2, :, j, :] = xy[b][1]
+            block = ember.block.Block(shape=(ni, nj, nk))
+            block.set_label(f"row{i_row}_{name}")
+            block.set_Nb(machine.rows[i_row].n_blade)
+            block.set_x(xrt[0])
+            block.set_r(xrt[1])
+            block.set_t(xrt[2])
+            for dim, n in zip("ijk", block.shape):
+                assert not (n - 1) % 8, f"{name}: n{dim}-1={n - 1} not divisible by 8"
+            blocks.append(block)
+        return blocks
+
+    def assemble(self, machine, i_row, layout, planes, topo, X_smooth, jtip=None):
+        """Return ember blocks from the smoothed planes of a row, with the two
+        blocks of a tip gap from `jtip` after the rest."""
         n_row = len(machine.rows)
-        blocks = self.blocks(machine, i_row, planes, topo, X_smooth)
+        per_plane = [
+            self.finish(topo.scatter(X), plane) for X, plane in zip(X_smooth, planes)
+        ]
+        blocks = self.blocks(machine, i_row, planes, per_plane, self.labels)
         O, P, LE, Pin, TE, Pout, up, dn = blocks
         i3, i4, i1, i2 = layout.i_corners()
         nkP = P.shape[2] - 1
@@ -1063,6 +1426,45 @@ class OHPassage(PlaneMesher):
                 Per(k=-1),
             ]
         )
+        if jtip is None:
+            return blocks
+
+        # Over the gap the blade's outline is the face the O block of the gap
+        # shares with the O block round the blade, noded differently.
+        NonMatch = ember.patch.NonMatchPatch
+        O.patches.append(NonMatch(k=0, j=(jtip, -1), label="tip_gap"))
+        gap, (iA, iB, iC, iD) = self._tip_gap(layout, planes[jtip:], per_plane[jtip:])
+        tO, tH = self.blocks(machine, i_row, planes[jtip:], gap, ("tipO", "tipH"))
+        N = tO.shape[0] - 1
+        tO.patches.extend(
+            [
+                Per(i=0, label="tip_cut0"),
+                Per(i=-1, label="tip_cut1"),
+                NonMatch(k=-1, label="tip_outline"),
+                Per(i=(iA, iB), k=0, label="tip_lower"),
+                Per(i=(iB, iC), k=0, label="tip_front"),
+                Per(i=(iC, iD), k=0, label="tip_upper"),
+            ]
+        )
+        # The rear of the H block runs round the trailing edge, across the cut.
+        if iD < N:
+            tO.patches.append(Per(i=(iD, -1), k=0, label="tip_rear_upper"))
+        if iA > 0:
+            tO.patches.append(Per(i=(0, iA), k=0, label="tip_rear_lower"))
+        tH.patches.extend([Per(k=0), Per(k=-1), Per(i=0)])
+        if 0 < iA < tH.shape[2] - 1:
+            tH.patches.extend([Per(i=-1, k=(0, iA)), Per(i=-1, k=(iA, -1))])
+        else:
+            tH.patches.append(Per(i=-1))
+
+        # Walls turn with their block unless a `RotatingPatch` overrides
+        # them, so the casing over a tip gap needs one on every block; `bconds`
+        # sets its speed. The j = 0 faces of the gap's blocks are the tip of
+        # the blade, a wall turning with the row, which is what an unpatched
+        # face already means.
+        blocks += [tO, tH]
+        for blk in blocks:
+            blk.patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
         return blocks
 
 
@@ -1122,6 +1524,149 @@ def _pairs(marks):
 def _up8(n):
     """Return `n` rounded up to a multiple of eight, at least eight."""
     return max(8, 8 * int(np.ceil(n / 8)))
+
+
+def _gap_corners(W, nk_tip):
+    """Return where the H block of a tip gap has its corners round outline `W`.
+
+    `W` (2, N + 1) is the outline of the blade, clockwise from the middle of
+    the trailing edge, and `N` a multiple of sixteen. The H block takes
+    `a` cells along each side and `b` across each end, `2 (a + b) = N`. Its
+    front runs round the leading edge, `f` cells of it on the lower side,
+    and its rear round the trailing edge, `r` of it on the lower side, so
+    that `f + r` is `b` plus half the difference between the lower and upper
+    sides' counts; the end is lengthened until both fit within it.
+    """
+    N = W.shape[1] - 1
+    i_LE = int(np.argmin(W[0]))
+    D = i_LE - N // 2
+    b = max(nk_tip - 1, _up8(abs(D)))
+    a = N // 2 - b
+    if a < 8:
+        raise ValueError(
+            f"The blade has too few nodes round it, {N}, for a tip gap's H block "
+            f"with {b} cells across: give it more, or lower nk_tip."
+        )
+    f = (b + D) // 2
+    r = b + D - f
+    iB = i_LE - f
+    return (r, iB, iB + b, N - b + r)
+
+
+def _gap_fractions(W):
+    """Return where the outline of a tip gap has its nodes along each side.
+
+    `W` (2, N + 1) is the outline of the blade, clockwise from the middle of
+    the trailing edge, and `N` a multiple of sixteen. Fractions (N / 2 + 1,)
+    of each side's length from the leading edge, the mean of the two sides'
+    own spacings, so the outline keeps the clustering it had.
+    """
+    N = W.shape[1] - 1
+    i_LE = int(np.argmin(W[0]))
+    sides = (W[:, i_LE::-1], W[:, i_LE:])
+    return np.mean(
+        [util.resample_to(_norm_arc(side), N // 2 + 1) for side in sides], axis=0
+    )
+
+
+def _gap_outline(W, frac):
+    """Return the outline `W` (2, N + 1) of a tip gap renoded at `frac`.
+
+    Each side at the same fractions `frac` of its length from the leading
+    edge, the leading edge at node `N / 2`, so that nodes of one index along
+    either side lie level with each other.
+    """
+    i_LE = int(np.argmin(W[0]))
+    lower, upper = (
+        _at_arc(side, frac * util.arc_length(side))
+        for side in (W[:, i_LE::-1], W[:, i_LE:])
+    )
+    out = np.concatenate((lower[:, ::-1], upper[:, 1:]), axis=1)
+    out[:, 0], out[:, -1] = W[:, 0], W[:, -1]
+    return out
+
+
+def _gap_inset(W, frac):
+    """Return the outline `W` (2, N + 1) moved inwards by `frac` of its thickness.
+
+    Along the inward normals, by `frac` of the distance to the far side of
+    the blade along them, but no more than `frac` of the diameter of
+    curvature where the outline is convex: round a leading edge the normals
+    meet, and the distance along them to the far side runs to the length of
+    the blade. Rounded down where it rises sharply between neighbours.
+    """
+    n_in = -_outward_normals(W)
+    P, d = W[:, :-1], n_in[:, :-1]
+    A, E = W[:, :-1], np.diff(W, axis=1)
+    # Where the ray from each node meets each segment of the outline.
+    den = d[0][:, None] * E[1][None] - d[1][:, None] * E[0][None]
+    AP = A[:, None, :] - P[:, :, None]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (AP[0] * E[1][None] - AP[1] * E[0][None]) / den
+        u = (AP[0] * d[1][:, None] - AP[1] * d[0][:, None]) / den
+    tol = 1e-6 * util.arc_length(W)
+    t = np.where((t > tol) & (u >= 0.0) & (u <= 1.0), t, np.inf).min(axis=1)
+
+    # Radius of curvature where the outline is convex, turning clockwise.
+    d1 = 0.5 * (np.roll(P, -1, axis=1) - np.roll(P, 1, axis=1))
+    d2 = np.roll(P, -1, axis=1) - 2.0 * P + np.roll(P, 1, axis=1)
+    kappa = (d1[0] * d2[1] - d1[1] * d2[0]) / np.linalg.norm(d1, axis=0) ** 3
+    rho = np.where(kappa < 0.0, -1.0 / np.minimum(kappa, -1e-300), np.inf)
+
+    depth = frac * np.minimum(t, 2.0 * rho)
+    for _ in range(N_SMOOTH_NORMAL):
+        depth = np.minimum(
+            depth,
+            0.25 * np.roll(depth, 1) + 0.5 * depth + 0.25 * np.roll(depth, -1),
+        )
+    depth = np.append(depth, depth[0])
+    inner = W + depth * n_in
+    inner[:, -1] = inner[:, 0]
+    return inner
+
+
+def _gap_plane(W, corners, frac, nk_O):
+    """Return the algebraic O and H blocks (2, ni, nk) of a tip gap in `W`.
+
+    The O block from the H block at `k = 0` to the outline at `k = -1`,
+    evenly across; the H block by transfinite interpolation of the edges the
+    corners cut its inner face into.
+    """
+    iA, iB, iC, iD = corners
+    N = W.shape[1] - 1
+    inner = _gap_inset(W, frac)
+    H = _tfi(
+        inner[:, iA : iB + 1][:, ::-1],
+        inner[:, iC : iD + 1],
+        inner[:, iB : iC + 1],
+        np.concatenate((inner[:, iA::-1], inner[:, N - 1 : iD - 1 : -1]), axis=1),
+    )
+    f = np.linspace(0.0, 1.0, nk_O)[None, None]
+    O = inner[..., None] + f * (W - inner)[..., None]
+    return [O, H]
+
+
+def _respace_gap_O(O, d_wall):
+    """Return the O block (2, ni, nk) of a tip gap, each line respaced.
+
+    Along itself from the H block, where its cells are as long as even
+    spacing would make them, to the outline, where they are `d_wall` (ni,),
+    or as long as even spacing would make them if that is less.
+    """
+    nk = O.shape[2]
+    seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
+    s = np.concatenate((np.zeros((len(seg), 1)), np.cumsum(seg, axis=1)), axis=1)
+    L = s[:, -1]
+    even = 1.0 / (nk - 1)
+    T = L[:, None] * clusterfunc.double.fixed_many(
+        np.full(len(L), even), np.minimum(d_wall / L, even), nk
+    )
+    out = np.empty_like(O)
+    for c in range(2):
+        out[c] = [np.interp(Ti, si, Oi) for Ti, si, Oi in zip(T, s, O[c])]
+    out[:, :, 0] = O[:, :, 0]
+    out[:, :, -1] = O[:, :, -1]
+    return out
 
 
 def _reverse(u, n):
@@ -1197,3 +1742,188 @@ def _cell_angles(B):
         ang = np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))
         out = np.minimum(out, 90.0 - np.abs(90.0 - ang))
     return out
+
+
+#
+# GEOMETRY HELPERS
+#
+
+_J = np.array([0.0, 1.0])
+"""Unit vector in the direction of increasing `theta` in the conformal plane."""
+
+
+def _surfaces(blade, cmap, spf):
+    """Return the two surfaces in conformal coordinates, higher-theta first.
+
+    Each (2, n), from the leading edge to its trailing edge corner.
+    """
+    upper, lower = _by_theta(blade, spf, m=util.cluster_cosine(N_CHORD))
+    return tuple(np.stack((cmap.mp_from_xr(s[:2]), s[2])) for s in (upper, lower))
+
+
+def _blade_pieces(blade, cmap, spf):
+    """Return the two surfaces and the trailing edge in conformal coordinates.
+
+    Each surface (2, n) from the leading edge to its trailing edge corner,
+    higher-theta first, and the trailing edge (2, n) from the upper corner to
+    the lower. On a round trailing edge, the corners are where each surface's
+    arc begins, and the trailing edge is the arc.
+    """
+    upper, lower = _surfaces(blade, cmap, spf)
+    caps = blade.evaluate_TE_cap(spf)
+    if caps is None:
+        t = np.linspace(0.0, 1.0, 101)[None]
+        return upper, lower, upper[:, -1:] + t * (lower[:, -1:] - upper[:, -1:])
+    # Split each surface at its sample nearest where the arc begins; the
+    # samples are those `_surfaces` evaluates at.
+    m = util.cluster_cosine(N_CHORD)
+    m_upper, m_lower = caps if blade.suction_is_upper else caps[::-1]
+    i_u, i_l = (int(np.argmin(np.abs(m - m_cap))) for m_cap in (m_upper, m_lower))
+    te = np.concatenate((upper[:, i_u:], lower[:, i_l:][:, ::-1][:, 1:]), axis=1)
+    return upper[:, : i_u + 1], lower[:, : i_l + 1], te
+
+
+def _at_arc(curve, s):
+    """Return points on a polyline (2, n) at arc lengths `s` from its start."""
+    s_curve = util.cum_arc_length(curve)
+    return np.stack([np.interp(s, s_curve, c) for c in curve])
+
+
+def _norm_arc(curve):
+    """Return normalised arc length along a polyline (2, n)."""
+    s = util.cum_arc_length(curve)
+    return s / s[-1]
+
+
+def _outward_normals(loop):
+    """Return smoothed unit normals out of a closed clockwise loop (2, n)."""
+    pts = loop[:, :-1]
+    t = np.roll(pts, -1, axis=1) - np.roll(pts, 1, axis=1)
+    t /= np.linalg.norm(t, axis=0)
+    n = np.stack((-t[1], t[0]))
+    for _ in range(N_SMOOTH_NORMAL):
+        n = 0.25 * np.roll(n, 1, axis=1) + 0.5 * n + 0.25 * np.roll(n, -1, axis=1)
+        n /= np.linalg.norm(n, axis=0)
+    return np.concatenate((n, n[:, :1]), axis=1)
+
+
+def _periodic_line(blade, cmap, pitch):
+    """Return `theta(m')` of the initial periodic line above the blade.
+
+    Half a pitch above the camber line, extended straight beyond it at the
+    end slopes of the camber line, limited to 45 degrees.
+    """
+    cam = blade.evaluate_camber(cmap.spf, m=util.cluster_cosine(400))
+    mp = cmap.mp_from_xr(cam[:2])
+    theta = cam[2] + 0.5 * pitch
+    slope = np.clip(
+        [
+            (theta[1] - theta[0]) / (mp[1] - mp[0]),
+            (theta[-1] - theta[-2]) / (mp[-1] - mp[-2]),
+        ],
+        -SLOPE_MAX,
+        SLOPE_MAX,
+    )
+
+    def periodic(mq):
+        mq = np.asarray(mq, dtype=float)
+        out = np.interp(mq, mp, theta)
+        out = np.where(mq < mp[0], theta[0] + slope[0] * (mq - mp[0]), out)
+        out = np.where(mq > mp[-1], theta[-1] + slope[1] * (mq - mp[-1]), out)
+        return out
+
+    return periodic
+
+
+def _line(a, b, f):
+    """Return points (2, n) on the straight line from `a` to `b` at fractions `f`."""
+    pts = a[:, None] + f[None, :] * (b - a)[:, None]
+    pts[:, 0], pts[:, -1] = a, b
+    return pts
+
+
+def _tfi(bottom, top, left, right):
+    """Return a block (2, ni, nk) by transfinite interpolation of its edges.
+
+    `bottom` and `top` run along `i`, `left` and `right` along `k`, and the
+    corners must agree. Blended on normalised arc length rather than index, so
+    a clustered edge pulls the interior with it.
+    """
+    for a, b in (
+        (bottom[:, 0], left[:, 0]),
+        (bottom[:, -1], right[:, 0]),
+        (top[:, 0], left[:, -1]),
+        (top[:, -1], right[:, -1]),
+    ):
+        assert np.allclose(a, b, rtol=0.0, atol=1e-12), f"TFI corners disagree {a} {b}"
+
+    sb = _norm_arc(bottom)[:, None]
+    st = _norm_arc(top)[:, None]
+    tl = _norm_arc(left)[None, :]
+    tr = _norm_arc(right)[None, :]
+    u = (sb + (st - sb) * tl) / (1.0 - (st - sb) * (tr - tl))
+    v = tl + (tr - tl) * u
+
+    B, T = bottom[:, :, None], top[:, :, None]
+    L, R = left[:, None, :], right[:, None, :]
+    c00, c10 = bottom[:, 0, None, None], bottom[:, -1, None, None]
+    c01, c11 = top[:, 0, None, None], top[:, -1, None, None]
+    xy = (1 - v) * B + v * T + (1 - u) * L + u * R
+    xy -= (1 - u) * (1 - v) * c00 + u * (1 - v) * c10 + (1 - u) * v * c01 + u * v * c11
+
+    # Edges exactly as given, so shared edges are bit-identical between blocks.
+    xy[:, :, 0], xy[:, :, -1] = bottom, top
+    xy[:, 0, :], xy[:, -1, :] = left, right
+    return xy
+
+
+def _mult(x, mult):
+    """Return `x` resampled up to a number of intervals divisible by `mult`."""
+    n_cell = len(x) - 1
+    return util.resample_to(x, n_cell + (-n_cell) % mult + 1)
+
+
+def _uniform(d):
+    """Uniform points on the unit interval at no more than spacing `d`."""
+    return np.linspace(0.0, 1.0, max(int(np.ceil(1.0 / d)), 1) + 1)
+
+
+def _single(dmin, dmax, ER):
+    """Single-sided clustering on the unit interval, coping with a short one."""
+    if dmin * ER >= dmax or dmin >= 0.5:
+        return _uniform(min(dmin, dmax))
+    try:
+        return clusterfunc.single.free(dmin, dmax, ER)
+    except clusterfunc.exceptions.ClusteringException:
+        return clusterfunc.single.free(dmin, dmax, ER, mult=1)
+
+
+def _double(d0, d1, dmax, ER):
+    """Double-sided clustering on the unit interval, coping with a short one."""
+    if min(d0, d1) * ER >= dmax or min(d0, d1) >= 0.5:
+        return _uniform(min(d0, d1, dmax))
+    dmax = max(dmax, d0, d1)
+    try:
+        return clusterfunc.double.free(d0, d1, dmax, ER)
+    except clusterfunc.exceptions.ClusteringException:
+        pass
+    try:
+        return clusterfunc.double.free(d0, d1, dmax, ER, mult=1)
+    except clusterfunc.exceptions.ClusteringException:
+        # Too short to grow at this ratio: the end spacings, whatever the
+        # growth between them.
+        n = max(int(np.ceil(2.0 / (d0 + d1))), 2) + 1
+        return clusterfunc.double.fixed(d0, d1, n)
+
+
+def _stitch_mixing_planes(rows, labels=LABELS):
+    """Force xr coordinates to match exactly at mixing planes."""
+    for i_row in range(len(rows) - 1):
+        dn = rows[i_row][labels.index("dn")]
+        up = rows[i_row + 1][labels.index("up")]
+        x = 0.5 * (dn.x[-1, :, 0] + up.x[0, :, 0])[:, None]
+        r = 0.5 * (dn.r[-1, :, 0] + up.r[0, :, 0])[:, None]
+        dn[-1].set_x(x)
+        up[0].set_x(x)
+        dn[-1].set_r(r)
+        up[0].set_r(r)

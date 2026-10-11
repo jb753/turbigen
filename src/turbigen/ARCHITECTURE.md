@@ -426,18 +426,21 @@ config --- but four things are dropped:
   statements commented out --- so it went too, and with it the `row_meta` that
   existed to feed it.
 
-### OH: AutoGrid's blocking, smoothed here
+### OHP: an O block and a passage block, swept coarse then refined
 
-`type: oh` replaces the old route of writing a geomTurbo file and running
+`type: ohp` replaces the old route of writing a geomTurbo file and running
 AutoGrid over ssh. It reads the same three things `h` does --- `evaluate_xr`,
-`evaluate_section`, `evaluate_camber` --- and nothing else, and it has no tip
-gap yet: a row with a clearance is refused rather than meshed as shrouded.
+`evaluate_section`, `evaluate_camber` --- and nothing else. It grids only a
+round trailing edge, because its blade nodes slide along the blade and would
+gather at the corners of a blunt one.
 
-**Seven blocks a row, in AutoGrid's O4H layout.** An O block round the blade,
-H blocks ahead, behind and either side of it, and an H block out to each
-boundary, so that the inlet, outlet and mixing planes are each one whole face.
-The O block wraps in `i`, cut at the middle of the trailing edge, with the
-blade on `k = 0`: the convention `util.cut_blade_surfs` already recognised.
+**Eight blocks a row.** An O block round the blade, a passage block from the
+O block of one blade to that of the next, a block ahead of the leading edge
+and one behind the trailing edge, one each ahead of and behind the passage
+block, and an H block out to each boundary, so that the inlet, outlet and
+mixing planes are each one whole face. The O block wraps in `i`, cut at the
+middle of the trailing edge, with the blade on `k = 0`: the convention
+`util.cut_blade_surfs` already recognised.
 
 **Every plane is meshed in conformal coordinates.** A constant-`j` plane is a
 surface of constant span fraction of the annulus, the surface the section at
@@ -447,43 +450,36 @@ angle is `dtheta/dm' = tan(chi)` whatever the radius, so nothing about radial
 variation of the stream tube reaches the smoother. Nodes go back through the
 annulus itself, not an interpolant, so they lie exactly on it.
 
-**The smoother is its own module and knows nothing about blades.**
+**The plane topology is its own module and knows nothing about blades.**
 `turbigen.elliptic` takes blocks, merges coincident and pitch-shifted nodes,
-and smooths the plane as one mesh, assembling each node's stencil from the four
-cells round it in whatever blocks they are. So block interfaces and periodic
-lines float with no special treatment, and a node with five cells round it ---
-the corners of the O block --- sits at the mean of its neighbours. That is
-what lets the same module take a tip-gap plane, of different topology, later.
+and assembles each node's stencil from the four cells round it in whatever
+blocks they are. So block interfaces and periodic lines float with no special
+treatment. The compiled Winslow sweeps in `ember.elliptic` run on those
+stencils, and `elliptic.polish` squares up the poor cells round the singular
+points by local target-matrix optimisation.
 
-Four things were learned the hard way, and each is now a choice in the code:
+**Smoothed coarse, refined after.** Each plane is built and swept at the cell
+size the free stream needs, and refined only where the flow needs it: along
+the blade to its edges, across the passage towards the O blocks, and in the O
+block to the wall spacing. Only `n_span_smooth` planes are swept. The rest take
+the correction interpolated in span, which is zero on the blade and has no
+streamwise part on the inlet and outlet, so it keeps both.
 
-* **Sources are the Thomas--Middlecoff form, set by feedback.** With
-  `alpha (r_xixi + P r_xi) + ... + gamma (r_etaeta + Q r_eta) = 0`, `P` and `Q`
-  are dimensionless, where in Sorenson's `-J^2 (P r_xi + Q r_eta)` they scale
-  with the square of the resolution and no fixed limit means anything.
-  Sorenson's estimate of them at the wall settles a quarter short of the target
-  spacing, because the wall nodes are fixed and the sources act only from the
-  decayed first layer; correcting by the measured spacing and lean, after
-  Hilgenstock, has the target as its only fixed point.
-* **The O block keeps its own spacing.** Plain Winslow pulls the first node
-  hundreds of wall spacings off a blade; sources read off the algebraic O block
-  (tapered to nothing at its edge) keep its clustering. Applied everywhere they
-  carry the leading edge clustering out to the inlet as bands, so the H blocks
-  are left plain.
-* **A square trailing edge needs points.** With nine across it the smoothed
-  mesh folds at both corners; with twenty-five, clustered into the corners at
-  two wall spacings, it does not.
-* **The inlet and outlet are fixed, not sliding.** ember's non-reflecting
-  boundaries need one pitchwise distribution at every span, which a node free
-  to slide does not keep. The distribution is taken from mid-span.
-
-**Cost is in the wall control, and in planes.** Each smoothing iteration is a
-direct-factorisation solve, reused across iterations until it stops converging.
-About 150 iterations settle the wall feedback. So only `n_span_smooth` planes
-are smoothed, each from its own algebraic mesh and the wall control the last
-finished with, and the rest take the smoothing correction interpolated in span.
-The correction is zero on the blade and the boundaries, so the interpolated one
-keeps both. That gives about two and a half minutes for a cascade row.
+**A tip gap is two more blocks, inside the blade.** Above a spanwise node put
+at the top of the blade, an O block whose outer face is the O block round the
+blade's inner one, node for node, and an H block filling it. Node for node is
+the constraint that shapes it: ember's solver exchanges only across
+point-matched seams, so the gap has to take the blade's own nodes, and those
+do not line up chordwise from one side to the other. The passage block meets
+the O block further back along one side than the other, and joins the two with
+equal counts, so the sides differ in where their nodes lie and often in how
+many there are. The H block's ends take up the difference in count, running
+some way along the side with more, and its lines across the blade lean to take
+up the rest. Built algebraically, the plane at the tip is squared up by
+target-matrix optimisation over all of its nodes, and the correction carried to
+the planes above, whose outline barely changes. The O block round the blade
+carries a periodic patch over the gap instead of a wall, so the blade surface
+cut off it stops at the tip, as an H passage's does.
 
 ## Rotation: placed by the mesher, valued by the boundary conditions
 

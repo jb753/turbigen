@@ -61,9 +61,7 @@ from turbigen.meanline import MeanLine
 from turbigen.mesh import Mesher, WallSpacing
 from turbigen.metric import LossBreakdown, Metric, SurfaceDissipation
 from turbigen.node import Node
-from turbigen.ohmesh import OH
 from turbigen.ohpmesh import OHPassage
-from turbigen.omesh import OPeriodic
 from turbigen.post import (
     AnnulusPlot,
     CamberPlot,
@@ -93,7 +91,6 @@ except ImportError:  # pragma: no cover - only hit in a bare, unbuilt source tre
         __version__ = "0.0.0+unknown"
 
 __all__ = [
-    "OH",
     "Annulus",
     "AnnulusDesign",
     "AnnulusPlot",
@@ -135,7 +132,6 @@ __all__ = [
     "Modal",
     "Node",
     "OHPassage",
-    "OPeriodic",
     "OperatingPoint",
     "PchipAnnulus",
     "PerfectFluid",

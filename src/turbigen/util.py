@@ -899,10 +899,23 @@ def cut_blade_surfs(grid, offset=0):
         for block in row_block:
             wraps = np.allclose(block[0, :, 0].xrt, block[-1, :, 0].xrt)
             if wraps and block.shape[1] == nj:
+                # Over a gridded clearance the face is the outline the gap's
+                # blocks meet it on, and a patch there says so: trimmed off,
+                # as it is from an H passage's sides.
+                jen = nj
+                for patch in block.patches.permeable:
+                    lim = patch.ijk_lim_abs
+                    if (
+                        patch.const_dim == 2
+                        and lim[2, 0] == 0
+                        and lim[1, 1] == nj - 1
+                        and lim[1, 0] > 0
+                    ):
+                        jen = lim[1, 0] + 1
                 # Copied, not sliced: a view shares its block's angular
                 # velocity, so setting the wall speed on one would re-time the
                 # grid itself.
-                surf = block[:, :, offset].copy(keep_patches=False)
+                surf = block[:, :jen, offset].copy(keep_patches=False)
                 surf.patches.clear()
                 surf.set_Omega(_wall_Omega(block, 2, offset != 0))
                 surfs[-1].append(surf)

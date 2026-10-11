@@ -40,9 +40,10 @@ blades:
           kappa_max: 0.0
           t_TE: 0.03
           tanwedge: 0.18
+          round_TE: true
 
 mesh:
-  type: oh
+  type: ohp
   yplus: 30.0
 
 iterate:

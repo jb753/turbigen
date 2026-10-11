@@ -280,7 +280,7 @@ class H(Mesher):
             if row.blade.round_TE:
                 raise ValueError(
                     f"Row {i_row} has a round trailing edge, which the H mesher "
-                    f"does not grid. Mesh it with type: o, or leave it blunt."
+                    f"does not grid. Mesh it with type: ohp, or leave it blunt."
                 )
         if self.AR_cusp:
             self._check_trailing_edges(machine)
