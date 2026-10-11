@@ -93,9 +93,6 @@ POLISH_POWER = 4.0
 """Power the polish raises each cell corner's shape measure to, so that the
 worst cells dominate rather than being traded for small gains elsewhere."""
 
-N_POLISH_TIP_PASS = 4
-"""Passes of the polish of a tip gap's poor cells, each finding them again."""
-
 N_MATCH_REAR = 4
 """Corrections of the blade's spacing at the corners behind it, to match
 the cells across the passage there."""
@@ -354,9 +351,9 @@ class OHPassage(Mesher):
     """Thickness of the O block of a tip gap before it is polished, as a
     fraction of the local thickness of the blade."""
 
-    n_polish_tip: int = 500
-    """Most iterations of the target-matrix optimisation that squares up the
-    poor cells of a tip gap."""
+    n_polish_tip: int = 1000
+    """Iterations of the target-matrix optimisation that squares up the
+    plane of a tip gap that is smoothed."""
 
     def __post_init__(self):
         if min(self.ds, self.ds_LE, self.ds_free, self.t_O) <= 0.0:
@@ -1467,10 +1464,10 @@ class OHPassage(Mesher):
         is built algebraically, which folds round a strongly curved blade,
         then smoothed as a main plane is: swept by Winslow's equations, which
         unfolds all but the O block's cells at the H block's corners, its O
-        block's lines respaced to the wall spacing at the outline, and its
-        poor cells polished, found again and polished again up to
-        :data:`N_POLISH_TIP_PASS` times, as one pass leaves cells the sweeps
-        folded only just unfolded. That plane is carried to each above it by
+        block's lines respaced to the wall spacing at the outline, and the
+        whole plane polished: polishing only its poor cells, even again and
+        again, leaves it worse in its worst cell, and fewer iterations of the
+        whole can stop with cells the sweeps folded only just unfolded. That plane is carried to each above it by
         moving its outline to theirs and the nodes inside by a discrete
         Laplacian, then respacing. Carried instead as a correction to each
         plane's algebraic one, it folds near the casing where the blade
@@ -1518,24 +1515,14 @@ class OHPassage(Mesher):
         # at the outline a little.
         X = self._gap_sweeps(topo, topo.gather(alg[0]), self.n_sweep)
         X = respaced(X, d_wall[0])
-        for _ in range(N_POLISH_TIP_PASS):
-            poor = []
-            for B, g in zip(topo.scatter(X), topo.gid):
-                bad = _cell_angles(B) < self.polish_below
-                for corner in (g[:-1, :-1], g[1:, :-1], g[1:, 1:], g[:-1, 1:]):
-                    poor.append(corner[bad])
-            poor = np.unique(np.concatenate(poor))
-            if not len(poor):
-                break
-            X = elliptic.polish(
-                topo,
-                X,
-                poor,
-                rings=POLISH_FINE_RINGS,
-                X_target=X,
-                max_iter=self.n_polish_tip,
-                power=POLISH_POWER,
-            )
+        X = elliptic.polish(
+            topo,
+            X,
+            np.arange(topo.n_node),
+            rings=0,
+            max_iter=self.n_polish_tip,
+            power=POLISH_POWER,
+        )
         X = respaced(X, d_wall[0])
 
         # The nodes inside the outline moved by a discrete Laplacian of the
