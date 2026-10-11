@@ -22,6 +22,7 @@ by :func:`polish`, a local target-matrix optimisation.
 
 import logging
 
+import ember.elliptic
 import numpy as np
 import scipy.optimize
 import scipy.sparse
@@ -474,46 +475,19 @@ def polish(
     la = 0.5 * (np.linalg.norm(a0[0][0], axis=1) + np.linalg.norm(a0[2][0], axis=1))
     lb = 0.5 * (np.linalg.norm(a0[0][1], axis=1) + np.linalg.norm(a0[1][1], axis=1))
     scale = np.sqrt(np.mean(la * lb))
-    # Which nodes each corner's edges run between, for the gradient.
-    edge_nodes = [
-        ((1, 0), (3, 0)),
-        ((1, 0), (2, 1)),
-        ((2, 3), (2, 1)),
-        ((2, 3), (3, 0)),
-    ]
     n_corner = 4.0 * len(ids)
     X0 = X.copy()
 
+    # The cost and its gradient by ember's compiled kernel, in double
+    # precision whatever the mesh is held in.
+    X64 = X.astype(float)
+
     def fun(z):
-        Xc = X0.copy()
+        Xc = X64.copy()
         Xc[free] = z * scale
-        f = 0.0
-        G = np.zeros((len(ids), 4, 2))
-        for (a, b), ((pa, ma), (pb, mb)) in zip(corners(Xc), edge_nodes):
-            ta, tb = a / la[:, None], b / lb[:, None]
-            det = ta[:, 0] * tb[:, 1] - ta[:, 1] * tb[:, 0]
-            root = np.sqrt(det**2 + POLISH_EPS**2)
-            dreg = 0.5 * (det + root)
-            dd = 0.5 * (1.0 + det / root)
-            nrm2 = np.sum(ta**2, 1) + np.sum(tb**2, 1)
-            mu = nrm2 / (2.0 * dreg)
-            dmu = power * mu ** (power - 1.0)
-            f += np.sum(mu**power + w_size * 0.5 * (dreg + 1.0 / dreg))
-            dF = (-dmu * mu / dreg + w_size * 0.5 * (1.0 - 1.0 / dreg**2)) * dd
-            ga = (dmu / dreg)[:, None] * ta + dF[:, None] * np.stack(
-                (tb[:, 1], -tb[:, 0]), 1
-            )
-            gb = (dmu / dreg)[:, None] * tb + dF[:, None] * np.stack(
-                (-ta[:, 1], ta[:, 0]), 1
-            )
-            ga /= la[:, None]
-            gb /= lb[:, None]
-            G[:, pa] += ga
-            G[:, ma] -= ga
-            G[:, pb] += gb
-            G[:, mb] -= gb
-        g = np.zeros_like(X)
-        np.add.at(g, ids.ravel(), G.reshape(-1, 2))
+        f, g = ember.elliptic.polish_cost(
+            Xc, ids, shifts, la, lb, POLISH_EPS, power, w_size
+        )
         return f / n_corner, g[free] * scale / n_corner
 
     res = scipy.optimize.minimize(
