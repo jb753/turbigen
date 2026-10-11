@@ -63,6 +63,7 @@ import numpy as np
 import scipy.interpolate
 import scipy.ndimage
 import scipy.sparse
+import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 from turbigen import clusterfunc, elliptic, util
@@ -92,10 +93,8 @@ POLISH_POWER = 4.0
 """Power the polish raises each cell corner's shape measure to, so that the
 worst cells dominate rather than being traded for small gains elsewhere."""
 
-TIP_BLEND_SLACK = 5.0
-"""How much worse in its worst cell corner [deg] a plane of a tip gap may come
-out, blending the corrections of the squared planes either side of it, than
-the worse of them, before it is squared up itself."""
+N_POLISH_TIP_PASS = 4
+"""Passes of the polish of a tip gap's poor cells, each finding them again."""
 
 N_MATCH_REAR = 4
 """Corrections of the blade's spacing at the corners behind it, to match
@@ -355,9 +354,9 @@ class OHPassage(Mesher):
     """Thickness of the O block of a tip gap before it is polished, as a
     fraction of the local thickness of the blade."""
 
-    n_polish_tip: int = 1000
-    """Iterations of the target-matrix optimisation that squares up the
-    cells of a tip gap."""
+    n_polish_tip: int = 500
+    """Most iterations of the target-matrix optimisation that squares up the
+    poor cells of a tip gap."""
 
     def __post_init__(self):
         if min(self.ds, self.ds_LE, self.ds_free, self.t_O) <= 0.0:
@@ -1464,18 +1463,18 @@ class OHPassage(Mesher):
         blade, not level chordwise, so the gap's outline is that face
         renoded, half its nodes along each side at the same fractions of each
         side's length, and joined to it by a non-matching interface; the H
-        block then runs straight across. Each plane is built algebraically,
-        which folds round a strongly curved blade, and swept by Winslow's
-        equations as the main planes are, which unfolds all but the O block's
-        cells at the H block's corners, and its O block's lines respaced to
-        the wall spacing at the outline. The planes at the tip and at the
-        casing are squared up by target-matrix optimisation, the casing's
-        started from the tip's correction, and those between take a blend of
-        the corrections of the squared planes either side; any that comes out
-        worse than those by more than :data:`TIP_BLEND_SLACK` is squared up
-        too. One correction carried up the whole gap folds the planes near
-        the casing where the blade twists. Last, the O block's lines are
-        respaced again.
+        block then runs straight across. The plane at the tip of the blade
+        is built algebraically, which folds round a strongly curved blade,
+        then smoothed as a main plane is: swept by Winslow's equations, which
+        unfolds all but the O block's cells at the H block's corners, its O
+        block's lines respaced to the wall spacing at the outline, and its
+        poor cells polished, found again and polished again up to
+        :data:`N_POLISH_TIP_PASS` times, as one pass leaves cells the sweeps
+        folded only just unfolded. That plane is carried to each above it by
+        moving its outline to theirs and the nodes inside by a discrete
+        Laplacian, then respacing. Carried instead as a correction to each
+        plane's algebraic one, it folds near the casing where the blade
+        twists, the algebraic planes' folds not being alike.
 
         Parameters
         ----------
@@ -1503,22 +1502,6 @@ class OHPassage(Mesher):
         fixed = [np.zeros(B.shape[1:], dtype=bool) for B in alg[0]]
         fixed[0][:, -1] = True
         topo = self._sweep_operators(elliptic.PlaneTopology(alg[0], fixed=fixed))
-
-        def polished(X):
-            return elliptic.polish(
-                topo,
-                X,
-                np.arange(topo.n_node),
-                rings=0,
-                max_iter=self.n_polish_tip,
-                power=POLISH_POWER,
-            )
-
-        # Swept, then each line of the O block respaced to the wall spacing
-        # at the outline before squaring up, which keeps the sizes it finds:
-        # respaced after, each line on its own, the lines either side of the
-        # H block's corners, whose lengths differ sharply, skew the cells
-        # between them.
         d_wall = [
             layout.d_wall / plane["cmap"].xr_from_mp(W[0])[1]
             for W, plane in zip(walls, planes)
@@ -1528,50 +1511,62 @@ class OHPassage(Mesher):
             tO, tH = topo.scatter(X)
             return topo.gather([_respace_gap_O(tO, d), tH])
 
-        A = [
-            respaced(self._gap_sweeps(topo, topo.gather(xy), self.n_sweep), d)
-            for xy, d in zip(alg, d_wall)
-        ]
-        n = len(A)
-
-        def worst(X):
-            return min(_cell_angles(B).min() for B in topo.scatter(X))
-
-        # Squared planes, by index, and their corrections and worst corners.
-        dX = {0: polished(A[0]) - A[0]}
-        dX[n - 1] = polished(A[-1] + dX[0]) - A[-1]
-        q = {j: worst(A[j] + dX[j]) for j in dX}
-
-        def blend(j):
-            js = sorted(dX)
-            b = js[np.searchsorted(js, j)]
-            a = js[np.searchsorted(js, j) - 1]
-            w = (j - a) / (b - a)
-            return (1.0 - w) * dX[a] + w * dX[b], min(q[a], q[b])
-
-        while True:
-            poor = {}
-            for j in range(n):
-                if j in dX:
-                    continue
-                d, q_ends = blend(j)
-                q_j = worst(A[j] + d)
-                if q_j < q_ends - TIP_BLEND_SLACK:
-                    poor[j] = (q_j, d)
-            if not poor:
+        # Respaced before the polish, which keeps the sizes it finds:
+        # respaced only after, each line on its own, the lines either side of
+        # the H block's corners, whose lengths differ sharply, skew the cells
+        # between them. Respaced again after, as the polish moves the cells
+        # at the outline a little.
+        X = self._gap_sweeps(topo, topo.gather(alg[0]), self.n_sweep)
+        X = respaced(X, d_wall[0])
+        for _ in range(N_POLISH_TIP_PASS):
+            poor = []
+            for B, g in zip(topo.scatter(X), topo.gid):
+                bad = _cell_angles(B) < self.polish_below
+                for corner in (g[:-1, :-1], g[1:, :-1], g[1:, 1:], g[:-1, 1:]):
+                    poor.append(corner[bad])
+            poor = np.unique(np.concatenate(poor))
+            if not len(poor):
                 break
-            j = min(poor, key=lambda j: poor[j][0])
-            dX[j] = polished(A[j] + poor[j][1]) - A[j]
-            q[j] = worst(A[j] + dX[j])
-        logger.debug(f"Tip gap planes squared: {sorted(dX)} of {n}")
+            X = elliptic.polish(
+                topo,
+                X,
+                poor,
+                rings=POLISH_FINE_RINGS,
+                X_target=X,
+                max_iter=self.n_polish_tip,
+                power=POLISH_POWER,
+            )
+        X = respaced(X, d_wall[0])
 
-        # Respaced again, as squaring up moves the cells at the outline a
-        # little; the lines are clustered and square by now, so this does
-        # little else.
+        # The nodes inside the outline moved by a discrete Laplacian of the
+        # outline's move, over the edges of the cells.
+        n = topo.n_node
+        edges = np.concatenate(
+            [
+                np.stack((a.ravel(), b.ravel()), axis=1)
+                for g in topo.gid
+                for a, b in ((g[:-1], g[1:]), (g[:, :-1], g[:, 1:]))
+            ]
+        )
+        edges = np.unique(np.sort(edges, axis=1), axis=0)
+        edges = edges[edges[:, 0] != edges[:, 1]]
+        adj = scipy.sparse.coo_matrix(
+            (np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n)
+        )
+        adj = (adj + adj.T).tocsr()
+        lap = scipy.sparse.diags(np.asarray(adj.sum(axis=1)).ravel()) - adj
+        edge = np.unique(topo.gid[0][:, -1])
+        inside = np.setdiff1d(np.arange(n), edge)
+        solve = scipy.sparse.linalg.factorized(lap[inside][:, inside].tocsc())
+        lap_edge = lap[inside][:, edge]
+
         gap = []
-        for j, W in enumerate(walls):
-            d = dX[j] if j in dX else blend(j)[0]
-            tO, tH = topo.scatter(A[j] + d)
+        for j, (xy, W) in enumerate(zip(alg, walls)):
+            move = np.zeros_like(X)
+            move[edge] = topo.gather(xy)[edge] - X[edge]
+            for c in range(2):
+                move[inside, c] = solve(-(lap_edge @ move[edge, c]))
+            tO, tH = topo.scatter(X + move)
             tO = _respace_gap_O(tO, d_wall[j])
             tO = tO.astype(DTYPE)
             tO[:, :, -1] = W
