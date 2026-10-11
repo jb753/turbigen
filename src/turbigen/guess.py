@@ -48,8 +48,11 @@ def apply(grid, machine):
     if any(_wraps(block) for block in grid):
         # ember divides by zero aligning the flow with an O block's grid
         # lines, and those values are about to be replaced.
+        # Nor are the other blocks of such a row passages whose `i` runs
+        # downstream, so the velocity is left as the mean line has it rather
+        # than aligned with their grid lines.
         with np.errstate(divide="ignore", invalid="ignore"):
-            grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR)
+            grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR, snap=False)
         _fill_wrapped_blocks(grid)
     else:
         grid.apply_guess_meridional(guess, refine_factor=REFINE_FACTOR)

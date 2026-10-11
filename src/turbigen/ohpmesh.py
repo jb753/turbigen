@@ -227,11 +227,15 @@ class _Layout:
     inlet and outlet blocks."""
     nk_O: int
     """Nodes across the O block once clustered to the blade."""
+    wall_density: tuple
+    """Refined cells per unit length round the blade, as fractions of its
+    length from the middle of the trailing edge, and the density there,
+    for the O block's nodes on the blade."""
     u: dict
     """Where each refined node lies, in fractional coarse indices from the
     start of its stretch: along the rear of the lower and upper sides of the
-    blade from the cut, `rl` and `ru`; along a side between corners,
-    upstream to downstream, `side`; round the leading edge, `front`; across
+    blade from the cut, `rl` and `ru`; along the lower and upper sides
+    between corners, upstream to downstream, `side_lo` and `side_up`; round the leading edge, `front`; across
     the passage, `P`; and along the blocks ahead of and behind the blade,
     `in` and `out`."""
 
@@ -242,7 +246,7 @@ class _Layout:
 
     def i_corners(self):
         """O block `i` of the corners C3, C4, C1, C2 once refined."""
-        n = [len(self.u[k]) - 1 for k in ("rl", "side", "front", "side")]
+        n = [len(self.u[k]) - 1 for k in ("rl", "side_lo", "front", "side_up")]
         i3 = n[0]
         return i3, i3 + n[1], i3 + n[1] + n[2], i3 + n[1] + n[2] + n[3]
 
@@ -745,9 +749,11 @@ class OHPassage(Mesher):
             n_up=_up8(round((mp_Zin - mp_in) * stretch_in / H)),
             n_dn=_up8(round((mp_out - mp_Zout) * stretch_out / H)),
             nk_O=len(_mult(f_O, 8)),
+            wall_density=(s / S, S / fine),
             u={
                 "rl": along(0, nf_rl),
-                "side": u_side,
+                "side_lo": u_side,
+                "side_up": u_side,
                 "front": along(i4, nf_front),
                 "ru": along(4, nf_ru),
                 "P": f_P * n_P,
@@ -1094,6 +1100,12 @@ class OHPassage(Mesher):
         correction = between(correction)
         X_smooth = [X_alg[j] + correction[j] for j in range(len(spf))]
 
+        # The refinement along the blade taken from where the sweeps left the
+        # coarse nodes at mid-span, not where the layout first put them.
+        lay = self._wall_u(lay, planes[j_mid], topo.scatter(X_smooth[j_mid]))
+        for p in planes:
+            p["layout"] = lay
+
         # The refined planes share one topology, built when first needed. The
         # control planes are polished once refined, and how far that moves
         # each node carried to the planes between, as the smoothing is.
@@ -1108,6 +1120,94 @@ class OHPassage(Mesher):
             for p, d in zip(planes, between(shift)):
                 p["polish_shift"] = d
         return self.assemble(machine, i_row, lay, planes, topo, X_smooth, jtip)
+
+    def _wall_u(self, lay, plane, xy):
+        """Return `lay` refined along the blade to its density on plane `xy`.
+
+        The layout places refined nodes at fractional coarse indices worked
+        out from where the coarse nodes were before the sweeps, which slide
+        them along the blade, and by interpolating linearly between them,
+        where :meth:`_refined` uses a spline: so the spacing along the blade
+        steps wherever the coarse spacing changes sharply, as it does where a
+        round trailing edge meets the surfaces. Here the indices are the
+        inverse of that spline through the swept coarse nodes, at the nodes
+        the layout's density puts along each piece, so the spacing along the
+        blade at this plane is the density's, scaled to fit each piece's
+        count of cells. The scale runs linearly along each piece and
+        continuously from one to the next, so the spacing does not step where
+        they meet, as it would scaling each piece alone. The two sides
+        are refined apart, and the passage block between them blends from
+        one to the other.
+        """
+        wall = plane["wall"]
+        S = util.arc_length(wall)
+        s_c = _wall_arc(wall, xy[0][:, :, 0])
+        e = np.cumsum((0, *lay.n_wall))
+        m = {k: len(lay.u[k]) - 1 for k in ("rl", "side_lo", "front", "side_up", "ru")}
+        counts = np.array(list(m.values()))
+
+        # The density round the whole blade, from the first corner to where
+        # it closes on itself.
+        sigma, dens = lay.wall_density
+        sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
+        dens = np.concatenate((dens[:-1], dens[:-1], dens))
+        c = s_c[e] / S
+        t = np.linspace(c[0], c[-1], N_WALL)
+        d = np.interp(t, sigma, dens)
+
+        # Each piece scales the density to its count; at each corner, the
+        # geometric mean of the scales of the pieces either side, so the
+        # spacing does not step there; and along each piece, linearly from
+        # one corner's to the next with a parabolic bow to make its count.
+        n_piece = len(counts)
+        scale = np.empty(len(t))
+        pieces = []
+        for j in range(n_piece):
+            inside = (t >= c[j]) & (t <= c[j + 1])
+            w = (t[inside] - c[j]) / (c[j + 1] - c[j])
+            pieces.append((inside, w))
+        k = np.array(
+            [
+                counts[j] / np.trapezoid(d[ins], t[ins])
+                for j, (ins, _) in enumerate(pieces)
+            ]
+        )
+        g = np.sqrt(k * np.roll(k, 1))
+        g = np.append(g, g[0])
+        for j, (inside, w) in enumerate(pieces):
+            lin = g[j] * (1.0 - w) + g[j + 1] * w
+            bow = w * (1.0 - w)
+            q = (counts[j] - np.trapezoid(d[inside] * lin, t[inside])) / np.trapezoid(
+                d[inside] * bow, t[inside]
+            )
+            scale[inside] = lin + q * bow
+        # Too uneven a set of counts to bow positive, and each piece scales
+        # alone in `_by_density`.
+        if (scale > 0.0).all():
+            d = d * scale
+        logger.debug(
+            f"Wall density scales at corners {g}, positive {(scale > 0).all()}"
+        )
+
+        def along(j, m):
+            a, b = e[j], e[j + 1]
+            s_f = S * _by_density(t, d, c[j], c[j + 1], m)
+            q = np.linspace(0.0, b - a, 64 * (b - a) + 1)
+            s_q = scipy.interpolate.PchipInterpolator(
+                np.arange(b - a + 1), s_c[a : b + 1]
+            )(q)
+            u = np.interp(s_f, s_q, q)
+            u[0], u[-1] = 0.0, b - a
+            return u
+
+        u = dict(lay.u)
+        n_sd = lay.n_wall[1]
+        u["rl"] = along(0, m["rl"])
+        u["side_lo"] = _reverse(along(1, m["side_lo"]), n_sd)
+        u["side_up"] = along(3, m["side_up"])
+        u["front"] = along(2, m["front"])
+        u["ru"] = along(4, m["ru"])
+        return dataclasses.replace(lay, u=u)
 
     def finish(self, xy, plane):
         """Return the blocks of a smoothed coarse plane, refined, and moved by
@@ -1132,7 +1232,8 @@ class OHPassage(Mesher):
         n_rl, _, n_fr, _, n_ru = lay.n_wall
         n_sd = lay.n_wall[1]
         n_P = lay.n_P
-        side = [(0, n_sd, u["side"])]
+        side = [(0, n_sd, u["side_up"])]
+        side_lo = [(0, n_sd, u["side_lo"])]
         across = [(0, n_P, u["P"])]
         front = [(0, n_fr, u["front"])]
         rear = [
@@ -1146,9 +1247,9 @@ class OHPassage(Mesher):
         e = np.cumsum((0, *lay.n_wall))
         O_i = [
             (e[0], e[1], u["rl"]),
-            (e[1], e[2], _reverse(u["side"], n_sd)),
+            (e[1], e[2], _reverse(u["side_lo"], n_sd)),
             (e[2], e[3], u["front"]),
-            (e[3], e[4], u["side"]),
+            (e[3], e[4], u["side_up"]),
             (e[4], e[5], u["ru"]),
         ]
         plan = {
@@ -1164,10 +1265,8 @@ class OHPassage(Mesher):
         # The O block's blade nodes refined through where they lie along the
         # blade, monotonically, so they stay on it and in order round it.
         wall = plane["wall"]
-        s_wall = util.cum_arc_length(wall)
-        S = s_wall[-1]
-        s_c = _unwrap(_project(wall, s_wall, cKDTree(wall.T), xy[0][:, :, 0].T), S)
-        s_c[-1] = s_c[0] + S
+        S = util.arc_length(wall)
+        s_c = _wall_arc(wall, xy[0][:, :, 0])
         s_f = np.concatenate(
             [
                 scipy.interpolate.PchipInterpolator(
@@ -1189,10 +1288,17 @@ class OHPassage(Mesher):
                 )
                 for name, B in zip(LABELS, xy)
             }
+            fine["refine_P_lo"] = _refine_matrix(n_sd + 1, side_lo, xy[1].dtype)
         out = []
         for name, B in zip(LABELS, xy):
             R_i, R_k = fine["refine"][name]
-            if R_i is not None:
+            if name == "P":
+                # Along the upper side of the blade at k = 0 and the lower at
+                # k = -1, each as the O block it meets is refined, and
+                # blended linearly across.
+                w = np.linspace(0.0, 1.0, B.shape[2], dtype=B.dtype)
+                B = (R_i @ B) * (1.0 - w) + (fine["refine_P_lo"] @ B) * w
+            elif R_i is not None:
                 B = R_i @ B
             if R_k is not None:
                 B = B @ R_k.T
@@ -1486,6 +1592,16 @@ def _project(wall, s_wall, tree, pts):
         best_d[better] = d[better]
         best_s[better] = (s_wall[a] + t * (s_wall[b] - s_wall[a]))[better]
     return best_s
+
+
+def _wall_arc(wall, nodes):
+    """Return where `nodes` (2, n) lie along closed line `wall` (2, N),
+    unwrapped to increase from the first, which the last closes on."""
+    s_wall = util.cum_arc_length(wall)
+    S = s_wall[-1]
+    s_c = _unwrap(_project(wall, s_wall, cKDTree(wall.T), nodes.T), S)
+    s_c[-1] = s_c[0] + S
+    return s_c
 
 
 def _unwrap(s, S):
