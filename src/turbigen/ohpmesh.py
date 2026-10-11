@@ -268,7 +268,7 @@ class OHPassage(Mesher):
     resolution_factor: float = 1.0
     """Multiply the number of points in each direction, keeping relative spacings."""
 
-    n_span_smooth: int = 9
+    n_span_smooth: int = 5
     """Number of spanwise planes to smooth, hub and casing included. The rest
     are interpolated between them. Zero smooths every plane."""
 
