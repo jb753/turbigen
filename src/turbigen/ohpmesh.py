@@ -124,6 +124,10 @@ its lines to the next round the blade."""
 
 N_MINIMAX = 30
 
+EXTRUDE_GAP = 0.3
+"""Most a line of an extruded inlet or outlet block departs from the turn of
+the pitch-mean line, as a fraction of the gap to its nearer neighbour."""
+
 S_MAX = 20.0
 """Logarithm of the largest step between cells the O block's lines are
 searched to."""
@@ -344,7 +348,7 @@ class OHPassage(Mesher):
     """Where the blocks ahead of and behind the blade end, as a fraction of
     the way from the blade to the mixing plane between rows."""
 
-    cut: float = 1.0
+    cut: float = 0.5
     """Distance from the leading edge of the first row and the trailing edge
     of the last at which the blocks ahead of and behind the blade end, and
     beyond which the inlet and outlet blocks are extruded rather than swept,
@@ -1012,8 +1016,13 @@ class OHPassage(Mesher):
             for b, (g, s) in enumerate(zip(topo.gid, topo.shift)):
                 ni, nk = g.shape
                 # In the O block, no nearer the blade than half way across it,
-                # so the nodes there stay free to square up to it.
+                # so the nodes there stay free to square up to it. In any
+                # block, no more than half way along or across it, so the
+                # patches of corners at either end of a short block do not
+                # overlap: claimed node by node by one corner or the other,
+                # they draw its lines into a zigzag through the sweeps.
                 most = self.n_corner if b else (nk - 1) // 2
+                most = min(most, (ni + 1) // 2, (nk + 1) // 2)
                 for i0, k0 in np.argwhere(g == c):
                     di_s = [d for d in (1, -1) if 0 <= i0 + d < ni]
                     dk_s = [d for d in (1, -1) if 0 <= k0 + d < nk]
@@ -1200,18 +1209,27 @@ class OHPassage(Mesher):
         mp_end = plane["cmap"].mp_from_m(lay.m_in if inlet else lay.m_out)
         D = float(np.median(np.abs(mp_end - face[0])))
         h0 = float(np.median(np.linalg.norm(face - inner, axis=0)))
-        return _mult(_single(h0 / D, max(lay.H, h0) / D, self.ER_stream), 8)
+        # No cell longer than half the way, which may be short where the
+        # inlet or outlet lies not far beyond the cut.
+        h1 = min(max(lay.H, h0), 0.5 * D)
+        try:
+            f = _single(h0 / D, h1 / D, self.ER_stream)
+        except clusterfunc.exceptions.ClusteringException:
+            f = _uniform(min(h0, h1) / D)
+        return _mult(f, 8)
 
     def _extrude(self, xy, plane, lay, inlet, f):
         """Replace the inlet or outlet block of refined plane `xy` by its cut
         face extruded to the inlet or outlet, at fractions `f` of the way.
 
         Each line leaves the cut along the grid line it continues, and turns
-        to meridional, its slope `dtheta/dm'` falling linearly to nothing
-        over :attr:`straighten` chords; the nodes across the pitch relax
-        from their spacing at the cut to even in theta over
-        :attr:`even_theta` chords. The lines at either side of the pitch,
-        one pitch apart at the cut, turn alike and stay so.
+        to meridional with the pitch-mean slope `dtheta/dm'`, which falls
+        linearly to nothing over :attr:`straighten` chords, its own
+        departure from that mean fading within :data:`EXTRUDE_GAP` of the
+        gap to its nearer neighbour; the nodes across the pitch relax from
+        their spacing at the cut to even in theta over :attr:`even_theta`
+        chords. The lines at either side of the pitch, one pitch apart at
+        the cut, turn alike and stay so.
         """
         face, inner = self._cut_face(xy, inlet)
         mp_end = plane["cmap"].mp_from_m(lay.m_in if inlet else lay.m_out)
@@ -1219,9 +1237,22 @@ class OHPassage(Mesher):
         slope = (face[1] - inner[1]) / (face[0] - inner[0])
         mp = face[0][None] + f[:, None] * (mp_end - face[0])[None]
         d = np.abs(mp - face[0][None])
+        sense = np.sign(mp_end - face[0])[None]
+        # Every line turns as the pitch-mean slope does, straightening over
+        # `straighten` chords; its own departure from that mean, with which
+        # it leaves the cut along its grid line, fades within a fraction of
+        # the gap to its nearer neighbour, so that lines leaving at different
+        # angles cannot cross. The lines at either side of the pitch, images
+        # of each other, see the gaps either side of the cut alike.
         R = self.straighten * chord
         run = np.where(d < R, d - d**2 / (2.0 * R), 0.5 * R)
-        theta = face[1][None] + slope[None] * np.sign(mp_end - face[0])[None] * run
+        mean = float(np.mean(slope[:-1]))
+        gap = np.diff(face[1])
+        near = np.minimum(np.r_[gap[-1], gap], np.r_[gap, gap[0]])
+        excess = np.abs(slope - mean)
+        reach = EXTRUDE_GAP * near / np.maximum(excess, 1e-300)
+        own = reach * -np.expm1(-d / np.maximum(reach, 1e-300)[None])
+        theta = face[1][None] + sense * (mean * run + (slope - mean)[None] * own)
         nk = face.shape[1]
         even = theta[:, :1] + lay.pitch * np.linspace(0.0, 1.0, nk)[None]
         x = np.clip(d / (self.even_theta * chord), 0.0, 1.0)
