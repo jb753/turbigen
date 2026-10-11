@@ -179,21 +179,8 @@ class ConformalMap:
         either side of its nearest sample.
         """
         pts = np.reshape(xr, (2, -1)).T
-        _, near = self._tree.query(pts)
-        n = len(self.m)
-        best_mp = np.zeros(len(pts))
-        best_d = np.full(len(pts), np.inf)
-        for seg in (near - 1, near):
-            seg = np.clip(seg, 0, n - 2)
-            a = self.xr[:, seg].T
-            ab = self.xr[:, seg + 1].T - a
-            t = np.clip(np.sum((pts - a) * ab, 1) / np.sum(ab**2, 1), 0.0, 1.0)
-            d = np.linalg.norm(a + t[:, None] * ab - pts, axis=1)
-            better = d < best_d
-            best_d[better] = d[better]
-            mp = self.mp[seg] + t * (self.mp[seg + 1] - self.mp[seg])
-            best_mp[better] = mp[better]
-        return best_mp.reshape(np.shape(xr)[1:])
+        mp = _project(self.xr, self.mp, self._tree, pts)
+        return mp.reshape(np.shape(xr)[1:])
 
 
 @dataclasses.dataclass(frozen=True)
@@ -239,13 +226,19 @@ class _Layout:
     """Refined cells per unit length round the blade, as fractions of its
     length from the middle of the trailing edge, and the density there,
     for the O block's nodes on the blade."""
+    nf_wall: tuple
+    """Refined cells along each piece of the blade, in the order of
+    `n_wall`: the rear of the lower side from the cut, the lower side
+    between corners, the leading edge, the upper side between corners, and
+    the rear of the upper side to the cut."""
     u: dict
     """Where each refined node lies, in fractional coarse indices from the
-    start of its stretch: along the rear of the lower and upper sides of the
-    blade from the cut, `rl` and `ru`; along the lower and upper sides
-    between corners, upstream to downstream, `side_lo` and `side_up`; round the leading edge, `front`; across
-    the passage, `P`; and along the blocks ahead of and behind the blade,
-    `in` and `out`."""
+    start of its stretch: across the passage, `P`; and along the blocks
+    ahead of and behind the blade, `in` and `out`. Once refined along the
+    blade by :meth:`OHPassage._wall_u`, also along the rear of the lower and
+    upper sides of the blade from the cut, `rl` and `ru`; along the lower
+    and upper sides between corners, upstream to downstream, `side_lo` and
+    `side_up`; and round the leading edge, `front`."""
 
     def i_corners_coarse(self):
         """O block `i` of the corners C3, C4, C1, C2 on the coarse mesh."""
@@ -254,9 +247,7 @@ class _Layout:
 
     def i_corners(self):
         """O block `i` of the corners C3, C4, C1, C2 once refined."""
-        n = [len(self.u[k]) - 1 for k in ("rl", "side_lo", "front", "side_up")]
-        i3 = n[0]
-        return i3, i3 + n[1], i3 + n[1] + n[2], i3 + n[1] + n[2] + n[3]
+        return tuple(int(i) for i in np.cumsum(self.nf_wall[:4]))
 
 
 class OHPassage(Mesher):
@@ -326,12 +317,6 @@ class OHPassage(Mesher):
     n_corner: int = 16
     """Nodes along each side of the patch drawn in towards a corner."""
 
-    polish_rings: int = 0
-    """How many coarse cells out from each corner of the O block are polished
-    once the sweeps are done, by local target-matrix optimisation against the
-    worst cells there, short of the inner half of the O block. None if zero,
-    the default: the polish of the refined plane does better, and sooner."""
-
     polish_below: float = 32.0
     """Once refined, the nodes near any cell whose worst corner angle, folded
     onto 0 to 90 degrees, is under this are polished: within three cells of
@@ -368,8 +353,6 @@ class OHPassage(Mesher):
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
-        if self.polish_rings < 0:
-            raise ValueError(f"polish_rings={self.polish_rings} must not be negative.")
         if not 0.0 <= self.polish_below < 90.0:
             raise ValueError(
                 f"polish_below={self.polish_below} must be from zero to 90 degrees."
@@ -690,11 +673,11 @@ class OHPassage(Mesher):
             for (a, b), k in zip(_pairs(marks), n)
         )
         geo = self._geometry(blade, cmap, t_O, corners, f_wall)
-        s_nodes = geo["s_loop"] * S
-        ends = np.cumsum((0, *n))
 
         # Refined along the blade: down to h_LE at the leading edge and the
         # middle of the trailing edge, growing at ER_surf to h between them.
+        # Only the counts are fixed here; `_wall_u` places the nodes once the
+        # sweeps have moved the coarse ones.
         s_LE = s[int(np.argmin(wall[0]))]
         grow = self.ER_surf - 1.0
         fine = np.minimum.reduce(
@@ -714,15 +697,6 @@ class OHPassage(Mesher):
         # each side, and its counts must halve under multigrid too.
         if row.tip_gap:
             nf_ru += -(nf_rl + nf_ru + 2 * nf_side + nf_front) % 16
-
-        def along(j, m):
-            """Fractional coarse indices of `m` refined cells along piece `j`."""
-            s_f = _by_density(s, 1.0 / fine, marks[j], marks[j + 1], m)
-            u = np.interp(s_f, s_nodes[ends[j] : ends[j + 1] + 1], np.arange(n[j] + 1))
-            u[0], u[-1] = 0.0, n[j]
-            return u
-
-        u_side = 0.5 * (along(i1, nf_side) + _reverse(along(i3, nf_side), n[i3]))
 
         # Refined across the passage and along the blocks ahead of and behind
         # the blade: h at the O block, growing at ER_stream to the free stream.
@@ -766,12 +740,8 @@ class OHPassage(Mesher):
             n_dn=_up8(round((mp_out - mp_Zout) * stretch_out / H)),
             nk_O=len(_mult(f_O, 8)),
             wall_density=(s / S, S / fine),
+            nf_wall=(nf_rl, nf_side, nf_front, nf_side, nf_ru),
             u={
-                "rl": along(0, nf_rl),
-                "side_lo": u_side,
-                "side_up": u_side,
-                "front": along(i4, nf_front),
-                "ru": along(4, nf_ru),
                 "P": f_P * n_P,
                 "in": f_in * n_in,
                 "out": f_out * n_out,
@@ -780,8 +750,9 @@ class OHPassage(Mesher):
         logger.debug(
             f"Row {i_row} OH passage layout, coarse cells: blade {layout.n_wall}, "
             f"O {layout.n_O}, passage {n_P}, in {n_in}, out {n_out}, up "
-            f"{layout.n_up}, dn {layout.n_dn}; refined: blade "
-            f"{[len(v) - 1 for v in layout.u.values()]}, O {layout.nk_O} nodes"
+            f"{layout.n_up}, dn {layout.n_dn}; refined: blade {layout.nf_wall}, "
+            f"P {len(layout.u['P']) - 1}, in {len(layout.u['in']) - 1}, out "
+            f"{len(layout.u['out']) - 1}, O {layout.nk_O} nodes"
         )
         return layout
 
@@ -915,24 +886,11 @@ class OHPassage(Mesher):
             "cmap": cmap,
             "wall": g["wall"],
             "s_loop": g["s_loop"],
-            "control": None,
-            "layout": layout,
         }
 
     #
     # SMOOTHING
     #
-
-    def _topology(self, xy, pitch):
-        """Return the topology of a plane, with what the sweeps need."""
-        shapes = [b.shape[1:] for b in xy]
-        fixed = [np.zeros(s, dtype=bool) for s in shapes]
-        slide = [np.zeros(s, dtype=bool) for s in shapes]
-        fixed[0][:, 0] = True
-        slide[6][0, :] = True
-        slide[7][-1, :] = True
-        topo = elliptic.PlaneTopology(xy, pitch=pitch, fixed=fixed, slide=slide)
-        return self._sweep_operators(topo)
 
     def _sweep_operators(self, topo):
         """Return `topo` with the operators the sweeps need attached."""
@@ -1016,50 +974,36 @@ class OHPassage(Mesher):
                             out["f"].append(fc[a, b])
         return {k: np.array(v) for k, v in out.items()}
 
-    def _gap_sweeps(self, topo, X, n_sweep):
-        """Return `X` of a tip gap's plane after `n_sweep` sweeps of Winslow's
-        equations: as :meth:`_sweeps`, but with the outline fixed rather than
-        a wall to slide along, and no period."""
-        W_irr, c_irr = topo.sweep_irr
-        W_sl, c_sl = topo.sweep_slide
-        cp = topo.sweep_corner
-        none = np.zeros(0, dtype=np.int32)
-        X, _, _ = ember.elliptic.winslow_sweeps(
-            X.astype(DTYPE),
-            topo.stencil_g,
-            topo.stencil_s,
-            0.0,
-            (topo.irregular, W_irr.indptr, W_irr.indices, W_irr.data, c_irr),
-            (topo.slide, W_sl.indptr, W_sl.indices, W_sl.data, c_sl),
-            (cp["node"], cp["corner"], 0.0 * cp["shift"], cp["f"]),
-            (
-                none,
-                none,
-                np.zeros(0, dtype=DTYPE),
-                np.zeros(0, dtype=DTYPE),
-                np.zeros((2, 2), dtype=DTYPE),
-                np.zeros(2, dtype=DTYPE),
-                np.zeros(0, dtype=DTYPE),
-                none,
-                none,
-            ),
-            n_sweep,
-        )
-        return X.astype(float)
-
-    def _sweeps(self, topo, X, plane, n_sweep):
+    def _sweeps(self, topo, X, n_sweep, plane=None):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
         singular nodes from their stencils, the inlet and outlet level with
         the nodes inside, the nodes near the corners drawn in, and the blade
-        nodes slid along the blade to the foot of the perpendicular from the
-        node outside them.
+        nodes of `plane` slid along the blade to the foot of the perpendicular
+        from the node outside them. Without a `plane`, as for a tip gap, there
+        is no blade to slide along, its outline being fixed instead.
         """
-        pitch = topo.pitch
+        pitch = topo.pitch or 0.0
         W_irr, c_irr = topo.sweep_irr
         W_sl, c_sl = topo.sweep_slide
         cp = topo.sweep_corner
+        args = (
+            X.astype(DTYPE),
+            topo.stencil_g,
+            topo.stencil_s,
+            pitch,
+            (topo.irregular, W_irr.indptr, W_irr.indices, W_irr.data, c_irr),
+            (topo.slide, W_sl.indptr, W_sl.indices, W_sl.data, c_sl),
+            (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
+        )
+        if plane is None:
+            none = np.zeros(0, dtype=np.int32)
+            empty = np.zeros(0, dtype=DTYPE)
+            wall = (none, none, empty, empty, np.zeros((2, 2), dtype=DTYPE))
+            wall += (np.zeros(2, dtype=DTYPE), empty, none, none)
+            X, _, _ = ember.elliptic.winslow_sweeps(*args, wall, n_sweep)
+            return X
         gid, shift = topo.gid[0], topo.shift[0] * pitch
 
         # The blade as a closed line, and where on it each blade node and the
@@ -1082,13 +1026,7 @@ class OHPassage(Mesher):
         )
 
         X, _, _ = ember.elliptic.winslow_sweeps(
-            X,
-            topo.stencil_g,
-            topo.stencil_s,
-            pitch,
-            (topo.irregular, W_irr.indptr, W_irr.indices, W_irr.data, c_irr),
-            (topo.slide, W_sl.indptr, W_sl.indices, W_sl.data, c_sl),
-            (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
+            *args,
             (
                 gid[:, 0],
                 gid[:, 1],
@@ -1110,11 +1048,7 @@ class OHPassage(Mesher):
         planes = [self.plane(machine, i_row, lay, s) for s in spf]
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
 
-        topo = self._topology(planes[j_mid]["xy"], lay.pitch)
-        # The polish leaves the inner half of the O block alone, whose lines
-        # off the blade the clustering afterwards puts the first cells on.
-        nk = topo.gid[0].shape[1]
-        inner = topo.gid[0][:, : (nk + 1) // 2].ravel()
+        topo = self._sweep_operators(_plane_topology(planes[j_mid]["xy"], lay.pitch))
         X_alg = [topo.gather(p["xy"]) for p in planes]
 
         # Swept on the control planes, and the correction that made carried
@@ -1124,17 +1058,7 @@ class OHPassage(Mesher):
         for j in j_ctrl:
             # Started from the algebraic plane as it is: the sweeps unfold
             # what folds in it without untangling first.
-            X = self._sweeps(topo, X_alg[j], planes[j], self.n_sweep)
-            if self.polish_rings:
-                X = elliptic.polish(
-                    topo,
-                    X,
-                    topo.irregular,
-                    rings=self.polish_rings,
-                    X_target=X_alg[j],
-                    power=POLISH_POWER,
-                    hold=inner,
-                )
+            X = self._sweeps(topo, X_alg[j], self.n_sweep, planes[j])
             correction[j] = X - X_alg[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
 
@@ -1153,36 +1077,33 @@ class OHPassage(Mesher):
         X_smooth = [X_alg[j] + correction[j] for j in range(len(spf))]
 
         # The refinement along the blade taken from where the sweeps left the
-        # coarse nodes at mid-span, not where the layout first put them.
+        # coarse nodes at mid-span.
         lay = self._wall_u(lay, planes[j_mid], topo.scatter(X_smooth[j_mid]))
-        for p in planes:
-            p["layout"] = lay
+        refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+        per_plane = [
+            self._refined(topo.scatter(X), plane, lay, refine)
+            for X, plane in zip(X_smooth, planes)
+        ]
 
-        # The refined planes share one topology, built when first needed. The
-        # control planes are polished once refined, and how far that moves
-        # each node carried to the planes between, as the smoothing is.
-        fine = {}
-        for p in planes:
-            p["fine"] = fine
+        # The control planes are polished once refined, and how far that
+        # moves each node carried to the planes between, as the smoothing is.
         if self.polish_below:
+            fine = _plane_topology(per_plane[j_mid], lay.pitch)
+            hold = fine.gid[0][:, : HOLD_FINE + 1].ravel()
             shift = [None] * len(spf)
             for j in j_ctrl:
-                xy = self._refined(topo.scatter(X_smooth[j]), planes[j])
-                shift[j] = self._polish_shift(xy, planes[j])
-            for p, d in zip(planes, between(shift)):
-                p["polish_shift"] = d
-        return self.assemble(machine, i_row, lay, planes, topo, X_smooth, jtip)
+                shift[j] = self._polish_shift(fine, hold, per_plane[j])
+            for j, d in enumerate(between(shift)):
+                per_plane[j] = fine.scatter(fine.gather(per_plane[j]) + d)
+        return self.assemble(machine, i_row, lay, planes, per_plane, jtip)
 
     def _wall_u(self, lay, plane, xy):
         """Return `lay` refined along the blade to its density on plane `xy`.
 
-        The layout places refined nodes at fractional coarse indices worked
-        out from where the coarse nodes were before the sweeps, which slide
-        them along the blade, and by interpolating linearly between them,
-        where :meth:`_refined` uses a spline: so the spacing along the blade
-        steps wherever the coarse spacing changes sharply, as it does where a
-        round trailing edge meets the surfaces. Here the indices are the
-        inverse of that spline through the swept coarse nodes, at the nodes
+        The layout fixes only how many refined cells each piece of the blade
+        has, since the sweeps slide the coarse nodes along it. Here they are
+        placed at fractional coarse indices, the inverse of the spline
+        :meth:`_refined` runs through the swept coarse nodes, at the nodes
         the layout's density puts along each piece, so the spacing along the
         blade at this plane is the density's, scaled to fit each piece's
         count of cells. The scale runs linearly along each piece and
@@ -1191,15 +1112,16 @@ class OHPassage(Mesher):
         behind the blade, C3 and C2, the scale is instead what makes the
         rear pieces' first cells as long as the passage block's last cells
         across there, at the downstream end of the trailing edge block, which
-        the blocks behind the blade continue along `k`. The two sides are refined apart, and the passage block between
-        them blends from one to the other.
+        the blocks behind the blade continue along `k`. The two sides are
+        refined apart, and the passage block between them blends from one to
+        the other.
         """
         wall = plane["wall"]
         S = util.arc_length(wall)
         s_c = _wall_arc(wall, xy[0][:, :, 0])
         e = np.cumsum((0, *lay.n_wall))
-        m = {k: len(lay.u[k]) - 1 for k in ("rl", "side_lo", "front", "side_up", "ru")}
-        counts = np.array(list(m.values()))
+        m = dict(zip(("rl", "side_lo", "front", "side_up", "ru"), lay.nf_wall))
+        counts = np.array(lay.nf_wall)
 
         # The density round the whole blade, from the first corner to where
         # it closes on itself.
@@ -1294,25 +1216,29 @@ class OHPassage(Mesher):
         u["ru"] = along(d_eff, 4, m["ru"])
         return dataclasses.replace(lay, u=u)
 
-    def finish(self, xy, plane):
-        """Return the blocks of a smoothed coarse plane, refined, and moved by
-        the polish carried to it from the control planes."""
-        out = self._refined(xy, plane)
-        if "polish_shift" in plane:
-            topo = plane["fine"]["topo"]
-            out = topo.scatter(topo.gather(out) + plane["polish_shift"])
-        return out
+    @staticmethod
+    def _wall_pieces(lay):
+        """Return the stretches of the O block along the blade, `(a, b, u)`
+        from coarse node `a` to `b` with refined nodes at `u` from `a`."""
+        u = lay.u
+        e = np.cumsum((0, *lay.n_wall))
+        return [
+            (e[0], e[1], u["rl"]),
+            (e[1], e[2], _reverse(u["side_lo"], lay.n_wall[1])),
+            (e[2], e[3], u["front"]),
+            (e[3], e[4], u["side_up"]),
+            (e[4], e[5], u["ru"]),
+        ]
 
-    def _refined(self, xy, plane):
-        """Return the blocks of a smoothed coarse plane, refined.
+    def _refine_matrices(self, lay, xy):
+        """Return the matrices refining each block of a coarse plane `xy`.
 
-        Each block refined along each of its directions on cubic splines
-        through the coarse nodes, one between each pair of block junctions;
-        the O block's blade nodes put back on the blade, and each line off it
-        respaced along itself from the wall spacing at the blade to `h` at
-        the outside.
+        For each block, one along `i` and one along `k`, or None if it is not
+        refined that way: the splines' values for each coarse node alone,
+        built once for the row, the refinement being linear in the coarse
+        nodes and its pieces fixed. Also `P_lo`, along `i` of the passage
+        block as the O block is refined along the lower side.
         """
-        lay = plane["layout"]
         u = lay.u
         n_rl, _, n_fr, _, n_ru = lay.n_wall
         n_sd = lay.n_wall[1]
@@ -1329,16 +1255,8 @@ class OHPassage(Mesher):
         def shifted(pieces, by):
             return [(a + by, b + by, v) for a, b, v in pieces]
 
-        e = np.cumsum((0, *lay.n_wall))
-        O_i = [
-            (e[0], e[1], u["rl"]),
-            (e[1], e[2], _reverse(u["side_lo"], n_sd)),
-            (e[2], e[3], u["front"]),
-            (e[3], e[4], u["side_up"]),
-            (e[4], e[5], u["ru"]),
-        ]
         plan = {
-            "O": (O_i, None),
+            "O": (self._wall_pieces(lay), None),
             "P": (side, across),
             "LE": ([(0, lay.n_in, u["in"])], front),
             "Pin": ([(0, lay.n_in, u["in"])], across),
@@ -1347,6 +1265,25 @@ class OHPassage(Mesher):
             "up": (None, across + shifted(front, n_P)),
             "dn": (None, across + shifted(rear, n_P)),
         }
+        refine = {
+            name: tuple(
+                None if pieces is None else _refine_matrix(n, pieces, B.dtype)
+                for n, pieces in zip(B.shape[1:], plan[name])
+            )
+            for name, B in zip(LABELS, xy)
+        }
+        refine["P_lo"] = _refine_matrix(n_sd + 1, side_lo, xy[1].dtype)
+        return refine
+
+    def _refined(self, xy, plane, lay, refine):
+        """Return the blocks of a smoothed coarse plane, refined.
+
+        Each block refined along each of its directions on cubic splines
+        through the coarse nodes, one between each pair of block junctions,
+        by the matrices `refine`; the O block's blade nodes put back on the
+        blade, and each line off it respaced along itself from the wall
+        spacing at the blade to `h` at the outside.
+        """
         # The O block's blade nodes refined through where they lie along the
         # blade, monotonically, so they stay on it and in order round it.
         wall = plane["wall"]
@@ -1357,32 +1294,19 @@ class OHPassage(Mesher):
                 scipy.interpolate.PchipInterpolator(
                     np.arange(a, b + 1), s_c[a : b + 1]
                 )(a + v)[(0 if j == 0 else 1) :]
-                for j, (a, b, v) in enumerate(O_i)
+                for j, (a, b, v) in enumerate(self._wall_pieces(lay))
             ]
         )
 
-        # Each block refined along each direction by a matrix, the splines'
-        # values for each coarse node alone, built once for the row: the
-        # refinement is linear in the coarse nodes, and its pieces fixed.
-        fine = plane["fine"]
-        if "refine" not in fine:
-            fine["refine"] = {
-                name: tuple(
-                    None if pieces is None else _refine_matrix(n, pieces, B.dtype)
-                    for n, pieces in zip(B.shape[1:], plan[name])
-                )
-                for name, B in zip(LABELS, xy)
-            }
-            fine["refine_P_lo"] = _refine_matrix(n_sd + 1, side_lo, xy[1].dtype)
         out = []
         for name, B in zip(LABELS, xy):
-            R_i, R_k = fine["refine"][name]
+            R_i, R_k = refine[name]
             if name == "P":
                 # Along the upper side of the blade at k = 0 and the lower at
                 # k = -1, each as the O block it meets is refined, and
                 # blended linearly across.
                 w = np.linspace(0.0, 1.0, B.shape[2], dtype=B.dtype)
-                B = (R_i @ B) * (1.0 - w) + (fine["refine_P_lo"] @ B) * w
+                B = (R_i @ B) * (1.0 - w) + (refine["P_lo"] @ B) * w
             elif R_i is not None:
                 B = R_i @ B
             if R_k is not None:
@@ -1411,27 +1335,15 @@ class OHPassage(Mesher):
         out[0] = lo + w[None] * (hi - lo)
         return out
 
-    def _polish_shift(self, xy, plane):
-        """Return how far polishing moves each node of refined blocks.
+    def _polish_shift(self, topo, hold, xy):
+        """Return how far polishing moves each node of refined blocks `xy`.
 
         The nodes within `POLISH_FINE_RINGS` cells of every cell whose worst
         corner is under :attr:`polish_below`, against cells the size they
-        are; the O block's first `HOLD_FINE` layers of cells off the blade
-        held, so its spacing and squareness there stay as clustered.
+        are; the nodes `hold`, the O block's first `HOLD_FINE` layers of
+        cells off the blade, held so its spacing and squareness there stay as
+        clustered.
         """
-        fine = plane["fine"]
-        pitch = plane["layout"].pitch
-        if "topo" not in fine:
-            shapes = [B.shape[1:] for B in xy]
-            fixed = [np.zeros(sh, dtype=bool) for sh in shapes]
-            slide = [np.zeros(sh, dtype=bool) for sh in shapes]
-            fixed[0][:, 0] = True
-            slide[6][0, :] = True
-            slide[7][-1, :] = True
-            topo = elliptic.PlaneTopology(xy, pitch=pitch, fixed=fixed, slide=slide)
-            fine["topo"] = topo
-            fine["hold"] = topo.gid[0][:, : HOLD_FINE + 1].ravel()
-        topo = fine["topo"]
         poor = []
         for B, g in zip(xy, topo.gid):
             bad = _cell_angles(B) < self.polish_below
@@ -1446,9 +1358,8 @@ class OHPassage(Mesher):
             X,
             poor,
             rings=POLISH_FINE_RINGS,
-            X_target=X,
             power=POLISH_POWER,
-            hold=fine["hold"],
+            hold=hold,
         )
         return polished - X
 
@@ -1524,7 +1435,7 @@ class OHPassage(Mesher):
         # the H block's corners, whose lengths differ sharply, skew the cells
         # between them. Respaced again after, as the polish moves the cells
         # at the outline a little.
-        X = self._gap_sweeps(topo, topo.gather(alg[0]), self.n_sweep)
+        X = self._sweeps(topo, topo.gather(alg[0]), self.n_sweep).astype(float)
         X = respaced(X, d_wall[0])
         X = elliptic.polish(
             topo,
@@ -1608,13 +1519,10 @@ class OHPassage(Mesher):
             blocks.append(block)
         return blocks
 
-    def assemble(self, machine, i_row, layout, planes, topo, X_smooth, jtip=None):
-        """Return ember blocks from the smoothed planes of a row, with the two
+    def assemble(self, machine, i_row, layout, planes, per_plane, jtip=None):
+        """Return ember blocks from the finished planes of a row, with the two
         blocks of a tip gap from `jtip` after the rest."""
         n_row = len(machine.rows)
-        per_plane = [
-            self.finish(topo.scatter(X), plane) for X, plane in zip(X_smooth, planes)
-        ]
         blocks = self.blocks(machine, i_row, planes, per_plane, self.labels)
         O, P, LE, Pin, TE, Pout, up, dn = blocks
         i3, i4, i1, i2 = layout.i_corners()
@@ -1701,8 +1609,21 @@ class OHPassage(Mesher):
         return blocks
 
 
+def _plane_topology(xy, pitch):
+    """Return the topology of a plane of a row's main blocks `xy`, coarse or
+    refined: the O block's blade nodes fixed, the inlet and outlet sliding."""
+    shapes = [B.shape[1:] for B in xy]
+    fixed = [np.zeros(sh, dtype=bool) for sh in shapes]
+    slide = [np.zeros(sh, dtype=bool) for sh in shapes]
+    fixed[0][:, 0] = True
+    slide[6][0, :] = True
+    slide[7][-1, :] = True
+    return elliptic.PlaneTopology(xy, pitch=pitch, fixed=fixed, slide=slide)
+
+
 def _project(wall, s_wall, tree, pts):
-    """Return the arc lengths along `wall` (2, n) nearest each of `pts` (m, 2).
+    """Return `s_wall`, sampled along `wall` (2, n), at the point of `wall`
+    nearest each of `pts` (m, 2).
 
     On the segment either side of the nearest sample, so between samples
     rather than snapped to one.
