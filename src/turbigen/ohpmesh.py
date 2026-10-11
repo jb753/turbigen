@@ -1961,9 +1961,21 @@ def _gap_fractions(W, lower, upper, i_LE):
     N = W.shape[1] - 1
     sides = (W[:, i_LE::-1], W[:, i_LE:])
     m = util.cluster_cosine(N_CHORD)
-    f0 = np.mean(
-        [util.resample_to(_norm_arc(side), N // 2 + 1) for side in sides], axis=0
-    )
+    # Spaced along each side in proportion to the blade's local thickness,
+    # so that the H block's ends, a fixed count of cells, span the leading
+    # and trailing edges alike, whatever the main O block's spacing round
+    # them: kept as it is, a leading edge spaced five times as coarsely as
+    # the trailing edge wrapped the front far round the nose and folded it.
+    t = np.log(2.0 * _inscribed_radius(W))
+    for _ in range(N_SMOOTH_NORMAL):
+        t = 0.25 * np.roll(t, 1) + 0.5 * t + 0.25 * np.roll(t, -1)
+    t = np.exp(np.append(t, t[0]))
+    f0 = []
+    for side, ts in zip(sides, (t[i_LE::-1], t[i_LE:])):
+        sa = util.cum_arc_length(side)
+        c = util.cumtrapz0(1.0 / ts, sa)
+        f0.append(np.interp(np.linspace(0.0, c[-1], N // 2 + 1), c, sa / sa[-1]))
+    f0 = np.mean(f0, axis=0)
     curves = []
     for side, surf in zip(sides, (lower, upper)):
         f = np.linspace(0.0, 1.0, N_WALL)
@@ -1998,6 +2010,21 @@ def _gap_outline(W, frac, i_LE):
     return out
 
 
+def _inscribed_radius(W):
+    """Return the radius of the largest circle inside closed outline `W`
+    (2, N + 1) that touches it at each of its first `N` nodes."""
+    n_in = -_outward_normals(W)
+    P, d = W[:, :-1], n_in[:, :-1]
+    # The circle tangent at node a through node b has radius
+    # |b - a|^2 / (2 (b - a) . n_a); the largest inside is the least of
+    # these over the nodes on its inward side.
+    rel = P[:, None, :] - P[:, :, None]
+    along = np.einsum("cab,ca->ab", rel, d)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = np.where(along > 0.0, np.sum(rel**2, axis=0) / (2.0 * along), np.inf)
+    return r.min(axis=1)
+
+
 def _gap_inset(W, frac):
     """Return the outline `W` (2, N + 1) moved inwards by `frac` of its thickness.
 
@@ -2013,16 +2040,7 @@ def _gap_inset(W, frac):
     sharply between neighbours.
     """
     n_in = -_outward_normals(W)
-    P, d = W[:, :-1], n_in[:, :-1]
-    # The circle tangent at node a through node b has radius
-    # |b - a|^2 / (2 (b - a) . n_a); the largest inside is the least of
-    # these over the nodes on its inward side.
-    rel = P[:, None, :] - P[:, :, None]
-    along = np.einsum("cab,ca->ab", rel, d)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        r = np.where(along > 0.0, np.sum(rel**2, axis=0) / (2.0 * along), np.inf)
-    r = r.min(axis=1)
-
+    r = _inscribed_radius(W)
     depth = frac * 2.0 * r
     for _ in range(N_SMOOTH_NORMAL):
         depth = np.minimum(
@@ -2482,7 +2500,13 @@ def _single(dmin, dmax, ER):
     try:
         return clusterfunc.single.free(dmin, dmax, ER)
     except clusterfunc.exceptions.ClusteringException:
+        pass
+    try:
         return clusterfunc.single.free(dmin, dmax, ER, mult=1)
+    except clusterfunc.exceptions.ClusteringException:
+        # Too short to grow at this ratio in the fewest points it takes:
+        # evenly, at the first spacing.
+        return _uniform(dmin)
 
 
 def _double(d0, d1, dmax, ER):
