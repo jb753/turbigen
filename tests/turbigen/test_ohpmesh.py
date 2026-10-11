@@ -6,7 +6,8 @@ blade would have had, an O block and an H block, so these check that they fit
 the rest of the mesh node for node, that the blade surface and endwalls are
 read off it as they would be off an H mesh's gridded tip, and that the cells
 in the gap are fit to solve on. The rest guard what has gone wrong before:
-steps in spacing along the blade and across the O block, poor cells in the
+steps in spacing along the blade, across the O block and spanwise into
+the clearance, poor cells in the
 main blocks, and a guessed flow turned the wrong way in the blocks whose `i`
 does not run downstream.
 """
@@ -198,15 +199,15 @@ def test_the_spacing_along_the_blade_does_not_step(grid):
         assert _steps(d, 0).max() < 2.0, i_row
 
 
-def test_no_block_steps_sharply_along_i_or_k(grid):
+def test_no_block_steps_sharply_in_any_direction(grid):
     # Across the O block on short lines, and where the blocks behind the
-    # blade meet the passage's, up to four times once. Spanwise is left out:
-    # the clearance's spacing meets the main span's there.
+    # blade meet the passage's, up to four times once; and spanwise, where
+    # the main span met a clearance held finer by its least count, twice.
     for block in grid:
         xyz = _cartesian(block)
-        for axis in (0, 2):
+        for axis in range(3):
             d = np.linalg.norm(np.diff(xyz, axis=axis), axis=-1)
-            assert _steps(d, axis).max() < 3.0, (block.label, "ik"[axis // 2])
+            assert _steps(d, axis).max() < 3.0, (block.label, "ijk"[axis])
 
 
 def test_the_cells_in_the_main_blocks_are_not_badly_skewed(grid):

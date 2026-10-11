@@ -93,6 +93,9 @@ POLISH_POWER = 4.0
 """Power the polish raises each cell corner's shape measure to, so that the
 worst cells dominate rather than being traded for small gains elsewhere."""
 
+N_MATCH_SPAN = 3
+"""Corrections of the main span's end spacing to meet a tip gap's."""
+
 N_MATCH_REAR = 4
 """Corrections of the blade's spacing at the corners behind it, to match
 the cells across the passage there."""
@@ -459,7 +462,7 @@ class OHPassage(Mesher):
         With a tip gap, a fraction `tip` of span, two pieces joined at a node
         at the top of the blade: the main span, and at least
         :attr:`njtip_min` nodes across the gap, spaced at the casing spacing
-        or finer.
+        or finer, the main span ending as finely as the gap begins.
         """
         if not tip:
             return util.resample(
@@ -472,9 +475,6 @@ class OHPassage(Mesher):
 
         L_main = 1.0 - tip
         dspf_tip = min(dspf_casing, tip / (self.njtip_min - 1))
-        spf_main = clusterfunc.double.free(
-            dspf_hub, dspf_tip, self.dspf_mid, self.ER_span, 0.0, L_main
-        )
         try:
             spf_tip = clusterfunc.double.free(
                 dspf_tip, dspf_tip, 4.0 * dspf_tip, self.ER_span, L_main, 1.0
@@ -483,14 +483,25 @@ class OHPassage(Mesher):
             spf_tip = clusterfunc.double.fixed(
                 dspf_tip, dspf_tip, self.njtip_min, L_main, 1.0
             )
-        spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
         spf_tip = util.resample(spf_tip, self.resolution_factor, mult=8)
         # Each piece is a block's span in the clearance, so each a count a
         # multigrid level can halve, and the gap no fewer than asked.
         spf_tip = util.resample_to(
             spf_tip, max(_up8(len(spf_tip) - 1) + 1, self.njtip_min)
         )
-        spf_main = util.resample_to(spf_main, _up8(len(spf_main) - 1) + 1)
+
+        # The main span ends as finely as the gap begins once resampled. Its
+        # end spacing grows as the resolution falls, but the gap's is held by
+        # its least count, and the two once met at a step of twice.
+        d_end = spf_tip[1] - spf_tip[0]
+        d_main = d_end * self.resolution_factor
+        for _ in range(N_MATCH_SPAN):
+            spf_main = clusterfunc.double.free(
+                dspf_hub, d_main, self.dspf_mid, self.ER_span, 0.0, L_main
+            )
+            spf_main = util.resample(spf_main, self.resolution_factor, mult=8)
+            spf_main = util.resample_to(spf_main, _up8(len(spf_main) - 1) + 1)
+            d_main *= d_end / (spf_main[-1] - spf_main[-2])
         spf_main[-1] = spf_tip[0] = L_main
         return np.concatenate((spf_main[:-1], spf_tip))
 
