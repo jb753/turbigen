@@ -118,6 +118,20 @@ DTYPE = np.float32
 finished grid is stored in single precision, and the sweeps run faster in
 it. Only their geometry is worked out in double before."""
 
+GAP_PAIR_MIX = 0.1
+"""Share of the fraction of each side's length mixed into the chordwise
+parameter the nodes either side of a tip gap are paired by, so that it keeps
+rising where one side's parameter stands still."""
+
+GAP_PAIR_ENDS = 0.03
+"""Fraction of each side's length from either edge of a tip gap over which
+its nodes are paired at the same fractions of the two sides' lengths,
+blending to the pairing by chordwise parameter."""
+
+GAP_FADE = 3.0
+"""Distance back from the leading edge, in bulges of the front of a tip gap's
+H block ahead of its first straight line, over which that bulge fades out."""
+
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
 they slide: only a guard against a run of them collapsing, the crowding the
@@ -339,9 +353,14 @@ class OHPassage(Mesher):
     """Thickness of the O block of a tip gap before it is polished, as a
     fraction of the local thickness of the blade."""
 
-    n_polish_tip: int = 1000
+    n_size_smooth_tip: int = 10
+    """Passes of smoothing of the spacing the tip gap's polish aims for,
+    along each grid line, which draws out the steps in spacing the
+    algebraic plane is built with. See :func:`turbigen.elliptic.polish`."""
+
+    n_polish_tip: int = 250
     """Iterations of the target-matrix optimisation that squares up the
-    plane of a tip gap that is smoothed."""
+    plane of a tip gap that is smoothed, from the algebraic plane."""
 
     def __post_init__(self):
         if min(self.ds, self.ds_LE, self.ds_free, self.t_O) <= 0.0:
@@ -974,22 +993,21 @@ class OHPassage(Mesher):
                             out["f"].append(fc[a, b])
         return {k: np.array(v) for k, v in out.items()}
 
-    def _sweeps(self, topo, X, n_sweep, plane=None):
+    def _sweeps(self, topo, X, n_sweep, plane):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
         singular nodes from their stencils, the inlet and outlet level with
         the nodes inside, the nodes near the corners drawn in, and the blade
         nodes of `plane` slid along the blade to the foot of the perpendicular
-        from the node outside them. Without a `plane`, as for a tip gap, there
-        is no blade to slide along, its outline being fixed instead.
+        from the node outside them.
         """
-        pitch = topo.pitch or 0.0
+        pitch = topo.pitch
         W_irr, c_irr = topo.sweep_irr
         W_sl, c_sl = topo.sweep_slide
         cp = topo.sweep_corner
         args = (
-            X.astype(DTYPE),
+            X,
             topo.stencil_g,
             topo.stencil_s,
             pitch,
@@ -997,13 +1015,6 @@ class OHPassage(Mesher):
             (topo.slide, W_sl.indptr, W_sl.indices, W_sl.data, c_sl),
             (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
         )
-        if plane is None:
-            none = np.zeros(0, dtype=np.int32)
-            empty = np.zeros(0, dtype=DTYPE)
-            wall = (none, none, empty, empty, np.zeros((2, 2), dtype=DTYPE))
-            wall += (np.zeros(2, dtype=DTYPE), empty, none, none)
-            X, _, _ = ember.elliptic.winslow_sweeps(*args, wall, n_sweep)
-            return X
         gid, shift = topo.gid[0], topo.shift[0] * pitch
 
         # The blade as a closed line, and where on it each blade node and the
@@ -1367,7 +1378,7 @@ class OHPassage(Mesher):
     # TIP GAP
     #
 
-    def _tip_gap(self, layout, planes, per_plane):
+    def _tip_gap(self, blade, layout, planes, per_plane):
         """Return the blocks of a tip gap on each plane, and where they meet.
 
         Two blocks, inside the outline the blade would have had: an O block
@@ -1380,16 +1391,20 @@ class OHPassage(Mesher):
 
         The O block round the blade has unequal counts either side of the
         blade, not level chordwise, so the gap's outline is that face
-        renoded, half its nodes along each side at the same fractions of each
-        side's length, and joined to it by a non-matching interface; the H
-        block then runs straight across. The plane at the tip of the blade
+        renoded, half its nodes along each side, those of one index either
+        side across the blade from each other, and joined to it by a
+        non-matching interface; the H block then runs straight across. See
+        :func:`_gap_fractions`. The plane at the tip of the blade
         is built algebraically, which folds round a strongly curved blade,
-        then smoothed as a main plane is: swept by Winslow's equations, which
-        unfolds all but the O block's cells at the H block's corners, its O
-        block's lines respaced to the wall spacing at the outline, and the
-        whole plane polished: polishing only its poor cells, even again and
-        again, leaves it worse in its worst cell, and fewer iterations of the
-        whole can stop with cells the sweeps folded only just unfolded. That plane is carried to each above it by
+        its O block's lines respaced to the wall spacing at the outline, and
+        the whole plane polished, which unfolds it: polishing only its poor
+        cells, even again and again, leaves it worse in its worst cell. It is
+        not swept by Winslow's equations first, as a main plane is: at the
+        gap's final resolution, its cells long and thin, the sweeps set the
+        lines zigzagging from node to node round the H block's corners and
+        fold the O block's cells there, and the polish then needs four times
+        the iterations to undo that and still ends worse in its worst cell.
+        That plane is carried to each above it by
         moving its outline to theirs and the nodes inside by a discrete
         Laplacian, then respacing. Carried instead as a correction to each
         plane's algebraic one, it folds near the casing where the blade
@@ -1397,6 +1412,8 @@ class OHPassage(Mesher):
 
         Parameters
         ----------
+        blade : Blade
+            The row's blade.
         layout : _Layout
             The row's layout.
         planes : list of dict
@@ -1413,14 +1430,16 @@ class OHPassage(Mesher):
 
         """
         walls = [np.asarray(xy[0][:, :, 0], dtype=float) for xy in per_plane]
-        frac = _gap_fractions(walls[0])
+        cmap = planes[0]["cmap"]
+        upper, lower = _surfaces(blade, cmap, cmap.spf)
+        frac = _gap_fractions(walls[0], lower, upper)
         walls = [_gap_outline(W, frac) for W in walls]
         corners = _gap_corners(walls[0], self.nk_tip)
         alg = [_gap_plane(W, corners, self.t_tip_O, self.nk_tip_O) for W in walls]
 
         fixed = [np.zeros(B.shape[1:], dtype=bool) for B in alg[0]]
         fixed[0][:, -1] = True
-        topo = self._sweep_operators(elliptic.PlaneTopology(alg[0], fixed=fixed))
+        topo = elliptic.PlaneTopology(alg[0], fixed=fixed, stencils=False)
         d_wall = [
             layout.d_wall / plane["cmap"].xr_from_mp(W[0])[1]
             for W, plane in zip(walls, planes)
@@ -1435,8 +1454,7 @@ class OHPassage(Mesher):
         # the H block's corners, whose lengths differ sharply, skew the cells
         # between them. Respaced again after, as the polish moves the cells
         # at the outline a little.
-        X = self._sweeps(topo, topo.gather(alg[0]), self.n_sweep).astype(float)
-        X = respaced(X, d_wall[0])
+        X = respaced(topo.gather(alg[0]), d_wall[0])
         X = elliptic.polish(
             topo,
             X,
@@ -1444,6 +1462,7 @@ class OHPassage(Mesher):
             rings=0,
             max_iter=self.n_polish_tip,
             power=POLISH_POWER,
+            smooth=self.n_size_smooth_tip,
         )
         X = respaced(X, d_wall[0])
 
@@ -1574,7 +1593,9 @@ class OHPassage(Mesher):
         # shares with the O block round the blade, noded differently.
         NonMatch = ember.patch.NonMatchPatch
         O.patches.append(NonMatch(k=0, j=(jtip, -1), label="tip_gap"))
-        gap, (iA, iB, iC, iD) = self._tip_gap(layout, planes[jtip:], per_plane[jtip:])
+        gap, (iA, iB, iC, iD) = self._tip_gap(
+            machine.rows[i_row].blade, layout, planes[jtip:], per_plane[jtip:]
+        )
         tO, tH = self.blocks(machine, i_row, planes[jtip:], gap, ("tipO", "tipH"))
         N = tO.shape[0] - 1
         tO.patches.extend(
@@ -1720,33 +1741,63 @@ def _gap_corners(W, nk_tip):
     return (r, iB, iB + b, N - b + r)
 
 
-def _gap_fractions(W):
+def _gap_fractions(W, lower, upper):
     """Return where the outline of a tip gap has its nodes along each side.
 
     `W` (2, N + 1) is the outline of the blade, clockwise from the middle of
-    the trailing edge, and `N` a multiple of sixteen. Fractions (N / 2 + 1,)
-    of each side's length from the leading edge, the mean of the two sides'
-    own spacings, so the outline keeps the clustering it had.
+    the trailing edge, and `N` a multiple of sixteen; `lower` and `upper`
+    (2, N_CHORD) the blade's surfaces at the chordwise parameters `m` the
+    blade hangs them off its camber line at. Fractions (2, N / 2 + 1) of the
+    lower and upper sides' lengths from the leading edge, at which the nodes
+    of one index either side lie at the same chordwise parameter, each side's
+    rescaled to run from zero to one along it and mixed with `GAP_PAIR_MIX`
+    of the fraction of its length, so the line between them crosses the
+    blade about square to its camber; at the leading and trailing edges, at
+    the same fractions of the two sides' lengths. The parameters are spaced as the mean
+    of the two sides' own spacings, so the outline keeps the clustering it
+    had. At the same fraction of each side's length instead, nodes on a
+    highly cambered blade lie well apart chordwise, its suction side the
+    longer, and the H block's lines across the gap lean by up to sixty
+    degrees from one to the other. Paired across the camber line by
+    projection onto it instead, the projections fold back on the concave
+    side near a thick leading edge.
     """
     N = W.shape[1] - 1
     i_LE = int(np.argmin(W[0]))
     sides = (W[:, i_LE::-1], W[:, i_LE:])
-    return np.mean(
+    m = util.cluster_cosine(N_CHORD)
+    f0 = np.mean(
         [util.resample_to(_norm_arc(side), N // 2 + 1) for side in sides], axis=0
     )
+    curves = []
+    for side, surf in zip(sides, (lower, upper)):
+        f = np.linspace(0.0, 1.0, N_WALL)
+        pts = _at_arc(side, f * util.arc_length(side))
+        t = np.maximum.accumulate(_project(surf, m, cKDTree(surf.T), pts.T))
+        t = (t - t[0]) / (t[-1] - t[0])
+        curves.append((f, (1.0 - GAP_PAIR_MIX) * t + GAP_PAIR_MIX * f))
+    t_pair = np.mean([np.interp(f0, f, t) for f, t in curves], axis=0)
+    paired = np.stack([np.interp(t_pair, t, f) for f, t in curves])
+    # Round the nose one side's parameter stands still, and round the
+    # trailing edge both, and the nodes there would lie far apart; at the
+    # same fractions of the two sides instead, blending to the pairs over
+    # `GAP_PAIR_ENDS` of each side's length.
+    x = np.clip(np.minimum(f0, 1.0 - f0) / GAP_PAIR_ENDS, 0.0, 1.0)
+    return f0 + x * x * (3.0 - 2.0 * x) * (paired - f0)
 
 
 def _gap_outline(W, frac):
     """Return the outline `W` (2, N + 1) of a tip gap renoded at `frac`.
 
-    Each side at the same fractions `frac` of its length from the leading
-    edge, the leading edge at node `N / 2`, so that nodes of one index along
-    either side lie level with each other.
+    The lower and upper sides at fractions `frac` (2, N / 2 + 1) of their
+    lengths from the leading edge, the leading edge at node `N / 2`, so that
+    nodes of one index along either side lie across the blade from each
+    other.
     """
     i_LE = int(np.argmin(W[0]))
     lower, upper = (
-        _at_arc(side, frac * util.arc_length(side))
-        for side in (W[:, i_LE::-1], W[:, i_LE:])
+        _at_arc(side, f * util.arc_length(side))
+        for side, f in zip((W[:, i_LE::-1], W[:, i_LE:]), frac)
     )
     out = np.concatenate((lower[:, ::-1], upper[:, 1:]), axis=1)
     out[:, 0], out[:, -1] = W[:, 0], W[:, -1]
@@ -1756,31 +1807,29 @@ def _gap_outline(W, frac):
 def _gap_inset(W, frac):
     """Return the outline `W` (2, N + 1) moved inwards by `frac` of its thickness.
 
-    Along the inward normals, by `frac` of the distance to the far side of
-    the blade along them, but no more than `frac` of the diameter of
-    curvature where the outline is convex: round a leading edge the normals
-    meet, and the distance along them to the far side runs to the length of
-    the blade. Rounded down where it rises sharply between neighbours.
+    Along the inward normals, by `frac` of the diameter of the largest circle
+    inside the outline that touches it at each node: the local thickness of
+    the blade, across it on the sides, round the edges. Measured along the
+    normal instead, the distance to the far side runs long wherever the
+    normal leaves the blade aslant, as it does behind a cambered leading
+    edge, and the two sides of the inset outline nearly meet there. With
+    `frac` under a half, no inset node reaches its circle's far side, nor
+    further than its radius, no more than the radius of curvature, so the
+    normals do not cross before it either. Rounded down where it rises
+    sharply between neighbours.
     """
     n_in = -_outward_normals(W)
     P, d = W[:, :-1], n_in[:, :-1]
-    A, E = W[:, :-1], np.diff(W, axis=1)
-    # Where the ray from each node meets each segment of the outline.
-    den = d[0][:, None] * E[1][None] - d[1][:, None] * E[0][None]
-    AP = A[:, None, :] - P[:, :, None]
+    # The circle tangent at node a through node b has radius
+    # |b - a|^2 / (2 (b - a) . n_a); the largest inside is the least of
+    # these over the nodes on its inward side.
+    rel = P[:, None, :] - P[:, :, None]
+    along = np.einsum("cab,ca->ab", rel, d)
     with np.errstate(divide="ignore", invalid="ignore"):
-        t = (AP[0] * E[1][None] - AP[1] * E[0][None]) / den
-        u = (AP[0] * d[1][:, None] - AP[1] * d[0][:, None]) / den
-    tol = 1e-6 * util.arc_length(W)
-    t = np.where((t > tol) & (u >= 0.0) & (u <= 1.0), t, np.inf).min(axis=1)
+        r = np.where(along > 0.0, np.sum(rel**2, axis=0) / (2.0 * along), np.inf)
+    r = r.min(axis=1)
 
-    # Radius of curvature where the outline is convex, turning clockwise.
-    d1 = 0.5 * (np.roll(P, -1, axis=1) - np.roll(P, 1, axis=1))
-    d2 = np.roll(P, -1, axis=1) - 2.0 * P + np.roll(P, 1, axis=1)
-    kappa = (d1[0] * d2[1] - d1[1] * d2[0]) / np.linalg.norm(d1, axis=0) ** 3
-    rho = np.where(kappa < 0.0, -1.0 / np.minimum(kappa, -1e-300), np.inf)
-
-    depth = frac * np.minimum(t, 2.0 * rho)
+    depth = frac * 2.0 * r
     for _ in range(N_SMOOTH_NORMAL):
         depth = np.minimum(
             depth,
@@ -1796,18 +1845,39 @@ def _gap_plane(W, corners, frac, nk_O):
     """Return the algebraic O and H blocks (2, ni, nk) of a tip gap in `W`.
 
     The O block from the H block at `k = 0` to the outline at `k = -1`,
-    evenly across; the H block by transfinite interpolation of the edges the
-    corners cut its inner face into.
+    evenly across; the H block of straight lines across the blade, from each
+    node of the lower side of the face the corners cut its inner face into
+    to the node of the upper side as far along, between its ends round the
+    leading and trailing edges. Not by transfinite interpolation, which
+    blends an end's bulge round the leading edge in by the fraction of the
+    way along the sides, so the many lines clustered towards the leading
+    edge all take nearly the whole of it, and cross the sides there.
     """
     iA, iB, iC, iD = corners
     N = W.shape[1] - 1
     inner = _gap_inset(W, frac)
-    H = _tfi(
-        inner[:, iA : iB + 1][:, ::-1],
-        inner[:, iC : iD + 1],
-        inner[:, iB : iC + 1],
-        np.concatenate((inner[:, iA::-1], inner[:, N - 1 : iD - 1 : -1]), axis=1),
-    )
+    lower = inner[:, iA : iB + 1][:, ::-1]
+    upper = inner[:, iC : iD + 1]
+    front = inner[:, iB : iC + 1]
+    rear = np.concatenate((inner[:, iA::-1], inner[:, N - 1 : iD - 1 : -1]), axis=1)
+    # Spaced evenly across. Spaced as the ends are, the leading edge's
+    # spacing round the nose, uneven where the corners sit apart round it,
+    # carries down the whole block.
+    v = np.linspace(0.0, 1.0, front.shape[1])[None, None]
+    H = (1.0 - v) * lower[:, :, None] + v * upper[:, :, None]
+    # The front bulges ahead of the first straight line round the leading
+    # edge; its bulge carried into the lines behind, fading by the square of
+    # the distance back over `GAP_FADE` of the bulge, so the first cells do
+    # not step from long to short. Faded by distance rather than by
+    # fraction along the sides, which the lines crowd towards the leading
+    # edge, so that many would take nearly the whole bulge and cross.
+    bulge = front - H[:, 0, :]
+    d = 0.5 * (util.cum_arc_length(lower) + util.cum_arc_length(upper))
+    reach = GAP_FADE * np.linalg.norm(bulge, axis=0).max()
+    if reach > 0.0:
+        w = (1.0 - np.minimum(d / reach, 1.0)) ** 2
+        H += w[None, :, None] * bulge[:, None, :]
+    H[:, 0, :], H[:, -1, :] = front, rear
     f = np.linspace(0.0, 1.0, nk_O)[None, None]
     O = inner[..., None] + f * (W - inner)[..., None]
     return [O, H]

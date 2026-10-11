@@ -385,6 +385,7 @@ def polish(
     X_target=None,
     power=1.0,
     hold=None,
+    smooth=0,
 ):
     """Return `X` with the nodes near `centres` moved to square up their cells.
 
@@ -427,6 +428,15 @@ def polish(
         trading them for small gains everywhere else.
     hold : array_like of int, optional
         Nodes to leave where they are, as well as the fixed ones.
+    smooth : int
+        Passes of smoothing of the logarithm of the target edge lengths along
+        each grid line of each block, before they are averaged into each
+        cell's. See :func:`_smoothed_targets`. None if zero. A step in spacing
+        is a kink in the logarithm of the edge lengths, which the passes
+        spread over the cells either side of it, while a steady stretching,
+        a straight line in the logarithm, passes unchanged; so the size term
+        draws a step out into a gradual change, and leaves the clustering the
+        mesh was built with.
 
     Returns
     -------
@@ -483,6 +493,9 @@ def polish(
     a0 = corners(X if X_target is None else X_target)
     la = 0.5 * (np.linalg.norm(a0[0][0], axis=1) + np.linalg.norm(a0[2][0], axis=1))
     lb = 0.5 * (np.linalg.norm(a0[0][1], axis=1) + np.linalg.norm(a0[1][1], axis=1))
+    if smooth:
+        la, lb = _smoothed_targets(topo, X if X_target is None else X_target, smooth)
+        la, lb = la[cells], lb[cells]
     scale = np.sqrt(np.mean(la * lb))
     n_corner = 4.0 * len(ids)
     X0 = X.copy()
@@ -513,3 +526,50 @@ def polish(
         f"{fun(X0[free] / scale)[0]:.4g} to {res.fun:.4g}, {res.message}"
     )
     return out
+
+
+def _smoothed_targets(topo, X, n_pass):
+    """Return target edge lengths along `i` and `k` of every cell, smoothed.
+
+    The logarithm of each edge's length smoothed along its grid line in its
+    block by `n_pass` passes of a three-point average: round a line that
+    closes on itself, as an O block's does; on an open line, its end edges
+    held where the line ends on a fixed node, a wall, whose spacing is kept,
+    and otherwise averaged with their one neighbour. Each cell's targets the
+    mean of its two edges in each direction, in the order :func:`polish`
+    numbers the cells.
+
+    Within each block only. Carried on through the junctions of blocks, a
+    tip gap's lines across its H block run on into its O block's, clustered
+    to the wall, and draw that clustering into the H block; and on a main
+    plane, whose polish moves only the nodes near poor cells, it leaves the
+    steps across the O block's outer face no better and its worst cells
+    worse.
+    """
+    fixed = np.zeros(topo.n_node, dtype=bool)
+    fixed[topo.fixed] = True
+    la, lb = [], []
+    for B, g in zip(topo.scatter(np.asarray(X, dtype=float)), topo.gid):
+        L = []
+        for axis in (1, 2):
+            d = np.linalg.norm(np.diff(B, axis=axis), axis=0)
+            line = np.moveaxis(np.log(np.maximum(d, 1e-300)), axis - 1, 0)
+            nodes = np.moveaxis(g, axis - 1, 0)
+            closed = bool((nodes[0] == nodes[-1]).all())
+            hold0, hold1 = fixed[nodes[0]], fixed[nodes[-1]]
+            for _ in range(n_pass if len(line) > 1 else 0):
+                if closed:
+                    line = 0.5 * line + 0.25 * (
+                        np.roll(line, 1, axis=0) + np.roll(line, -1, axis=0)
+                    )
+                    continue
+                new = line.copy()
+                new[1:-1] = 0.5 * line[1:-1] + 0.25 * (line[:-2] + line[2:])
+                new[0] = np.where(hold0, line[0], 0.75 * line[0] + 0.25 * line[1])
+                new[-1] = np.where(hold1, line[-1], 0.75 * line[-1] + 0.25 * line[-2])
+                line = new
+            L.append(np.exp(np.moveaxis(line, 0, axis - 1)))
+        Li, Lk = L
+        la.append((0.5 * (Li[:, :-1] + Li[:, 1:])).ravel())
+        lb.append((0.5 * (Lk[:-1, :] + Lk[1:, :])).ravel())
+    return np.concatenate(la), np.concatenate(lb)
