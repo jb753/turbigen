@@ -313,22 +313,28 @@ class OHPassage(Mesher):
     """Number of spanwise planes to smooth, hub and casing included. The rest
     are interpolated between them. Zero smooths every plane."""
 
-    ds: float = 0.01
+    ds: float = 0.02
     """Cell size along the blade between its edges, next to the O block and
     across the passage there, as a fraction of meridional chord."""
 
-    ds_LE: float = 0.002
-    """Cell size along the blade at the leading and trailing edges, as a
-    fraction of meridional chord."""
+    ds_LE: float = 0.01
+    """Cell size along the blade at the leading edge, as a fraction of
+    meridional chord."""
 
-    ds_free: float = 0.03
+    ds_TE: float = 0.002
+    """Cell size along the blade at the middle of the trailing edge, as a
+    fraction of meridional chord: a round trailing edge is much smaller than
+    the leading edge, and too few nodes round it fan the O block's lines
+    sharply off it."""
+
+    ds_free: float = 0.05
     """Cell size in the free stream, and of the coarse mesh that is smoothed,
     as a fraction of meridional chord."""
 
     turn_max: float = 15.0
     """Most the blade turns across one cell of the coarse mesh, degrees."""
 
-    ER_surf: float = 1.15
+    ER_surf: float = 1.2
     """Expansion ratio along the blade away from its edges."""
 
     ER_stream: float = 1.2
@@ -406,12 +412,12 @@ class OHPassage(Mesher):
     plane of a tip gap that is smoothed, from the algebraic plane."""
 
     def __post_init__(self):
-        if min(self.ds, self.ds_LE, self.ds_free, self.t_O) <= 0.0:
-            raise ValueError("ds, ds_LE, ds_free and t_O must be positive.")
-        if not self.ds_LE <= self.ds <= self.ds_free:
+        if min(self.ds, self.ds_LE, self.ds_TE, self.ds_free, self.t_O) <= 0.0:
+            raise ValueError("ds, ds_LE, ds_TE, ds_free and t_O must be positive.")
+        if not max(self.ds_LE, self.ds_TE) <= self.ds <= self.ds_free:
             raise ValueError(
-                f"Need ds_LE <= ds <= ds_free, got {self.ds_LE}, {self.ds}, "
-                f"{self.ds_free}."
+                f"Need ds_LE and ds_TE <= ds <= ds_free, got {self.ds_LE}, "
+                f"{self.ds_TE}, {self.ds}, {self.ds_free}."
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
@@ -595,15 +601,24 @@ class OHPassage(Mesher):
         )
         S = util.arc_length(wall)
         s_lo, s_hi = half, S - half
+        # The leading edge where the two surfaces meet, at the start of the
+        # camber line they hang off; not the furthest point upstream, which
+        # on a staggered blade lies round the nose on one side.
+        s_LE = (s_te[-1] - half) + util.arc_length(lower)
         s = np.linspace(0.0, S, N_WALL)
         wall = _at_arc(wall, s)
         if corners is not None:
-            return wall, np.array([0.0, *(np.asarray(corners) * S), S]), (1, 2, 3, 4)
+            marks = np.array([0.0, *(np.asarray(corners) * S), S])
+            return wall, marks, (1, 2, 3, 4), s_LE
 
         # The outline of the O block, turned by the stagger about the leading
         # edge; its corners are where it comes nearest those of its box.
         outline = wall + t_O * _outward_normals(wall)
+        # The box turned about the furthest point upstream, which sets the
+        # corners as they were tuned; the leading edge proper, `s_LE`, sets
+        # the spacing along the blade and the tip gap's sides.
         i_LE = int(np.argmin(wall[0]))
+        s_up = s[i_LE]
         chord = wall[:, 0] - wall[:, i_LE]
         stag = np.clip(
             np.arctan2(chord[1], chord[0]),
@@ -626,23 +641,22 @@ class OHPassage(Mesher):
         }
         # Clear of the trailing edge, and in order round the blade.
         gap = 0.02 * S
-        s_LE = s[i_LE]
-        s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_LE - 3 * gap)
-        s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_LE - gap)
+        s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_up - 3 * gap)
+        s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
         # The passage block's rear edge, from C2 across to C3 on the next
         # blade, leaves the O block square: on a staggered blade the box's
         # corner can sit far up the upper side, its edge to C3 running along
         # the blade, and the blocks round C2 starting as slivers.
-        upper = (s > s_LE + 3 * gap) & (s < s_hi - gap)
+        upper = (s > s_up + 3 * gap) & (s < s_hi - gap)
         i_C3 = int(np.argmin(np.abs(s - s_C["C3"])))
         to_C3 = outline - (outline[:, i_C3] + pitch * _J)[:, None]
         s_C["C2"] = s[upper][np.argmin(np.hypot(*to_C3[:, upper]))]
-        s_C["C1"] = np.clip(s_C["C1"], s_LE + gap, s_C["C2"] - gap)
+        s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
         # Likewise its front edge, from C1 on the blade below across to C4:
         # C4 where the normal out of C1 lands on the lower side's outline, if
         # it does, so the edge leaves C1 square too. The nearest point to C1
         # instead can lie far back along a staggered blade's pressure side.
-        lower = (s > s_C["C3"] + gap) & (s < s_LE - gap)
+        lower = (s > s_C["C3"] + gap) & (s < s_up - gap)
         i_C1 = int(np.argmin(np.abs(s - s_C["C1"])))
         A = outline[:, i_C1] - pitch * _J
         n = _outward_normals(wall)[:, i_C1]
@@ -653,7 +667,7 @@ class OHPassage(Mesher):
             s_C["C4"] = s[lower][ahead][np.argmin(off[ahead])]
 
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
-        return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4)
+        return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4), s_LE
 
     def _geometry(self, blade, cmap, t_O, corners, f_wall):
         """Return the blade, its coarse nodes, and the O block outline.
@@ -662,7 +676,7 @@ class OHPassage(Mesher):
         the blade, and the nodes at fractions `f_wall` of each piece of it
         between them, the same at every span.
         """
-        wall, marks, i_C = self._wall(blade, cmap, t_O, corners)
+        wall, marks, i_C, _ = self._wall(blade, cmap, t_O, corners)
         s = np.linspace(0.0, marks[-1], N_WALL)
         n_wall = [len(f) - 1 for f in f_wall]
         s_loop = np.concatenate(
@@ -717,6 +731,7 @@ class OHPassage(Mesher):
         r_ref = float(np.mean(_by_theta(blade, 0.5)[0][1]))
         to_c = blade.evaluate_chord(0.5) / r_ref / self.resolution_factor
         h, h_LE, H = self.ds * to_c, self.ds_LE * to_c, self.ds_free * to_c
+        h_TE = self.ds_TE * to_c
         t_O = self.t_O * pitch
 
         # Coarse along the blade: the free stream size, or less where it
@@ -725,7 +740,7 @@ class OHPassage(Mesher):
         # round at every span: found at each, the nearest point to a corner of
         # the box can jump from one part of the blade to another between
         # spans, and the planes either side no longer fit together.
-        wall, marks, i_C = self._wall(blade, cmap, t_O, pitch=pitch)
+        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, pitch=pitch)
         S = marks[-1]
         corners = tuple(float(x) for x in marks[1:5] / S)
         s = np.linspace(0.0, S, N_WALL)
@@ -742,17 +757,16 @@ class OHPassage(Mesher):
         )
         geo = self._geometry(blade, cmap, t_O, corners, f_wall)
 
-        # Refined along the blade: down to h_LE at the leading edge and the
-        # middle of the trailing edge, growing at ER_surf to h between them.
+        # Refined along the blade: down to h_LE at the leading edge and h_TE
+        # at the middle of the trailing edge, growing at ER_surf to h between.
         # Only the counts are fixed here; `_wall_u` places the nodes once the
         # sweeps have moved the coarse ones.
-        s_LE = s[int(np.argmin(wall[0]))]
         grow = self.ER_surf - 1.0
         fine = np.minimum.reduce(
             [
                 np.full_like(s, h),
                 h_LE + grow * np.abs(s - s_LE),
-                h_LE + grow * np.minimum(s, S - s),
+                h_TE + grow * np.minimum(s, S - s),
             ]
         )
         nf = [round(_integral(s, 1.0 / fine, a, b)) for a, b in _pairs(marks)]
@@ -1612,8 +1626,10 @@ class OHPassage(Mesher):
         walls = [np.asarray(xy[0][:, :, 0], dtype=float) for xy in per_plane]
         cmap = planes[0]["cmap"]
         upper, lower = _surfaces(blade, cmap, cmap.spf)
-        frac = _gap_fractions(walls[0], lower, upper)
-        walls = [_gap_outline(W, frac) for W in walls]
+        # The leading edge node, nearest where the two surfaces meet.
+        i_LE = int(np.argmin(np.linalg.norm(walls[0] - upper[:, :1], axis=0)))
+        frac = _gap_fractions(walls[0], lower, upper, i_LE)
+        walls = [_gap_outline(W, frac, i_LE) for W in walls]
         corners = _gap_corners(walls[0], self.nk_tip)
         alg = [_gap_plane(W, corners, self.t_tip_O, self.nk_tip_O) for W in walls]
 
@@ -1906,7 +1922,7 @@ def _gap_corners(W, nk_tip):
     sides' counts; the end is lengthened until both fit within it.
     """
     N = W.shape[1] - 1
-    i_LE = int(np.argmin(W[0]))
+    i_LE = N // 2
     D = i_LE - N // 2
     b = max(nk_tip - 1, _up8(abs(D)))
     a = N // 2 - b
@@ -1921,7 +1937,7 @@ def _gap_corners(W, nk_tip):
     return (r, iB, iB + b, N - b + r)
 
 
-def _gap_fractions(W, lower, upper):
+def _gap_fractions(W, lower, upper, i_LE):
     """Return where the outline of a tip gap has its nodes along each side.
 
     `W` (2, N + 1) is the outline of the blade, clockwise from the middle of
@@ -1943,7 +1959,6 @@ def _gap_fractions(W, lower, upper):
     side near a thick leading edge.
     """
     N = W.shape[1] - 1
-    i_LE = int(np.argmin(W[0]))
     sides = (W[:, i_LE::-1], W[:, i_LE:])
     m = util.cluster_cosine(N_CHORD)
     f0 = np.mean(
@@ -1966,7 +1981,7 @@ def _gap_fractions(W, lower, upper):
     return f0 + x * x * (3.0 - 2.0 * x) * (paired - f0)
 
 
-def _gap_outline(W, frac):
+def _gap_outline(W, frac, i_LE):
     """Return the outline `W` (2, N + 1) of a tip gap renoded at `frac`.
 
     The lower and upper sides at fractions `frac` (2, N / 2 + 1) of their
@@ -1974,7 +1989,6 @@ def _gap_outline(W, frac):
     nodes of one index along either side lie across the blade from each
     other.
     """
-    i_LE = int(np.argmin(W[0]))
     lower, upper = (
         _at_arc(side, f * util.arc_length(side))
         for side, f in zip((W[:, i_LE::-1], W[:, i_LE:]), frac)
