@@ -29,6 +29,7 @@ ALLOWED_DIRS = {
     "src",
     "tests",
     "doc",
+    "bench",
     "examples",
     "tutorial",
     "bin",
