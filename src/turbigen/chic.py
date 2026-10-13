@@ -128,7 +128,7 @@ def at(config, DP_adjust):
     # controller holding the mass flow would ignore every point asked for here
     # while the table at the end still read as a map. Cleared rather than
     # refused because the design point it was converged at is not lost by
-    # clearing it: `converge_design` has already recorded the pressure the
+    # clearing it: `loop.converge_design` has already recorded the pressure the
     # throttle settled at as this config's own `DP_adjust`, which is the datum
     # `sweep` departs from.
     return dataclasses.replace(

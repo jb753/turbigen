@@ -16,7 +16,7 @@ from test_blade import SPF, build
 from test_cli import RUN_CASE
 
 import turbigen.util
-from turbigen import Config, Result, cli
+from turbigen import Config, Result, pipeline
 from turbigen.blade import to_xrrt
 from turbigen.loading import locate_arc_length, measure_clark_profile
 
@@ -139,7 +139,7 @@ def solved():
         section["thickness"] = dict(CLARK)
 
     config = Config.from_dict(case)
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     config.solver.solve(grid)
     return config, Result(machine=machine, grid=grid, converged=True)
 

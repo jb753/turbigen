@@ -1,7 +1,7 @@
 """Tests for design iteration.
 
 No CFD anywhere here. Everything is a pure function of a config and a result,
-so the stand-ins declare the answer: `Fixed` and `Coupled` state their own error
+so the stand-ins declare the answer: `Fixed` and `Other` state their own error
 as a function of their own knobs, and a run that solves nothing drives the loop.
 A march would add minutes and a noise floor while testing nothing extra.
 
@@ -19,30 +19,20 @@ Test cases:
 - test_step_clips: a bad early step cannot throw the design
 - test_step_refuses_to_move_a_design_it_could_not_measure: a failed run stops it
 - test_unmeasured_knobs_are_not_converged: nor is silence agreement
-- test_each_iterator_keeps_its_own_jacobian_block: the Jacobian is block-diagonal
-- test_a_block_that_did_not_move_keeps_its_prior: a block learns from its own move
-- test_a_block_on_its_clip_does_not_shrink_another: the trust bound is per block
+- test_a_knob_on_its_clip_does_not_shrink_another: the trust bound is per knob
 - test_an_unmeasurable_section_says_where_it_is: a failure names what to fix
 - test_converge_reaches_the_answer: the loop, on an analytic error
 - test_converge_stops_on_a_diverged_march: a blown-up run measures nothing
 - test_converge_gives_up: and stops when it cannot
-- test_no_history_is_the_declared_gain: a first iteration is what it always was
-- test_a_coupled_system_converges_faster: the claim of Broyden, on a stage-like
-  lower-triangular Jacobian
-- test_a_move_too_small_to_learn_from_is_ignored: a secant on noise is refused
-- test_a_flat_response_stays_within_the_clip: a plateau cannot make a wild step
-- test_the_history_holds_no_grids: the loop remembers numbers, not fields
+- test_the_step_is_the_declared_gain: sign and size, every iteration
+- test_the_loop_holds_no_grids: a finished pass frees its field
 - test_deviation_error_is_zero_for_a_machine_that_matches: the measurement datum
 - test_mean_line_error_is_zero_for_its_own_design: likewise, through backward()
 - test_mean_line_tolerance_scales_with_the_nominal: relative, per variable
 - test_mean_line_restores_a_scalar_as_a_scalar: shapes survive a round trip
-- test_calibration_measures_the_slope: a run writes back the slope it saw
-- test_calibration_measures_a_steeper_slope: and its size, not only its sign
-- test_calibration_measures_a_sign_it_did_not_expect: a flip is a measurement
-- test_a_run_with_nothing_to_learn_keeps_its_gain: the fixed point of the update
-- test_calibration_keeps_every_iterator: including the design-only ones
-- test_a_loading_profile_splits_its_calibration: two gains, two measurements
-- test_a_pass_runs_on_the_gains_the_last_one_measured: carried, not held back
+- test_clark_recamber_error_flips_with_the_turning: one gain for rows turning either way
+- test_clark_recambers_the_way_incidence_would: an over-loaded nose is pressure-side incidence
+- test_clark_refuses_to_share_the_recamber_with_incidence: one owner per leaf
 """
 
 import dataclasses
@@ -53,7 +43,7 @@ from test_blade import FLUID, MEAN_LINE, blade, build
 
 import turbigen.loading
 import turbigen.util
-from turbigen import Config, Result, iterate, node, shapespace
+from turbigen import Config, DesignError, Result, iterate, node, shapespace
 
 
 @pytest.fixture
@@ -92,9 +82,8 @@ class Fixed(iterate.Iterator):
 class Other(iterate.Iterator):
     """A second stand-in on a different leaf, so two iterators are disjoint.
 
-    Its error reads *both* leaves, which is the cross-iterator coupling the
-    block-diagonal Jacobian declines to learn: `spill` is how much of the other
-    iterator's knob leaks into this one's error.
+    `spill` is how much of the other iterator's knob leaks into this one's
+    error.
     """
 
     target: float = 1.0
@@ -116,66 +105,6 @@ class Other(iterate.Iterator):
             self.name: self.slope * (config.mean_line.phi2 - self.target)
             + self.spill * config.mean_line.psi
         }
-
-
-class Coupled(iterate.Iterator):
-    """Two knobs whose errors are an affine function of both.
-
-    Lower-triangular by default, which is the structure a row feeding the next
-    produces: moving the first knob moves the second's error nearly as much as
-    its own, and not the other way about. The diagonal is not unity either,
-    because the declared gains are only ever a guess at it.
-    """
-
-    jacobian: tuple = ((1.5, 0.0), (0.8, 0.6))
-    target: tuple = (3.0, 1.0)
-    gain: float = 1.0
-    tolerance: float = 1e-3
-
-    def unknowns(self, config):
-        return {
-            "a": float(config.mean_line.psi),
-            "b": float(config.mean_line.phi2),
-        }
-
-    def with_unknowns(self, config, values):
-        return dataclasses.replace(
-            config,
-            mean_line=dataclasses.replace(
-                config.mean_line,
-                psi=values.get("a", config.mean_line.psi),
-                phi2=values.get("b", config.mean_line.phi2),
-            ),
-        )
-
-    def error(self, config, result):
-        offset = np.array([config.mean_line.psi, config.mean_line.phi2]) - np.asarray(
-            self.target
-        )
-        error = np.asarray(self.jacobian) @ offset
-        return {"a": float(error[0]), "b": float(error[1])}
-
-
-def drive(config, remember, max_iter=50):
-    """Iterate to convergence, with or without a history, and count the passes.
-
-    Both routes go through the same `step`, so the comparison is of the rule
-    alone: handed no history it is the fixed-gain rule this replaces.
-    """
-    history = []
-
-    for i_iter in range(max_iter):
-        result = Result()
-        if iterate.converged(config, result):
-            return i_iter, config
-
-        stepped = iterate.step(config, result, history if remember else ())
-        history.append(
-            (iterate.unknowns(config), iterate.measured_errors(config, result))
-        )
-        config = stepped
-
-    return max_iter, config
 
 
 #
@@ -409,10 +338,9 @@ def test_converge_reaches_the_answer():
 
     assert converged
     assert final.mean_line.psi == pytest.approx(3.0, abs=1e-3)
-    # A gain of 0.5 against a true slope of 1 would halve the error each pass,
-    # which from psi = 1.6 is about ten of them. The secant learns the slope
-    # from the first move and steps straight to the root.
-    assert len(seen) <= 4
+    # A gain of 0.5 against a true slope of 1 halves the error each pass,
+    # which from psi = 1.6 is about ten of them.
+    assert len(seen) <= 12
 
 
 def test_converge_stops_on_a_diverged_march():
@@ -451,12 +379,12 @@ def test_converge_gives_up():
 
 
 #
-# BROYDEN
+# THE STEP
 #
 
 
-def test_no_history_is_the_declared_gain(config):
-    """The first iteration of every run must be what it always was."""
+def test_the_step_is_the_declared_gain(config):
+    """`u -= gain * e`, sign and size, on every iteration."""
     machine = config.design()
     result = Result(machine=machine, actual=machine.mean_line, error={})
 
@@ -472,144 +400,19 @@ def test_no_history_is_the_declared_gain(config):
         assert stepped.mean_line.psi == pytest.approx(psi - gain * error)
 
 
-def test_a_coupled_system_converges_faster(config):
-    """The claim of the whole change, on the structure a stage produces."""
-    coupled = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Coupled(),))
-    )
+def test_a_knob_on_its_clip_does_not_shrink_another():
+    """A trust bound is a statement about one knob's step, not everyone's.
 
-    without, _ = drive(coupled, remember=False)
-    with_history, final = drive(coupled, remember=True)
-
-    assert with_history < without
-    assert with_history <= 5
-    assert final.mean_line.psi == pytest.approx(3.0, abs=1e-3)
-    assert final.mean_line.phi2 == pytest.approx(1.0, abs=1e-3)
-
-
-def _two_blocks(spill=0.0, **kw):
-    """A config whose two iterators own one knob each."""
-    return dataclasses.replace(
+    Scaling the step as a whole let one thickness coefficient marching
+    against its clip hold a circulation coefficient to a fifth of its own
+    step, every pass.
+    """
+    far = dataclasses.replace(
         build(),
         iterate=iterate.Iteration(
-            correct=(Fixed(name="toy", **kw), Other(name="other", spill=spill))
+            correct=(Fixed(name="toy", target=100.0, clip=0.5), Other(name="other"))
         ),
     )
-
-
-def test_each_iterator_keeps_its_own_jacobian_block():
-    """Cross-iterator terms are left at the prior, however loudly they couple."""
-    config = _two_blocks(spill=2.0)
-    result = Result()
-
-    # A pass in which both knobs moved, so a full Broyden update would have
-    # every entry to learn from and would fill the off-diagonal in.
-    previous = (
-        {"toy": config.mean_line.psi - 1.0, "other": config.mean_line.phi2 - 1.0},
-        {"toy": -1.0, "other": -3.0},
-    )
-
-    table = iterate._assembled(config, result, [previous])
-
-    i = table.names.index("toy")
-    j = table.names.index("other")
-    assert table.jacobian[i, j] == 0.0
-    assert table.jacobian[j, i] == 0.0
-    assert [sorted(idx.tolist()) for idx, _ in table.blocks] == [[i], [j]]
-
-
-def test_a_block_that_does_not_learn_keeps_the_gain_it_declared():
-    """The whole point of `learns`: the step stays `u -= gain * e`.
-
-    A pass that would teach Broyden a different slope leaves the diagonal
-    exactly where the declared gain put it, so nothing is fitted to it.
-    """
-
-    class Dumb(Fixed):
-        type = "_test_dumb"
-        learns = False
-
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Dumb(name="toy", slope=4.0),))
-    )
-    previous = ({"toy": config.mean_line.psi - 1.0}, {"toy": -4.0})
-
-    table = iterate._assembled(config, Result(), [previous])
-
-    i = table.names.index("toy")
-    assert table.jacobian[i, i] == table.prior[i]
-    assert [learns for _, learns in table.blocks] == [False]
-
-    # And the same move does move a learning block, or the test above says
-    # nothing about `learns`.
-    learning = _two_blocks()
-    moved = iterate._assembled(
-        learning,
-        Result(),
-        [
-            (
-                {"toy": learning.mean_line.psi - 1.0, "other": learning.mean_line.phi2},
-                {"toy": -4.0, "other": 0.0},
-            )
-        ],
-    )
-    j = moved.names.index("toy")
-    assert moved.jacobian[j, j] != moved.prior[j]
-
-
-def test_a_block_cannot_half_learn():
-    """Iterators sharing a block must agree, the update being applied whole.
-
-    Refused rather than resolved: either rule for settling the disagreement
-    would make `learns` mean something different depending on what it sits
-    beside.
-    """
-
-    class Dumb(Other):
-        type = "_test_dumb_other"
-        learns = False
-
-        def blocks(self, config):
-            return {name: "shared" for name in self.unknowns(config)}
-
-    class Keen(Fixed):
-        type = "_test_keen"
-
-        def blocks(self, config):
-            return {name: "shared" for name in self.unknowns(config)}
-
-    config = dataclasses.replace(
-        build(),
-        iterate=iterate.Iteration(correct=(Keen(name="toy"), Dumb(name="other"))),
-    )
-
-    with pytest.raises(ValueError, match="disagree on whether it learns"):
-        iterate._blocks(config, list(iterate.unknowns(config)))
-
-
-def test_a_block_that_did_not_move_keeps_its_prior():
-    """The move that teaches a block is its own, not one made elsewhere."""
-    config = _two_blocks()
-    result = Result()
-
-    # `toy` strides, `other` barely twitches. Sharing one DU_MIN would let the
-    # stride carry `other` past the threshold and update it off noise.
-    previous = (
-        {"toy": config.mean_line.psi - 5.0, "other": config.mean_line.phi2 - 1e-9},
-        {"toy": -20.0, "other": -1.0},
-    )
-
-    table = iterate._assembled(config, result, [previous])
-
-    i = table.names.index("toy")
-    j = table.names.index("other")
-    assert table.jacobian[i, i] != table.prior[i]
-    assert table.jacobian[j, j] == table.prior[j]
-
-
-def test_a_block_on_its_clip_does_not_shrink_another():
-    """A trust bound is a statement about one block's step, not everyone's."""
-    far = _two_blocks(target=100.0, clip=0.5)
     alone = dataclasses.replace(
         far, iterate=iterate.Iteration(correct=(Other(name="other"),))
     )
@@ -617,95 +420,10 @@ def test_a_block_on_its_clip_does_not_shrink_another():
     both = iterate.step(far, Result())
     only = iterate.step(alone, Result())
 
-    # `toy` is a hundred away and pinned to its clip; `other` must take the
+    # `toy` is a hundred away and held to its clip; `other` must take the
     # same step it would have taken with nothing beside it.
     assert both.mean_line.phi2 == pytest.approx(only.mean_line.phi2)
     assert abs(both.mean_line.psi - far.mean_line.psi) == pytest.approx(0.5)
-
-
-def test_a_knob_that_could_not_move_is_pinned():
-    """du ~ 0 while its block strode: held out of the coupled solve."""
-    config = _two_blocks()
-    previous = (
-        {"toy": config.mean_line.psi - 3.0, "other": config.mean_line.phi2},
-        {"toy": -3.0, "other": -1.0},
-    )
-
-    table = iterate._assembled(config, Result(), [previous])
-
-    i = table.names.index("toy")
-    j = table.names.index("other")
-    assert not table.pinned[i]
-    assert table.pinned[j]
-
-
-def test_a_pinned_knob_does_not_teach_its_block():
-    """Its secant row is a frozen residual over the movers' stride: not learnt."""
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Coupled(),))
-    )
-    ml = config.mean_line
-    # `a` strode, `b` was clamped (unchanged), and `b`'s error moved anyway
-    # because `a` feeds it --- exactly what would fill in a bogus b-row.
-    previous = ({"a": ml.psi - 2.0, "b": ml.phi2}, {"a": -3.0, "b": -1.6})
-
-    table = iterate._assembled(config, Result(), [previous])
-
-    ia, ib = table.names.index("a"), table.names.index("b")
-    assert table.jacobian[ia, ia] != table.prior[ia]
-    assert table.jacobian[ib, ib] == table.prior[ib]
-    assert table.jacobian[ib, ia] == 0.0
-    assert table.jacobian[ia, ib] == 0.0
-
-
-def test_a_pinned_knob_takes_the_decoupled_prior_step():
-    """The rest of the block solves without it; it falls back to `u -= gain*e`."""
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Coupled(),))
-    )
-    ml = config.mean_line
-    previous = ({"a": ml.psi - 2.0, "b": ml.phi2}, {"a": -3.0, "b": -1.6})
-
-    table = iterate._assembled(config, Result(), [previous])
-    stepped = iterate.step(config, Result(), [previous])
-
-    ia, ib = table.names.index("a"), table.names.index("b")
-    assert table.pinned[ib] and not table.pinned[ia]
-
-    # `b` held: the decoupled prior step, `u -= gain * e`, gain being one here.
-    err_b = config.iterate.correct[0].error(config, Result())["b"]
-    assert stepped.mean_line.phi2 == pytest.approx(config.mean_line.phi2 - err_b)
-
-    # `a` free: solved on its own 1x1 sub-block, not the 2x2 that includes `b`.
-    err_a = table.measured["a"] / table.e_scale[ia]
-    da = -err_a / table.jacobian[ia, ia] * table.u_scale[ia]
-    assert stepped.mean_line.psi == pytest.approx(config.mean_line.psi + da)
-
-
-def test_a_clamped_knob_does_not_derail_its_block():
-    """End to end: a knob stuck on a ceiling, its block-mate still converges."""
-
-    class Ceiling(Coupled):
-        """`Coupled`, but the first knob cannot climb past `ceiling`."""
-
-        ceiling: float = 2.0
-
-        def with_unknowns(self, config, values):
-            capped = dict(values)
-            if "a" in capped:
-                capped["a"] = min(capped["a"], self.ceiling)
-            return super().with_unknowns(config, capped)
-
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Ceiling(),))
-    )
-
-    _, final = drive(config, remember=True)
-
-    # `a` wants 3.0 and is held at the ceiling; `b` clears the residual `a`
-    # leaves in its error and converges regardless: 0.8*(2-3) + 0.6*(b-1) = 0.
-    assert final.mean_line.psi == pytest.approx(2.0)
-    assert final.mean_line.phi2 == pytest.approx(1.0 + 0.8 / 0.6, abs=1e-3)
 
 
 def test_an_unmeasurable_section_says_where_it_is(config, monkeypatch):
@@ -723,48 +441,37 @@ def test_an_unmeasurable_section_says_where_it_is(config, monkeypatch):
     assert "clearance gap" in str(raised.value)
 
 
-def test_a_move_too_small_to_learn_from_is_ignored():
-    """Below the threshold a secant reports noise, so the prior stands."""
-    config = dataclasses.replace(
-        build(), iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0),))
+def test_an_incidence_target_is_onto_the_pressure_surface_on_every_row(
+    config, monkeypatch
+):
+    """One target, the same physical incidence on rows turning opposite ways.
+
+    The two rows here do: the metal angle rises through the first and falls
+    through the second. Flow arriving from the pressure side of the metal is
+    then below it on the first row and above it on the second, so a positive
+    target is met by flow less metal of opposite signs.
+    """
+    machine = config.design()
+    rows = machine.rows
+    assert not rows[0].blade.suction_is_upper
+    assert rows[1].blade.suction_is_upper
+
+    target = 5.0
+    onto_pressure = {0: -target, 1: target}
+    monkeypatch.setattr(turbigen.util, "cut_blade_surfs", lambda grid: [None, None])
+    monkeypatch.setattr(
+        iterate,
+        "_incidence",
+        lambda result, surface, i_row, *a, **k: onto_pressure[i_row],
     )
-    result = Result()
 
-    values = iterate.unknowns(config)
-    errs = iterate.measured_errors(config, result)
-    # A knob that has barely moved, with an error that has: exactly the
-    # arrangement that would infer an enormous slope.
-    negligible = [
-        (
-            {"toy": values["toy"] - 1e-6},
-            {"toy": errs["toy"] - 1.0},
-        )
-    ]
-
-    assert iterate.step(config, result, negligible) == iterate.step(config, result)
+    result = Result(machine=machine, grid=object())
+    errors = iterate.Incidence(target=target).error(config, result)
+    assert errors
+    assert all(e == pytest.approx(0.0) for e in errors.values())
 
 
-def test_a_flat_response_stays_within_the_clip():
-    """A plateau makes the Jacobian singular, which must not make a wild step."""
-    config = dataclasses.replace(
-        build(),
-        iterate=iterate.Iteration(correct=(Fixed(slope=1.0, target=3.0, clip=0.2),)),
-    )
-    result = Result()
-
-    values = iterate.unknowns(config)
-    errs = iterate.measured_errors(config, result)
-    # The knob moved a long way and the error did not move at all.
-    flat = [({"toy": values["toy"] - 2.0}, {"toy": errs["toy"]})]
-
-    stepped = iterate.step(config, result, flat)
-
-    change = stepped.mean_line.psi - config.mean_line.psi
-    assert np.isfinite(change)
-    assert abs(change) <= 0.2 + 1e-9
-
-
-def test_the_history_holds_no_grids():
+def test_the_loop_holds_no_grids():
     """A Result pins a live grid; keeping one per iteration would pin them all.
 
     Asserted by weak reference rather than by inspection, because the failure
@@ -862,7 +569,9 @@ def test_mean_line_no_clip_stays_no_clip():
     """Zero is what the stepper reads as unbounded, so it must not be scaled."""
     config = dataclasses.replace(
         build(),
-        iterate=iterate.Iteration(correct=(iterate.MeanLine(variables=("Ys",)),)),
+        iterate=iterate.Iteration(
+            correct=(iterate.MeanLine(variables=("Ys",), clip=0.0),)
+        ),
     )
 
     assert set(config.iterate.correct[0].clips(config).values()) == {0.0}
@@ -988,10 +697,9 @@ def test_resolve_reports_a_target_it_cannot_reach():
 def test_the_outer_loop_does_not_step_a_design_only_knob():
     """The guard that fails silently if it is wrong.
 
-    A resolved knob has ~0 error while its *value* has moved, because `resolve`
-    moved it inside the run. That is a zero slope, and feeding it to the
-    Broyden update spends a least-change correction explaining a knob that
-    needs none -- at the expense of the ones that do.
+    A resolved knob has ~0 error while its *value* in this config is stale,
+    because `resolve` moved it on a copy inside the run. Stepping the pair
+    would move it somewhere neither describes.
     """
     config = dataclasses.replace(
         build(),
@@ -1217,9 +925,13 @@ def test_the_inherited_tolerance_is_ignored():
 #
 
 
-def test_the_whole_exit_profile_comes_round_by_default():
+def test_the_whole_exit_profile_comes_round_undamped():
     """A strictly repeating stage, which is what the loop meant before."""
-    assert iterate.Repeat().transfers() == {"DPo": 1.0, "DTo": 1.0, "DAlpha": 1.0}
+    assert iterate.Repeat(transfer_To=1.0).transfers() == {
+        "DPo": 1.0,
+        "DTo": 1.0,
+        "DAlpha": 1.0,
+    }
 
 
 def test_only_the_temperature_is_damped():
@@ -1262,7 +974,10 @@ def test_a_damped_temperature_moves_the_fixed_point_not_the_path(monkeypatch):
 
     # And the undamped loop is not settled there: it wants the whole profile.
     undamped = dataclasses.replace(
-        settled, iterate=iterate.Iteration(correct=(iterate.Repeat(order=2),))
+        settled,
+        iterate=iterate.Iteration(
+            correct=(iterate.Repeat(order=2, transfer_To=1.0),)
+        ),
     )
     assert undamped.iterate.correct[0].error(undamped, result)[
         "inlet_profile.DTo[0]"
@@ -1321,785 +1036,11 @@ def test_the_fit_recovers_blockage_but_not_the_wall():
 
 
 #
-# THE TRUST BOUND
-#
-
-
-@pytest.mark.parametrize(
-    "change, limit, expected",
-    [
-        # Nothing over its limit passes through untouched.
-        ([0.05, -0.02], [0.1, 0.1], [0.05, -0.02]),
-        # One knob over: everything shrinks by the same factor.
-        ([0.3, 0.05], [0.1, 0.1], [0.1, 0.05 / 3.0]),
-        # Both over, which is the case that used to be projected onto a corner.
-        ([0.3, -0.2], [0.1, 0.1], [0.1, -0.2 / 3.0]),
-        # A knob with no clip does not constrain the others.
-        ([5.0, -2.0], [np.inf, np.inf], [5.0, -2.0]),
-        ([0.3, -0.2], [0.1, np.inf], [0.1, -0.2 / 3.0]),
-        # A step of nothing stays nothing rather than dividing by zero.
-        ([0.0, 0.0], [0.1, 0.1], [0.0, 0.0]),
-    ],
-)
-def test_the_trust_bound_scales_rather_than_clipping(change, limit, expected):
-    """The direction survives; only the length is cut."""
-    np.testing.assert_allclose(
-        iterate._bounded(np.array(change), np.array(limit)), expected
-    )
-
-
-def test_the_trust_bound_keeps_the_direction():
-    """The ratio between knobs is what per-component clipping destroyed."""
-    change = np.array([0.31, -0.17, 0.02])
-    bounded = iterate._bounded(change, np.full(3, 0.1))
-
-    # Same direction, shorter.
-    np.testing.assert_allclose(
-        bounded / np.linalg.norm(bounded), change / np.linalg.norm(change)
-    )
-    assert np.linalg.norm(bounded) < np.linalg.norm(change)
-
-    # And the knob that binds moves exactly its clip, which is what the
-    # setting promises.
-    assert np.max(np.abs(bounded)) == pytest.approx(0.1)
-
-
-def test_a_saturated_step_does_not_cycle():
-    """Two knobs whose Newton step exceeds both clips must not orbit.
-
-    Clipping each on its own sent a two-knob loading iterator into a period-2
-    orbit: the corner of the box overshoots, the next step wants the opposite
-    corner, and the design lands exactly where it was two iterations before.
-    Scaling cannot do that, because it never changes the direction it was
-    handed.
-    """
-    change = np.array([0.4, -0.25])
-    limit = np.full(2, 0.1)
-
-    first = iterate._bounded(change, limit)
-    # The corner would have been (+0.1, -0.1): equal magnitudes, no memory of
-    # the 0.4-to-0.25 ratio that the Jacobian actually asked for.
-    assert abs(first[0]) != pytest.approx(abs(first[1]))
-    np.testing.assert_allclose(first[0] / first[1], change[0] / change[1])
-
-
-#
-# THE LOADING DISTRIBUTION
-#
-# One point on the curve rather than end angles, so its knob is a camber line
-# and its error is a single number: the front acceleration. Everything below
-# stands in for the CFD that would measure it: `Shaped` declares the answer as
-# a function of its own knob, exactly as `Fixed` and `Coupled` do above.
-#
-
-BERNSTEIN = {"type": "bernstein", "order": 2, "coeff": [0.0]}
-"""A camber line carrying exactly the one coefficient the iterator moves."""
-
-
-def shaped(camber=None, **kwargs):
-    """Return a blade whose sections carry a Bernstein camber line.
-
-    `test_blade.blade` writes a quadratic camber and takes no argument to say
-    otherwise; rather than widen the shared factory for one caller, this
-    rewrites the sections it produces.
-    """
-    built = blade(**kwargs)
-    built["sections"] = [
-        {**section, "camber": dict(camber or BERNSTEIN)}
-        for section in built["sections"]
-    ]
-    return built
-
-
-@pytest.fixture
-def loading():
-    """A two-row config whose first row has its loading shaped."""
-    return dataclasses.replace(
-        build(blades=[shaped(), shaped()]),
-        iterate=iterate.Iteration(
-            correct=(iterate.LoadingDistribution(fac_front=1.8),)
-        ),
-    )
-
-
-class Shaped(iterate.LoadingDistribution):
-    """The real knob, against a declared response instead of a solved grid.
-
-    Only `error` is overridden, so `unknowns`, `with_unknowns` and `paths` are
-    the shipped ones. No `type`, so it stays out of the registry.
-
-    The response is the one measured on a cascade, so what the loop is tested
-    against is the coupling it will actually meet: the coefficient softens the
-    front, and the circulation coefficient moves it too --- appreciably, which
-    is why the level had to become a target of its own rather than being left
-    to float.
-    """
-
-    def response(self, config):
-        (c0,) = (self.unknowns(config)[name] for name in self.names())
-        Co = config.blades[self.i_row].count.Co
-        return 1.900 - 0.500 * c0 + 2.600 * (Co - 0.7)
-
-    def error(self, config, result):
-        del result
-        return {self.names()[0]: self.response(config) - self.fac_front}
-
-
-def _measured(fac_front=1.95, fac_peak=1.25, zeta_peak=0.62):
-    """A `Loading` with the fields a test cares about and plausible rest."""
-    return turbigen.loading.Loading(
-        zeta_peak=zeta_peak,
-        fac_front=fac_front,
-        fac_peak=fac_peak,
-        ma_peak=0.75,
-        ma_TE=0.60,
-        ma_max=0.74,
-        zeta_max=zeta_peak + 0.02,
-    )
-
-
-class Levelled(iterate.PeakMach):
-    """The `peak_Ma` stand-in, whose slope is positive where the camber's is not.
-
-    Its whole reason for being a separate member: `Iterator.gain` carries one
-    sign per iterator, and this knob's is the opposite of the shape knob's.
-    """
-
-    def response(self, config):
-        c0 = float(
-            np.mean([s.camber.coeff[0] for s in config.blades[self.i_row].sections])
-        )
-        Co = config.blades[self.i_row].count.Co
-        return 1.160 - 0.020 * c0 + 0.500 * (Co - 0.7)
-
-    def error(self, config, result):
-        del result
-        return {f"Co[{self.i_row}]": self.response(config) - self.fac_peak}
-
-
-def designing(config, i_iter):
-    """A run that designs and solves nothing."""
-    del i_iter
-    return Result(machine=config.design())
-
-
-def test_loading_owns_one_coefficient_of_its_own_row(loading):
-    """One knob, named by row so a second entry cannot collide with it."""
-    assert set(loading.iterate.correct[0].unknowns(loading)) == {
-        "camber_coeff[0][0]",
-    }
-
-
-def test_loading_reads_the_mean_across_sections(loading):
-    """One number per row, as a deviation is one per row.
-
-    The distribution is measured at a single span fraction, so it has nothing
-    to say about how the shape should vary up the blade.
-    """
-    varied = dataclasses.replace(
-        loading.blades[0],
-        sections=tuple(
-            dataclasses.replace(
-                section, camber=dataclasses.replace(section.camber, coeff=(c,))
-            )
-            for section, c in zip(loading.blades[0].sections, (0.1, 0.2, 0.6))
-        ),
-    )
-    config = dataclasses.replace(loading, blades=(varied, loading.blades[1]))
-
-    assert loading.iterate.correct[0].unknowns(config)[
-        "camber_coeff[0][0]"
-    ] == pytest.approx(0.3)
-
-
-def test_loading_shifts_every_section_alike(loading):
-    """A uniform shift, so a spanwise distribution survives being iterated."""
-    before = (0.1, 0.2, 0.6)
-    varied = dataclasses.replace(
-        loading.blades[0],
-        sections=tuple(
-            dataclasses.replace(
-                section, camber=dataclasses.replace(section.camber, coeff=(c,))
-            )
-            for section, c in zip(loading.blades[0].sections, before)
-        ),
-    )
-    config = dataclasses.replace(loading, blades=(varied, loading.blades[1]))
-
-    moved = loading.iterate.correct[0].with_unknowns(
-        config, {"camber_coeff[0][0]": 0.5}
-    )
-    after = [section.camber.coeff[0] for section in moved.blades[0].sections]
-
-    # The mean lands on what was asked for, and the spread is untouched.
-    assert np.mean(after) == pytest.approx(0.5)
-    np.testing.assert_allclose(np.array(after) - np.array(before), 0.2)
-
-
-def test_loading_leaves_the_rows_it_does_not_own_alone(loading):
-    """One row per iterator, so the other row's camber must not move."""
-    moved = loading.iterate.correct[0].with_unknowns(
-        loading, {"camber_coeff[0][0]": 0.3}
-    )
-    assert moved.blades[1] == loading.blades[1]
-
-
-def test_peak_owns_the_circulation_coefficient(loading):
-    """The lever `LoadingDistribution` has none of.
-
-    At a fixed blade count the loop area is fixed, so a camber line cannot set
-    the peak height on its own; freeing `Co` is what lifts it.
-    """
-    peak = iterate.PeakMach(i_row=0)
-
-    assert peak.unknowns(loading) == {
-        "Co[0]": pytest.approx(loading.blades[0].count.Co)
-    }
-
-    moved = peak.with_unknowns(loading, {"Co[0]": 0.62})
-    assert moved.blades[0].count.Co == pytest.approx(0.62)
-    # It owns the count and nothing else; the camber is the other member's.
-    assert moved.blades[0].sections == loading.blades[0].sections
-
-
-def test_peak_declares_the_opposite_sign_to_the_shape(loading):
-    """Why this is a member of its own rather than a third knob on the other.
-
-    `gain` carries one sign per iterator. The peak rises with the circulation
-    coefficient while the front value falls with the camber coefficient, so a
-    single scalar cannot serve both -- folded together it drove this knob the
-    wrong way every iteration.
-    """
-    config = dataclasses.replace(
-        loading,
-        iterate=iterate.Iteration(
-            correct=(*loading.iterate.correct, iterate.PeakMach(i_row=0))
-        ),
-    )
-    gain, _, _ = iterate.properties(config)
-
-    assert gain["camber_coeff[0][0]"] < 0.0
-    assert gain["Co[0]"] > 0.0
-
-
-def test_peak_paths_match_what_is_moved(loading):
-    peak = iterate.PeakMach(i_row=0)
-    assert peak.paths(loading) == _probe(peak, loading)
-    assert peak.paths(loading) <= set(node.flatten(loading))
-
-
-def test_peak_round_trips_through_a_config_dict(loading):
-    config = dataclasses.replace(
-        loading, iterate=iterate.Iteration(correct=(iterate.PeakMach(fac_peak=1.3),))
-    )
-    assert Config.from_dict(config.to_dict()) == config
-    assert config.to_dict()["iterate"]["correct"][0]["type"] == "peak_Ma"
-
-
-def test_peak_without_a_grid_raises(loading):
-    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
-        iterate.PeakMach().error(loading, Result())
-
-
-def test_peak_delegates_to_the_measurement(loading, monkeypatch):
-    monkeypatch.setattr(
-        turbigen.loading, "measure", lambda *a: _measured(fac_peak=1.31)
-    )
-    error = iterate.PeakMach(fac_peak=1.2).error(
-        loading, Result(machine=loading.design(), grid=object())
-    )
-    assert error["Co[0]"] == pytest.approx(1.31 - 1.2)
-
-
-def test_peak_needs_a_circulation_count():
-    """A fixed blade count has no continuous lever to move."""
-    fixed = shaped()
-    fixed["count"] = {"type": "Nb", "Nb": 40}
-    config = build(blades=[fixed, shaped()])
-
-    with pytest.raises(ValueError, match="FixedCount"):
-        iterate.PeakMach().unknowns(config)
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [{"fac_peak": 0.0}, {"fac_peak": -1.0}, {"zeta_front": 0.0}, {"zeta_front": 0.99}],
-)
-def test_peak_refuses_an_impossible_setting(kwargs):
-    with pytest.raises(ValueError):
-        iterate.PeakMach(**kwargs)
-
-
-def test_loading_paths_match_what_is_moved(loading):
-    """The `paths`/`with_unknowns` contract, on a knob nested two deep.
-
-    A camber coefficient is a leaf inside a tuple inside a camber inside a
-    section, which is further down than any other iterator reaches.
-    """
-    iterator = loading.iterate.correct[0]
-
-    assert iterator.paths(loading) == _probe(iterator, loading)
-    assert iterator.paths(loading) <= set(node.flatten(loading))
-
-
-def test_loading_round_trips_through_a_config_dict(loading):
-    assert Config.from_dict(loading.to_dict()) == loading
-    assert loading.to_dict()["iterate"]["correct"][0]["type"] == "loading"
-
-
-def test_loading_two_rows_do_not_collide():
-    """A stator and a rotor want different loading, so two entries."""
-    config = dataclasses.replace(
-        build(blades=[shaped(), shaped()]),
-        iterate=iterate.Iteration(
-            correct=(
-                iterate.LoadingDistribution(i_row=0, fac_front=1.8),
-                iterate.LoadingDistribution(i_row=1, fac_front=1.9),
-            )
-        ),
-    )
-
-    assert set(iterate.unknowns(config)) == {
-        "camber_coeff[0][0]",
-        "camber_coeff[1][0]",
-    }
-
-
-def test_loading_shares_a_table_with_the_recambers():
-    """Nothing else claims a camber coefficient, so all three iterate together."""
-    config = dataclasses.replace(
-        build(blades=[shaped(), shaped()]),
-        iterate=iterate.Iteration(
-            correct=(
-                iterate.Deviation(),
-                iterate.Incidence(),
-                iterate.LoadingDistribution(),
-            )
-        ),
-    )
-
-    unknowns = iterate.unknowns(config)
-    assert "camber_coeff[0][0]" in unknowns
-    assert "dchi_TE[0]" in unknowns
-    assert iterate.format_table(config, Result())
-
-
-def test_loading_uses_the_inherited_tolerance(loading):
-    """One knob, one error, so the base class's scalar tolerance is enough."""
-    iterator = dataclasses.replace(loading.iterate.correct[0], tolerance=0.07)
-    assert iterator.tolerances(loading) == {"camber_coeff[0][0]": 0.07}
-
-
-def test_loading_without_a_grid_raises(loading):
-    """A run with no field cannot say anything, and must say so."""
-    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
-        loading.iterate.correct[0].error(loading, Result())
-
-
-def test_loading_needs_a_bernstein_camber():
-    """A quadratic camber line has no interior coefficient to move."""
-    config = build(blades=[blade(), blade()])
-    with pytest.raises(ValueError, match="Quadratic"):
-        iterate.LoadingDistribution().unknowns(config)
-
-
-@pytest.mark.parametrize(
-    "camber",
-    [
-        {"type": "bernstein", "order": 3, "coeff": [0.0, 0.0]},
-        {"type": "bernstein", "order": 2, "coeff": []},
-    ],
-)
-def test_loading_needs_exactly_one_coefficient(camber):
-    """One is what a camber line has to give to move a single front value.
-
-    A short `coeff` is refused as well as a long one: `Bernstein` zero-pads it
-    to evaluate, but an unwritten coefficient is no leaf of the config, and
-    `paths` would then name something that does not exist.
-    """
-    config = build(blades=[shaped(camber=camber), shaped()])
-    with pytest.raises(ValueError, match="exactly 1"):
-        iterate.LoadingDistribution().unknowns(config)
-
-
-def test_loading_refuses_a_row_that_is_not_there():
-    config = build(blades=[shaped(), shaped()])
-    with pytest.raises(ValueError, match="out of range"):
-        iterate.LoadingDistribution(i_row=5).unknowns(config)
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"zeta_front": 0.0},  # the stagnation point itself
-        {"zeta_front": 1.5},  # past the trailing edge
-        {"fac_front": 0.0},  # a leading edge that is not moving
-        {"fac_front": -0.5},  # a Mach number ratio below zero
-    ],
-)
-def test_loading_refuses_an_unreachable_target(kwargs):
-    """Caught where it is written, rather than as a NaN eight solves later."""
-    with pytest.raises(ValueError):
-        iterate.LoadingDistribution(**kwargs)
-
-
-def test_loading_converges_onto_its_target(loading):
-    """The closed loop, against a declared response instead of a solver."""
-    config = dataclasses.replace(
-        loading,
-        iterate=iterate.Iteration(
-            correct=(
-                Shaped(fac_front=1.85),
-                Levelled(fac_peak=1.19),
-            )
-        ),
-    )
-
-    final, _, converged = iterate.converge(config, designing, max_iter=20)
-    assert converged
-
-    assert final.iterate.correct[0].response(final) == pytest.approx(1.85, abs=0.05)
-    assert final.iterate.correct[1].response(final) == pytest.approx(1.19, abs=0.02)
-
-
-def test_loading_moves_the_camber_it_started_from(loading):
-    """Convergence has to come from the coefficient, not from nowhere."""
-    config = dataclasses.replace(
-        loading, iterate=iterate.Iteration(correct=(Shaped(fac_front=1.85),))
-    )
-    final, _, _ = iterate.converge(config, designing, max_iter=20)
-
-    assert final.blades[0].sections[0].camber.coeff != (0.0,)
-    assert final.blades[1] == config.blades[1]
-
-
-def test_loading_is_clipped(loading):
-    """The trust bound holds on the first step, taken before anything is known."""
-    iterator = Shaped(fac_front=1.20, clip=0.02)
-    config = dataclasses.replace(
-        loading, iterate=iterate.Iteration(correct=(iterator,))
-    )
-
-    stepped = iterate.step(config, Result(machine=config.design()))
-
-    for name, value in iterator.unknowns(stepped).items():
-        assert abs(value - iterator.unknowns(config)[name]) <= 0.02 + 1e-9
-
-
-def test_loading_delegates_to_the_measurement(loading, monkeypatch):
-    """`error` guards and subtracts; everything else is `measure`.
-
-    Replaced wholesale, which is what having it at module level is for: the
-    cutting it does needs a solved grid, and the arithmetic either side of it
-    does not.
-    """
-    monkeypatch.setattr(
-        turbigen.loading, "measure", lambda *a: _measured(fac_front=1.95)
-    )
-
-    error = loading.iterate.correct[0].error(
-        loading, Result(machine=loading.design(), grid=object())
-    )
-
-    assert error["camber_coeff[0][0]"] == pytest.approx(1.95 - 1.8)
-
-
-def test_loading_raises_with_no_suction_surface(loading, monkeypatch):
-    """A knob that cannot be read stops the run rather than leaving the table."""
-    monkeypatch.setattr(turbigen.loading, "measure", lambda *a: None)
-
-    result = Result(machine=loading.design(), grid=object())
-    with pytest.raises(iterate.MeasurementError, match="suction surface"):
-        loading.iterate.correct[0].error(loading, result)
-    with pytest.raises(iterate.MeasurementError):
-        iterate.converged(loading, result)
-
-
-#
-# THE LOADING PROFILE
-#
-# The whole curve rather than one point, so its knobs are every interior
-# camber coefficient plus the circulation coefficient that owns the level.
-# `measure_profile` stands in for the CFD, exactly as `measure` does above.
-#
-
-PROFILE_BERNSTEIN = {"type": "bernstein", "order": 3, "coeff": [0.0, 0.0]}
-"""A camber line carrying exactly the two coefficients a `LoadingProfile` of
-order 3 moves."""
-
-
-@pytest.fixture
-def profile():
-    """A two-row config whose first row has its loading profile shaped."""
-    return dataclasses.replace(
-        build(
-            blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]
-        ),
-        iterate=iterate.Iteration(correct=(iterate.LoadingProfile(order=3),)),
-    )
-
-
-def test_profile_owns_two_coefficients_and_the_level(profile):
-    """order=3 gives two interior coefficients, plus the row's own Co."""
-    assert set(profile.iterate.correct[0].unknowns(profile)) == {
-        "camber_coeff[0][0]",
-        "camber_coeff[0][1]",
-        "Co[0]",
-    }
-
-
-def test_profile_reads_the_mean_across_sections(profile):
-    """One number per row and per coefficient, as a deviation is one per row."""
-    varied = dataclasses.replace(
-        profile.blades[0],
-        sections=tuple(
-            dataclasses.replace(
-                section, camber=dataclasses.replace(section.camber, coeff=(c, 0.0))
-            )
-            for section, c in zip(profile.blades[0].sections, (0.1, 0.2, 0.6))
-        ),
-    )
-    config = dataclasses.replace(profile, blades=(varied, profile.blades[1]))
-
-    unknowns = profile.iterate.correct[0].unknowns(config)
-    assert unknowns["camber_coeff[0][0]"] == pytest.approx(0.3)
-    assert unknowns["camber_coeff[0][1]"] == pytest.approx(0.0)
-
-
-def test_profile_shifts_every_section_alike(profile):
-    """A uniform shift, so a spanwise distribution survives being iterated."""
-    moved = profile.iterate.correct[0].with_unknowns(
-        profile, {"camber_coeff[0][0]": 0.4, "Co[0]": 0.65}
-    )
-
-    coeffs0 = [s.camber.coeff[0] for s in moved.blades[0].sections]
-    np.testing.assert_allclose(coeffs0, 0.4)
-    assert moved.blades[0].count.Co == pytest.approx(0.65)
-    # The other coefficient and the other row are untouched.
-    assert all(s.camber.coeff[1] == 0.0 for s in moved.blades[0].sections)
-    assert moved.blades[1] == profile.blades[1]
-
-
-def test_profile_paths_match_what_is_moved(profile):
-    """A knob nested two deep, plus a sibling one on the blade count."""
-    iterator = profile.iterate.correct[0]
-    assert iterator.paths(profile) == _probe(iterator, profile)
-    assert iterator.paths(profile) <= set(node.flatten(profile))
-
-
-def test_profile_round_trips_through_a_config_dict(profile):
-    assert Config.from_dict(profile.to_dict()) == profile
-    assert profile.to_dict()["iterate"]["correct"][0]["type"] == "loading_profile"
-
-
-def test_profile_needs_a_bernstein_camber():
-    """A quadratic camber line has no interior coefficient to move."""
-    config = build(blades=[blade(), blade()])
-    with pytest.raises(ValueError, match="Quadratic"):
-        iterate.LoadingProfile().unknowns(config)
-
-
-def test_profile_needs_coefficients_written_out_in_full():
-    """A short or mismatched-order camber line is refused, not padded."""
-    config = build(
-        blades=[
-            shaped(camber={"type": "bernstein", "order": 4, "coeff": [0.0, 0.0, 0.0]})
-        ]
-        * 2
-    )
-    with pytest.raises(ValueError, match="written out in full"):
-        iterate.LoadingProfile(order=3).unknowns(config)
-
-
-def test_profile_refuses_a_row_that_is_not_there():
-    config = build(
-        blades=[shaped(camber=PROFILE_BERNSTEIN), shaped(camber=PROFILE_BERNSTEIN)]
-    )
-    with pytest.raises(ValueError, match="out of range"):
-        iterate.LoadingProfile(i_row=5).unknowns(config)
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"order": 1},  # no interior coefficient at all
-        {"zeta_front": 0.6, "zeta_peak": 0.5},  # peak ahead of the front anchor
-        {"zeta_front": 0.0},  # the stagnation point itself
-        {"zeta_peak": 1.0},  # the trailing edge itself
-        {"fac_front": 0.0},
-        {"fac_peak": -0.5},
-    ],
-)
-def test_profile_refuses_an_impossible_setting(kwargs):
-    with pytest.raises(ValueError):
-        iterate.LoadingProfile(**kwargs)
-
-
-def test_profile_without_a_grid_raises(profile):
-    with pytest.raises(iterate.MeasurementError, match="no solved grid"):
-        profile.iterate.correct[0].error(profile, Result())
-
-
-def test_profile_gains_clips_and_tolerances_differ_for_shape_and_level():
-    """Two knobs, not one: the level and the shape need not agree."""
-    iterator = iterate.LoadingProfile(
-        order=3,
-        gain=-0.5,
-        gain_Co=1.5,
-        clip=0.1,
-        clip_Co=0.05,
-        tolerance=0.05,
-        tolerance_Co=0.02,
-    )
-    config = build(blades=[shaped(camber=PROFILE_BERNSTEIN)] * 2)
-
-    assert iterator.gains(config) == {
-        "camber_coeff[0][0]": -0.5,
-        "camber_coeff[0][1]": -0.5,
-        "Co[0]": 1.5,
-    }
-    assert iterator.clips(config) == {
-        "camber_coeff[0][0]": 0.1,
-        "camber_coeff[0][1]": 0.1,
-        "Co[0]": 0.05,
-    }
-    assert iterator.tolerances(config) == {
-        "camber_coeff[0][0]": 0.05,
-        "camber_coeff[0][1]": 0.05,
-        "Co[0]": 0.02,
-    }
-
-
-def test_profile_delegates_to_the_measurement(profile, monkeypatch):
-    """`error` guards, builds the target, and splits level from shape; the rest is `measure_profile`."""
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
-    monkeypatch.setattr(
-        turbigen.loading,
-        "measure_profile",
-        lambda *a: (np.array([0.3, 0.7]), np.array([2.0, 2.5])),
-    )
-
-    iterator = profile.iterate.correct[0]
-    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
-
-    # The peak anchor is `fac_peak * mach_ratio` = 1.32, since `fac_peak` is
-    # written as Ma_peak/Ma_TE and carries no duty factor. zeta=0.3 sits on the
-    # front line (target 1.64), zeta=0.7 on the aft line (target 1.232); the
-    # mean of the two residuals is the level, and each point's own residual
-    # less that mean is its shape error.
-    assert error["Co[0]"] == pytest.approx(0.814)
-    assert error["camber_coeff[0][0]"] == pytest.approx(-0.454)
-    assert error["camber_coeff[0][1]"] == pytest.approx(0.454)
-
-
-def test_profile_holds_a_knob_below_zeta_front(profile, monkeypatch):
-    """A coefficient whose m maps inside zeta_front is held at zero error.
-
-    Zero rather than omitted: `converged` treats an omitted knob as proof of
-    nothing, which would block this design forever on a coefficient that is
-    excluded on purpose, every iteration, by construction.
-    """
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
-    monkeypatch.setattr(
-        turbigen.loading,
-        "measure_profile",
-        lambda *a: (np.array([0.15, 0.7]), np.array([0.0, 2.5])),
-    )
-
-    iterator = profile.iterate.correct[0]
-    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
-
-    assert error["camber_coeff[0][0]"] == pytest.approx(0.0)
-    assert error["camber_coeff[0][1]"] == pytest.approx(0.0)
-    assert error["Co[0]"] == pytest.approx(1.268)
-
-
-def test_profile_held_knob_never_blocks_convergence(profile, monkeypatch):
-    """The whole point: a permanently-excluded coefficient still lets the
-    design converge, as long as everything else measured is in tolerance."""
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.1)
-    monkeypatch.setattr(
-        turbigen.loading,
-        "measure_profile",
-        lambda *a: (np.array([0.15, 0.55]), np.array([0.0, 1.6])),
-    )
-
-    result = Result(machine=profile.design(), grid=object())
-    stepping = dataclasses.replace(
-        profile,
-        iterate=iterate.Iteration(
-            correct=(iterate.LoadingProfile(order=3, tolerance=1.0, tolerance_Co=1.0),)
-        ),
-    )
-
-    assert iterate.converged(stepping, result)
-
-
-def test_profile_all_knobs_held_reports_zero_shape_and_no_level(profile, monkeypatch):
-    """With nothing beyond zeta_front, every camber knob is zero and the
-    level -- which needs at least one driven point -- stays unmeasured."""
-    monkeypatch.setattr(
-        turbigen.loading,
-        "measure_profile",
-        lambda *a: (np.array([0.1, 0.15]), np.array([0.0, 0.0])),
-    )
-
-    iterator = profile.iterate.correct[0]
-    error = iterator.error(profile, Result(machine=profile.design(), grid=object()))
-
-    assert error == {"camber_coeff[0][0]": 0.0, "camber_coeff[0][1]": 0.0}
-
-
-def test_profile_raises_with_no_suction_surface(profile, monkeypatch):
-    """A row that cannot be read stops the run rather than leaving the table."""
-    monkeypatch.setattr(turbigen.loading, "measure_profile", lambda *a: None)
-
-    result = Result(machine=profile.design(), grid=object())
-    with pytest.raises(iterate.MeasurementError, match="suction surface"):
-        profile.iterate.correct[0].error(profile, result)
-    with pytest.raises(iterate.MeasurementError):
-        iterate.converged(profile, result)
-
-
-#
-# CALIBRATION
-#
-# A gain is the reciprocal of an assumed slope, and a run measures the real
-# one. What is asserted below is that what it measured is what comes back.
-#
-
-
-def with_fixed(**kwargs):
-    """A config iterating one analytic knob."""
-    return dataclasses.replace(
-        build(),
-        iterate=iterate.Iteration(correct=(Fixed(tolerance=1e-3, **kwargs),)),
-    )
-
-
-def solve_nothing(config_now, i_iter):
-    """A run that solves nothing: `Fixed` states its own error."""
-    return Result()
-
-
-def with_bounded(**kwargs):
-    """A config iterating one analytic knob under a clip, so a ceiling exists.
-
-    `with_fixed` fixes a tolerance of its own, and the ceiling is a statement
-    about a clip *and* a tolerance together; both have to be sayable here.
-    """
-    return dataclasses.replace(
-        build(),
-        iterate=iterate.Iteration(correct=(Fixed(**kwargs),)),
-    )
-
-
-#
 # THE CLARK PROFILE
 #
 # Both surfaces at once, driven by thickness rather than camber, against the
 # distribution `turbigen.clark` draws. `measure_clark_profile` stands in for
-# the CFD, as `measure_profile` does above.
+# the CFD, as `measure` does above.
 #
 
 CLARK_THICKNESS = {
@@ -2111,6 +1052,10 @@ CLARK_THICKNESS = {
 }
 """A symmetric two-sided section of order 3, so a `ClarkProfile` has two
 interior coefficients per surface to move."""
+
+CLARK_MEAN_LINE = {**MEAN_LINE, "Ma2": 0.75}
+"""Slow enough that the default `Ma_peak` asks for a subsonic suction peak,
+which `ClarkProfile.check` insists on before anything is designed."""
 
 
 def thickened(thickness=None, **kwargs):
@@ -2127,7 +1072,7 @@ def thickened(thickness=None, **kwargs):
 def clark():
     """A two-row config whose first row has its thickness shaped."""
     return dataclasses.replace(
-        build(blades=[thickened(), thickened()]),
+        build(blades=[thickened(), thickened()], mean_line=CLARK_MEAN_LINE),
         iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
     )
 
@@ -2154,10 +1099,11 @@ def target_loop(iterator, machine, ratio):
     )
 
 
-def test_clark_owns_both_ends_both_surfaces_and_the_level(clark):
-    """Order 3 gives four control points, of which only the nose is shared."""
+def test_clark_owns_both_ends_both_surfaces_the_level_and_the_recamber(clark):
+    """Order 3 gives four control points, of which only the ends are shared."""
     assert set(clark.iterate.correct[0].unknowns(clark)) == {
         "Co[0]",
+        "dchi_LE[0]",
         "tau_LE[0]",
         "tau_TE[0]",
         "tau[0][0][1]",
@@ -2170,13 +1116,14 @@ def test_clark_owns_both_ends_both_surfaces_and_the_level(clark):
 def test_clark_puts_the_level_first_and_the_ends_before_the_interior(clark):
     """The order a sequence `gain` is matched to, so it is load-bearing.
 
-    `Co` at index zero and the three ends next means none of them moves when a
-    design changes order --- only the interior grows, at the tail. Written the
-    other way round, a calibration measured on one design would be read back
-    against different knobs on the next.
+    `Co` and the recamber first and the two ends next means none of them
+    moves when a design changes order --- only the interior grows, at the
+    tail. Written the other way round, a gain written for one design would be
+    read back against different knobs on the next.
     """
-    assert list(clark.iterate.correct[0].unknowns(clark))[:3] == [
+    assert list(clark.iterate.correct[0].unknowns(clark))[:4] == [
         "Co[0]",
+        "dchi_LE[0]",
         "tau_LE[0]",
         "tau_TE[0]",
     ]
@@ -2254,88 +1201,253 @@ def test_clark_keeps_one_nose_and_one_wedge(clark):
         assert c[0][0] == pytest.approx(unknowns["tau_LE[0]"] + 0.05)
 
 
+#
+# SEVERAL TO A ROW
+#
+
+
+@pytest.fixture
+def spans(clark):
+    """`clark` with its first row shaped at every section, midspan on the level."""
+    return dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.2, level=False),
+                iterate.ClarkProfile(spf=0.5),
+                iterate.ClarkProfile(spf=0.8, level=False),
+            )
+        ),
+    )
+
+
+def test_clark_names_its_knobs_by_section_beside_another(spans):
+    """Several on a row cannot share row-level names, so each adds its section.
+
+    `Co` alone stays named by the row, and only the one carrying the level
+    claims it. Merged, nothing collides.
+    """
+    hub, mid, tip = spans.iterate.correct
+    assert list(hub.unknowns(spans))[:3] == [
+        "dchi_LE[0][0]",
+        "tau_LE[0][0]",
+        "tau_TE[0][0]",
+    ]
+    assert list(mid.unknowns(spans))[:3] == ["Co[0]", "dchi_LE[0][1]", "tau_LE[0][1]"]
+    assert "tau[0][2][1][2]" in tip.unknowns(spans)
+
+    merged = iterate.unknowns(spans)
+    assert sum(len(it.unknowns(spans)) for it in spans.iterate.correct) == len(merged)
+
+
+def test_clark_moves_only_the_sections_nearest_it(spans):
+    """Each owns its own section, and `paths` says so."""
+    before = node.flatten(spans)
+    for i_section, iterator in enumerate(spans.iterate.correct):
+        moved = set()
+        for name, value in iterator.unknowns(spans).items():
+            after = node.flatten(iterator.with_unknowns(spans, {name: value + 0.02}))
+            moved |= {path for path in before if before[path] != after.get(path)}
+
+        assert moved == iterator.paths(spans)
+        others = {f"blades[0].sections[{j}]" for j in range(3) if j != i_section}
+        assert not any(path.startswith(tuple(others)) for path in moved)
+
+
+def test_clark_gives_a_tied_section_to_the_lower_span(clark):
+    """Two at the outer sections, and midspan halfway between them."""
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.8, level=False),
+                iterate.ClarkProfile(spf=0.2),
+            )
+        ),
+    )
+    tip, hub = config.iterate.correct
+    assert hub._owned(config) == (0, 1)
+    assert tip._owned(config) == (2,)
+
+
+def test_clark_lone_one_still_owns_the_whole_row(clark):
+    """A lone one away from midspan still moves every section."""
+    config = dataclasses.replace(
+        clark, iterate=iterate.Iteration(correct=(iterate.ClarkProfile(spf=0.8),))
+    )
+    assert config.iterate.correct[0]._owned(config) == (0, 1, 2)
+    assert "tau_LE[0]" in config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_measures_only_at_a_section(clark):
+    """A span between sections is refused, not interpolated."""
+    config = dataclasses.replace(
+        clark, iterate=iterate.Iteration(correct=(iterate.ClarkProfile(spf=0.4),))
+    )
+    with pytest.raises(ValueError, match="no section's"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_refuses_two_at_one_span(clark):
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(spf=0.5),
+                iterate.ClarkProfile(spf=0.5, level=False, gain=0.3),
+            )
+        ),
+    )
+    with pytest.raises(ValueError, match="one span"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_refuses_two_levels_on_one_row(clark):
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(spf=0.2), iterate.ClarkProfile(spf=0.5))
+        ),
+    )
+    with pytest.raises(ValueError, match="level: false"):
+        config.iterate.correct[0].unknowns(config)
+
+
+def test_clark_off_the_level_still_takes_it_off_the_shape(spans, monkeypatch):
+    """No `Co` reported, but the shape is still read against the morphed target.
+
+    A blade drawing exactly the morphed target at the wrong level therefore
+    reads as converged in every knob it has, the level being another's.
+    """
+    ratio = 0.6
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    hub = spans.iterate.correct[0]
+    machine = spans.design()
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    d = 0.1
+    fac = hub._target(z, machine, d)
+    measured = measured_as(z, fac, ratio, hub._loop(machine, ratio, d))
+    monkeypatch.setattr(
+        turbigen.loading, "measure_clark_profile", lambda *a: measured
+    )
+    errors = hub.error(spans, Result(machine=machine, grid=object()))
+
+    assert "Co[0]" not in errors
+    assert set(errors) == set(hub.unknowns(spans))
+    for name, value in errors.items():
+        assert value == pytest.approx(0.0, abs=1e-9), name
+
+
+def test_clark_off_the_level_reads_a_sequence_gain_from_the_recamber(spans):
+    """Without `Co` the recamber leads a sequence `gain`."""
+    hub = dataclasses.replace(spans.iterate.correct[0], gain=tuple(range(1, 8)))
+    gains = hub.gains(spans)
+    assert list(gains) == list(hub.unknowns(spans))
+    assert gains["dchi_LE[0][0]"] == 1.0
+
+
 def test_clark_splits_the_level_from_the_shape(clark, monkeypatch):
     """`error` builds the target and divides it; the rest is the measurement.
 
     The level is the circulation the blade drew less the one the target asks
-    for, and the shape is what is left once the surface offset that would
-    cause that level is taken back off --- `level / (1 + ratio)` on one side
-    and its negative on the other, which is a half each only when the two
-    surfaces are the same length. A ratio away from one here, so the weighting
-    is pinned rather than cancelling.
+    for, and the shape is what is left against the target morphed to the
+    circulation drawn. A ratio away from one here, so the weighting of the
+    two surfaces in the loop is pinned rather than cancelling.
     """
     ratio = 0.8
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
     z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    measured = measured_as(z, np.zeros((2, 4)), ratio, Co=0.5)
     monkeypatch.setattr(
-        turbigen.loading,
-        "measure_clark_profile",
-        lambda *a: measured_as(z, np.zeros((2, 4)), ratio),
+        turbigen.loading, "measure_clark_profile", lambda *a: measured
     )
 
     iterator = clark.iterate.correct[0]
     machine = clark.design()
     error = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # Everything measured zero, so each residual is minus its own target.
-    residual = -iterator.target(z, machine)
-    level = measured_as(z, np.zeros((2, 4)), ratio).Co - target_loop(
-        iterator, machine, ratio
-    )
-    delta = level / (1.0 + ratio)
-    shape = residual - np.array([[delta], [-delta]])
+    # Everything measured zero, so each residual is minus the morphed target.
+    level = measured.Co - target_loop(iterator, machine, ratio)
+    d = iterator.morph(machine, ratio, measured.Co)
+    assert d != pytest.approx(0.0)
+    shape = -iterator._target(z, machine, d)
 
     assert error["Co[0]"] == pytest.approx(level)
     assert error["tau_LE[0]"] == pytest.approx(0.5 * (shape[0][0] + shape[1][0]))
+    # Row 0's metal angle rises, so its pressure surface is the upper one and
+    # the loading error is already in the recamber's frame.
+    assert not machine.rows[0].blade.suction_is_upper
+    assert error["dchi_LE[0]"] == pytest.approx(shape[0][0] - shape[1][0])
     assert error["tau_TE[0]"] == pytest.approx(0.5 * (shape[0][-1] + shape[1][-1]))
     assert error["tau[0][0][1]"] == pytest.approx(shape[0][1])
     assert error["tau[0][1][2]"] == pytest.approx(shape[1][2])
 
 
-def test_clark_ends_cannot_be_driven_by_the_level(clark, monkeypatch):
-    """The property that leaves the loop determined.
+def test_clark_morph_meets_the_circulation_asked(clark, monkeypatch):
+    """The morph is closed form, so it lands on the loop exactly.
 
-    A shared end reports the *mean* of the two surfaces' residuals there, and
-    the offset is taken off one surface and added to the other --- so it
-    cancels exactly. The nose and the wedge answer only for the common mode at
-    their end, and can neither be moved by the blade count nor fight it.
-
-    A surface lifted by `d` and the other dropped by `d` opens the loop by
-    `d (1 + ratio)`, the two surfaces entering the circulation weighted by
-    their own lengths. The ratio is away from one here, so that weighting is
-    what the number below tests rather than something that cancels.
+    And it is what it says it is: the ramp up by `d` and the plateau down by
+    `d`, in plain `Ma / Ma_TE`, so a target written with the two parameters
+    moved by `d` times the Mach ratio each carries draws the same curve.
     """
     ratio = 0.8
-    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
-
-    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.5)
+    monkeypatch.setattr(turbigen.loading, "mach_ratio_axial", lambda *a: 2.0)
     iterator = clark.iterate.correct[0]
     machine = clark.design()
-    target = iterator.target(z, machine)
 
-    # Two measurements differing by a pure level: one surface lifted and the
-    # other dropped, which is what opening the loop does and nothing else. The
-    # circulation is stated rather than integrated from these four samples,
-    # which span only part of the surface -- the real one integrates the whole
-    # cut, so a uniform offset reaches it whole.
     base = target_loop(iterator, machine, ratio)
-    errors = []
-    for offset in (0.0, 0.3):
-        fac = target + np.array([[offset], [-offset]])
-        loop = base + offset * (1.0 + ratio)
-        monkeypatch.setattr(
-            turbigen.loading,
-            "measure_clark_profile",
-            lambda *a, f=fac, c=loop: measured_as(z, f, ratio, Co=c),
+    for Co in (base - 0.1, base + 0.05):
+        d = iterator.morph(machine, ratio, Co)
+        assert iterator._loop(machine, ratio, d) == pytest.approx(Co, abs=1e-10)
+
+        written = dataclasses.replace(
+            iterator, Ma_LE=iterator.Ma_LE + 1.5 * d, Ma_PS=iterator.Ma_PS - 2.0 * d
         )
-        errors.append(iterator.error(clark, Result(machine=machine, grid=object())))
+        z = np.tile(np.linspace(0.0, 1.0, 11), (2, 1))
+        assert iterator._target(z, machine, d) == pytest.approx(
+            written.target(z, machine)
+        )
 
-    # The first is the target's own loop, so it reports no circulation error.
-    assert errors[0]["Co[0]"] == pytest.approx(0.0, abs=1e-12)
+    assert iterator.morph(machine, ratio, base) == 0.0
 
-    assert errors[1]["Co[0]"] - errors[0]["Co[0]"] == pytest.approx(0.3 * (1.0 + ratio))
-    for name in ("tau_LE[0]", "tau_TE[0]"):
-        assert errors[1][name] == pytest.approx(errors[0][name], abs=1e-12)
+
+def test_clark_morph_leaves_the_peak_and_trailing_edge_alone(clark, monkeypatch):
+    """Where the level is taken off, and where it is not.
+
+    The suction surface from its peak back, and both surfaces at the trailing
+    edge, are the same whatever the morph: a level is carried on the ramp and
+    the plateau, which is where a change of blade count moves a Clark curve,
+    and not at a trailing edge every target pins to one.
+    """
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+
+    z = np.linspace(iterator.z_peak, 1.0, 21)
+    zz = np.stack((z, z))
+    datum = iterator._target(zz, machine, 0.0)
+    for d in (-0.2, 0.2):
+        moved = iterator._target(zz, machine, d)
+        assert moved[0] == pytest.approx(datum[0], abs=1e-12)
+        assert moved[:, -1] == pytest.approx(datum[:, -1], abs=1e-12)
+        # The plateau did move, so this is not a morph that does nothing.
+        assert moved[1][0] != pytest.approx(datum[1][0])
+
+
+def test_clark_clamps_a_morph_the_curve_cannot_take(clark, monkeypatch):
+    """A level too large to morph is held at a valid curve, not refused."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    iterator = clark.iterate.correct[0]
+    machine = clark.design()
+
+    lo, hi = iterator._morph_bounds(machine)
+    base = target_loop(iterator, machine, 1.0)
+    assert iterator.morph(machine, 1.0, base + 10.0) == pytest.approx(hi)
+    assert iterator.morph(machine, 1.0, base - 10.0) == pytest.approx(lo)
+    for d in (lo, hi):
+        iterator._target(np.zeros((2, 3)) + 0.5, machine, d)
 
 
 #
@@ -2360,47 +1472,45 @@ def test_clark_cannot_see_an_antisymmetric_trailing_edge_error(clark, monkeypatc
     machine = clark.design()
 
     # Right everywhere but the two ends, where the surfaces are wrong by the
-    # same amount in opposite directions.
+    # same amount in opposite directions. The target's own loop, so no morph
+    # is taken off and the skew is read whole.
     skew = np.array([[0.1, 0.0, 0.0, 0.1], [-0.1, 0.0, 0.0, -0.1]])
     fac = iterator.target(z, machine) + skew
+    loop = target_loop(iterator, machine, 1.0)
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
-        lambda *a: measured_as(z, fac),
+        lambda *a: measured_as(z, fac, Co=loop),
     )
     errors = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # Whatever the skew does to the level, the offset takes the same amount
-    # off one surface and adds it to the other --- so at the trailing edge the
-    # antisymmetric part survives untouched, and the one knob there reports
-    # the mean of it, which is zero.
+    # The one knob at the trailing edge reports the mean, which is zero.
     assert errors["tau_TE[0]"] == pytest.approx(0.0, abs=1e-12)
 
-    # And the nose, one radius and so one knob, still cannot see it.
+    # Nor can the nose radius, one knob for two surfaces; but at the nose the
+    # recamber reads the difference, the skew twice over.
     assert errors["tau_LE[0]"] == pytest.approx(0.0, abs=1e-12)
+    assert errors["dchi_LE[0]"] == pytest.approx(0.2)
 
 
 def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
-    """What the offset is for: the shape never sees the loop.
+    """What the morph is for: the shape never sees the loop.
 
     A circulation error is the blade count's alone, a thickness being able to
-    move loading about but not to create it. So the surface offset that would
-    have caused the measured level is taken back off before any coefficient
-    reads its own residual --- and at unequal surface lengths that offset is
-    `level / (1 + ratio)`, not half each.
+    move loading about but not to create it. A blade that draws exactly the
+    morphed target has the right shape at the wrong level, so the whole of
+    its error lands on the count and every shape knob reads zero.
     """
     ratio = 0.6
-    delta = 0.25
     monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
 
     z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
     iterator = clark.iterate.correct[0]
     machine = clark.design()
 
-    # On target everywhere, then lifted and dropped by a pure offset -- so
-    # every residual is the offset and nothing else.
-    fac = iterator.target(z, machine) + np.array([[delta], [-delta]])
-    loop = target_loop(iterator, machine, ratio) + delta * (1.0 + ratio)
+    d = 0.1
+    fac = iterator._target(z, machine, d)
+    loop = iterator._loop(machine, ratio, d)
     monkeypatch.setattr(
         turbigen.loading,
         "measure_clark_profile",
@@ -2408,11 +1518,11 @@ def test_clark_takes_the_whole_level_off_the_shape(clark, monkeypatch):
     )
     errors = iterator.error(clark, Result(machine=machine, grid=object()))
 
-    # The whole of it lands on the count, and every shape knob reads zero.
-    assert errors["Co[0]"] == pytest.approx(delta * (1.0 + ratio))
+    assert errors["Co[0]"] == pytest.approx(loop - target_loop(iterator, machine, ratio))
+    assert errors["Co[0]"] != pytest.approx(0.0)
     for name, value in errors.items():
         if name != "Co[0]":
-            assert value == pytest.approx(0.0, abs=1e-12), name
+            assert value == pytest.approx(0.0, abs=1e-9), name
 
 
 def test_clark_measures_a_level_the_curve_order_cannot_move(monkeypatch):
@@ -2429,7 +1539,10 @@ def test_clark_measures_a_level_the_curve_order_cannot_move(monkeypatch):
     for coeff in ([[0.0, 0.0], [0.0, 0.0]], [[0.0] * 4, [0.0] * 4]):
         section = {**CLARK_THICKNESS, "coeff": coeff}
         config = dataclasses.replace(
-            build(blades=[thickened(section), thickened(section)]),
+            build(
+                blades=[thickened(section), thickened(section)],
+                mean_line=CLARK_MEAN_LINE,
+            ),
             iterate=iterate.Iteration(correct=(iterate.ClarkProfile(),)),
         )
         iterator = config.iterate.correct[0]
@@ -2464,13 +1577,28 @@ def test_clark_holds_the_nose_inside_its_bounds(clark):
     other knob in the row because this one reached a limit.
     """
     iterator = clark.iterate.correct[0]
-    lo, hi = iterator.R_LE_lim
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
     tau = iterator.unknowns(clark)["tau_LE[0]"]
 
     for asked, bound in ((10.0, hi), (-tau + (2.0 * lo) ** 0.5 * 0.5, lo)):
         moved = iterator.with_unknowns(clark, {"tau_LE[0]": tau + asked})
         for section in moved.blades[0].sections:
             assert section.thickness.R_LE == pytest.approx(bound)
+
+
+def test_clark_refuses_a_deprecated_nose_bound_that_disagrees(clark):
+    """The bounds live on the thickness; one left here must agree with it,
+    or it would read as a bound in force when it is not."""
+    iterator = dataclasses.replace(clark.iterate.correct[0], R_LE_lim=(0.02, 0.1))
+    tau = iterator.unknowns(clark)["tau_LE[0]"]
+
+    with pytest.raises(ValueError, match="now live on the thickness"):
+        iterator.with_unknowns(clark, {"tau_LE[0]": tau + 0.01})
+
+    agrees = dataclasses.replace(
+        iterator, R_LE_lim=clark.blades[0].sections[0].thickness.R_LE_lim
+    )
+    agrees.with_unknowns(clark, {"tau_LE[0]": tau + 0.01})
 
 
 def test_clark_leaves_a_nose_inside_its_bounds_alone(clark):
@@ -2480,11 +1608,83 @@ def test_clark_leaves_a_nose_inside_its_bounds_alone(clark):
 
     # Half way between where it starts and the upper bound, so the move is
     # real but lands inside.
-    wanted = 0.5 * (clark.blades[0].sections[0].thickness.R_LE + iterator.R_LE_lim[1])
+    thickness = clark.blades[0].sections[0].thickness
+    wanted = 0.5 * (thickness.R_LE + thickness.R_LE_lim[1])
     moved = iterator.with_unknowns(clark, {"tau_LE[0]": (2.0 * wanted) ** 0.5})
 
     assert moved.blades[0].sections[0].thickness.R_LE == pytest.approx(wanted)
     assert tau != pytest.approx((2.0 * wanted) ** 0.5)
+
+
+def _nose_error_at(clark, R_LE, offset, monkeypatch):
+    """Return row 0's `tau_LE` error with its nose at `R_LE`, both surfaces
+    running `offset` fast at the first station and on target elsewhere."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    iterator = clark.iterate.correct[0]
+
+    def at(section):
+        c = section.thickness.tau_coeff.copy()
+        c[:, 0] = shapespace.tau_LE(R_LE)
+        return dataclasses.replace(
+            section, thickness=section.thickness.with_tau_coeff(c)
+        )
+
+    blade = clark.blades[0]
+    config = dataclasses.replace(
+        clark,
+        blades=(
+            dataclasses.replace(blade, sections=tuple(map(at, blade.sections))),
+            *clark.blades[1:],
+        ),
+    )
+    machine = config.design()
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    fac = iterator.target(z, machine) + np.array(
+        [[offset, 0.0, 0.0, 0.0], [offset, 0.0, 0.0, 0.0]]
+    )
+    loop = target_loop(iterator, machine, 1.0)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_clark_profile",
+        lambda *a: measured_as(z, fac, Co=loop),
+    )
+    return iterator.error(config, Result(machine=machine, grid=object()))[
+        "tau_LE[0]"
+    ]
+
+
+@pytest.mark.parametrize(
+    "bound, offset, nulled",
+    [
+        ("lower", 0.05, True),
+        ("lower", -0.05, False),
+        ("upper", -0.05, True),
+        ("upper", 0.05, False),
+    ],
+)
+def test_clark_counts_a_nose_held_at_its_bound_as_converged(
+    clark, monkeypatch, bound, offset, nulled
+):
+    """A nose that may go no further has converged; one that can come back
+    off the bound has not, and keeps the error that takes it there."""
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
+    R_LE = lo if bound == "lower" else hi
+
+    error = _nose_error_at(clark, R_LE, offset, monkeypatch)
+
+    if nulled:
+        assert error == 0.0
+    else:
+        assert error == pytest.approx(offset)
+
+
+def test_clark_reports_a_free_nose_whole(clark, monkeypatch):
+    """Inside its bounds the nose error is the plain mean residual."""
+    lo, hi = clark.blades[0].sections[0].thickness.R_LE_lim
+    error = _nose_error_at(clark, 0.5 * (lo + hi), 0.05, monkeypatch)
+
+    assert error == pytest.approx(0.05)
 
 
 def test_clark_refuses_a_step_that_closes_the_section(clark):
@@ -2526,11 +1726,129 @@ def test_clark_leading_edge_tolerance_is_its_own(clark):
     assert tolerances["tau[0][0][1]"] == pytest.approx(0.01)
 
 
-def test_clark_leading_edge_tolerance_defaults_wide(clark):
-    """An old config that never named it still gets the wider nose criterion."""
+def test_clark_tolerances_default(clark):
+    """Shape knobs converge to 0.025 and the rest to 0.02 unless a config says otherwise."""
     tolerances = clark.iterate.correct[0].tolerances(clark)
 
-    assert tolerances["tau_LE[0]"] == pytest.approx(0.05)
+    shape = {name for name in tolerances if name.startswith(("tau[", "tau_TE["))}
+    assert shape
+    for name, value in tolerances.items():
+        assert value == pytest.approx(0.025 if name in shape else 0.02), name
+
+
+def test_clark_recambers_every_section_together(clark):
+    """One span fraction is measured, so the recamber is a uniform shift too."""
+    iterator = clark.iterate.correct[0]
+    dchi = iterator.unknowns(clark)["dchi_LE[0]"]
+
+    moved = iterator.with_unknowns(clark, {"dchi_LE[0]": dchi + 0.7})
+
+    shifts = [
+        section.dchi_LE - original.dchi_LE
+        for section, original in zip(moved.blades[0].sections, clark.blades[0].sections)
+    ]
+    assert shifts == pytest.approx([0.7] * len(shifts))
+    assert moved.blades[1] == clark.blades[1]
+    for section, original in zip(moved.blades[0].sections, clark.blades[0].sections):
+        assert section.thickness == original.thickness
+
+
+def _nose_loading_error(clark, i_row, skew, monkeypatch):
+    """Return the `dchi_LE` error of row `i_row` for a nose skewed by `skew`."""
+    monkeypatch.setattr(turbigen.loading, "mach_ratio", lambda *a: 1.0)
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(correct=(iterate.ClarkProfile(i_row=i_row),)),
+    )
+    iterator = config.iterate.correct[0]
+    machine = config.design()
+
+    z = np.array([[0.2, 0.5, 0.7, 0.9], [0.2, 0.5, 0.7, 0.9]])
+    fac = iterator.target(z, machine) + np.array(
+        [[skew, 0.0, 0.0, 0.0], [-skew, 0.0, 0.0, 0.0]]
+    )
+    # The target's own loop, so no level is taken off and the skew is read
+    # whole.
+    loop = target_loop(iterator, machine, 1.0)
+    monkeypatch.setattr(
+        turbigen.loading,
+        "measure_clark_profile",
+        lambda *a: measured_as(z, fac, Co=loop),
+    )
+    return iterator.error(config, Result(machine=machine, grid=object()))[
+        f"dchi_LE[{i_row}]"
+    ]
+
+
+def test_clark_recamber_error_flips_with_the_turning(clark, monkeypatch):
+    """The same over-loaded nose, on rows turning opposite ways.
+
+    A rising metal angle takes flow off the pressure surface where that is
+    the lower one and puts it on where it is the upper, so the one positive
+    gain needs the error turned into the recamber's frame row by row.
+    """
+    rows = clark.design().rows
+    assert rows[0].blade.suction_is_upper != rows[1].blade.suction_is_upper
+
+    first = _nose_loading_error(clark, 0, 0.1, monkeypatch)
+    second = _nose_loading_error(clark, 1, 0.1, monkeypatch)
+
+    assert abs(first) == pytest.approx(0.2)
+    assert second == pytest.approx(-first)
+
+
+@pytest.mark.parametrize("i_row", [0, 1])
+def test_clark_recambers_the_way_incidence_would(clark, monkeypatch, i_row):
+    """An over-loaded nose is flow too far onto the pressure surface.
+
+    So the recamber this takes for it has to have the sign the incidence
+    iterator takes for the same flow, on either row. Checked against that
+    iterator rather than against a sign written here, because its frame is the
+    one pinned to what a blade measures.
+    """
+    clark_step = -iterate.ClarkProfile().gain_dchi_LE * _nose_loading_error(
+        clark, i_row, 0.1, monkeypatch
+    )
+
+    # Flow onto the pressure surface, in the frame the incidence is measured
+    # in: positive where the suction surface is the upper one.
+    machine = clark.design()
+    onto_pressure = 5.0 if machine.rows[i_row].blade.suction_is_upper else -5.0
+    monkeypatch.setattr(turbigen.util, "cut_blade_surfs", lambda grid: [None, None])
+    monkeypatch.setattr(iterate, "_incidence", lambda *a, **k: onto_pressure)
+    config = dataclasses.replace(
+        clark, iterate=iterate.Iteration(correct=(iterate.Incidence(),))
+    )
+    incidence = iterate.Incidence()
+    errors = incidence.error(config, Result(machine=machine, grid=object()))
+    incidence_step = -incidence.gain * errors[f"dchi_LE[{i_row}][0]"]
+
+    assert np.sign(clark_step) == np.sign(incidence_step) != 0.0
+
+
+def test_clark_refuses_to_share_the_recamber_with_incidence(clark):
+    """Two iterators moving one leaf towards different targets is a fight."""
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(), iterate.Incidence())
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Drop the incidence iterator"):
+        iterate.unknowns(config)
+
+
+def test_clark_recamber_has_its_own_gain_clip_and_tolerance(clark):
+    """An angle against a loading error, so none of the shape knobs' numbers."""
+    iterator = iterate.ClarkProfile(
+        gain_dchi_LE=3.0, clip_dchi_LE=0.4, tolerance_dchi_LE=0.07
+    )
+
+    assert iterator.gains(clark)["dchi_LE[0]"] == pytest.approx(3.0)
+    assert iterator.clips(clark)["dchi_LE[0]"] == pytest.approx(0.4)
+    assert iterator.tolerances(clark)["dchi_LE[0]"] == pytest.approx(0.07)
+    assert iterator.gains(clark)["tau_LE[0]"] == pytest.approx(iterator.gain)
 
 
 def test_clark_needs_a_two_sided_thickness():
@@ -2574,6 +1892,7 @@ def test_clark_needs_every_section_to_agree_on_order():
         ({"z_peak": 0.0}, "0 < z_peak < 1"),
         ({"z_peak": 1.0}, "0 < z_peak < 1"),
         ({"Ma_peak": 0.0}, "Ma_peak must be positive"),
+        ({"Ma_peak_max": 0.0}, "Ma_peak_max must be positive"),
         ({"Ma_LE": -1.0}, "Ma_LE must be positive"),
         ({"Ma_PS": 0.0}, "Ma_PS must be positive"),
         ({"tolerance_tau_LE": 0.0}, "tolerance_tau_LE must be positive"),
@@ -2582,6 +1901,58 @@ def test_clark_needs_every_section_to_agree_on_order():
 def test_clark_rejects_a_target_off_the_surface(kwargs, match):
     with pytest.raises(ValueError, match=match):
         iterate.ClarkProfile(**kwargs)
+
+
+@pytest.mark.parametrize("i_row", [0, 1])
+def test_clark_refuses_a_peak_over_the_default_limit(clark, i_row):
+    """The peak is `Ma_peak` times the row exit relative Mach number, checked
+    at design time so a batch screens the point out before it is solved."""
+    Ma_TE = float(clark.design().mean_line[:, i_row].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(i_row=i_row, Ma_peak=1.11 / Ma_TE),)
+        ),
+    )
+    with pytest.raises(DesignError, match=f"Row {i_row}: .* exceeds Ma_peak_max=1.1"):
+        config.design()
+
+
+def test_clark_accepts_a_peak_under_the_default_limit(clark):
+    Ma_TE = float(clark.design().mean_line[:, 0].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(iterate.ClarkProfile(Ma_peak=1.09 / Ma_TE),)
+        ),
+    )
+    config.design()
+
+
+@pytest.mark.parametrize("Ma_peak_max, refused", [(0.8, True), (1.2, False)])
+def test_clark_peak_limit_is_configurable(clark, Ma_peak_max, refused):
+    """The limit is on the peak itself, so the same target is refused under a
+    tighter limit and accepted under a looser one."""
+    Ma_TE = float(clark.design().mean_line[:, 0].Ma_rel[1])
+    config = dataclasses.replace(
+        clark,
+        iterate=iterate.Iteration(
+            correct=(
+                iterate.ClarkProfile(Ma_peak=1.0 / Ma_TE, Ma_peak_max=Ma_peak_max),
+            )
+        ),
+    )
+    if refused:
+        with pytest.raises(DesignError, match="exceeds Ma_peak_max=0.8"):
+            config.design()
+    else:
+        config.design()
+
+
+def test_an_iterator_checks_nothing_by_default(config):
+    """The hook is opt-in, so an iterator without a design-time target is
+    never the reason a design fails."""
+    config.design()
 
 
 #
@@ -2641,7 +2012,9 @@ def test_the_outermost_stations_do_not_move_the_fit(monkeypatch):
         values[[0, -1]] = -50.0
 
     def measured(deficit):
-        monkeypatch.setattr(iterate, "exit_deficit", lambda result, offset: (spf, deficit, {}))
+        monkeypatch.setattr(
+            iterate, "exit_deficit", lambda result, offset: (spf, deficit, {})
+        )
         return iterate.exit_profile(None, bconds.LegendreModes(), 3)
 
     assert measured(spiked)["DPo"] == pytest.approx(measured(clean)["DPo"])

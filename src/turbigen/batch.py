@@ -31,6 +31,7 @@ import math
 import warnings
 
 import numpy as np
+import yaml
 from scipy.stats import qmc
 
 from turbigen import node
@@ -53,6 +54,14 @@ A power of two, because that is where Sobol' balance properties hold. Nothing
 like it exists for a grid, whose count is the product of what it names.
 """
 
+DRAWS_PER_POINT = 100
+"""Sequence points looked at per point wanted when filling the gaps between runs.
+
+Generous, because a point already covered by a run costs a distance calculation
+and nothing more; only the uncovered ones are designed, and those are capped by
+:data:`ATTEMPTS_PER_POINT` as a drawn batch is.
+"""
+
 
 class Batch(Node):
     """A set of related runs, and how to choose them."""
@@ -66,6 +75,11 @@ class Batch(Node):
     Paths are spelled as :func:`~turbigen.node.flatten` writes them, the same
     as `database.variables`, so a design variable is named identically wherever
     it appears.
+
+    A key may join several paths with commas, which ties them: one value is
+    drawn and written to every one of them. That is how a quantity spread
+    over several leaves --- the suction peak of each section of a row --- moves
+    as one variable, without a dimension of the box per leaf. See `members`.
 
     A mapping rather than a list of triples because this is the one section a
     user writes by hand and ``mean_line.psi: [1.2, 2.0]`` is the shortest
@@ -145,23 +159,34 @@ class Batch(Node):
             )
 
         leaves = node.flatten(config)
+        seen = set()
 
         for path in self.paths():
-            if path not in leaves:
-                raise ValueError(
-                    f"The batch variable {path!r} is not a leaf of this config."
-                )
+            for leaf in members(path):
+                if leaf not in leaves:
+                    raise ValueError(
+                        f"The batch variable {leaf!r} is not a leaf of this config."
+                    )
+                # Named twice, the last key written would win and the other's
+                # column would no longer be what the design was run at.
+                if leaf in seen:
+                    raise ValueError(
+                        f"The batch variable {leaf!r} is named by more than "
+                        "one key, so it cannot follow both."
+                    )
+                seen.add(leaf)
+
+                if not self.is_grid():
+                    self._check_bounds(path, leaf, leaves[leaf])
 
             if self.is_grid():
                 self._check_values(path)
-            else:
-                self._check_bounds(path, leaves[path])
 
-    def _check_bounds(self, path, value):
-        """Raise unless `path` is something a continuous draw can move."""
+    def _check_bounds(self, path, leaf, value):
+        """Raise unless `leaf`, varied by `path`, can move continuously."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(
-                f"The batch bound {path!r} is {value!r}, which is not a "
+                f"The batch bound {leaf!r} is {value!r}, which is not a "
                 "number to move continuously."
             )
         if isinstance(value, int):
@@ -171,7 +196,7 @@ class Batch(Node):
             # mesh. Named values cannot collide this way, so `values:` allows
             # them.
             raise ValueError(
-                f"The batch bound {path!r} is a whole number, and whole "
+                f"The batch bound {leaf!r} is a whole number, and whole "
                 "numbers are not drawn: rounding a continuous draw makes "
                 "duplicate designs. Name the values with values: instead."
             )
@@ -210,7 +235,18 @@ class Batch(Node):
             )
 
 
-def generate(config, n=None, start=0, edges=None):
+def members(path):
+    """Return the leaves a batch variable `path` writes to, as a tuple.
+
+    One for a plain path, several for a comma-joined key that ties them. The
+    first is the one read back when a finished run is asked where it sat in
+    the box: the others hold the same value, so any would do, and the first is
+    the one a reader can see without splitting the key in their head.
+    """
+    return tuple(leaf.strip() for leaf in path.split(","))
+
+
+def generate(config, n=None, start=0, edges=None, taken=None):
     """Return the designs this config's `batch:` section asks for.
 
     Pairs of ``(index, config)``. The index is the point's position in the
@@ -235,6 +271,11 @@ def generate(config, n=None, start=0, edges=None):
         When set, ignore `n` and `start` and run the surface of the `bounds:`
         box instead of drawing from it: the `edges`-level grid over the box,
         keeping only the points with a coordinate at a bound. `bounds:` only.
+    taken : array or None
+        When set, the design variables of the runs already made, shape
+        ``(n_taken, n_var)`` in `Batch.paths` order, as :func:`taken_points`
+        reads them. The `n` designs are then drawn in sequence but only from
+        the gaps between them: see :func:`_fill`. `bounds:` only.
 
     """
     spec = config.batch
@@ -250,6 +291,14 @@ def generate(config, n=None, start=0, edges=None):
                 "section names its points with values:."
             )
         return _edges(config, spec, edges)
+
+    if taken is not None:
+        if spec.is_grid():
+            raise ValueError(
+                "--fill draws points from a bounds: box; this batch: section "
+                "names its points with values:. Give bounds: instead."
+            )
+        return _fill(config, spec, DEFAULT_NUMBER if n is None else n, start, taken)
 
     if spec.is_grid():
         return _grid(config, spec)
@@ -369,6 +418,145 @@ def _sequence(config, spec, n, start):
     return drawn
 
 
+def _fill(config, spec, n, start, taken):
+    """Return `n` designs drawn from the part of the box the `taken` runs miss.
+
+    The sequence is walked from `start` as for a drawn batch, but a point within
+    a radius of any run already made is skipped as covered, the way a point that
+    does not design is. What is left is the sequence restricted to the gaps, so
+    it fills them as evenly as it would fill an empty box, at a density `n`
+    sets; the margin a widened bound adds is one such gap, a hole a screen kept
+    skipping is another.
+
+    The radius is the median distance from a run to its nearest neighbour, with
+    each variable scaled onto ``[0, 1]`` over its bound so that no one
+    variable's units decide what counts as near: the spacing the runs already
+    have, so a gap is a region they leave at least as open as they leave each
+    other. Fewer than two runs have no spacing, and cover nothing.
+
+    The picks are not kept apart from one another, only from the runs. Keeping
+    them apart too would place each in the largest gap left, and in many
+    variables the largest gap is nearly always on a face of the box, so the
+    picks would crowd the bounds of every variable, widened or not.
+    """
+    paths = spec.paths()
+    lo, hi = spec.limits()
+    # A power of two, which scipy asks of a draw from the start of the sequence.
+    draws = 1 << math.ceil(math.log2(n * DRAWS_PER_POINT))
+
+    engine = qmc.Sobol(d=len(paths), scramble=True, seed=spec.seed)
+    if start:
+        engine.fast_forward(start)
+    candidates = engine.random(draws)
+
+    runs = (np.asarray(taken, float).reshape(-1, len(paths)) - lo) / (hi - lo)
+    radius = _spacing(runs)
+    nearest = np.full(draws, np.inf)
+    for run in runs:
+        nearest = np.minimum(nearest, np.linalg.norm(candidates - run, axis=1))
+    open_ = nearest >= radius
+
+    # The fraction of the sequence left open is the fraction of the box, so
+    # the runs sit at len(runs) per covered fraction, and this many points
+    # would put the gaps at the same density.
+    share = np.mean(open_)
+    matching = len(runs) * share / max(1.0 - share, np.finfo(float).tiny)
+    logger.info(
+        f"Filling the gaps between {len(runs)} run(s) with {n} design(s), "
+        f"skipping points within {radius:.3g} of a run in the unit box, over "
+        f"{len(paths)} design variable(s):\n" + _format_bounds(spec)
+    )
+    logger.info(
+        f"The gaps are {share:.0%} of the box; about {matching:.0f} design(s) "
+        "would fill them as densely as the runs fill the rest."
+    )
+
+    datum = config.to_dict()
+    drawn = []
+    attempts = 0
+
+    for k in np.flatnonzero(open_):
+        if len(drawn) == n or attempts == n * ATTEMPTS_PER_POINT:
+            break
+        attempts += 1
+
+        index = start + int(k)
+        values = lo + (hi - lo) * candidates[k]
+        candidate, why = _build(config, datum, paths, values)
+
+        if candidate is None:
+            logger.info(
+                f"Point {index} ({_format_point(paths, values)}) does not "
+                f"design, so it is skipped: {why}"
+            )
+        else:
+            drawn.append((index, candidate))
+
+    if len(drawn) < n:
+        raise ValueError(
+            f"Only {len(drawn)} of {n} points designed in the gaps between "
+            f"the runs, from {draws} drawn and {attempts} designed. The gaps "
+            f"are probably mostly outside what this design can do:\n"
+            f"{_format_bounds(spec)}"
+        )
+
+    return drawn
+
+
+def _spacing(points):
+    """Return the median distance from each of `points` to its nearest other.
+
+    Zero for fewer than two points, which then cover nothing.
+    """
+    if len(points) < 2:
+        return 0.0
+    nearest = np.full(len(points), np.inf)
+    for i, point in enumerate(points):
+        distance = np.linalg.norm(points - point, axis=1)
+        distance[i] = np.inf
+        nearest[i] = distance.min()
+    return float(np.median(nearest))
+
+
+def taken_points(directories, spec):
+    """Return the design variables of every member of earlier batches.
+
+    Shape ``(n_member, n_var)``, in `Batch.paths` order, read from each
+    member's own config rather than from its answer: a member still queued or
+    one that never converged was a point chosen, and filling it again would
+    only choose it again. A tied key is read from its first leaf, as
+    :func:`members` says.
+
+    A member without one of the variables --- written from a datum with a
+    different `batch:` section, or not a member at all --- is skipped with a
+    warning rather than guessed at.
+    """
+    paths = spec.paths()
+    leaves = [members(path)[0] for path in paths]
+    rows = []
+
+    for directory in directories:
+        for member in sorted(directory.glob(f"*/{INPUT_NAME}")):
+            try:
+                int(member.parent.name)
+            except ValueError:
+                continue
+
+            flat = {}
+            node._leaves(yaml.safe_load(member.read_text()) or {}, "", flat)
+            missing = [leaf for leaf in leaves if leaf not in flat]
+            if missing:
+                logger.warning(
+                    f"{member} has no {', '.join(missing)}, so it is not "
+                    "counted as a point already run."
+                )
+                continue
+
+            rows.append([float(flat[leaf]) for leaf in leaves])
+
+    return np.array(rows, float).reshape(-1, len(paths))
+
+
 def _grid(config, spec):
     """Return every combination of the named values, in a fixed order.
 
@@ -424,18 +612,15 @@ def _build(config, datum, paths, values):
         # float() rather than the value itself, so a drawn numpy scalar
         # serialises. A named whole number is left as it was typed: `values:`
         # allows integers, and a blade count must stay one.
-        node.set_by_path(data, path, value if isinstance(value, int) else float(value))
+        for leaf in members(path):
+            node.set_by_path(
+                data, leaf, value if isinstance(value, int) else float(value)
+            )
 
-    # Screening is deliberate probing of bad points, so numeric complaints are
-    # expected rather than newsworthy: a corner where an equation of state
-    # takes the log of a negative number is exactly a corner to reject. They
-    # are caught rather than silenced, and logged below if the point survives.
-    #
-    # Logged rather than re-raised. A design that iterates through a bad guess
-    # and recovers still warns on the way, so re-issuing would turn a
-    # survivable hiccup into a hard failure for anyone who escalates warnings
-    # -- as the test suite does -- and would detach the warning from the point
-    # that caused it.
+    # Screening probes bad points on purpose, so numeric warnings are expected.
+    # Record them and log them below if the point survives. Not re-raised: a
+    # design that recovers from a bad guess still warns on the way, and
+    # re-raising would fail it wherever warnings are escalated to errors.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try:

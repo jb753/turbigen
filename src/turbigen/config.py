@@ -152,4 +152,6 @@ class Config(Node):
                 for i_row, blade in enumerate(self.blades)
             )
 
-        return Machine(mean_line=mean_line, annulus=annulus, rows=rows)
+        machine = Machine(mean_line=mean_line, annulus=annulus, rows=rows)
+        self.iterate.check(machine)
+        return machine

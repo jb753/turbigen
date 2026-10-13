@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 
 import turbigen.clusterfunc.check
+import turbigen.clusterfunc.plateau
 import turbigen.clusterfunc.single
 import turbigen.clusterfunc.util
 from turbigen.clusterfunc.exceptions import ClusteringException
@@ -103,6 +104,68 @@ def free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8):
     return x
 
 
+def fixed_many(dx0, dx1, N):
+    """Double-sided clustering of many unit intervals with a fixed number of points.
+
+    What :func:`fixed` does for one pair of end spacings, for arrays of them at
+    once, by the same Vinokur stretching and the same correction of its end
+    spacings, each interval to the same tolerance.
+
+    Parameters
+    ----------
+    dx0, dx1: array
+        Boundary spacings at the start and end of each unit interval, shape (m,).
+    N: int
+        Number of points in each grid vector.
+
+    Returns
+    -------
+    x: array
+        Grid vectors on the unit interval, shape (m, N).
+
+    """
+    dx = np.stack(np.broadcast_arrays(dx0, dx1), axis=1).astype(float)
+    dx_in = dx.copy()
+    out = np.empty((len(dx), N))
+    todo = np.ones(len(dx), dtype=bool)
+    for _ in range(100):
+        x = _vinokur_many(dx_in[todo], N)
+        fac = np.stack((x[:, 1] - x[:, 0], x[:, -1] - x[:, -2]), axis=1) / dx[todo]
+        done = (np.abs(fac - 1.0) < 1e-2).all(axis=1)
+        idx = np.flatnonzero(todo)
+        out[idx] = x
+        todo[idx[done]] = False
+        if not todo.any():
+            break
+        dx_in[idx[~done]] /= fac[~done]
+    return out
+
+
+def _vinokur_many(ds, N):
+    """Two sided analytic clustering after Vinokur, for many intervals (m, 2)."""
+    s0 = 1.0 / N / ds[:, 0]
+    s1 = N * ds[:, 1]
+    A = np.sqrt(s0 * s1)[:, None]
+    B = np.sqrt(s0 / s1)
+    xi = np.linspace(0.0, 1.0, N)[None, :]
+
+    near = np.abs(B - 1.0) < 0.001
+    below = (B < 1.0) & ~near
+    above = (B >= 1.0) & ~near
+    u = np.empty((len(B), N))
+    b = B[near][:, None]
+    u[near] = xi * (1.0 + 2.0 * (b - 1.0) * (xi - 0.5) * (1.0 - xi))
+    D = _invert_sinx_x(B[below])[:, None]
+    u[below] = 0.5 * (1.0 + np.tan(D * (xi - 0.5)) / np.tan(D / 2.0))
+    D = _invert_sinhx_x(B[above])[:, None]
+    u[above] = 0.5 * (1.0 + np.tanh(D * (xi - 0.5)) / np.tanh(D / 2.0))
+
+    t = u / (A + (1.0 - A) * u)
+    t -= t[:, :1]
+    t /= t[:, -1:]
+    return t
+
+
 def _vinokur(ds, N):
     """Two sided analytic clustering function after Vinokur."""
 
@@ -130,7 +193,7 @@ def _vinokur(ds, N):
         # Eqn. (47)
         u = 0.5 * (1.0 + np.tanh(Dy * (xi - 0.5)) / np.tanh(Dy / 2.0))
     else:
-        raise Exception(f"Unexpected B={B}, s0={s0}, s1={s1}")
+        raise ClusteringException(f"Unexpected B={B}, s0={s0}, s1={s1}")
 
     t = u / (A + (1.0 - A) * u)
 
@@ -142,62 +205,62 @@ def _vinokur(ds, N):
 
 
 def _invert_sinhx_x(y):
-    """Return solution x for y = sinh(x)/x in Eqns. (62-67)."""
-
-    if y < 2.7829681:
-        y1 = y - 1.0
-        x2 = np.sqrt(6.0 * y1) * (
-            1.0
-            - 0.15 * y1
-            + 0.057321429 * y1**2.0
-            - 0.024907295 * y1**3.0
-            + 0.0077424461 * y1**4.0
-            - 0.0010794123 * y1**5.0
-        )
-    else:
-        v = np.log(y)
-        w = 1.0 / y - 0.028527431
-        x2 = (
-            v
-            + (1.0 + 1.0 / v) * np.log(2.0 * v)
-            - 0.02041793
-            + 0.24902722 * w
-            + 1.9496443 * w**2.0
-            - 2.6294547 * w**3.0
-            + 8.56795911 * w**4.0
-        )
-
-    # if not np.isclose(x, x2):
-    #     print(x, x2, y)
-    #     raise Exception('beans')
-
-    return x2
+    """Return solution x for y = sinh(x)/x in Eqns. (62-67), for a scalar or
+    an array of `y`, each branch on only the values it covers."""
+    scalar = np.ndim(y) == 0
+    y = np.atleast_1d(np.asarray(y, dtype=float))
+    x = np.empty_like(y)
+    near = y < 2.7829681
+    y1 = y[near] - 1.0
+    x[near] = np.sqrt(6.0 * y1) * (
+        1.0
+        - 0.15 * y1
+        + 0.057321429 * y1**2.0
+        - 0.024907295 * y1**3.0
+        + 0.0077424461 * y1**4.0
+        - 0.0010794123 * y1**5.0
+    )
+    v = np.log(y[~near])
+    w = 1.0 / y[~near] - 0.028527431
+    x[~near] = (
+        v
+        + (1.0 + 1.0 / v) * np.log(2.0 * v)
+        - 0.02041793
+        + 0.24902722 * w
+        + 1.9496443 * w**2.0
+        - 2.6294547 * w**3.0
+        + 8.56795911 * w**4.0
+    )
+    return float(x[0]) if scalar else x
 
 
 def _invert_sinx_x(y):
-    """Return solution x for y = sin(x)/x from Eqns. (68-71)."""
-    if y < 0.26938972:
-        x = np.pi * (
-            1.0
-            - y
-            + y**2.0
-            - (1.0 + np.pi**2.0 / 6.0) * y**3.0
-            + 6.794732 * y**4.0
-            - 13.205501 * y**5.0
-            + 11.726095 * y**6.0
-        )
-    else:
-        y1 = 1.0 - y
-        x = np.sqrt(6.0 * y1) * (
-            1.0
-            + 0.15 * y1
-            + 0.057321429 * y1**2.0
-            + 0.048774238 * y1**3.0
-            - 0.053337753 * y1**4.0
-            + 0.075845134 * y1**5.0
-        )
-
-    return x
+    """Return solution x for y = sin(x)/x from Eqns. (68-71), for a scalar or
+    an array of `y`, each branch on only the values it covers."""
+    scalar = np.ndim(y) == 0
+    y = np.atleast_1d(np.asarray(y, dtype=float))
+    x = np.empty_like(y)
+    low = y < 0.26938972
+    yl = y[low]
+    x[low] = np.pi * (
+        1.0
+        - yl
+        + yl**2.0
+        - (1.0 + np.pi**2.0 / 6.0) * yl**3.0
+        + 6.794732 * yl**4.0
+        - 13.205501 * yl**5.0
+        + 11.726095 * yl**6.0
+    )
+    y1 = 1.0 - y[~low]
+    x[~low] = np.sqrt(6.0 * y1) * (
+        1.0
+        + 0.15 * y1
+        + 0.057321429 * y1**2.0
+        + 0.048774238 * y1**3.0
+        - 0.053337753 * y1**4.0
+        + 0.075845134 * y1**5.0
+    )
+    return float(x[0]) if scalar else x
 
 
 def _unit_fixed(dx0, dx1, N, rtol=1e-2):
@@ -248,3 +311,97 @@ def _unit_free(dx0, dx1, dmax, ERmax, mult=8, rtol=1e-2):
         )
 
     return x
+
+
+def plateau_fixed(dx0, dx1, dmax, ERmax, N, x0=0.0, x1=1.0, width=None):
+    """Double-sided plateau clustering with fixed number of points.
+
+    Generate a grid vector x of length N, by default over the unit interval.
+    From the specified spacings at x0 and x1, grow geometrically and turn over
+    onto a uniform plateau at the maximum spacing. The expansion ratio is
+    lowered from its limit to fit the interval exactly. See
+    :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dx0 float
+        Boundary spacing at x0.
+    dx1 float
+        Boundary spacing at x1.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    N: int
+        Number of points in the grid vector.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    width: float
+        Turnover half-width as a fraction of each ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_fixed(
+        dx0 / Dxa, dx1 / Dxa, dmax / Dxa, ERmax, N, **kwargs
+    )
+
+
+def plateau_free(dx0, dx1, dmax, ERmax, x0=0.0, x1=1.0, mult=8, width=None):
+    """Double-sided plateau clustering with free number of points.
+
+    Generate a grid vector x from x0 to x1, with the fewest points, in a
+    multiple of `mult` cells, that meet the end spacings, the maximum spacing
+    and the expansion ratio limit. From each end the spacing grows
+    geometrically and turns over onto a uniform plateau at the maximum
+    spacing. See :mod:`turbigen.clusterfunc.plateau`.
+
+    Parameters
+    ----------
+    dx0 float
+        Boundary spacing at x0.
+    dx1 float
+        Boundary spacing at x1.
+    dmax: float
+        Plateau spacing, which no cell exceeds.
+    ERmax: float
+        Expansion ratio limit > 1.
+    x0: float
+        Start value.
+    x1: float
+        End value.
+    mult: int
+        Choose a number of cells divisible by this factor.
+    width: float
+        Turnover half-width as a fraction of each ramp's length, in (0, 1].
+
+    Returns
+    -------
+    x: array
+        Grid vector of clustered points.
+
+    """
+    Dx = _interval(x0, x1)
+    Dxa = np.abs(Dx)
+    kwargs = {} if width is None else {"width": width}
+    return x0 + Dx * turbigen.clusterfunc.plateau.unit_free(
+        dx0 / Dxa, dx1 / Dxa, dmax / Dxa, ERmax, mult, **kwargs
+    )
+
+
+def _interval(x0, x1):
+    """Return the signed length of the interval, refusing an empty one."""
+    if np.isclose(x0, x1):
+        raise ClusteringException(
+            "Cannot distribute points without distinct start and end points, "
+            f"got x0={x0} and x1={x1}"
+        )
+    return x1 - x0

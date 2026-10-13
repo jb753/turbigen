@@ -3,6 +3,13 @@
 See CLI.md in this package for the full plan. Every verb it specifies is
 implemented: `design`, `report`, `run`, `iterate` and `batch`.
 
+This module is the command line and nothing else: arguments, where each run's
+directory is, logging and submission. What happens to one case --- preparing a
+grid, solving it, measuring it, recovering a stored answer --- is
+:mod:`turbigen.pipeline`, and drawing it is :func:`turbigen.post.write_report`.
+Runs of many cases, the design loop and a characteristic sweep, are
+:mod:`turbigen.loop`.
+
 Two conventions are worth stating.
 
 Everything a run says goes through the logging system, on one stream, to
@@ -39,36 +46,33 @@ import argparse
 import contextlib
 import dataclasses
 import datetime
+import functools
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from timeit import default_timer as timer
 
 import ember.convergence_history
 import ember.yaml_util
-import numpy as np
 import yaml
 
 import turbigen
 from turbigen import (
     batch,
-    bconds,
     case,
-    chic,
-    database,
-    guess,
     include,
     iterate,
     job,
-    metric,
-    mixout,
+    loop,
     node,
+    pipeline,
     plugins,
     post,
     restart,
-    warm_field,
 )
 from turbigen.config import Config
+from turbigen.pipeline import HISTORY_NAME, OUTPUT_NAME, run_log
 from turbigen.result import Result
 
 # The modules in this package log under the turbigen logger, so configure that
@@ -82,30 +86,6 @@ logger = logging.getLogger("turbigen")
 # notebook or another tool leaves ember's logger exactly as that caller set it.
 LOGGER_NAMES = ("turbigen", "ember")
 
-run_log = logging.getLogger("turbigen.run")
-"""What one run produced: its tables, its verdict, the files it wrote.
-
-Separated from the session's own messages by name rather than by level, so that
-`iterate` can quieten the console for a hundred runs while the log file still
-records every one of them in full. The package this replaces gets the same
-effect by raising the level and emitting its results as *warnings*, which is
-why a genuine warning there is indistinguishable from a startup banner.
-"""
-
-OUTPUT_NAME = "output.yaml"
-"""What a run calls the resolved config and the answer it reached.
-
-Deliberately not the name of anything anyone hands us, and now enforced rather
-than merely conventional: `check_not_output` refuses it as a target when the
-run would write back over it --- the default, where output lands beside the
-input. With `-o` sending the run to another directory the file is readable,
-because the write goes somewhere else and nothing is lost.
-
-The check earns its keep now that `report` writes here too. While only the
-solving verbs did, the rule held by construction --- nothing read an
-`output.yaml` and wrote one back. `report` reads a config and writes one
-beside it, so without the refusal it would write over its own input.
-"""
 
 LOG_NAME = "log_turbigen.txt"
 """What a run calls its transcript, beside everything else it wrote."""
@@ -114,25 +94,6 @@ RESTART_NAME = restart.RESTART_NAME
 """Re-exported from :mod:`turbigen.restart`, where the name now lives so that
 :func:`turbigen.database.nearest_field` can find a neighbour's field without
 importing the CLI."""
-
-GRID_NAME = "grid.emb"
-"""What a run calls the whole grid, written only when something went wrong.
-
-Written by ember's own `write_emb`, gzipped, rather than by a pickle of our
-own: a `Grid` carries weakrefs --- a patch back to its block, the connectivity
-manager to its grid --- so a plain `pickle.dumps` refuses it, and a reducer
-written here to dodge them would be ours to keep in step with a class that is
-not. `Grid.read_emb` brings it back.
-"""
-
-HISTORY_NAME = "conv.cnv"
-"""What a run calls its convergence history, written beside the flow field.
-
-ember's own CNV format, which is a pickle: its `to_json` writes three files of
-plotting points, drops the residuals and the divergence flag, and has no
-reader, so it cannot bring a history back. The consequence of the format is
-handled where it is read rather than avoided here --- see `read_history`.
-"""
 
 
 #
@@ -829,9 +790,70 @@ def task_options(args):
 #
 
 
-def cmd_design(args):
-    """Design the machine and report it."""
-    return each(args, _design_one)
+@dataclasses.dataclass(frozen=True)
+class Verb:
+    """A command that runs each config file it is given, one at a time."""
+
+    name: str
+    """What is typed after `turbigen`."""
+
+    one: Callable
+    """``one(args, config_path)``, returning an exit code for that config."""
+
+    help: str
+    """One line, for the command list in `turbigen --help`."""
+
+    description: str
+    """The paragraph at the top of `turbigen <name> --help`."""
+
+    flags: tuple[Callable, ...] = ()
+    """The `_add_*_argument` functions giving this command its options."""
+
+    needs: tuple[str, ...] = ()
+    """Keys of :data:`REQUIREMENTS` a config must satisfy, checked in order."""
+
+    quiet: bool = False
+    """Keep the per-run tables off the console, unless `-v` or `--queue`."""
+
+
+REQUIREMENTS = {
+    "solver": (
+        lambda config: config.solver is not None,
+        "needs a solver: section in the config file.",
+    ),
+    "iterate": (
+        lambda config: bool(config.iterate.correct),
+        (
+            "needs an iterate: key with a correct: list saying what to correct; "
+            "without one, use 'run'."
+        ),
+    ),
+    "chic": (
+        lambda config: config.chic is not None,
+        "needs a chic: section saying how far to step and how finely to pin the limit.",
+    ),
+}
+"""What a command can require of a config, and the message when it is missing."""
+
+
+def require(config, command):
+    """Raise unless `config` has every section the command `command` needs."""
+    (verb,) = (verb for verb in VERBS if verb.name == command)
+    for need in verb.needs:
+        satisfied, message = REQUIREMENTS[need]
+        if not satisfied(config):
+            raise ValueError(f"The '{command}' command {message}")
+
+
+def _dispatch(verb, args):
+    """Run `verb` over every config file named, or submit them all."""
+    # Once for the invocation rather than once per target: the filter is added
+    # to the console handler, and adding it again for every config in a batch
+    # would stack a dozen copies of the same test.
+    if verb.quiet and not args.verbose and not args.queue:
+        _quieten_the_runs()
+
+    return each(args, verb.one)
 
 
 def _design_one(args, config_path):
@@ -857,82 +879,11 @@ def _design_one(args, config_path):
     # no CFD to mix out, there is no actual to set beside the nominal, so it
     # comes back one column narrower. See `design_variable_string`.
     try:
-        run_log.info(design_variable_string(config, Result(machine=machine)))
+        run_log.info(pipeline.design_variable_string(config, Result(machine=machine)))
     except Exception as err:
         logger.warning(f"Could not print design variables: {err}")
 
     return 0
-
-
-def prepare(config, restart_path=None, warm=None):
-    """Return the resolved config, the machine, and a grid ready to solve.
-
-    Shared by every verb that needs a grid, so there is one definition of
-    "ready to solve" rather than one per verb. `report` stops here and `run`
-    carries on, which is what makes the grid a report draws the one `run`
-    actually solves. Written out twice instead, the two would drift -- which is
-    what happened to `turbigen.main`, where the pipeline appears in both
-    branches of one `if` and again in ninety-three unreachable lines that no
-    longer match either.
-
-    The grid is None when the config has no `mesh:` section. Whether that is an
-    error belongs to the verb: `run` cannot proceed without one, while a report
-    of a mean-line design is a perfectly good thing to want.
-
-    The config comes back because it may not be the one that went in: knobs
-    whose target is a property of the design alone are converged here, so the
-    caller has the viscosity that was actually used rather than the guess it
-    started from. `solve` archives what this returns, which is what makes an
-    `output.yaml` record the design that ran.
-    """
-    config = iterate.resolve(config)
-
-    # Each stage reports as it finishes rather than the verb reporting them all
-    # at the end, so what is read on the way past is in the order it happened:
-    # the mean line, then the grid it was meshed onto, then where the flow
-    # field in that grid came from.
-    machine = config.design()
-    run_log.info(machine.to_string())
-
-    if config.mesh is None:
-        return config, machine, None
-
-    grid = config.mesh.mesh(machine)
-    run_log.info(grid_string(grid))
-
-    bconds.apply(grid, machine, config.operating_point, config.inlet_profile)
-    guess.apply(grid, machine)
-
-    # A stored field supersedes the meridional guess. Applied after it rather
-    # than instead of it, so that a block the field cannot fill is still left
-    # with something sane in it. An explicit or chained `restart_path` wins; a
-    # `warm` seed (a database neighbour's field, perturbed onto this design's
-    # mean line) is the fallback for the first solve of a loop when nothing has
-    # been chained yet.
-    if restart_path is not None:
-        restart.apply(grid, restart_path)
-    elif warm is not None:
-        warm.apply(grid, machine)
-
-    return config, machine, grid
-
-
-def stored_field(config_path):
-    """Return the flow field a previous run left beside `config_path`.
-
-    Found rather than named, because a report of a run that has one always
-    wants it, and there is no second thing it could sensibly mean. That is what
-    lets the re-plot be the same command as the plot, with no flag between
-    them. Nothing raises when there is none: a case that has not been solved
-    still has geometry worth drawing.
-    """
-    field = Path(config_path).resolve().parent / RESTART_NAME
-
-    if not field.is_file():
-        return None
-
-    logger.info(f"Using the flow field at {field}")
-    return field
 
 
 def resolve_restart(args, config_path):
@@ -957,36 +908,6 @@ def resolve_restart(args, config_path):
     return restart_path
 
 
-def save_history(path, history):
-    """Write `history` beside the flow field it belongs to."""
-    history.write_cnv(path)
-    logger.debug(f"Wrote the convergence history to {path}")
-
-
-def read_history(path):
-    """Return the convergence history at `path`, or None if there is not one.
-
-    A history is a bonus rather than a requirement, so nothing here raises: a
-    re-plot without one is the report minus its convergence page, which beats a
-    re-plot that refuses to run because a file an older version wrote will not
-    unpickle. That is the price of ember's CNV format, paid here rather than by
-    the caller.
-    """
-    if not path.is_file():
-        return None
-
-    try:
-        return ember.convergence_history.ConvergenceHistory.read_cnv(path)
-    except Exception as err:
-        logger.warning(f"Could not read the convergence history at {path}: {err}")
-        return None
-
-
-def cmd_report(args):
-    """Describe a case as fully as it can be described, and draw it."""
-    return each(args, _report_one)
-
-
 def _report_one(args, config_path):
     """Draw one config file, using whatever a run has already left beside it.
 
@@ -1007,91 +928,22 @@ def _report_one(args, config_path):
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        field = stored_field(config_path)
-        config, machine, grid = prepare(config, field)
+        field = pipeline.stored_field(config_path)
+        config, machine, grid = pipeline.prepare(config, field)
 
         # Looked for whether or not there is a field to go with it: a history
         # beside the config means a run happened here, and its convergence page
         # is worth drawing either way.
-        history = read_history(config_path.parent / HISTORY_NAME)
+        history = pipeline.read_history(config_path.parent / HISTORY_NAME)
 
-        answer = reconstruct(config, machine, grid, history, field)
+        answer = pipeline.reconstruct(config, machine, grid, history, field)
 
         result = answer or Result(machine=machine, grid=grid, history=history)
 
-        write_report([(config, result)], out_dir, svg=args.svg)
+        post.write_report([(config, result)], out_dir, svg=args.svg)
         _write_report_output(config, answer, out_dir)
 
     return 0
-
-
-def reconstruct(config, machine, grid, history, field):
-    """Return the answer `field` records for `config`, or None if it cannot.
-
-    A report has the same ingredients a run has once its march is over -- the
-    solved grid, the history beside it -- so it can measure the same three
-    things `solve` does and archive an identical `result:`. What it does not
-    have is the run itself, so it must first establish that the field it picked
-    up is the solution to the config in front of it and not merely a useful
-    starting guess for it. That is the stamp's whole purpose.
-
-    None is returned wherever any part of that fails. It means "this report has
-    no answer to record", never "the answer is that it did not converge": the
-    two are very different to `turbigen.database`, which drops any sample whose
-    `converged` is false, so guessing here would silently delete designs from a
-    later fit.
-    """
-    if field is None or grid is None:
-        return None
-
-    stamp = restart.read_stamp(field)
-    if stamp is None:
-        logger.info(
-            f"The field at {field} carries no design stamp, so this report "
-            "cannot tell which design it solves and will not record an answer."
-        )
-        return None
-
-    if stamp != restart.design_stamp(config):
-        logger.warning(
-            f"The field at {field} was written for a different design than "
-            "this config describes, so it is drawn but not recorded as its "
-            "answer."
-        )
-        return None
-
-    # Beyond here the field is this config's solution. The remaining guards are
-    # about whether the answer can be *described*, not whether it is the right
-    # one.
-    if config.solver is None or history is None:
-        logger.info(
-            "Without a solver: section and a convergence history there is no "
-            "saying whether this field converged, so no answer is recorded."
-        )
-        return None
-
-    try:
-        actual, Ds_mix = mixout.mean_line(grid, machine)
-    except Exception as err:
-        logger.warning(f"Could not mix out the stored field: {err}")
-        return None
-
-    result = Result(
-        machine=machine,
-        actual=actual,
-        Ds_mix=Ds_mix,
-        grid=grid,
-        converged=config.solver.converged(history),
-        history=history,
-    )
-
-    # Tolerant, because this is describing a stored field rather than steering
-    # a design off it: a march that diverged has nothing to measure and is
-    # exactly the run whose report someone needs to read.
-    result = dataclasses.replace(
-        result, error=iterate.errors(config, result, strict=False)
-    )
-    return dataclasses.replace(result, metrics=metric.measure(config, result))
 
 
 def _write_report_output(config, answer, out_dir):
@@ -1141,309 +993,14 @@ def _records_an_answer(path):
     return result is not None
 
 
-def write_input(config, out_dir):
-    """Record `config` as the input of the run about to happen in `out_dir`.
-
-    For the verbs that solve into directories they invent. `run` needs nothing
-    of the sort -- the file it was handed is already sitting there, whatever it
-    was called -- but an iteration's config exists only in memory, having been
-    moved there by the iterator, so without this the only record of what
-    `iter_0003` solved is the config half of its own `output.yaml`.
-
-    That matters because `output.yaml` is not a file anyone may hand back to
-    us. Writing the input is what keeps every directory a run happened in
-    addressable: `iter_0003/input.yaml` re-solves that iteration alone, and
-    reports it against the field already beside it.
-    """
-    path = out_dir / batch.INPUT_NAME
-    case.write(path, config)
-    logger.debug(f"Wrote the config being solved to {path}")
-    return path
-
-
-def save_grid(path, grid):
-    """Write the whole grid to `path`, for a run that is not going to finish.
-
-    Never allowed to be the thing that ends a run: this is called on paths that
-    are already failing, and a diagnostic that raises on its way out would
-    replace the error someone needs to read with one about writing a file.
-
-    Catching the exception is not enough for that, because writing a grid moves
-    it. `Grid.write_emb` detaches every patch before pickling and re-attaches
-    them afterwards, so a write that fails partway can leave a perfectly good
-    grid with patches that no longer know their block --- and the next thing to
-    read a surface off it dies on that instead, far from here and looking like
-    a fault of its own. So the grid is put back before the warning goes out,
-    and the run carries on with what it was given.
-    """
-    try:
-        grid.write_emb(str(path), compress=True)
-        logger.info(f"Wrote the grid to {path}")
-    except Exception as err:
-        logger.warning(f"Could not write the grid to {path}: {err}")
-        _reattach_patches(grid)
-
-
-def _reattach_patches(grid):
-    """Re-establish every patch's link to its block, quietly.
-
-    What :meth:`ember.grid.Grid.write_emb` does on its way out, done again for
-    a write that did not get that far. Quiet because it is already the second
-    thing to go wrong: the first is on its way to the log, and this one has
-    nothing to add that the grid being unreadable will not say later.
-    """
-    try:
-        for block in grid:
-            for patch in block.patches:
-                patch.attach_to_block(block)
-    except Exception as err:
-        logger.debug(f"Could not re-attach the grid's patches: {err}")
-
-
-def soft_start(solver, grid, n_step=None):
-    """March `grid` with a detuned copy of `solver`, and return what it did.
-
-    Nothing of it is kept. The grid is marched in place, so the production
-    march that follows simply continues from the field this leaves, and the
-    history comes back only so the caller can see whether it survived.
-
-    The step count is the config's, replacing the one `soft()` names: how long
-    to spend on a robust start depends on the case and the guess it is starting
-    from, which the solver has no way to know. `n_step` defaults to
-    `solver.n_step_soft`; a retry passes `solver.n_step_retry` instead.
-    """
-    if n_step is None:
-        n_step = solver.n_step_soft
-
-    soft = dataclasses.replace(solver.soft(), n_step=n_step)
-
-    run_log.info(f"Soft start: {n_step} steps")
-    history = soft.solve(grid)
-    run_log.info(convergence_string(solver.converged(history)))
-
-    return history
-
-
-def solve(
-    config,
-    out_dir,
-    restart_path=None,
-    svg=False,
-    trajectory=(),
-    warm=None,
-    soft=False,
-    retry=False,
-):
-    """Design, mesh and solve `config`, writing everything into `out_dir`.
-
-    The whole of a run, so that `iterate` composes runs rather than writing a
-    second copy of one -- which is how `turbigen.main` came to hold the same
-    pipeline three times over, two of them unreachable and already drifted.
-
-    `trajectory` is what the design loop has been through so far, if anything,
-    which the report draws the loop's own convergence from. Passed in rather
-    than reachable from here, because a run knows nothing of the loop that may
-    be repeating it -- and passed *through* rather than kept, because the pair
-    this call is about does not exist until the solve is over.
-
-    `warm` is a :class:`turbigen.warm_field.Seed` for the first solve of a loop,
-    used only when nothing has been chained into `restart_path` yet.
-
-    `soft` says this is the first solve of the invocation, which is the one
-    entitled to a soft start if the config asked for one. Passed in rather than
-    inferred from `restart_path`, because a restarted run is still a first
-    solve: the field it was handed may be a neighbour's, or its own from before
-    a change to the design, and both are exactly what a robust pass is for.
-    What disqualifies a solve is having a loop's previous iteration behind it,
-    which only the caller knows.
-
-    `retry` says a divergence here may be tried again, once, from the same
-    start behind `solver.n_step_retry` soft steps, if the config asked for that
-    and this solve had no soft start of its own. The caller decides because a
-    `chic` point that diverges is an answer rather than a failure.
-    """
-    # Checked before anything is meshed, so a bad count is a message rather
-    # than an ember error about an averaging window after the mesh is paid for.
-    if config.solver is not None:
-        for name in ("n_step_soft", "n_step_retry"):
-            if getattr(config.solver, name) < 0:
-                raise ValueError(
-                    f"solver.{name} must be >= 0, got "
-                    f"{getattr(config.solver, name)}. It is a number of steps "
-                    "to march, and 0 is how it is declined."
-                )
-
-    config, machine, grid = prepare(config, restart_path, warm=warm)
-
-    if grid is None:
-        raise ValueError("The 'run' command needs a mesh: section in the config file.")
-
-    history = None
-    soft_ran = bool(soft and config.solver.n_step_soft)
-    if soft_ran:
-        history = soft_start(config.solver, grid)
-
-        # A soft pass that blew up leaves a field of NaNs, and marching the
-        # production settings from those is CFD paid for and certain to reach
-        # no answer. Its history stands as the run's own, so everything below
-        # writes the failure and the field it failed in, which is the only
-        # record there is of what happened here.
-        if config.solver.converged(history):
-            history = None
-
-    if history is None:
-        history = config.solver.solve(grid)
-
-        # A hard start that diverged gets one more go. Only one that had no
-        # soft start: a soft pass that ran and still led here is not helped by
-        # running it again.
-        if (
-            retry
-            and not soft_ran
-            and config.solver.n_step_retry
-            and getattr(history, "diverged", False)
-        ):
-            run_log.info(
-                "Diverged without a soft start; retrying from the same field "
-                f"with {config.solver.n_step_retry} soft steps"
-            )
-
-            # The march left NaNs in the grid, and the patches carry state of
-            # their own -- mixing-plane exchange, throttle, relaxation -- so the
-            # start is rebuilt rather than restored.
-            del grid
-            config, machine, grid = prepare(config, restart_path, warm=warm)
-
-            history = soft_start(config.solver, grid, config.solver.n_step_retry)
-            if config.solver.converged(history):
-                history = config.solver.solve(grid)
-
-    converged = config.solver.converged(history)
-
-    # Written whatever happened, and written first --- before the mix-out, the
-    # measurements and the tables, every one of which can raise. A march that
-    # did not converge is the one most likely to be picked up and continued, so
-    # withholding its field would be exactly backwards; and nothing downstream
-    # may be able to discard a solution the CFD has already been paid for. The
-    # field is also the whole of what a failure needs to be diagnosed from: the
-    # mesh is not written because `input.yaml` beside it rebuilds one, and the
-    # two together are what `prepare` reads back.
-    restart_path = out_dir / RESTART_NAME
-    restart.save(restart_path, grid, config)
-    run_log.info(f"Wrote the flow field to {restart_path}")
-
-    # Beside the field, and for the same reason: it is what a re-plot needs to
-    # draw the convergence page, and it costs a few kilobytes.
-    save_history(out_dir / HISTORY_NAME, history)
-
-    # A march that fell over is the one nobody can rebuild their way back to.
-    # `restart.npz` holds the flow and nothing else, on the reasoning that
-    # `input.yaml` beside it rebuilds the mesh -- which is true only while the
-    # mesher is the code that wrote it, and a failure worth keeping is often
-    # one being chased across a change to that code. It is also the case that
-    # needs the geometry most: a divergence reports where it happened in index
-    # space, and turning `i[144:144]` into a trailing edge takes coordinates.
-    # So the whole grid goes down, coordinates, patches and all.
-    if getattr(history, "diverged", False):
-        save_grid(out_dir / GRID_NAME, grid)
-
-    # Reduce the solution to a mean line. A diverged grid has nothing to mix
-    # out, and even a converged one can refuse, so this must not cost the run
-    # the output it has already earned.
-    actual = None
-    Ds_mix = None
-    try:
-        actual, Ds_mix = mixout.mean_line(grid, machine)
-    except Exception as err:
-        logger.warning(f"Could not mix out the solution: {err}")
-
-    result = Result(
-        machine=machine,
-        grid=grid,
-        actual=actual,
-        Ds_mix=Ds_mix,
-        converged=converged,
-        history=history,
-    )
-
-    # Measured whether or not anything is iterating: the exit angle a row
-    # achieved and the incidence its leading edge saw are observations of the
-    # flow, and they can only be taken while the grid is in memory.
-    #
-    # A measurement that refuses is the other half of the case the divergence
-    # flag covers above, and the harder one: the march converged, so nothing
-    # says the geometry is suspect, and yet a leading edge had no stagnation
-    # point to find or a section had no surface to cut. That is a question
-    # about the grid, asked of a grid about to go out of scope. Written once,
-    # whichever of these raises, and the error goes on to be raised.
-    #
-    # Strict only when the march reached an answer, because that is the only
-    # time an unmeasurable knob means something is wrong. A diverged march
-    # measures nothing by construction -- there is no mixed-out mean line to
-    # read an exit angle off a field of NaNs -- and raising about it here
-    # aborted the whole loop with a traceback, from inside the call
-    # `iterate.converge` makes, before it could reach its own divergence check
-    # and stop with the design that produced it. Describing the failure is what
-    # is wanted; steering on it is what is refused.
-    try:
-        result = dataclasses.replace(
-            result, error=iterate.errors(config, result, strict=converged)
-        )
-
-        # Anything the config asked to measure from the field, for the same
-        # reason and against the same deadline.
-        result = dataclasses.replace(result, metrics=metric.measure(config, result))
-    except Exception:
-        if not (out_dir / GRID_NAME).is_file():
-            save_grid(out_dir / GRID_NAME, grid)
-        raise
-
-    # Where a throttled exit turned out to sit, for the same reason and with
-    # the same deadline: the pressure the controller chose is on the patch, and
-    # the patch goes out of scope with the grid. Folded into the config as well
-    # as the result, so that `output.yaml` records the operating point the run
-    # reached rather than the guess it was given -- which is what makes a
-    # throttled run reproducible, and what a characteristic sweep measures from.
-    achieved = bconds.achieved(grid, machine, config.operating_point)
-    if achieved is not None:
-        config = dataclasses.replace(config, operating_point=achieved)
-        result = dataclasses.replace(result, operating_point=achieved)
-
-    run_log.info(convergence_string(converged))
-    if actual is not None:
-        run_log.info(actual.to_string())
-
-        # Last, because it is the answer to the question the config asked, and
-        # what someone reads first when scrolling back. Guarded for the same
-        # reason the mix-out above is: a table is a report of a solution the
-        # CFD has already been paid for, and it must not be able to cost the
-        # run the output written below.
-        try:
-            run_log.info(design_variable_string(config, result))
-        except Exception as err:
-            logger.warning(f"Could not compare the design against its solution: {err}")
-
-    _write_output(config, result, out_dir, svg=svg, trajectory=trajectory)
-
-    return result
-
-
-def cmd_run(args):
-    """Design, mesh and solve, then report."""
-    return each(args, _run_one)
-
-
 def _run_one(args, config_path):
     """Solve one config file, writing everything beside it."""
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        if config.solver is None:
-            raise ValueError(
-                "The 'run' command needs a solver: section in the config file."
-            )
+        require(config, args.command)
 
-        result = solve(
+        result = pipeline.solve(
             config,
             out_dir,
             resolve_restart(args, config_path),
@@ -1458,33 +1015,14 @@ def _run_one(args, config_path):
     return 0 if result.converged else 2
 
 
-def cmd_iterate(args):
-    """Run repeatedly, moving the design onto its own solution."""
-    # Once for the invocation rather than once per target: the filter is added
-    # to the console handler, and adding it again for every config in a batch
-    # would stack a dozen copies of the same test.
-    if not args.verbose and not args.queue:
-        _quieten_the_runs()
-
-    return each(args, _iterate_one)
-
-
 def _iterate_one(args, config_path):
     """Iterate one config file, keeping every iteration beside it."""
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        if config.solver is None:
-            raise ValueError(
-                "The 'iterate' command needs a solver: section in the config file."
-            )
-        if not config.iterate.correct:
-            raise ValueError(
-                "The 'iterate' command needs an iterate: key with a correct: "
-                "list saying what to correct; without one, use 'run'."
-            )
+        require(config, args.command)
 
-        _, result, converged, _ = converge_design(
+        _, result, converged, _ = loop.converge_design(
             config, out_dir, resolve_restart(args, config_path)
         )
 
@@ -1497,280 +1035,22 @@ def _iterate_one(args, config_path):
     return 0 if converged else 2
 
 
-def cmd_chic(args):
-    """Converge the design, then sweep it to its stability limit."""
-    if not args.verbose and not args.queue:
-        _quieten_the_runs()
-
-    return each(args, _chic_one)
-
-
-def design_is_settled(config_path, config):
-    """Return whether the design at `config_path` has already converged.
-
-    The same two-part test `database` uses to decide whether a finished run
-    counts as a sample (`database.py:236`): the march reached an answer, *and*
-    the iterators it was judged by are inside their tolerances. One definition
-    of "this design is finished" for the whole package rather than a second one
-    here.
-
-    Logged with its reason, as `batch_verb` logs its choice, so "why did this
-    iterate" and "why did this not" are both answerable from the log file. That
-    matters more than usual because the test cannot see an override: `-s
-    mean_line.psi=1.8` invalidates the stored result and this will not notice.
-    """
-    try:
-        _, result = case.read(config_path, design=False)
-    except Exception as err:
-        logger.debug(f"No usable result beside {config_path}: {err}")
-        result = None
-
-    if result is None or not result.converged:
-        logger.info("Converging the design first: this case has no converged run.")
-        return False
-
-    if not iterate.converged(config, result):
-        logger.info(
-            "Converging the design first: the stored run finished, but its "
-            "design errors are outside their tolerances."
-        )
-        return False
-
-    logger.info(
-        "Sweeping straight away: the stored run converged with its design "
-        "errors inside their tolerances."
-    )
-    return True
-
-
 def _chic_one(args, config_path):
     """Sweep one config file, keeping every point beside it."""
     with logging_into(args, config_path) as out_dir:
         config = load_config(config_path, args)
 
-        if config.solver is None:
-            raise ValueError(
-                "The 'chic' command needs a solver: section in the config file."
-            )
-        if config.chic is None:
-            raise ValueError(
-                "The 'chic' command needs a chic: section saying how far to "
-                "step and how finely to pin the limit."
-            )
+        require(config, args.command)
 
         previous = resolve_restart(args, config_path)
 
-        # The design first, unless it is already done. Every verb implies the
-        # ones before it, and a characteristic of a machine still being
-        # redesigned is a characteristic of no machine in particular.
-        if not design_is_settled(config_path, config):
-            config, _, converged, previous = converge_design(config, out_dir, previous)
-            if not converged:
-                raise ValueError(
-                    "The design did not converge, so there is no machine to "
-                    "sweep a characteristic of. Fix that with 'iterate' first."
-                )
-
-        def run(config_now, i_point):
-            """Solve one point of the characteristic, in a directory of its own."""
-            nonlocal previous
-
-            point_dir = out_dir / f"chic_{i_point:04d}"
-            point_dir.mkdir(parents=True, exist_ok=True)
-            chic.logger.info(f"Point {i_point} in {point_dir}")
-
-            # This point's own operating point exists nowhere else: the sweep
-            # moved it, and the datum describes the whole characteristic rather
-            # than any one station on it.
-            write_input(config_now, point_dir)
-
-            # Chained, and near the limit this is what keeps a point converging
-            # at all: the smallest perturbation from a field that worked.
-            result = solve(config_now, point_dir, previous)
-            if result.converged:
-                # A diverged point is not somewhere to start the next one from,
-                # and the next one is a bisection back towards what did work.
-                previous = point_dir / RESTART_NAME
-
-            return result
-
-        points, bracket = chic.sweep(config, run)
-
-        chic.logger.info(chic.format_table(points, bracket))
+        settled = loop.design_is_settled(config_path, config)
+        points, _ = loop.characteristic(config, out_dir, previous, settled)
 
     # The sweep did its job whenever it bracketed something, which is what the
     # verb is for -- a point that refused to converge is the answer here rather
     # than a failure, unlike every other verb.
     return 0 if any(point.converged for point in points) else 2
-
-
-@dataclasses.dataclass
-class _Chain:
-    """Solve one iteration per call, chaining the field and keeping the record.
-
-    What `iterate.converge` calls, satisfying the ``(config, i_iter)`` contract
-    it asks for while carrying the two things that have to survive between
-    calls. A closure did this and carried `previous` by `nonlocal`; a second
-    piece of hidden state in a nested function is where that stops being
-    reasonable.
-
-    **It owns the trajectory because it is the only thing that sees it.**
-    `converge` holds a history of its own for the Jacobian and cannot reach
-    the report, which is drawn inside `solve`; this sits between the two, so
-    the record can go down to the report without `converge` learning anything
-    about directories. That is why nothing was added to `Result` and nothing
-    was read back off disk.
-
-    The grid and the march history are dropped from what is kept. A stripped
-    `Result` is a few hundred numbers where a grid is tens of megabytes, which
-    is the difference between keeping every pass and keeping none.
-    """
-
-    out_dir: Path
-    """Where the numbered iteration directories go."""
-
-    previous: Path | None = None
-    """The field the next call starts from, advanced as each one finishes."""
-
-    warm: object | None = None
-    """A :class:`turbigen.warm_field.Seed` for the first solve, when there is a
-    database neighbour to start from. Used only while `previous` is None."""
-
-    trajectory: list = dataclasses.field(default_factory=list)
-    """Every ``(config, result)`` pair so far, oldest first."""
-
-    def __call__(self, config_now, i_iter):
-        iter_dir = self.out_dir / f"iter_{i_iter:04d}"
-        iter_dir.mkdir(parents=True, exist_ok=True)
-        iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
-
-        # Where this iteration's knobs stood, which the next one moves: the
-        # sequence is reproducible from the datum, but no single member of it
-        # is.
-        write_input(config_now, iter_dir)
-
-        # Chained: each iteration starts from the field the last one reached,
-        # which is most of the saving. Index-space interpolation covers the
-        # mesh moving with the design. The first pass has no chained field, so
-        # it takes the warm seed instead when there is one.
-        warm = self.warm if self.previous is None else None
-
-        # And the first pass is the one a soft start is for, whatever field it
-        # begins from: nothing of this design has been marched yet. `previous`
-        # cannot answer that -- a loop handed a restart has one from the
-        # outset -- but the trajectory can, being empty until a call returns.
-        first = not self.trajectory
-
-        result = solve(
-            config_now,
-            iter_dir,
-            self.previous,
-            trajectory=self.trajectory,
-            warm=warm,
-            soft=first,
-            retry=True,
-        )
-        self.previous = iter_dir / RESTART_NAME
-
-        self.trajectory.append(
-            (config_now, dataclasses.replace(result, grid=None, history=None))
-        )
-
-        return result
-
-
-def converge_design(config, out_dir, previous=None):
-    """Iterate `config` to convergence, keeping every iteration under `out_dir`.
-
-    The whole of an iteration, so that `chic` composes it rather than writing a
-    second copy --- the same reason `solve` is one function that `iterate` calls
-    repeatedly. Written out twice, the two would drift, which is what happened
-    to `turbigen.main`.
-
-    A config with nothing to correct still gets its design point solved once,
-    because the sweep that follows needs a field to start from and an answer to
-    be a departure from. That branch is `chic`'s alone: `iterate` refuses an
-    empty `correct:` list before it ever gets here, so the one pass is not a
-    degenerate iteration but the whole of what a fixed geometry needs before it
-    can be swept. It runs through the same `_Chain` as any other iteration,
-    which is what keeps one definition of where an iteration writes.
-
-    Returns
-    -------
-    config : Config
-        The design that produced `result`.
-    result : Result
-        What the last iteration achieved.
-    converged : bool
-    field : Path
-        The flow field it reached, for whatever runs next.
-
-    """
-    # The database is globbed and parsed once, here: the geometry blend in
-    # `warm_start` and the field seed in `nearest_field` both want the same
-    # finished runs, and reading a directory of result files is the cost.
-    samples = (
-        config.database.load_samples(config, out_dir, exclude=(out_dir,))
-        if config.database is not None
-        else None
-    )
-
-    def seed(cfg):
-        """A neighbour's field, perturbed onto this design, or None."""
-        if previous is not None or not samples:
-            return None
-        field = database.nearest_field(cfg, samples)
-        return warm_field.Seed(field) if field is not None else None
-
-    # Iteration -1: where the knobs start. Anchored on the config file's own
-    # directory, because a config is often run from somewhere else, and
-    # excluding that same directory because it is where this run's own
-    # iterations will land -- one directory being one run, nothing else of
-    # anyone's is in there to lose.
-    #
-    # Guarded on there being knobs at all rather than on `correct:`, which is
-    # the test `warm_start` itself makes of what it was handed: a design point
-    # with nothing to correct has nothing to start warm, and reaching in to be
-    # told so would warn about a config that is perfectly in order.
-    if iterate.unknowns(config):
-        config = database.warm_start(
-            config, out_dir, exclude=(out_dir,), samples=samples
-        )
-
-    # Built after the warm start, never before: the seed is the nearest
-    # neighbour to this design, and the warm start is what moves the design.
-    runner = _Chain(out_dir=out_dir, previous=previous, warm=seed(config))
-
-    if config.iterate.correct:
-        config, result, converged = iterate.converge(
-            config, runner, config.iterate.max_iter
-        )
-    else:
-        # Nothing to correct, so the loop is one pass of it.
-        result = runner(config, 0)
-        converged = result.converged
-
-    field = promote_final(out_dir, runner.previous.parent, converged)
-
-    return _with_achieved(config, result), result, converged, field
-
-
-def _with_achieved(config, result):
-    """Return `config` running where `result` says the machine ended up.
-
-    The operating point is the one thing a solve can change about the config it
-    was given, a throttled exit being handed a mass flow and finding the
-    pressure that passes it. Applied on the way out of `converge_design` so
-    that whatever runs next -- a sweep, above all -- inherits the pressure the
-    design converged at rather than the guess it started from.
-
-    Iterators do not move it, so taking it off the last result is taking it off
-    the run that produced the design being returned.
-    """
-    if result is None or result.operating_point is None:
-        return config
-
-    return dataclasses.replace(config, operating_point=result.operating_point)
 
 
 def cmd_batch(args):
@@ -1794,20 +1074,24 @@ def cmd_batch(args):
     config.batch.check(config)
     _check_grid_options(args, config.batch)
     _check_edges_options(args, config.batch)
+    _check_fill_options(args, config.batch)
 
     # Scanned before the new batch directory exists, so it cannot count itself.
     # A batch is never written into, only beside, so nothing can be lost.
     datum_dir = paths[0].resolve().parent
 
     start = 0
-    if args.carry_on:
+    taken = None
+    if args.carry_on or args.fill:
         start = batch.next_index(existing_batches(datum_dir))
         batch.logger.info(f"Carrying on from index {start}.")
+    if args.fill:
+        taken = batch.taken_points(existing_batches(datum_dir), config.batch)
 
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in batch.generate(config, args.number, start, args.edges):
+    for index, member in batch.generate(config, args.number, start, args.edges, taken):
         member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.
@@ -1888,6 +1172,31 @@ def _check_edges_options(args, spec):
         )
 
 
+def _check_fill_options(args, spec):
+    """Refuse ``--fill`` where it does not apply, before a number is burned.
+
+    Filling draws from the `bounds:` box, so it has nothing to draw from when
+    the section names its points with `values:`, and the surface of the box is
+    a different set of points altogether. It always
+    carries on past the batches already beside the datum, so ``--continue``
+    with it is allowed and changes nothing.
+    """
+    if not args.fill:
+        return
+
+    if spec.is_grid():
+        raise ValueError(
+            "--fill draws points from a bounds: box; this batch: section "
+            "names its points with values:. Give bounds: instead."
+        )
+
+    if args.edges is not None:
+        raise ValueError(
+            "--fill draws points between the runs already made, and --edges "
+            "runs the surface of the box. Choose one."
+        )
+
+
 def _quieten_the_runs():
     """Keep the per-run tables and the march off the console while iterating.
 
@@ -1919,101 +1228,6 @@ def _console_handlers():
             ):
                 seen[id(handler)] = handler
     return list(seen.values())
-
-
-PROMOTED = (OUTPUT_NAME, RESTART_NAME, HISTORY_NAME, "post.pdf")
-"""What a settled design leaves at the root of its directory.
-
-Everything a `run` leaves beside its config, so that a finished `iterate`
-directory reads as one: a database glob, a script reading a result and a
-`--restart` need not know whether a design took one solve or six.
-"""
-
-KEPT_PER_ITERATION = (batch.INPUT_NAME, OUTPUT_NAME, HISTORY_NAME)
-"""What an intermediate iteration keeps once the design has settled.
-
-The config it solved, the answer it reached, and the march that got there ---
-kilobytes apiece, and the only record of how the design moved. What goes is the
-flow field and the report drawn from it, which are the megabytes and which
-nothing reads again: `database` filters an unsettled iteration out by
-definition, `chic` reads only the config it was given, and no code globs
-`iter_*` at all. Both are recoverable by re-running that iteration's
-`input.yaml`, which is what makes deleting them a tidy-up rather than a loss.
-"""
-
-
-def promote_final(out_dir, iter_dir, converged):
-    """Move the last iteration's artefacts to `out_dir`, and prune the rest.
-
-    Only when the design settled. **A root `output.yaml` therefore means this
-    design converged**, which is a far more useful thing for the directory to
-    say than "here is wherever the iteration happened to stop". An unsettled
-    run keeps every iteration whole, because that is exactly when the history
-    is what you came to look at.
-
-    Moved rather than copied, and rather than linked as this once was. A copy
-    of `restart.npz` is megabytes duplicated and two files free to disagree; a
-    symlink avoids both but needs a filesystem that has them, and left the same
-    answer reachable by two paths --- which `database` counted twice, the
-    settled iteration being precisely the one that survives its filters.
-    Moving has neither problem: one answer, in one place, as a real file.
-
-    Returns the field to carry on from, which `chic` sweeps from and which has
-    moved out from under the caller.
-    """
-    if not converged:
-        iterate.logger.info(
-            "The design did not settle, so every iteration is kept whole and "
-            f"nothing is promoted to {out_dir}."
-        )
-        return iter_dir / RESTART_NAME
-
-    for name in PROMOTED:
-        source = iter_dir / name
-        if not source.is_file():
-            continue
-
-        destination = out_dir / name
-        if destination.exists():
-            destination.unlink()
-        source.rename(destination)
-
-    iterate.logger.info(f"Moved the settled design's artefacts to {out_dir}")
-
-    _prune_iterations(out_dir)
-
-    return out_dir / RESTART_NAME
-
-
-def _prune_iterations(out_dir):
-    """Cut every iteration directory back to what is worth keeping."""
-    removed = 0
-    for iter_dir in sorted(out_dir.glob("iter_*")):
-        if not iter_dir.is_dir():
-            continue
-
-        for entry in iter_dir.iterdir():
-            if entry.is_file() and entry.name not in KEPT_PER_ITERATION:
-                entry.unlink()
-                removed += 1
-
-    if removed:
-        iterate.logger.info(
-            f"Removed {removed} intermediate file(s); re-run an iteration's "
-            f"{batch.INPUT_NAME} to rebuild one."
-        )
-
-
-def convergence_string(converged):
-    """Report how a march ended, as a verdict alone.
-
-    ember has already logged every record as the march went, so repeating the
-    last one here would print it twice. Nor is a step count quoted: records
-    are written every `n_step_log` steps, so the last record is not in general
-    the last step marched, and reporting it as one would be wrong.
-    """
-    verdict = "converged" if converged else "NOT converged"
-    return f"Solver: {verdict}"
 
 
 @contextlib.contextmanager
@@ -2073,240 +1287,6 @@ def _open_batch(args, datum_dir):
     return out_dir
 
 
-def _write_output(config, result, out_dir, svg=False, trajectory=()):
-    """Write what a run achieved, and draw it.
-
-    Only the verbs that solve call this, and that is what makes it safe:
-    `output.yaml` is written by whoever has a real answer to put in it, so no
-    verb can replace a converged run's `result:` with an empty one of its own.
-    An earlier arrangement had `mesh --restart --write` writing back over the
-    config it had just read, guarded by comparing the two -- a guard that only
-    existed because the wrong verb was writing.
-    """
-    config_path = out_dir / OUTPUT_NAME
-    case.write(config_path, config, result)
-    run_log.info(f"Wrote resolved configuration to {config_path}")
-
-    write_report([*trajectory, (config, result)], out_dir, svg=svg)
-
-
-def grid_string(grid):
-    """One-line summary of the size of a grid."""
-    return f"Mesh: n_block={len(grid)}, n_cell/1e6={grid.size / 1e6:.2f}"
-
-
-def _design_variable_rows(config, result):
-    """Yield ``(name, nominal, actual, is_variable)`` for every inverted key.
-
-    **Both columns come from the same `backward()`**, one applied to the
-    nominal mean line and one to the mixed-out actual, rather than reading the
-    nominal off the config's own fields. Three things follow.
-
-    The comparison is like for like: whatever definition of loss or loading the
-    design uses, both sides are measured through it, so a difference is the
-    flow differing and never the two sides being computed differently.
-
-    Diagnostics get a nominal column for free. `backward` returns reaction,
-    pressure ratio and efficiency alongside the design variables, and those are
-    where a mismatch usually shows first. The package this replaces reached
-    them through a second loop over "additional vars not in nominal" and left
-    the nominal column blank, so the one comparison worth making was the one it
-    could not print.
-
-    And it is sound, because there are two states and not three: `solve_for`
-    raises if it cannot hit its targets and `_check_round_trip` raises if the
-    inverted variables disagree with the fields that asked for them, so a
-    nominal mean line that exists *is* the requested design.
-
-    Design variables are still marked, because a variable you set and a number
-    you read are different kinds of thing even when they are printed the same
-    way. That is field membership rather than the order `backward` happens to
-    return its keys in, which is only the author's convention.
-    """
-    variables = {field.name for field in dataclasses.fields(config.mean_line)}
-
-    nominal = config.mean_line.backward(result.nominal)
-
-    # `design` builds a result with no CFD behind it at all, so there is no
-    # actual to invert -- every row is nominal-only, not "neither can be
-    # compared" (that verdict is for a field a run's actual declines to
-    # invert, not for a run that never had one).
-    has_actual = result.actual is not None
-    actual = config.mean_line.backward(result.actual) if has_actual else {}
-
-    for name, value in nominal.items():
-        # A design may declare a variable as not invertible, and it may return
-        # one the other call did not; neither is an error, and neither can be
-        # compared.
-        if value is None or (has_actual and actual.get(name) is None):
-            continue
-
-        was = np.atleast_1d(value)
-        now = np.atleast_1d(actual[name]) if has_actual else None
-        if now is not None and was.shape != now.shape:
-            continue
-
-        for i in range(was.size):
-            label = name if was.size == 1 else f"{name}[{i}]"
-            yield (
-                label,
-                float(was[i]),
-                float(now[i]) if now is not None else None,
-                name in variables,
-            )
-
-
-def design_variable_string(config, result):
-    """Return a table of what the design asked for against what it achieved.
-
-    The most valuable few lines a run prints: a mean line states an intent, and
-    this is the only place that intent and the CFD are put side by side in the
-    same units.
-
-    Errors are `nominal - actual`, which is the sign
-    :meth:`turbigen.iterate.MeanLine.error` already uses, so a row here and a
-    row of the iteration table describe one number the same way round.
-    """
-    rows = list(_design_variable_rows(config, result))
-    if not rows:
-        return "Design variables: nothing that backward() returns can be compared."
-
-    width = max(len(name) for name, _, _, _ in rows)
-
-    # `design` never has a CFD actual to set against the nominal, so it gets
-    # the narrower table this degrades to: a value, not a comparison.
-    has_actual = result.actual is not None
-    if has_actual:
-        header = f"{'name':<{width}}  {'nominal':>10}  {'actual':>10}  {'err':>10}  {'err/%':>8}"
-    else:
-        header = f"{'name':<{width}}  {'nominal':>10}"
-    lines = ["Design variables:", header, "-" * len(header)]
-
-    # Set variables first, then what was read off the answer, with a rule
-    # between. Within each, the order the design returned them in, which is the
-    # order its author thought about them.
-    for wanted in (True, False):
-        block = [row for row in rows if row[3] is wanted]
-        if not block:
-            continue
-        if not wanted:
-            lines.append("-" * len(header))
-
-        for name, was, now, _ in block:
-            if not has_actual:
-                lines.append(f"{name:<{width}}  {was:10.4g}")
-                continue
-
-            error = was - now
-            # A nominal of zero has nothing to be relative to. Recamber and
-            # swirl angles are routinely zero by design, so this is the common
-            # case rather than a guard against the impossible.
-            relative = f"{error / was * 100.0:8.2f}" if was else f"{'--':>8}"
-            lines.append(
-                f"{name:<{width}}  {was:10.4g}  {now:10.4g}  {error:10.3g}  {relative}"
-            )
-
-    return "\n".join(lines)
-
-
-def processors(config):
-    """Return the post-processors to run, standard set first.
-
-    A configured entry *replaces* the standard plot of its own type rather than
-    adding to it, so naming one in a config tunes it instead of producing two
-    of them. That was the rule in the package this replaces as well, but it got
-    there by inserting into the user's own list from `__post_init__`, so the
-    config that ran was not the config that was written. Nothing is mutated
-    here: the standard set is a property of the report, and `post_process`
-    means what it says.
-    """
-    configured = {p.type for p in config.post_process}
-    standard = [p for p in post.STANDARD if p.type not in configured]
-    return standard + list(config.post_process)
-
-
-def write_report(trajectory, out_dir, svg=False):
-    """Run the post-processors and collect their figures into one PDF.
-
-    `trajectory` is the sequence of ``(config, result)`` pairs the run has been
-    through, oldest first and never empty. A :class:`~turbigen.post.Post` draws
-    one design and is handed the last of them; a
-    :class:`~turbigen.post.PostChain` draws the sequence and is handed all of
-    them. Passing the sequence rather than a pair is what lets the loop be
-    drawn without a `Result` carrying anything about designs other than its
-    own.
-
-    Nothing is produced without an output directory, so the figures are only
-    made when there is somewhere to put them. With one, a report is always
-    written: the standard plots cost a fraction of a solve, and a run whose
-    output nobody looks at is worse than a page nobody needed.
-
-    `svg` additionally writes each figure as its own file, for a document that
-    places them one at a time. Off by default, by the same rule: a directory of
-    pictures nobody opens is worse than the one PDF that holds them. The names
-    carry the post-processor that drew each figure rather than a page number,
-    so adding a plot cannot silently rename the images after it.
-    """
-    # Imported here so that the CLI does not pay for matplotlib until there is
-    # something to plot.
-    import matplotlib
-
-    # Only claim the backend if nothing has chosen one yet. pyplot in sys.modules
-    # means a caller -- a notebook driving main(), say -- is already plotting,
-    # and switching it out from under them would be rude.
-    if "matplotlib.pyplot" not in sys.modules:
-        matplotlib.use("Agg")
-
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
-
-    config, result = trajectory[-1]
-
-    path = out_dir / "post.pdf"
-    n_page = 0
-    # styled() spans figure creation, not just savefig: rcParams are read as
-    # artists are built. The user's own matplotlibrc still wins inside it.
-    with post.styled(), PdfPages(path) as pdf:
-        for i_processor, processor in enumerate(processors(config)):
-            logger.debug(f"Running post-processor {processor}")
-            # Figures are closed as they are written rather than collected and
-            # closed at the end, so a long report holds one at a time.
-            for i_figure, figure in enumerate(processor.report(config, result)):
-                pdf.savefig(figure)
-                if svg:
-                    figure.savefig(
-                        out_dir / f"post_{i_processor:02d}_{processor.type}"
-                        f"_{i_figure}.svg"
-                    )
-                plt.close(figure)
-                n_page += 1
-
-        # After the per-design pages, and named apart from them: a chain plot
-        # is not in `processors`, so numbering its figures alongside would let
-        # adding one rename the images of the plots before it.
-        for i_processor, processor in enumerate(post.STANDARD_CHAIN):
-            logger.debug(f"Running chain post-processor {processor}")
-            for i_figure, figure in enumerate(processor.report(trajectory)):
-                pdf.savefig(figure)
-                if svg:
-                    name = type(processor).__name__.lower()
-                    figure.savefig(
-                        out_dir / f"chain_{i_processor:02d}_{name}_{i_figure}.svg"
-                    )
-                plt.close(figure)
-                n_page += 1
-
-    # Nothing to draw is normal -- a mean-line design gives every standard plot
-    # nothing to work with -- and matplotlib writes no file for an empty
-    # document, so there is no report to announce and none to find.
-    if not n_page:
-        run_log.info("No figures were produced, so no report was written.")
-        return None
-
-    run_log.info(f"Wrote report to {path}")
-    return path
-
-
 #
 # ENTRY POINT
 #
@@ -2357,97 +1337,16 @@ def _make_parser():
     )
 
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
-    design = commands.add_parser(
-        "design",
-        parents=[common],
-        help="design the mean line and print it, writing nothing",
-        description=(
-            "Design the mean line and geometry from a configuration file and "
-            "print them. Nothing is ever written, so this is what to run while "
-            "changing a number and watching the tables move. Use 'report' for "
-            "figures."
-        ),
-    )
-    design.set_defaults(func=cmd_design)
-
-    report = commands.add_parser(
-        "report",
-        parents=[common],
-        help="draw a case, using whatever a run has left beside it",
-        description=(
-            "Design the machine, mesh it if the config says how, pick up any "
-            f"{RESTART_NAME} a previous run left beside the config, and write "
-            f"post.pdf and {OUTPUT_NAME}. Each standard plot draws nothing when "
-            "what it needs is absent, so a mean-line design gives the geometry "
-            "pages and a solved case gives the flow. Re-plotting a finished run "
-            "is therefore the same command, with no flag between them. The "
-            f"{OUTPUT_NAME} carries an answer only when the stored field is "
-            "stamped as this design's solution, and a report never removes one "
-            "it cannot reproduce. The grid itself is never written, because how "
-            "a mesh is serialised is a property of the solver that will read it."
-        ),
-    )
-    _add_svg_argument(report)
-    report.set_defaults(func=cmd_report)
-
-    run = commands.add_parser(
-        "run",
-        parents=[common],
-        help="design, mesh and solve, then report",
-        description=(
-            "Design the machine from a configuration file, mesh it, apply "
-            "boundary conditions and an initial guess, and solve. Everything "
-            f"is written beside the config, in {OUTPUT_NAME} and its "
-            "companions. Exits 2 if the solver did not converge, having "
-            "written its output anyway."
-        ),
-    )
-    _add_force_argument(run)
-    _add_out_dir_argument(run)
-    _add_queue_argument(run)
-    _add_restart_argument(run)
-    _add_svg_argument(run)
-    run.set_defaults(func=cmd_run)
-
-    iterate_ = commands.add_parser(
-        "iterate",
-        parents=[common],
-        help="run repeatedly, moving the design onto its own solution",
-        description=(
-            "Solve the machine, measure how far its design is from what the "
-            "flow actually did, correct the design, and solve again. Each "
-            "iteration is an ordinary run in a directory of its own beside the "
-            "config, with 'final' linked to the last and every iteration kept. "
-            "Needs an iterate: key naming what to correct. Exits 2 if the "
-            "design had not converged by iterate.max_iter."
-        ),
-    )
-    _add_force_argument(iterate_)
-    _add_out_dir_argument(iterate_)
-    _add_queue_argument(iterate_)
-    _add_restart_argument(iterate_)
-    iterate_.set_defaults(func=cmd_iterate)
-
-    chic_ = commands.add_parser(
-        "chic",
-        parents=[common],
-        help="sweep a characteristic until the solution will not stand up",
-        description=(
-            "Converge the design, then hold its geometry fixed and step the "
-            "back pressure until a point will not converge, halving the step "
-            "and coming back at it from the last good field until the limit "
-            "is pinned to chic.step_min. Each point is an ordinary run in a "
-            "directory of its own. A case whose stored result says the design "
-            "has already settled skips straight to the sweep. Needs a chic: "
-            "section. What it finds is where a steady solver stops "
-            "converging, which is not the surge line."
-        ),
-    )
-    _add_force_argument(chic_)
-    _add_out_dir_argument(chic_)
-    _add_queue_argument(chic_)
-    _add_restart_argument(chic_)
-    chic_.set_defaults(func=cmd_chic)
+    for verb in VERBS:
+        sub = commands.add_parser(
+            verb.name,
+            parents=[common],
+            help=verb.help,
+            description=verb.description,
+        )
+        for add_flag in verb.flags:
+            add_flag(sub)
+        sub.set_defaults(func=functools.partial(_dispatch, verb))
 
     batch_ = commands.add_parser(
         "batch",
@@ -2486,6 +1385,16 @@ def _make_parser():
             "instead of drawing from bounds:, run the surface of the box: the "
             "N-level grid over it, keeping only points with a coordinate at a "
             "bound. bounds: only, and not with -n or --continue"
+        ),
+    )
+    batch_.add_argument(
+        "--fill",
+        action="store_true",
+        help=(
+            "draw the next -n points in sequence, skipping those near a "
+            "member of the batches already beside the datum config, so the "
+            "gaps between them are filled, such as the margin a widened bound "
+            "adds; bounds: only, and implies --continue"
         ),
     )
     _add_queue_argument(batch_)
@@ -2612,6 +1521,106 @@ def _add_restart_argument(parser):
     )
 
 
+VERBS = (
+    Verb(
+        "design",
+        _design_one,
+        help="design the mean line and print it, writing nothing",
+        description=(
+            "Design the mean line and geometry from a configuration file and "
+            "print them. Nothing is ever written, so this is what to run while "
+            "changing a number and watching the tables move. Use 'report' for "
+            "figures."
+        ),
+    ),
+    Verb(
+        "report",
+        _report_one,
+        help="draw a case, using whatever a run has left beside it",
+        description=(
+            "Design the machine, mesh it if the config says how, pick up any "
+            f"{RESTART_NAME} a previous run left beside the config, and write "
+            f"post.pdf and {OUTPUT_NAME}. Each standard plot draws nothing when "
+            "what it needs is absent, so a mean-line design gives the geometry "
+            "pages and a solved case gives the flow. Re-plotting a finished run "
+            "is therefore the same command, with no flag between them. The "
+            f"{OUTPUT_NAME} carries an answer only when the stored field is "
+            "stamped as this design's solution, and a report never removes one "
+            "it cannot reproduce. The grid itself is never written, because how "
+            "a mesh is serialised is a property of the solver that will read it."
+        ),
+        flags=(_add_svg_argument,),
+    ),
+    Verb(
+        "run",
+        _run_one,
+        help="design, mesh and solve, then report",
+        description=(
+            "Design the machine from a configuration file, mesh it, apply "
+            "boundary conditions and an initial guess, and solve. Everything "
+            f"is written beside the config, in {OUTPUT_NAME} and its "
+            "companions. Exits 2 if the solver did not converge, having "
+            "written its output anyway."
+        ),
+        flags=(
+            _add_force_argument,
+            _add_out_dir_argument,
+            _add_queue_argument,
+            _add_restart_argument,
+            _add_svg_argument,
+        ),
+        needs=("solver",),
+    ),
+    Verb(
+        "iterate",
+        _iterate_one,
+        help="run repeatedly, moving the design onto its own solution",
+        description=(
+            "Solve the machine, measure how far its design is from what the "
+            "flow actually did, correct the design, and solve again. Each "
+            "iteration is an ordinary run in a directory of its own beside the "
+            "config, with 'final' linked to the last and every iteration kept. "
+            "Needs an iterate: key naming what to correct. Exits 2 if the "
+            "design had not converged by iterate.max_iter."
+        ),
+        flags=(
+            _add_force_argument,
+            _add_out_dir_argument,
+            _add_queue_argument,
+            _add_restart_argument,
+        ),
+        needs=("solver", "iterate"),
+        quiet=True,
+    ),
+    Verb(
+        "chic",
+        _chic_one,
+        help="sweep a characteristic until the solution will not stand up",
+        description=(
+            "Converge the design, then hold its geometry fixed and step the "
+            "back pressure until a point will not converge, halving the step "
+            "and coming back at it from the last good field until the limit "
+            "is pinned to chic.step_min. Each point is an ordinary run in a "
+            "directory of its own. A case whose stored result says the design "
+            "has already settled skips straight to the sweep. Needs a chic: "
+            "section. What it finds is where a steady solver stops "
+            "converging, which is not the surge line."
+        ),
+        flags=(
+            _add_force_argument,
+            _add_out_dir_argument,
+            _add_queue_argument,
+            _add_restart_argument,
+        ),
+        needs=("solver", "chic"),
+        quiet=True,
+    ),
+)
+"""Every command that works through its config files one at a time, in the
+order `--help` lists them. `batch` is not here: it takes one datum and has
+arguments of its own, so :func:`_make_parser` adds it by hand."""
+
+
 def _format_elapsed(seconds):
     """Human-readable elapsed time, in whichever unit reads best."""
     if seconds < 60.0:
@@ -2638,15 +1647,9 @@ def main(argv=None):
     try:
         return args.func(args)
     except Exception:
-        # A failure gets its traceback, whatever it is. Most of them are raised
-        # from a config file or a plugin, which are the user's own code in the
-        # sense that matters: the file and line are what say which of their
-        # lines to look at. Summarising to `Type: message` reads tidily for the
-        # errors raised deliberately against user input, but those cannot be
-        # told apart by type from the ones that mean something is broken --
-        # both arrive as ValueError -- so suppressing the trace for one
-        # suppresses it for the other, which is the expensive half of the
-        # trade.
+        # Always log the traceback. User input errors and genuine bugs both
+        # arrive as ValueError, so there is no safe way to show only a summary
+        # for the first kind.
         logger.exception("Error encountered, quitting...")
         return 1
     finally:

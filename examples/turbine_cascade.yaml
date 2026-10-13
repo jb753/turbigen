@@ -58,9 +58,8 @@ iterate:
       variables: [Ys]
       clip: 0.01
       tolerance: 0.05
-    # To shape the suction surface Mach distribution as well, see
-    # turbine_cascade_loading.yaml: a `loading` iterator needs a `bernstein`
-    # camber line to move, which the quadratic one above does not provide.
+    # To shape the surface Mach distribution as well, add a `clark_profile`
+    # iterator, which needs a `clark` thickness distribution to move.
 
 solver:
   type: ember

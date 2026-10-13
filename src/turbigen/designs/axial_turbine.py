@@ -51,8 +51,16 @@ class AxialTurbine(MeanLineDesign):
     r_rms: float
     """Mean radius, constant through the stage [m]."""
 
-    zeta: tuple[float, float] = (1.0, 1.0)
-    """Axial velocity at stage inlet and outlet, relative to rotor inlet [--]."""
+    dzeta: float = 0.0
+    """Axial velocity change through the stage, relative to rotor inlet [--].
+
+    Applied symmetrically about the rotor inlet: ``Vx1 = (1 - dzeta) Vx2`` and
+    ``Vx3 = (1 + dzeta) Vx2``, so positive accelerates the flow. One knob
+    rather than an inlet and an outlet ratio, because a box over two
+    independent ratios is mostly lopsided stages. Relative to `Vx2` rather
+    than the blade speed so that the same `dzeta` is the same shape of stage
+    at any `phi2`.
+    """
 
     Po1: float = 1e5
     """Inlet stagnation pressure [Pa]."""
@@ -111,20 +119,33 @@ class AxialTurbine(MeanLineDesign):
         """Flow coefficient at rotor inlet."""
         return ml.flat.Vx[2] / self.blade_speed(ml)
 
-    def velocity_ratios(self, ml):
-        """Axial velocity at inlet and outlet, relative to rotor inlet."""
+    def velocity_change(self, ml):
+        """Half the axial velocity rise through the stage, over rotor inlet's.
+
+        The inverse of :attr:`dzeta` for a symmetric stage. One that is not
+        returns the mean of its two halves, and fails the round trip.
+        """
         Vx = ml.flat.Vx
-        return Vx[(0, 3),] / Vx[2]
+        return 0.5 * (Vx[3] - Vx[0]) / Vx[2]
 
     #
     # DESIGN
     #
 
     def forward(self, fluid):
+        # Refused here rather than left to the solve, which would divide by a
+        # zero axial velocity and report it as a failure to converge.
+        if not abs(self.dzeta) < 1.0:
+            raise DesignError(
+                f"Mean-line type {self.type!r}: dzeta={self.dzeta} leaves no "
+                "axial velocity at the stage inlet or outlet; it must lie "
+                "strictly between -1 and 1."
+            )
+
         ml = self.allocate(fluid)
 
         Ys = np.asarray(self.Ys, dtype=float)
-        zeta = np.asarray(self.zeta, dtype=float)
+        zeta = np.array([1.0 - self.dzeta, 1.0 + self.dzeta])
         phi2, mdot, r_rms = self.phi2, self.mdot, self.r_rms
 
         # Reference state from the inlet stagnation conditions. This is the
@@ -175,20 +196,10 @@ class AxialTurbine(MeanLineDesign):
 
         # Guesses. The rotor exit swirl is negative for a turbine.
         #
-        # The blade speed is found by iterating rather than assumed, because
-        # `psi` is a statement about it: the stage loading is `dh0 / U^2`, and
-        # `dh0` is `U (Vt2 - Vt3)`, so a repeating stage satisfies
-        # `U (1 + psi) = Vt2 - Vt3_rel` -- with the swirls following from the
-        # exit Mach number and the axial velocity, which follow from `U`. A
-        # few passes close that loop.
-        #
-        # Fixed at half the exit velocity it was blind to `psi` altogether,
-        # giving the same 229 m/s across a box whose answers run 283 down to
-        # 212: nineteen per cent out at low loading, where the guess has to be
-        # good, because the least-squares cost has a local minimum near enough
-        # to the root that a starting point on the wrong side of it converges
-        # to a design that does not exist. Iterated, the guess tracks the
-        # answer and sits under four per cent of it throughout.
+        # The blade speed guess must depend on `psi`, or the solver can land
+        # in a nearby local minimum. A repeating stage satisfies
+        # `U (1 + psi) = Vt2 - Vt3_rel`, with the swirls depending on `U`
+        # through the axial velocity, so iterate that relation a few times.
         U0 = ao1 * self.Ma2 * 0.5
         for _ in range(N_GUESS):
             Vx_g = U0 * phi2
@@ -202,17 +213,9 @@ class AxialTurbine(MeanLineDesign):
             # Relaxed, the map being a contraction only for part of the range
             # this has to cover.
             U0 = 0.5 * U0 + 0.5 * (Vt2_g - Vt3_rel_g) / (1.0 + self.psi)
-        # Off zero, though an axial inlet is what this converges to. A guess
-        # of exactly zero degenerates the finite-difference step: it is taken
-        # relative to the value, floored at one, so Vt1 got a step of 3.5e-04
-        # where the other three velocities got 0.05 to 0.10. Dividing by a
-        # step 156x smaller inflates that column of the Jacobian by about as
-        # much, leaving the columns spread 2800x and the matrix conditioned at
-        # 2.5e+06 -- whose smallest singular value, 6.4e-06, is below the
-        # noise floor of a float32 residual, so the solver was working a
-        # rank-3 problem believing it had rank 4. Seeded here instead: the
-        # condition number becomes 6.7, and does so for anything from 1% to
-        # 10%, which is what a guess should look like.
+        # Guess the inlet swirl slightly off zero, though an axial inlet is the
+        # answer. The finite-difference step is relative to the value, so a
+        # zero guess gets a tiny step and makes the Jacobian ill-conditioned.
         Vx0 = U0 * phi2
         Vt2_0 = np.sqrt(max((self.Ma2 * ao1) ** 2 - Vx0**2, (0.5 * Vx0) ** 2))
         Vt3_rel_0 = -np.sqrt(
@@ -272,7 +275,7 @@ class AxialTurbine(MeanLineDesign):
             "mdot": ml.inlet.mdot,
             "Ys": self.loss_coefficient(ml),
             "r_rms": ml.inlet.r,
-            "zeta": self.velocity_ratios(ml),
+            "dzeta": self.velocity_change(ml),
             "Po1": ml.inlet.Po,
             "To1": ml.inlet.To,
             # A limit on the design, not a variable of it: nothing about a
@@ -285,7 +288,8 @@ class AxialTurbine(MeanLineDesign):
             "Ma1": flat.Ma[0],
             "Alpha3": ml.outlet.Alpha,
             "Ma3_rel": flat.Ma_rel[3],
-            "Lam": (h[1] - h[0]) / (h[3] - h[0]),
+            # Reaction, the rotor's share of the static enthalpy drop
+            "Lam": (h[2] - h[3]) / (h[0] - h[3]),
             "PR_ts": ml.PR_ts,
             "PR_tt": ml.PR_tt,
             "eta_tt": ml.eta_tt,

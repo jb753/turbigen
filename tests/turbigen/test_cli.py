@@ -11,7 +11,7 @@ import textwrap
 
 import pytest
 
-from turbigen import cli, iterate, plugins, restart
+from turbigen import cli, iterate, loop, pipeline, plugins, restart
 
 CASE = """
 fluid:
@@ -566,7 +566,7 @@ def test_a_soft_start_leaves_nothing_behind_but_the_field(run_case, marches):
     assert result.converged
 
     # One record per log step of the march that counts, and none of the other.
-    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    history = pipeline.read_history(run_case.parent / cli.HISTORY_NAME)
     assert history.i_log + 1 == 1
 
 
@@ -598,7 +598,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
     only record of what happened here.
     """
 
-    real_soft_start = cli.soft_start
+    real_soft_start = pipeline.soft_start
 
     def diverging(solver, grid):
         # The real pass, reported as having blown up. A genuine divergence
@@ -608,7 +608,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
         history.diverged = True
         return history
 
-    monkeypatch.setattr(cli, "soft_start", diverging)
+    monkeypatch.setattr(pipeline, "soft_start", diverging)
 
     assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 2
 
@@ -618,7 +618,7 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
     # And its evidence is on disk, as any failed march's is.
     assert (run_case.parent / cli.RESTART_NAME).is_file()
     assert (run_case.parent / cli.HISTORY_NAME).is_file()
-    assert (run_case.parent / cli.GRID_NAME).is_file()
+    assert (run_case.parent / pipeline.GRID_NAME).is_file()
 
 
 def test_a_negative_soft_step_count_is_a_message(run_case, capsys):
@@ -712,7 +712,7 @@ def test_a_retry_that_diverges_is_the_recorded_failure(run_case, marches, monkey
     assert [march.n_step for march in marches] == [10, 5]
     assert (run_case.parent / cli.RESTART_NAME).is_file()
     assert (run_case.parent / cli.HISTORY_NAME).is_file()
-    assert (run_case.parent / cli.GRID_NAME).is_file()
+    assert (run_case.parent / pipeline.GRID_NAME).is_file()
 
 
 def test_a_negative_retry_step_count_is_a_message(run_case, capsys):
@@ -798,7 +798,7 @@ def test_a_raising_measurement_leaves_the_whole_grid(run_case, monkeypatch):
 
     assert cli.main(["run", str(run_case)]) == 1
 
-    path = run_case.parent / cli.GRID_NAME
+    path = run_case.parent / pipeline.GRID_NAME
     assert path.is_file()
 
     # Read back through ember's own reader, carrying the geometry the field
@@ -820,7 +820,7 @@ def test_a_run_that_measures_leaves_no_grid(run_case):
     assert cli.main(["run", str(run_case)]) == 0
 
     assert (run_case.parent / cli.RESTART_NAME).is_file()
-    assert not (run_case.parent / cli.GRID_NAME).exists()
+    assert not (run_case.parent / pipeline.GRID_NAME).exists()
 
 
 def test_run_without_a_solver_section_is_a_message(run_case, capsys):
@@ -1481,7 +1481,7 @@ def test_a_report_hands_the_chain_the_whole_trajectory(tmp_path, monkeypatch):
     # not merely about the shape of it.
     trajectory = [(config, Result(error={"k": float(i)})) for i in range(3)]
 
-    cli.write_report(trajectory, tmp_path)
+    post.write_report(trajectory, tmp_path)
 
     assert seen["chain"] == trajectory
     assert seen["post"][1] is trajectory[-1][1]
@@ -1651,11 +1651,11 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
         for name in (*names, cli.RESTART_NAME):
             (iter_dir / name).write_text(f"{i_iter} {name}")
 
-    field = cli.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
+    field = loop.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
 
     # The last iteration's artefacts are the run's artefacts now.
     assert field == tmp_path / cli.RESTART_NAME
-    for name in cli.PROMOTED:
+    for name in loop.PROMOTED:
         assert (tmp_path / name).read_text() == f"2 {name}"
 
     # Its own directory keeps the config that produced it, and nothing else.
@@ -1666,7 +1666,7 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     # The ones before it keep what is worth keeping.
     for i_iter in range(2):
         kept = sorted(p.name for p in (tmp_path / f"iter_{i_iter:04d}").iterdir())
-        assert kept == sorted(cli.KEPT_PER_ITERATION)
+        assert kept == sorted(loop.KEPT_PER_ITERATION)
 
 
 def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
@@ -1678,7 +1678,7 @@ def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
     for name in names:
         (iter_dir / name).write_text(name)
 
-    field = cli.promote_final(tmp_path, iter_dir, converged=False)
+    field = loop.promote_final(tmp_path, iter_dir, converged=False)
 
     assert field == iter_dir / cli.RESTART_NAME
     assert sorted(p.name for p in iter_dir.iterdir()) == sorted(names)
@@ -1756,7 +1756,7 @@ def test_a_diverged_iteration_stops_the_loop_rather_than_crashing_it(
     # And the iteration that diverged is on disk to be looked at, field,
     # history, whole grid and all.
     iter_dir = iterate_case.parent / "iter_0000"
-    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, cli.GRID_NAME):
+    for name in (cli.RESTART_NAME, cli.HISTORY_NAME, pipeline.GRID_NAME):
         assert (iter_dir / name).is_file(), name
 
 
@@ -1962,6 +1962,30 @@ def test_batch_continue_is_the_tail_of_one_batch(tmp_path):
     assert psi(split.parent) == psi(whole.parent)
 
 
+def test_batch_fill_picks_the_margin_a_widened_bound_adds(batch_case):
+    """Runs over psi 1.4 to 1.8, then the bound widens to 2.2: fill the margin."""
+    from turbigen import Config
+
+    cli.main(["batch", str(batch_case), "-n", "8"])
+    batch_case.write_text(BATCH_CASE.replace("[1.4, 1.8]", "[1.4, 2.2]"))
+    assert cli.main(["batch", str(batch_case), "-n", "2", "--fill"]) == 0
+
+    datum = batch_case.parent
+    run = [Config.from_file(m).mean_line.psi for m in datum.glob("batch_0000/*/input.yaml")]
+    filled = sorted((datum / "batch_0001").glob("*/input.yaml"))
+    assert len(filled) == 2
+    for member in filled:
+        assert int(member.parent.name) >= 8
+        assert Config.from_file(member).mean_line.psi > max(run)
+
+
+def test_batch_fill_with_edges_is_refused(batch_case, capsys):
+    assert cli.main(["batch", str(batch_case), "--fill", "--edges", "2"]) == 1
+
+    assert "Choose one" in capsys.readouterr().err
+    assert not (batch_case.parent / "batch_0000").exists()
+
+
 def test_batch_without_a_batch_section_says_so(case, capsys):
     assert cli.main(["batch", str(case)]) == 1
 
@@ -2128,7 +2152,7 @@ def test_run_writes_its_convergence_history(run_case):
 def test_a_replot_recovers_the_convergence_history(run_case):
     cli.main(["run", str(run_case)])
 
-    history = cli.read_history(run_case.parent / cli.HISTORY_NAME)
+    history = pipeline.read_history(run_case.parent / cli.HISTORY_NAME)
 
     assert history is not None
     assert history.i_log >= 0
@@ -2145,11 +2169,11 @@ def test_a_history_that_will_not_load_is_not_fatal(tmp_path):
     path = tmp_path / cli.HISTORY_NAME
     path.write_text("not a pickle")
 
-    assert cli.read_history(path) is None
+    assert pipeline.read_history(path) is None
 
 
 def test_no_history_beside_a_restart_is_not_fatal(tmp_path):
-    assert cli.read_history(tmp_path / cli.HISTORY_NAME) is None
+    assert pipeline.read_history(tmp_path / cli.HISTORY_NAME) is None
 
 
 def test_bare_restart_says_when_there_is_nothing_to_read(run_case, capsys):
@@ -2211,7 +2235,7 @@ def _table(nominal_config, actual_config=None):
     other = (
         machine if actual_config is None else Config.from_dict(actual_config).design()
     )
-    return cli.design_variable_string(
+    return pipeline.design_variable_string(
         config, Result(machine=machine, actual=other.mean_line)
     )
 
@@ -2311,7 +2335,7 @@ def test_a_failed_comparison_does_not_cost_the_run_its_output(run_case, monkeypa
     def boom(config, result):
         raise RuntimeError("table exploded")
 
-    monkeypatch.setattr(cli, "design_variable_string", boom)
+    monkeypatch.setattr(pipeline, "design_variable_string", boom)
 
     assert cli.main(["run", str(run_case)]) == 0
 

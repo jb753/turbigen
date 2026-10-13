@@ -22,7 +22,7 @@ import pytest
 import yaml
 from test_cli import RUN_CASE
 
-from turbigen import Config, Metric, Result, case, cli, metric
+from turbigen import Config, Metric, Result, case, metric, pipeline
 
 
 class GridStats(Metric):
@@ -53,7 +53,7 @@ class Boom(Metric):
 def solved():
     """The fast single-row cascade, marched briefly for a real field."""
     config = Config.from_dict(yaml.safe_load(RUN_CASE))
-    _, machine, grid = cli.prepare(config)
+    _, machine, grid = pipeline.prepare(config)
     history = config.solver.solve(grid)
     result = Result(machine=machine, grid=grid, converged=True, history=history)
     return config, result

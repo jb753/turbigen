@@ -314,6 +314,34 @@ def test_axial_turbine_is_a_repeating_stage():
     )
 
 
+def axial_turbine(**kwargs):
+    """Return the axial turbine case with some of its variables changed."""
+    return Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": {"type": "axial_turbine", **CASES["axial_turbine"], **kwargs},
+        }
+    )
+
+
+@pytest.mark.parametrize("dzeta", [-0.1, 0.15])
+def test_axial_turbine_dzeta_is_symmetric_about_rotor_inlet(dzeta):
+    config = axial_turbine(dzeta=dzeta)
+    ml = config.design().mean_line
+    Vx = ml.flat.Vx
+
+    np.testing.assert_allclose(
+        Vx[(0, 3),] / Vx[2], [1.0 - dzeta, 1.0 + dzeta], rtol=1e-6
+    )
+    assert float(config.mean_line.backward(ml)["dzeta"]) == pytest.approx(dzeta)
+
+
+@pytest.mark.parametrize("dzeta", [-1.0, 1.0, 1.5])
+def test_axial_turbine_refuses_dzeta_that_stops_the_flow(dzeta):
+    with pytest.raises(DesignError, match="strictly between -1 and 1"):
+        axial_turbine(dzeta=dzeta).design()
+
+
 def test_axial_turbine_accepts_an_inlet_mach_number_under_the_limit():
     # The default limit of one is well clear of the inlet Mach number this
     # case reaches, so the check has to be invisible until it is asked for.

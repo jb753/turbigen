@@ -44,6 +44,26 @@ class ThicknessDesign(Node):
     The :doc:`/blade` page covers how a distribution is placed on a blade.
     """
 
+    round_TE: bool = False
+    """Close the trailing edge with a circular arc rather than leave it blunt.
+
+    The distribution itself is unchanged: it still arrives at the trailing
+    edge thickness and wedge it declares. The blade then replaces the last
+    part of each surface with the arc of a circle centred on the camber line,
+    tangent to the surface and closing at the camber line's end, so that
+    `t_TE` becomes, near enough, the diameter of the trailing edge circle. See
+    :mod:`turbigen.blade`. A blunt trailing edge is needed to round off, so
+    `t_TE` must be positive.
+    """
+
+    def _check_round_TE(self, t_TE):
+        """Raise if a round trailing edge is asked of a closed one."""
+        if self.round_TE and t_TE <= 0.0:
+            raise ValueError(
+                f"A round trailing edge closes a blunt one, so needs t_TE > 0, "
+                f"got t_TE={t_TE}."
+            )
+
     def thick(self, m):
         """Return half-thickness at normalised meridional distance `m`.
 
@@ -64,7 +84,7 @@ class ThicknessDesign(Node):
         camber line is the suction one is a property of the camber, and a
         thickness has none --- so "suction first" is a promise the *blade*
         keeps when it hangs these two numbers off its camber line (see
-        :attr:`~turbigen.blade.Blade._suction_is_upper`), and a claim about
+        :attr:`~turbigen.blade.Blade.suction_is_upper`), and a claim about
         intent when it is written in a config file. Evaluated on its own, a
         distribution can only say that its first answer goes on whichever
         surface a blade would call suction.
@@ -74,6 +94,21 @@ class ThicknessDesign(Node):
         """
         t = self.thick(m)
         return t, t
+
+    def ramp_TE(self, m):
+        """Return the trailing edge ramp within each surface's half-thickness.
+
+        The part of :meth:`thick_both` that a blade always hangs perpendicular
+        to the camber line, the rest being blended toward circumferential on
+        the pressure surface --- see :mod:`turbigen.blade`. The same on both
+        surfaces, since a trailing edge thickness is split evenly between
+        them.
+
+        Zero unless a distribution says otherwise: one with no ramp of its own
+        has all of its thickness blended, which is still perpendicular at both
+        ends.
+        """
+        return np.zeros_like(np.asarray(m, dtype=float))
 
 
 class Taylor(ThicknessDesign):
@@ -148,6 +183,7 @@ class Taylor(ThicknessDesign):
         return coeff_front, coeff_rear
 
     def __post_init__(self):
+        self._check_round_TE(self.t_TE)
         peak = self.peak()
         if peak > self.t_max + _PEAK_TOL:
             raise ValueError(
@@ -228,6 +264,9 @@ class Taylor(ThicknessDesign):
         # domain, where checking here could only ever cover the samples given.
         return float(t.item()) if np.isscalar(m) else t
 
+    def ramp_TE(self, m):
+        return shapespace.ramp_TE(m, self.t_TE)
+
 
 class ClarkThickness(ThicknessDesign):
     """A Bernstein polynomial in shape space per surface, after Clark (2019).
@@ -274,7 +313,7 @@ class ClarkThickness(ThicknessDesign):
     Which side that is comes from the camber line, not from here: see
     :meth:`ThicknessDesign.thick_both` for why a thickness distribution cannot
     check its own row ordering, and
-    :attr:`~turbigen.blade.Blade._suction_is_upper` for where it is decided.
+    :attr:`~turbigen.blade.Blade.suction_is_upper` for where it is decided.
 
     The two rows are the same length, and that length sets the order of the
     curve --- `order - 1` interior coefficients, the two endpoint ones being
@@ -289,39 +328,36 @@ class ClarkThickness(ThicknessDesign):
     One number, shared by both surfaces, so the two depart symmetrically about
     the camber line.
 
-    **Why this is shared when the interior is not.** A shape-space endpoint
-    moves the thickness as ``m^1.5 (1 - m)``, peaking at ``m = 0.6``, so a
-    wedge angle per surface would be real authority over the rear of each ---
-    the one place :class:`~turbigen.iterate.ClarkProfile` would otherwise have
-    none, since a shared knob reads the two surfaces only through their mean
-    and a pair equally wrong in opposite directions reads as converged.
-
-    It was written that way, and the cost was not worth it. The trailing edge
-    *point* does not move --- half-thickness at ``m = 1`` is ``t_TE / 2`` on
-    each surface whatever the wedge does, that being the linear ramp in
-    :func:`~turbigen.shapespace.thickness_from_tau` rather than anything the
-    shape space curve reaches. What moved was the direction the aerofoil left
-    in: with two wedges the bisector of the surfaces rotates away from the
-    camber line by of order twenty-five degrees per unit of difference between
-    them, which makes the thickness a second claim on the exit angle. Nothing
-    bounded that asymmetry, and :class:`~turbigen.iterate.Deviation` reads the
-    rotation as an exit flow angle error and pulls ``dchi_TE`` back against
-    it. The two then chase each other: a design loop measured the pair walking
-    to a difference of 0.13 --- some three degrees of exit angle --- over six
-    iterations with ``dchi_TE`` running to eleven degrees behind it, and no
-    sign of either settling.
-
-    So the exit angle belongs to the camber line alone, and the rear of each
-    surface is the interior coefficients' to answer for. Reaching as far aft
-    as a split wedge did takes a much higher order --- the rearmost interior
-    control point sits at ``m = 0.64`` at order 4 against the endpoint's
-    ``0.82`` --- which is the price of it, paid where it can be seen.
+    **Why shared.** A different wedge on each surface rotates the direction
+    the aerofoil leaves in, which gives the thickness a second say over the
+    exit angle. :class:`~turbigen.iterate.Deviation` then fights it through
+    ``dchi_TE`` and the two need not settle. So the exit angle belongs to the
+    camber line alone, and the rear of each surface is left to the interior
+    coefficients, which need a higher order to reach as far aft.
     """
 
     t_TE: float = 0.0
     """Trailing edge thickness, the total due to both sides [--]."""
 
+    R_LE_lim: tuple[float, float] = (0.01, 0.15)
+    """Bounds on the leading edge radius, normalised by meridional chord [--].
+
+    Carried by the thickness rather than by whatever moves it, so that every
+    route to a nose answers to the same numbers: a section written in a config
+    is refused outside them, an iterator stepping the nose clamps to them, and
+    a section interpolated between others is pulled back inside them by
+    :meth:`bounded_fields`. The last is the one no section-wise check can
+    cover, since a spline through three valid noses can dip below all of them.
+
+    **Why bounds at all.** A nose radius of a tenth of a chord is a cylinder
+    rather than a leading edge, and one of a hundredth or less is asking for
+    no nose at all; see
+    :class:`~turbigen.iterate.ClarkProfile` for the run that walked from one
+    towards the other.
+    """
+
     def __post_init__(self):
+        self._check_round_TE(self.t_TE)
         if len(self.coeff) != 2:
             raise ValueError(
                 f"A two-sided thickness takes one row of coefficients per "
@@ -339,6 +375,37 @@ class ClarkThickness(ThicknessDesign):
             raise ValueError(
                 f"A leading edge radius must be positive, got R_LE={self.R_LE}."
             )
+
+        lo, hi = self.R_LE_lim
+        if not 0.0 < lo < hi:
+            raise ValueError(
+                f"Leading edge radius bounds must satisfy 0 < lower < upper, "
+                f"got R_LE_lim={self.R_LE_lim}."
+            )
+
+        # A relative slack, because a nose clamped in shape space comes back
+        # through a square root and need not land on the bound to the last bit.
+        if not lo * (1.0 - 1e-9) <= self.R_LE <= hi * (1.0 + 1e-9):
+            raise ValueError(
+                f"Leading edge radius R_LE={self.R_LE} is outside its bounds "
+                f"R_LE_lim={self.R_LE_lim}."
+            )
+
+    @classmethod
+    def bounded_fields(cls, fields):
+        """Return constructor `fields` with the nose radius clamped to its bounds.
+
+        For :func:`turbigen.blade._interpolate`, which builds a section from
+        fields blended between others and has no section to clamp until it is
+        built --- by which time a blended radius below zero has already been
+        refused. On the field rather than on the shape-space coefficient, which
+        leaves the interior perturbations as blended and moves only the
+        straight line under them, so the surfaces away from the nose barely
+        notice.
+        """
+        lo, hi = fields.get("R_LE_lim", cls.R_LE_lim)
+        R_LE = float(fields["R_LE"])
+        return fields | {"R_LE": min(max(R_LE, lo), hi)}
 
     @property
     def order(self):
@@ -498,3 +565,6 @@ class ClarkThickness(ThicknessDesign):
         if np.isscalar(m):
             return tuple(float(side.item()) for side in t)
         return t
+
+    def ramp_TE(self, m):
+        return shapespace.ramp_TE(m, self.t_TE)

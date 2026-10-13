@@ -33,6 +33,11 @@ Test cases:
 - test_an_impossible_box_fails_loudly: rather than spinning
 - test_an_infeasible_grid_point_is_skipped_and_warned: you named it, so it is news
 - test_an_impossible_grid_fails_loudly
+- test_tied_paths_take_one_value: a comma-joined key writes every leaf it names
+- test_a_tie_is_one_dimension: the other variables draw as they did untied
+- test_a_tied_grid_takes_one_value
+- test_an_unknown_tied_path_is_refused: each member is checked, not the key
+- test_a_leaf_in_two_keys_is_refused: it cannot follow both
 - test_an_unknown_path_is_refused: before a batch of broken configs is written
 - test_an_unknown_grid_path_is_refused
 - test_an_integer_bound_is_refused: rounding makes duplicate designs
@@ -43,6 +48,14 @@ Test cases:
 - test_a_non_number_value_is_refused
 - test_bounds_and_values_together_are_refused: one way or the other
 - test_a_batch_that_varies_nothing_is_refused
+- test_fill_avoids_the_region_already_run: only the gap is drawn from
+- test_fill_keeps_the_sequence_index: a drawn point is the sequence's point
+- test_fill_with_nothing_taken_is_the_sequence: nothing is covered
+- test_fill_with_one_run_is_the_sequence: one run has no spacing
+- test_fill_skips_points_that_do_not_design: and still returns n
+- test_fill_needs_bounds_not_values
+- test_taken_points_reads_members_back: in paths order, from the configs
+- test_taken_points_reads_a_tie_from_its_first_leaf
 - test_member_names_are_the_sequence_index
 - test_next_index_carries_on_from_the_highest
 - test_next_index_of_nothing_is_the_start
@@ -50,6 +63,7 @@ Test cases:
 
 import dataclasses
 
+import numpy as np
 import pytest
 from test_blade import build
 
@@ -213,6 +227,97 @@ def test_edges_below_two_is_refused():
 
 
 #
+# FILLING THE GAPS
+#
+
+
+def test_fill_avoids_the_region_already_run():
+    """Runs over the low half of psi, so every point lands in the high half.
+
+    A square grid in the unit box, so its spacing covers the holes between
+    its own points and only the half it leaves empty is open.
+    """
+    (plo, phi), (flo, fhi) = BOX["mean_line.psi"], BOX["mean_line.phi2"]
+    mid = 0.5 * (plo + phi)
+    taken = [
+        (phi2, psi)  # paths() sorts phi2 before psi
+        for psi in np.linspace(plo, mid, 5)
+        for phi2 in np.linspace(flo, fhi, 9)
+    ]
+
+    pairs = batch.generate(make(BOX), 4, taken=np.array(taken))
+
+    assert len(pairs) == 4
+    assert all(psi > mid for psi in values_of(pairs))
+
+
+def test_fill_keeps_the_sequence_index():
+    """A picked point is the point the plain sequence has at that index."""
+    pairs = batch.generate(make(BOX), 4, start=3, taken=np.zeros((0, 2)))
+
+    for index, config in pairs:
+        assert index >= 3
+        (same,) = batch.generate(make(BOX), 1, start=index)
+        assert values_of([same]) == values_of([(index, config)])
+
+
+def test_fill_with_nothing_taken_is_the_sequence():
+    filled = batch.generate(make(BOX), 8, start=2, taken=np.zeros((0, 2)))
+    drawn = batch.generate(make(BOX), 8, start=2)
+
+    assert [i for i, _ in filled] == [i for i, _ in drawn]
+    assert _points(filled) == _points(drawn)
+
+
+def test_fill_with_one_run_is_the_sequence():
+    filled = batch.generate(make(BOX), 4, taken=np.array([[0.75, 1.6]]))
+
+    assert _points(filled) == _points(batch.generate(make(BOX), 4))
+
+
+def test_fill_skips_points_that_do_not_design():
+    pairs = batch.generate(make(WIDE), 4, taken=np.zeros((0, 1)))
+
+    assert len(pairs) == 4
+    for _, config in pairs:
+        config.design()
+
+
+def test_fill_needs_bounds_not_values():
+    with pytest.raises(ValueError, match="names its points with values:"):
+        batch.generate(make(values=GRID), 4, taken=np.zeros((0, 1)))
+
+
+def test_taken_points_reads_members_back(tmp_path):
+    config = make(BOX)
+    pairs = batch.generate(config, 4)
+    for index, member in pairs:
+        path = tmp_path / "batch_0000" / batch.member_name(index)
+        path.parent.mkdir(parents=True)
+        member.to_file(path)
+    (tmp_path / "batch_0000" / "log_turbigen.txt").write_text("")
+
+    taken = batch.taken_points([tmp_path / "batch_0000"], config.batch)
+
+    assert taken.shape == (4, 2)
+    assert taken[:, 1].tolist() == values_of(pairs)
+
+
+def test_taken_points_reads_a_tie_from_its_first_leaf(tmp_path):
+    tie = "mean_line.psi, mean_line.phi2"
+    config = make({tie: [0.7, 0.8]})
+    pairs = batch.generate(config, 2)
+    for index, member in pairs:
+        path = tmp_path / batch.member_name(index)
+        path.parent.mkdir(parents=True)
+        member.to_file(path)
+
+    taken = batch.taken_points([tmp_path], config.batch)
+
+    assert taken[:, 0].tolist() == values_of(pairs)
+
+
+#
 # THE GRID
 #
 
@@ -341,6 +446,51 @@ def test_an_infeasible_grid_point_is_skipped_and_warned(caplog):
 def test_an_impossible_grid_fails_loudly():
     with pytest.raises(ValueError, match="None of the"):
         batch.generate(make(values={"mean_line.Ma2": [25.0, 50.0]}))
+
+
+#
+# TIED PATHS
+#
+
+TIED = "mean_line.Ys[0],mean_line.Ys[1]"
+"""Two leaves varied as one, as the sections of a row are."""
+
+
+def test_tied_paths_take_one_value():
+    pairs = batch.generate(make({**BOX, TIED: [0.03, 0.07]}), 8)
+
+    first = values_of(pairs, "mean_line.Ys[0]")
+    assert first == values_of(pairs, "mean_line.Ys[1]")
+    assert len(set(first)) == 8
+    assert all(0.03 <= value <= 0.07 for value in first)
+
+
+def test_a_tie_is_one_dimension():
+    """Tying adds one column to the box, however many leaves it names."""
+    tied = batch.generate(make({**BOX, TIED: [0.03, 0.07]}), 8)
+    alone = batch.generate(make({**BOX, "mean_line.Ys[0]": [0.03, 0.07]}), 8)
+
+    for path in [*BOX, "mean_line.Ys[0]"]:
+        assert values_of(tied, path) == values_of(alone, path)
+
+
+def test_a_tied_grid_takes_one_value():
+    pairs = batch.generate(make(values={TIED: [0.03, 0.07]}))
+
+    assert values_of(pairs, "mean_line.Ys[0]") == [0.03, 0.07]
+    assert values_of(pairs, "mean_line.Ys[1]") == [0.03, 0.07]
+
+
+def test_an_unknown_tied_path_is_refused():
+    with pytest.raises(ValueError, match="'mean_line.Ys\\[2\\]' is not a leaf"):
+        batch.generate(make({"mean_line.Ys[0],mean_line.Ys[2]": [0.03, 0.07]}), 4)
+
+
+def test_a_leaf_in_two_keys_is_refused():
+    bounds = {TIED: [0.03, 0.07], "mean_line.Ys[1]": [0.03, 0.07]}
+
+    with pytest.raises(ValueError, match="more than one key"):
+        batch.generate(make(bounds), 4)
 
 
 #

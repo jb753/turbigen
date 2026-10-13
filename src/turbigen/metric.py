@@ -268,7 +268,7 @@ def _within_the_machine(cut, planes):
 
 
 class DiffusionFactor(Metric):
-    r"""Peak-to-exit diffusion over the blade surfaces of each row.
+    r"""Peak-to-exit diffusion and circulation of each row.
 
     The isentropic surface Mach number is a distribution, and the amount it
     falls from its peak back to the trailing edge is what the boundary layer on
@@ -277,28 +277,27 @@ class DiffusionFactor(Metric):
     .. math::
         \mathit{DF} = \frac{\mathit{Ma}_{s,\mathrm{max}}}{\mathit{Ma}_{s,\mathrm{TE}}} - 1
 
-    where the trailing-edge value is the mean of the two sides of the cut, the
-    surface being wrapped from one of them round to the other. Where the peak
-    sits is reported with it: the same diffusion late on the surface is harder
-    on the boundary layer than early, so the factor alone does not say what
-    the blade is doing.
+    where the peak is the largest value on the suction surface and the
+    trailing-edge value is the mean of the two sides of the cut. Where the peak
+    sits is reported with it, and the circulation coefficient the blade drew
+    beside both.
+
+    **Read directly, nothing fitted.** The peak is the maximum of the data and
+    `zeta_peak` the surface fraction of that node, so they exist for every
+    blade that has a surface --- including one that accelerates all the way to
+    its trailing edge, where `DF` can sit slightly below zero because the
+    suction side reads under the mean of the two --- and `Co` is the integral
+    round the whole cut.
+
+    **The numbers** :class:`~turbigen.iterate.ClarkProfile` **steers.** Every
+    one comes from :func:`turbigen.loading.surfaces`, so `zeta_peak` is Clark's
+    ``z = l / L_surf`` from the geometric leading edge, `DF + 1` is its
+    `Ma_peak`, and `Co` is the circulation it drives the blade count with. A
+    metric and an iterator that disagreed would let a design be driven onto a
+    target the report then contradicts.
 
     The isentropic Mach number is referred to the entropy entering *that row*,
-    the same reference :class:`~turbigen.post.SurfacePlot` draws it against, so
-    what this measures is the number that plot shows.
-
-    Every number here comes from :func:`turbigen.loading.measure`, which is
-    also what :class:`~turbigen.iterate.LoadingDistribution` and
-    :class:`~turbigen.iterate.PeakMach` correct against. That sharing is the
-    point: a metric and an iterator that disagreed about where the peak was
-    would let a design be driven onto a target the report then contradicts.
-
-    The peak is fitted rather than taken as a maximum of the data --- two
-    straight lines meeting at a breakpoint, so it uses every point in the
-    window and slides where an argmax steps between nodes. That makes `DF`
-    a little different from a peak read straight off the curve, by around
-    three per cent on the case it was checked against, and much steadier on the
-    flat-topped distributions that are a design style rather than a pathology.
+    the same reference :class:`~turbigen.post.SurfacePlot` draws it against.
     """
 
     type: ClassVar[str] = "diffusion_factor"
@@ -306,36 +305,15 @@ class DiffusionFactor(Metric):
     spf: tuple[float, ...] = (0.5,)
     """Span fractions to measure the surface distribution at [--]."""
 
-    offset: int = 0
-    """Cells away from the wall to take the distribution at."""
-
-    zeta_front: float = 0.2
-    """Front anchor of the window fitted [--].
-
-    Matches the default the iterators carry, so a config that shapes a blade
-    and a config that only measures one describe the same curve.
-    """
-
-    zeta_TE: float = 0.98
-    """Far end of the window fitted [--]."""
-
     def evaluate(self, config, result):
         """Return the diffusion of each row, at each span fraction.
 
         Returns
         -------
         dict
-            ``DF``, ``Mas_peak``, ``Mas_TE``, ``zeta_peak``, ``fac_front`` and
-            ``fac_peak`` [--], each shaped ``(n_spf, n_row)``. The two Mach
-            numbers are the parts `DF` is made of, so a change in it says
-            whether the peak grew or the exit fell; `fac_peak` is the same
-            ratio written as ``DF + 1``, which is the form the iterators take a
-            target in. `zeta_peak` is where the peak sits and `fac_front` how
-            hard the leading edge accelerates --- the same two numbers
-            :class:`~turbigen.iterate.LoadingDistribution` shapes a blade to.
-            NaN for a row and span with nothing to measure: above a clearance
-            gap, a row with no blade, or a distribution with no peak in the
-            window.
+            ``DF``, ``zeta_peak`` and ``Co`` [--], each shaped
+            ``(n_spf, n_row)``. NaN for a row and span with nothing to measure:
+            above a clearance gap, or a row with no blade.
         """
         del config
 
@@ -345,23 +323,11 @@ class DiffusionFactor(Metric):
             return {}
 
         shape = (len(self.spf), len(result.grid.rows))
-        out = {
-            name: np.full(shape, np.nan)
-            for name in (
-                "Mas_max",
-                "Mas_TE",
-                "zeta_max",
-                "zeta_peak",
-                "fac_front",
-                "fac_peak",
-            )
-        }
+        out = {name: np.full(shape, np.nan) for name in ("DF", "zeta_peak", "Co")}
 
         for i_row in range(shape[1]):
             for i_spf, spf in enumerate(self.spf):
-                measured = turbigen.loading.measure(
-                    result, i_row, spf, self.zeta_front, self.zeta_TE
-                )
+                measured = turbigen.loading.surfaces(result, i_row, spf)
                 if measured is None:
                     logger.debug(
                         f"Row {i_row} has no loading to measure at "
@@ -369,19 +335,256 @@ class DiffusionFactor(Metric):
                     )
                     continue
 
-                out["Mas_max"][i_spf, i_row] = measured.ma_max
-                out["Mas_TE"][i_spf, i_row] = measured.ma_TE
-                out["zeta_max"][i_spf, i_row] = measured.zeta_max
-                out["zeta_peak"][i_spf, i_row] = measured.zeta_peak
-                out["fac_front"][i_spf, i_row] = measured.fac_front
-                out["fac_peak"][i_spf, i_row] = measured.fac_peak
+                i_peak = int(np.argmax(measured.ma[0]))
+                # In double precision: the cut is single, and a float32 scalar
+                # over a Python float stays float32
+                out["DF"][i_spf, i_row] = (
+                    float(measured.ma[0][i_peak]) / measured.ma_TE - 1.0
+                )
+                out["zeta_peak"][i_spf, i_row] = measured.z[0][i_peak]
+                out["Co"][i_spf, i_row] = measured.Co
 
-        # From the maximum rather than from the fit, so that every blade gets a
-        # diffusion factor: one that accelerates to its trailing edge has no
-        # interior peak to fit, and it is still diffusing nothing, which is a
-        # measurement rather than a failure.
-        with np.errstate(divide="ignore", invalid="ignore"):
-            out["DF"] = np.where(
-                out["Mas_TE"] > 0.0, out["Mas_max"] / out["Mas_TE"] - 1.0, np.nan
-            )
         return out
+
+
+class LossBreakdown(Metric):
+    r"""Profile and secondary entropy loss of each row.
+
+    The profile loss is what the stream surface carrying the central `band` of
+    the mass flow generates, clear of the endwalls. The band is found by mass
+    fraction at the row's inlet and exit planes, not traced, and mixed out at
+    each. The secondary loss is the rest,
+
+    .. math::
+        \Delta s_\mathrm{sec} = \Delta s_\mathrm{total}
+            - \left[s_\mathrm{mix}(\text{exit band})
+            - s_\mathrm{mix}(\text{inlet band})\right] \,,
+
+    where :math:`\Delta s_\mathrm{total}`, from
+    :attr:`~turbigen.result.Result.actual`, is mixed out on the same planes,
+    so mixing is counted in both terms alike.
+
+    **Two normalisations.** A loss coefficient is referred to the row,
+    :math:`Y = T_\mathrm{out}\,\Delta s / \tfrac{1}{2}V_\mathrm{rel}^2`, with
+    the row exit static temperature and the relative dynamic head at its
+    characteristic station, as the spanwise plot draws :math:`Y_s`. A lost
+    efficiency is referred to the machine, after Denton (1993),
+    :math:`\Delta\eta = T_\mathrm{exit}\,\Delta s / |\Delta h_0|`, with the
+    machine exit static temperature and work, so lost efficiencies compare
+    across rows and add. Their sum falls a little short of the machine's own,
+    because the gaps between rows belong to none of them.
+    """
+
+    type: ClassVar[str] = "loss_breakdown"
+
+    band: float = 0.1
+    """Fraction of the mass flow in the central stream surface [--]."""
+
+    def evaluate(self, config, result):
+        """Return the profile and secondary loss of each row.
+
+        Returns
+        -------
+        dict
+            ``Ys_mid``, ``Ys_sec``, ``Deta_mid`` and ``Deta_sec`` [--], each
+            shaped ``(n_row,)``. NaN for a row whose planes cannot be cut or
+            whose band cannot be mixed out, and the lost efficiencies are NaN
+            throughout on a machine with no rotating row, which does no work.
+        """
+        del config
+
+        grid, machine, actual = result.grid, result.machine, result.actual
+        if grid is None or machine is None or actual is None:
+            return {}
+        if result.history is not None and getattr(result.history, "diverged", False):
+            return {}
+
+        planes = machine.annulus.cut_planes()
+        lo, hi = 0.5 - 0.5 * self.band, 0.5 + 0.5 * self.band
+
+        n_row = len(grid.rows)
+        Ds_mid = np.full(n_row, np.nan)
+        for i_row in range(n_row):
+            try:
+                s_in, s_out = (
+                    _band_entropy(grid, planes[2 * i_row + i], lo, hi) for i in (0, 1)
+                )
+            except (ValueError, RuntimeError, AssertionError) as err:
+                logger.debug(f"Row {i_row} has no band loss to measure: {err}")
+                continue
+            Ds_mid[i_row] = s_out - s_in
+
+        Ds_total = np.asarray(actual.s[1] - actual.s[0], dtype=float)
+        Ds_sec = Ds_total - Ds_mid
+
+        # One dynamic head per row, for the row's own loss coefficient.
+        Y_per_Ds = np.array(
+            [
+                float(actual[:, i_row].T[-1])
+                / float(actual.get_characteristic_station(i_row).halfVsq_rel)
+                for i_row in range(n_row)
+            ]
+        )
+
+        # One work for the whole machine, so every row's lost efficiency is in
+        # the same currency. A machine that does not rotate does no work, and
+        # its enthalpy change is round-off that must not be divided by.
+        if all(float(blocks[0].Omega) == 0.0 for blocks in grid.rows):
+            eta_per_Ds = np.nan
+        else:
+            eta_per_Ds = float(actual.outlet.T) / abs(float(actual.Dho))
+
+        return {
+            "Ys_mid": Y_per_Ds * Ds_mid,
+            "Ys_sec": Y_per_Ds * Ds_sec,
+            "Deta_mid": eta_per_Ds * Ds_mid,
+            "Deta_sec": eta_per_Ds * Ds_sec,
+        }
+
+
+def _band_entropy(grid, xr, lo, hi):
+    """Return the mixed-out entropy of the band `lo..hi` of mass on a plane."""
+    cut = turbigen.util.cut_structured(grid, xr)
+    if cut is None:
+        raise ValueError(f"The plane at {np.asarray(xr).tolist()} misses the grid.")
+    band = ember.average.mass_band(cut, lo, hi, axis=0)
+    return float(ember.average.mix_out(band).s)
+
+
+class LossBudget(Metric):
+    r"""Where the machine's lost efficiency comes from, adding up to
+    :math:`1 - \eta_\mathrm{tt}`.
+
+    The mean line behind :math:`\eta_\mathrm{tt}` mass averages along the
+    machine and mixes out only at its ends, so its entropy rise is exactly
+
+    .. math::
+        \Delta s = \sum_\mathrm{rows} \sum_b \frac{\dot{m}_b}{\dot{m}}
+            \Delta\bar{s}_b
+            + \sum_\mathrm{gaps} \Delta\bar{s}
+            + \Delta s_\mathrm{mix}(\text{exit})
+            - \Delta s_\mathrm{mix}(\text{inlet}) \,,
+
+    with no mixing between rows, and these terms:
+
+    - **Bands of each row:** each row's planes split by mass fraction into
+      `fraction` of the flow at the hub, the same at the casing, and the main
+      flow between; :math:`\Delta\bar{s}_b` is a band's mass-averaged rise.
+    - **Gaps:** the mass-averaged rise from one row's exit plane to the next
+      row's inlet, including what a mixing plane generates.
+    - **Mixing at the ends**, from :attr:`~turbigen.result.Result.Ds_mix`,
+      charged at the machine's exit and credited at its inlet.
+
+    **One currency.** Every term is multiplied by the run's
+    :math:`(1 - \eta_\mathrm{tt}) / \Delta s`, so the terms are lost
+    efficiencies adding up to :math:`1 - \eta_\mathrm{tt}`, to a few parts in
+    ten thousand from `mass_band`'s interpolation. The middle band is
+    ``main``, as :class:`LossBreakdown` already writes ``mid``.
+
+    **The bands are matched by mass fraction, not traced**, so a band's loss
+    is the entropy that leaves in it, not the entropy generated in it.
+    """
+
+    type: ClassVar[str] = "loss_budget"
+
+    fraction: float = 0.2
+    """Fraction of the mass flow in each of the hub and tip bands [--]."""
+
+    def __post_init__(self):
+        if not 0.0 < self.fraction < 0.5:
+            raise ValueError(
+                f"{self.type}.fraction is the mass in each endwall band, leaving "
+                f"the rest between them, so it must satisfy 0 < fraction < 0.5, "
+                f"got {self.fraction}."
+            )
+
+    def evaluate(self, config, result):
+        """Return the lost efficiency of each term of the budget.
+
+        Returns
+        -------
+        dict
+            ``Deta_hub``, ``Deta_main`` and ``Deta_tip``, each ``(n_row,)``;
+            ``Deta_gap``, ``(n_row - 1,)``; ``Deta_mix_out`` and
+            ``Deta_mix_in``, scalars, the second a credit. All [--], with
+
+            ``1 - eta_tt = sum(hub + main + tip) + sum(gap) + mix_out - mix_in``.
+
+            NaN for a term whose planes cannot be cut, and NaN throughout on a
+            machine with no rotating row, which has no efficiency.
+        """
+        del config
+
+        grid, machine, actual = result.grid, result.machine, result.actual
+        if grid is None or machine is None or actual is None or result.Ds_mix is None:
+            return {}
+        if result.history is not None and getattr(result.history, "diverged", False):
+            return {}
+
+        f = self.fraction
+        bands = {"hub": (0.0, f), "main": (f, 1.0 - f), "tip": (1.0 - f, 1.0)}
+
+        n_row = len(grid.rows)
+        Deta = {name: np.full(n_row, np.nan) for name in bands}
+        Deta["gap"] = np.full(n_row - 1, np.nan)
+        Deta["mix_out"] = np.nan
+        Deta["mix_in"] = np.nan
+        keys = {name: f"Deta_{name}" for name in Deta}
+
+        # Without a rotating row there is no work, so no efficiency to lose.
+        if all(float(blocks[0].Omega) == 0.0 for blocks in grid.rows):
+            return {keys[name]: value for name, value in Deta.items()}
+
+        Ds = float(actual.outlet.s) - float(actual.inlet.s)
+        per_Ds = (1.0 - float(actual.eta_tt)) / Ds
+        Ds_mix = np.asarray(result.Ds_mix, dtype=float)
+        Deta["mix_out"] = per_Ds * float(Ds_mix[1, -1])
+        Deta["mix_in"] = per_Ds * float(Ds_mix[0, 0])
+
+        # Mass-averaged entropy of each band, and of the whole plane, at every
+        # plane in streamwise order: row i's inlet is 2 i, its exit 2 i + 1.
+        planes = machine.annulus.cut_planes()
+        s_bar = []
+        for i_plane, xr in enumerate(planes):
+            try:
+                s_bar.append(_band_entropies(grid, xr, [*bands.values(), (0.0, 1.0)]))
+            except (ValueError, RuntimeError, AssertionError) as err:
+                logger.debug(f"Plane {i_plane} has no entropy to average: {err}")
+                s_bar.append(None)
+
+        for i_row in range(n_row):
+            s_in, s_out = s_bar[2 * i_row], s_bar[2 * i_row + 1]
+            if s_in is None or s_out is None:
+                continue
+            for (name, (lo, hi)), a, b in zip(bands.items(), s_in, s_out):
+                Deta[name][i_row] = (hi - lo) * per_Ds * (b - a)
+
+        for i_gap in range(n_row - 1):
+            s_in, s_out = s_bar[2 * i_gap + 1], s_bar[2 * i_gap + 2]
+            if s_in is None or s_out is None:
+                continue
+            Deta["gap"][i_gap] = per_Ds * (s_out[-1] - s_in[-1])
+
+        return {keys[name]: value for name, value in Deta.items()}
+
+
+class LossSpan(LossBudget):
+    """The name :class:`LossBudget` was first written to case files under.
+
+    Kept so that those files still read, their runs being in the database; a
+    new config should say ``loss_budget``.
+    """
+
+    type: ClassVar[str] = "loss_span"
+
+
+def _band_entropies(grid, xr, bands):
+    """Return the mass-averaged entropy of each band ``(lo, hi)`` of a plane."""
+    cut = turbigen.util.cut_structured(grid, xr)
+    if cut is None:
+        raise ValueError(f"The plane at {np.asarray(xr).tolist()} misses the grid.")
+    s = []
+    for lo, hi in bands:
+        band = ember.average.mass_band(cut, lo, hi, axis=0)
+        s.append(float(ember.average.mass_average(band.s, band)))
+    return s

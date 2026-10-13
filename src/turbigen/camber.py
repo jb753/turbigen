@@ -195,57 +195,34 @@ class CircularArc(CamberDesign):
 class ClarkCamber(CamberDesign):
     """Power-law camber line after :cite:`Clark2019`.
 
-    The camber line of the paper whose thickness distribution is
-    :class:`~turbigen.thickness.ClarkThickness`, written in the slope the
-    protocol here asks for. Clark states the camber itself,
+    The camber line paired with :class:`~turbigen.thickness.ClarkThickness`.
+    Clark states the camber itself,
 
     ``zeta = a m^n + b (1 - m)^n``, with ``a = tanchi_TE / n`` and
     ``b = -tanchi_LE / n``,
 
-    whose slope is ``tanchi_TE m^(n-1) + tanchi_LE (1 - m)^(n-1)`` --- the two
-    end tangents, each faded out along the chord by the same power. The ends
-    are then exact for any :attr:`exponent` above one, and the rise of the
-    line is ``(tanchi_LE + tanchi_TE) / n``, so that the stagger angle falls
-    out of the exponent rather than the other way about.
+    whose slope is ``tanchi_TE m^(n-1) + tanchi_LE (1 - m)^(n-1)``: the two end
+    tangents, each faded along the chord by the same power. The end angles are
+    exact for any :attr:`exponent` above one, and the stagger follows from the
+    exponent.
 
-    **Clark asks for the stagger and solves for the exponent; this asks for
-    the exponent.** Both say the same curve, and stagger is the more physical
-    of the two --- a designer has a view on it, and it is what the paper's
-    optimiser and its network actually output. But the staggers a camber line
-    can reach are an open interval its end angles fix, and taking the stagger
-    as the parameter would put those angles into the meaning of the parameter:
-    the same configured number would be a different curve at hub and at
-    casing, a shape could refuse angles it is handed, a
-    :class:`~turbigen.iterate.Deviation` moving ``dchi_TE`` could walk it into
-    that refusal, and there would be no value to default to. The exponent has
-    none of that, and it is the parameter the other shapes here are written
-    like: a normalised curve, the same whatever the ends are. Ask
-    :meth:`stagger` for the angle it lands on.
+    **The exponent is the parameter, not the stagger.** Clark specifies
+    stagger, but the reachable staggers depend on the end angles, so the same
+    number would mean different curves at hub and casing and could become
+    unreachable as an iterator moves the angles. The exponent is a normalised
+    shape independent of the ends. :meth:`stagger` reports the resulting angle.
 
-    An exponent of two gives ``tanchi_LE + m (tanchi_TE - tanchi_LE)``, exactly
-    :class:`Quadratic` with zero aft loading, at the stagger of the mean of the
-    end tangents that :class:`~turbigen.blade.DiffusionFactor` already assumes
-    when it resolves a true chord. The converged designs of the paper sit
-    between about 1.9 and 3.2, read off its Fig. 11.
+    An exponent of two is :class:`Quadratic` with zero aft loading. The
+    paper's converged designs have exponents of about 1.9 to 3.2.
 
-    **The exponent flattens the middle rather than shifting the loading aft.**
-    Both faded tangents carry the same factor ``0.5^(n-1)`` at mid-chord, so
-    raising the exponent drives the camber angle there towards axial and packs
-    the turning into the two ends. On a turbine that reads as aft loading, but
-    only because the leading edge is the end already near axial: between metal
-    angles of 20 and -70 degrees, 78% of the turning is done by mid-chord at an
-    exponent of two and 41% of it at four. Turn a section the other way about,
-    so the leading edge is the more turned end, and the same change front-loads
-    it; on a section symmetric about axial it changes no fore-and-aft balance
-    at all, only how tightly the turning bunches in the middle.
+    **The exponent concentrates turning at the ends.** Raising it pushes the
+    mid-chord camber angle towards axial. On a typical turbine section, where
+    the leading edge is near axial, this looks like aft loading; on a section
+    turned the other way it front-loads instead.
 
-    **Above two, end tangents of the same sign give an inflected camber line.**
-    The slope has an interior stationary point for any ``n > 2``, and where the
-    ends turn the same way that point lies outside both of them --- the camber
-    angle turns past its exit angle and comes back, an S in the annulus. A
-    section that turns through axial has a monotonic slope at any exponent,
-    which is every section in the paper; compressors it claims only as an
-    extension.
+    **Above two, end tangents of the same sign inflect the camber line**, so
+    the angle overshoots the exit angle and comes back. A section that turns
+    through axial is monotonic at any exponent.
     """
 
     type: ClassVar[str] = "clark"

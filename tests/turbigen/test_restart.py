@@ -29,7 +29,7 @@ import numpy as np
 import pytest
 from test_mixout import CASCADE
 
-from turbigen import cli, restart
+from turbigen import pipeline, restart
 from turbigen.config import Config
 
 
@@ -37,7 +37,7 @@ from turbigen.config import Config
 def solved(tmp_path_factory):
     """A short march, and the field it reached written to a file."""
     config = Config.from_dict(CASCADE)
-    _, _machine, grid = cli.prepare(config)
+    _, _machine, grid = pipeline.prepare(config)
     config.solver.solve(grid)
 
     path = tmp_path_factory.mktemp("restart") / "restart.npz"
@@ -47,7 +47,7 @@ def solved(tmp_path_factory):
 
 def test_a_saved_field_comes_back_unchanged(solved):
     config, grid, path = solved
-    *_, fresh = cli.prepare(config)
+    *_, fresh = pipeline.prepare(config)
 
     restart.apply(fresh, path)
 
@@ -70,7 +70,7 @@ def test_a_field_can_be_restarted_onto_a_finer_mesh(solved):
     finer = Config.from_dict(
         {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
     )
-    *_, fresh = cli.prepare(finer)
+    *_, fresh = pipeline.prepare(finer)
     assert fresh[0].shape != grid[0].shape
 
     restart.apply(fresh, path)
@@ -89,7 +89,7 @@ def test_a_field_is_not_reinterpreted_by_a_changed_datum(solved):
     that datum; pressure and temperature are not.
     """
     config, grid, path = solved
-    *_, fresh = cli.prepare(config)
+    *_, fresh = pipeline.prepare(config)
 
     shifted = fresh[0].fluid.change_datum(P_dtm=3.0e5, T_dtm=900.0)
     for block in fresh:
@@ -122,7 +122,7 @@ def test_the_file_holds_primitives_only(solved):
 
 def test_a_field_for_another_machine_is_refused(solved, tmp_path):
     config, _grid, path = solved
-    *_, fresh = cli.prepare(config)
+    *_, fresh = pipeline.prepare(config)
 
     # A file claiming two blocks, against a one-block grid.
     data = dict(np.load(path))
@@ -151,7 +151,7 @@ def _finer():
     finer = Config.from_dict(
         {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
     )
-    *_, fresh = cli.prepare(finer)
+    *_, fresh = pipeline.prepare(finer)
     return fresh
 
 
@@ -245,7 +245,7 @@ def test_mismatched_critical_indices_fall_back_to_end_to_end(solved, tmp_path):
 def test_the_critical_indices_are_not_counted_as_blocks(solved):
     """A one-block field with its indices in it is still a one-block field."""
     config, _grid, path = solved
-    *_, fresh = cli.prepare(config)
+    *_, fresh = pipeline.prepare(config)
 
     # Would raise "has 2 block(s)" or more if the index keys were counted.
     restart.apply(fresh, path)
@@ -315,7 +315,7 @@ def test_a_stamped_field_still_restarts_onto_a_changed_design(solved, tmp_path):
     finer = Config.from_dict(
         {**CASCADE, "mesh": {**CASCADE["mesh"], "resolution_factor": 0.4}}
     )
-    *_, fresh = cli.prepare(finer)
+    *_, fresh = pipeline.prepare(finer)
     assert restart.design_stamp(finer) != restart.read_stamp(path)
 
     restart.apply(fresh, path)
@@ -329,7 +329,7 @@ def test_the_stamp_is_not_counted_as_a_block(solved, tmp_path):
     path = tmp_path / "stamped.npz"
     restart.save(path, grid, config)
 
-    *_, fresh = cli.prepare(config)
+    *_, fresh = pipeline.prepare(config)
 
     # Would raise "has 2 block(s)" if the stamp key were counted as one.
     restart.apply(fresh, path)

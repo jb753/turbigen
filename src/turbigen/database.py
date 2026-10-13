@@ -19,8 +19,9 @@ is told rather than guessed: an :class:`~turbigen.iterate.Iterator` declares
 which config leaves it moves, and those are outputs of the iteration rather
 than inputs to it.
 
-The prediction is inverse distance weighting --- see :func:`_predict` for why
-that, and not the polynomial surrogate it replaces.
+The prediction is a linear trend plus inverse distance weighting of what the
+trend misses --- see :func:`_predict` for why that, and not the polynomial
+surrogate it replaces.
 """
 
 import logging
@@ -45,6 +46,10 @@ SUBTREE = ("fluid", "mean_line", "annulus", "blades")
 The design, and nothing about how it was executed. Without this a machine run
 at a finer mesh or for more steps would count as a different design, and
 `solver.n_step` would become an axis of the space.
+
+Besides these, an iterator's declared :attr:`~turbigen.iterate.Iterator.targets`
+are design variables: a Clark profile aimed at a higher peak Mach number is a
+different blade. The rest of `iterate` is how the answer was reached.
 """
 
 EPS = 1e-9
@@ -85,8 +90,9 @@ class Database(Node):
     onto it can carry flow the guess would not: reversed endwall flow at a
     mixing plane, which diverges a soft start the guess survives.
 
-    Only the field. The knobs are still blended by :func:`warm_start`, which
-    cannot leave the hull and so stays safe at any distance.
+    Only the field. The knobs are still predicted by :func:`warm_start`,
+    whose clip to the range the samples span keeps it meshable at any
+    distance.
     """
 
     variables: tuple[str, ...] = ()
@@ -144,15 +150,20 @@ class Database(Node):
         """Return the design variables to measure distance in, sorted.
 
         Every leaf of the design that the samples differ in, less the ones an
-        iterator owns. A leaf they all agree on says nothing about which sample
-        is nearest, and would divide by a zero range on the way to saying it.
+        iterator owns, plus the iterators' targets. A leaf they all agree on
+        says nothing about which sample is nearest, and would divide by a zero
+        range on the way to saying it.
         """
         if self.variables:
             return tuple(self.variables)
 
         owned = set()
-        for iterator in config.iterate.correct:
+        targets = set()
+        for i_iterator, iterator in enumerate(config.iterate.correct):
             owned |= set(iterator.paths(config))
+            targets |= {
+                f"iterate.correct[{i_iterator}].{name}" for name in iterator.targets
+            }
 
         flat = [node.flatten(sample) for sample in samples]
 
@@ -164,7 +175,7 @@ class Database(Node):
 
         varying = set()
         for path in shared - owned:
-            if _root(path) not in SUBTREE:
+            if _root(path) not in SUBTREE and path not in targets:
                 continue
             values = [leaves[path] for leaves in flat]
             if not all(_is_number(value) for value in values):
@@ -221,13 +232,12 @@ def warm_start(config, anchor, exclude=(), samples=None):
     # the mean of what they converged to is the right answer -- which is the
     # same path a lone sample takes to being copied.
     variables = config.database.candidates(config, samples)
-    flat = [node.flatten(sample) for sample in samples]
 
-    X = np.array([[leaves[path] for path in variables] for leaves in flat], float)
+    X = gather(samples, variables)
     U = np.array(
         [[iterate.unknowns(s)[name] for name in names] for s in samples], float
     )
-    xq = np.array([node.flatten(config)[path] for path in variables], float)
+    xq = gather([config], variables)[0]
 
     lo, span = _scale(X)
     predicted = dict(
@@ -280,13 +290,15 @@ def nearest_field(config, samples):
     if config.database is None or not samples:
         return None
 
+    # The query is counted among what varies, unlike for the blend. A lone
+    # sample varies in nothing, so measured over the samples alone every query
+    # would sit on top of it and be seeded however far away it is.
     configs = [sample for _, sample, _ in samples]
-    variables = config.database.candidates(config, configs)
-    flat = [node.flatten(sample) for sample in configs]
+    variables = config.database.candidates(config, [*configs, config])
 
-    X = np.array([[leaves[path] for path in variables] for leaves in flat], float)
-    xq = np.array([node.flatten(config)[path] for path in variables], float)
-    lo, span = _scale(X)
+    X = gather(configs, variables)
+    xq = gather([config], variables)[0]
+    lo, span = _seed_scale(X, xq)
     distance = np.linalg.norm((X - lo) / span - (xq - lo) / span, axis=1)
 
     for idx in np.argsort(distance):
@@ -311,6 +323,18 @@ def nearest_field(config, samples):
             return field
 
     return None
+
+
+def gather(configs, paths):
+    """Return the leaves at `paths` of each config, as rows of an array.
+
+    How a set of samples becomes the matrix a blend or a fit is made over, one
+    row per config and one column per path. Shared by the warm start and by
+    :mod:`~turbigen.surrogate`, so that a design variable is read off a sample
+    the same way whichever of them is reading it.
+    """
+    flat = [node.flatten(config) for config in configs]
+    return np.array([[leaves[path] for path in paths] for leaves in flat], float)
 
 
 def _profile_identity(config):
@@ -390,23 +414,54 @@ def _scale(X):
     return lo, span
 
 
+def _seed_scale(X, xq):
+    """Return the offset and divisor for measuring a field seed's distance.
+
+    The samples' range where they have one, as :func:`_scale`, so that a
+    distance means the same thing as the sweep fills in. A column every sample
+    agrees on has none, and there the query's own offset stands in: any
+    difference from the samples along it is then a whole unit, past any
+    sensible `max_distance`, rather than nothing. Only a column the query
+    agrees on too is left at one, where the distance along it is zero anyway.
+    """
+    lo = X.min(axis=0)
+    span = X.max(axis=0) - lo
+    agree = span == 0.0
+    span[agree] = np.abs(xq - lo)[agree]
+    span[span == 0.0] = 1.0
+    return lo, span
+
+
 def _predict(xq, X, U, power):
-    """Return the inverse-distance-weighted blend of `U` at `xq`.
+    """Return the prediction of `U` at `xq`: a plane, and IDW of its misses.
 
-    Chosen over the polynomial surrogate this replaces because the sample count
-    is the binding constraint. A total-order cubic in eight design variables is
-    165 terms against perhaps fifteen finished runs, which is why the old fit
-    needed an adaptive order, a degrees-of-freedom fraction and a train/test
-    split to stop it overfitting, and why it could still return an unmeshable
-    blade outside the sample hull.
+    Chosen over a polynomial fit because the sample count is the binding
+    constraint: a total-order cubic in eight variables is 165 terms against
+    perhaps fifteen finished runs.
 
-    This has nothing to choose and nothing to condition. It also *cannot* leave
-    the hull: the result is a convex combination of values that converged, so
-    no clip is needed to keep a warm start meshable. The price is that it
-    carries no trend --- its gradient is zero at every sample, and far from all
-    of them it decays to their mean --- so it interpolates between designs
-    already run rather than extrapolating beyond them. For a starting point
-    that Broyden then refines, bounded beats accurate.
+    Inverse distance weighting alone has nothing to choose, but carries no
+    trend: its gradient is zero at every sample, and in six or eight
+    dimensions the weights are so even that it decays towards the mean of the
+    samples almost everywhere. Leaving each of 80 runs of a Sobol sweep out
+    and predicting it from the rest, IDW at power 2 was barely better than the
+    mean, and more samples did not help. Most knobs follow a stage loading or
+    flow coefficient smoothly, which a plane captures and a weighted average
+    cannot.
+
+    So a plane is fitted by least squares, one per knob, and IDW blends its
+    residuals. The plane carries the trend; the residuals restore what it
+    misses near the samples, and make a design already run come back exactly.
+    On the same test this halved the error, and adding a quadratic term
+    bought little more.
+
+    The plane extrapolates, so each knob is clipped to the range the samples
+    span. That is weaker than the convex combination IDW alone returns ---
+    every knob is one some converged design used, but not necessarily in that
+    combination --- and cost nothing in accuracy on the test above.
+
+    With no more samples than a plane has coefficients there is nothing to fit
+    a trend *to*: the plane would pass through every sample, and its
+    extrapolation is a guess. Plain IDW is returned instead.
     """
     distance = np.linalg.norm(X - xq, axis=1)
 
@@ -423,7 +478,20 @@ def _predict(xq, X, U, power):
         return U[on_top].mean(axis=0)
 
     weight = distance**-power
-    return (weight @ U) / weight.sum()
+    weight /= weight.sum()
+
+    n_sample, n_variable = X.shape
+    if n_sample <= n_variable + 1:
+        return weight @ U
+
+    # A column the samples all agree on is all zeros after `_scale`, and
+    # least squares gives it a zero coefficient rather than failing.
+    A = np.column_stack((np.ones(n_sample), X))
+    coefficients, *_ = np.linalg.lstsq(A, U, rcond=None)
+    residual = U - A @ coefficients
+
+    predicted = np.concatenate(([1.0], xq)) @ coefficients + weight @ residual
+    return np.clip(predicted, U.min(axis=0), U.max(axis=0))
 
 
 def _format_table(before, after):

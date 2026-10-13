@@ -426,6 +426,61 @@ config --- but four things are dropped:
   statements commented out --- so it went too, and with it the `row_meta` that
   existed to feed it.
 
+### OHP: an O block and a passage block, swept coarse then refined
+
+`type: ohp` replaces the old route of writing a geomTurbo file and running
+AutoGrid over ssh. It reads the same three things `h` does --- `evaluate_xr`,
+`evaluate_section`, `evaluate_camber` --- and nothing else. It grids only a
+round trailing edge, because its blade nodes slide along the blade and would
+gather at the corners of a blunt one.
+
+**Eight blocks a row.** An O block round the blade, a passage block from the
+O block of one blade to that of the next, a block ahead of the leading edge
+and one behind the trailing edge, one each ahead of and behind the passage
+block, and an H block out to each boundary, so that the inlet, outlet and
+mixing planes are each one whole face. The O block wraps in `i`, cut at the
+middle of the trailing edge, with the blade on `k = 0`: the convention
+`util.cut_blade_surfs` already recognised.
+
+**Every plane is meshed in conformal coordinates.** A constant-`j` plane is a
+surface of constant span fraction of the annulus, the surface the section at
+that span lies on, and `dm' = dm / r` maps it to a plane without changing an
+angle. Orthogonal there is orthogonal on the stream surface, and a blade
+angle is `dtheta/dm' = tan(chi)` whatever the radius, so nothing about radial
+variation of the stream tube reaches the smoother. Nodes go back through the
+annulus itself, not an interpolant, so they lie exactly on it.
+
+**The plane topology is its own module and knows nothing about blades.**
+`turbigen.elliptic` takes blocks, merges coincident and pitch-shifted nodes,
+and assembles each node's stencil from the four cells round it in whatever
+blocks they are. So block interfaces and periodic lines float with no special
+treatment. The compiled Winslow sweeps in `ember.elliptic` run on those
+stencils, and `elliptic.polish` squares up the poor cells round the singular
+points by local target-matrix optimisation.
+
+**Smoothed coarse, refined after.** Each plane is built and swept at the cell
+size the free stream needs, and refined only where the flow needs it: along
+the blade to its edges, across the passage towards the O blocks, and in the O
+block to the wall spacing. Only `n_span_smooth` planes are swept. The rest take
+the correction interpolated in span, which is zero on the blade and has no
+streamwise part on the inlet and outlet, so it keeps both.
+
+**A tip gap is two more blocks, inside the blade.** Above a spanwise node put
+at the top of the blade, an O block whose outer face is the O block round the
+blade's inner one, node for node, and an H block filling it. Node for node is
+the constraint that shapes it: ember's solver exchanges only across
+point-matched seams, so the gap has to take the blade's own nodes, and those
+do not line up chordwise from one side to the other. The passage block meets
+the O block further back along one side than the other, and joins the two with
+equal counts, so the sides differ in where their nodes lie and often in how
+many there are. The H block's ends take up the difference in count, running
+some way along the side with more, and its lines across the blade lean to take
+up the rest. Built algebraically, the plane at the tip is squared up by
+target-matrix optimisation over all of its nodes, and the correction carried to
+the planes above, whose outline barely changes. The O block round the blade
+carries a periodic patch over the gap instead of a wall, so the blade surface
+cut off it stops at the tip, as an H passage's does.
+
 ## Rotation: placed by the mesher, valued by the boundary conditions
 
 Shaft speed divides in two, and the two halves belong to different stages.

@@ -101,11 +101,14 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
-CUT_OFFSET = 0.02
+CUT_OFFSET = 0.05
 """Cut planes sit this fraction of blade chord into the gap, clear of the row.
 
 Cutting exactly at a leading or trailing edge would put the plane inside the
 blade, where there is no single annulus-spanning surface to integrate over.
+Clear of the row includes the H-mesh trailing edge cusp, which runs on
+``AR_cusp`` trailing edge thicknesses past the blade: a plane through it cuts
+less than a pitch of fluid.
 """
 
 

@@ -59,8 +59,9 @@ from turbigen.job import Job, Slurm, Task, Tsp
 from turbigen.machine import Machine
 from turbigen.meanline import MeanLine
 from turbigen.mesh import Mesher, WallSpacing
-from turbigen.metric import Metric, SurfaceDissipation
+from turbigen.metric import LossBreakdown, Metric, SurfaceDissipation
 from turbigen.node import Node
+from turbigen.ohpmesh import OHPassage
 from turbigen.post import (
     AnnulusPlot,
     CamberPlot,
@@ -122,6 +123,7 @@ __all__ = [
     "Iterator",
     "Job",
     "Legendre",
+    "LossBreakdown",
     "Machine",
     "MeanLine",
     "MeanLineDesign",
@@ -129,6 +131,7 @@ __all__ = [
     "Metric",
     "Modal",
     "Node",
+    "OHPassage",
     "OperatingPoint",
     "PchipAnnulus",
     "PerfectFluid",

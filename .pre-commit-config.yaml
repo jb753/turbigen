@@ -24,8 +24,16 @@ repos:
         name: check class member order
         entry: uv run python bin/check_member_order.py
         language: system
-        files: ^src/turbigen/.*\.py$
-        pass_filenames: true
+        # With no files given it checks all of src/turbigen, as CI does.
+        pass_filenames: false
+        always_run: true
+    -   id: check-comments
+        name: check comment and docstring length
+        entry: uv run python bin/check_comments.py
+        language: system
+        # With no files given it checks all of src/turbigen, as CI does.
+        pass_filenames: false
+        always_run: true
     -   id: no-claude-in-commit-msg
         name: no Claude in commit message
         entry: ./bin/check_no_claude_commit_msg.sh
@@ -34,7 +42,14 @@ repos:
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.8
     hooks:
+    # Lint and format the whole tree on every commit, as CI does, not only the
+    # staged files; the exclude below does not apply without file names.
     -   id: ruff-check
-        args: [--fix]
+        args: [--fix, --config, "extend-exclude = ['tests', '_version.py']", src, bin, bench, doc, tutorial]
+        pass_filenames: false
+        always_run: true
     -   id: ruff-format
+        args: [--config, "extend-exclude = ['tests', '_version.py']", src, bin, bench, doc, tutorial]
+        pass_filenames: false
+        always_run: true
 exclude: '(tests|turbigen/install|configs|scripts|runs|fig)/.*'

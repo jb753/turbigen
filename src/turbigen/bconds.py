@@ -52,20 +52,14 @@ patch used on its own rather than under a design loop.
 class InletProfile(Node):
     """A non-uniform inlet, as a spanwise perturbation from the mean line.
 
-    Every field is a *departure* from what the design asked for, so zero is
-    uniform and an absent section is exactly what this package did before there
-    was one. Interpolated onto whatever span fractions the inlet patch has, so
-    a profile does not have to know the mesh.
+    Every field is a departure from the design, so zero is a uniform inlet.
+    Interpolated onto the span fractions of the inlet patch, so a profile does
+    not need to know the mesh. Spanwise only: ember does not accept a
+    pitchwise-varying inlet.
 
-    Non-dimensionalised by inlet quantities that vanish with the flow rather
-    than by the absolute level, for the reason
-    :attr:`OperatingPoint.DP_adjust` is a pressure change and not a ratio: at
-    low speed :math:`p_0` and :math:`p` converge, so a fraction of :math:`p_0`
-    is not a fraction of anything physical, while :math:`p_0 - p` stays
-    meaningful at every Mach number. A boundary layer therefore reads as
-    ``DPo`` running from 0 in the free stream to -1 at the wall --- the
-    fraction of dynamic head lost, which is a number that carries between
-    machines.
+    Non-dimensionalised by dynamic head and dynamic temperature rather than by
+    absolute levels, which stay meaningful at any Mach number. A boundary layer
+    reads as ``DPo`` running from 0 in the free stream to -1 at the wall.
 
     **The two scales are the same scale in disguise**, since
     :math:`(p_0-p)/p \\simeq \\gamma \\mathit{Ma}^2/2` and
@@ -79,24 +73,10 @@ class InletProfile(Node):
     a hot streak                 ``DTo`` alone
     ===========================  ===============================
 
-    Scaling ``DTo`` by the machine's temperature *rise* instead --- the closer
-    analogue of ``DP_adjust`` --- was considered and rejected: it breaks that
-    property, needs to know the machine's duty, and divides by zero for a
-    cascade.
-
-    Spanwise only. ember refuses a pitchwise-varying prescription at an inlet
-    patch rather than averaging it, so there is nothing here to express one
-    with.
-
     Two members, differing only in how a column is written down. `Sampled` is
-    values at span fractions, which is what a person writes from rig data.
-    `Legendre` is the coefficients of a series, which is what anything
-    *producing* a profile analytically should write --- storing such a profile
-    as samples and interpolating it back is pure loss, and measurably so: a
-    degree-3 profile kept at 21 span points comes back with a maximum error of
-    2.7e-3, a quarter of the tolerance
-    :class:`turbigen.iterate.Repeat` converges to, and at 11 points the error
-    exceeds the tolerance outright.
+    values at span fractions, as from rig data. `Legendre` is series
+    coefficients, which an analytic profile should use because sampling and
+    interpolating it back loses accuracy.
     """
 
     COLUMNS: ClassVar[tuple[str, ...]] = ("DPo", "DTo", "DAlpha", "DBeta")
@@ -554,67 +534,21 @@ class OperatingPoint(Node):
     #
     #   dp = dp_design * (1 + DP_adjust),  dp_design = Po_in - p_out
     #
-    # so zero reproduces the design exactly and positive always means *more*
-    # pressure change -- more throttled for a compressor, more expanded for a
-    # turbine. One formula covers both because the design's own dp carries the
-    # sign, negative for a machine that raises pressure, and neither the sign
-    # convention nor a machine type has to appear in the file.
-    #
-    # A pressure change and not a pressure ratio, which is the whole reason
-    # this field exists. A ratio measures from one rather than from zero, so a
-    # fraction of it is not a fraction of anything physical, and the error
-    # grows without limit as a machine gets slower. Adjusting the same cascade
-    # by "5 per cent": through the pressure ratio it is 1.16x the design
-    # pressure change at Ma = 0.6 and 3.14x at Ma = 0.05, where through this
-    # field it is 1.05x at both. The package this replaces offers only the
-    # ratio.
-    #
-    # The rule generalises -- adjust what vanishes when there is no machine,
-    # never what goes to one -- and is the same trap MeanLine.tolerances
-    # guards against for a design variable whose nominal is zero.
+    # Zero reproduces the design; positive means more pressure change for a
+    # compressor or a turbine alike, the design's own dp carrying the sign. A
+    # change rather than a ratio, because a fraction of a ratio means nothing
+    # physical and grows without bound as the machine gets slower.
     DP_adjust: float = 0.0
     """Change in the design pressure change through the machine, as a fraction [--]."""
 
-    # The other way to move along a characteristic. Where DP_adjust states an
-    # exit pressure and lets the mass flow be whatever that draws, this states
-    # a mass flow, mdot = mdot_design * (1 + mdot_adjust), and lets the
-    # pressure be whatever holds it. The exit pressure computed from the design
-    # is still imposed, but as a *starting point*: a proportional-integral
-    # controller on the outlet patch (ember.outlet.OutletPatch.set_throttle)
-    # then moves it each step until the measured mass flow reaches the target.
-    # What the boundary imposes is still a pressure, so nothing about the
-    # characteristic treatment changes -- the throttle only chooses which
-    # pressure.
-    #
-    # None, the default, is no throttle at all: the exit pressure stands as
-    # exit_pressure() set it, and the mass flow is an outcome. This is the
-    # distinction the field exists to make, and the reason it is not simply 0.0
-    # by default -- a design that asks for a mass flow and a design that
-    # accepts one are different requests, and zero cannot say both.
-    #
-    # Which of the two to state is a property of the design, not a preference.
-    # A design whose variables include mdot -- a fan parametrised on mass flow
-    # and total pressure rise, say -- has no way to report whether it achieved
-    # them if the mass flow is left to drift, because the nominal-vs-actual
-    # table would be comparing the design against a different operating point.
-    # A design parametrised on Mach number and exit angle does not care, and
-    # the simpler prescribed pressure is right.
-    #
-    # The gains are ember's and are not exposed here. They are dimensionless
-    # and scaled on the reference quantities, which MeanLine.get_referenced_fluid
-    # takes from the design's own mean density and velocity -- representative
-    # by construction, which is the condition ember states for its defaults
-    # holding.
-    #
-    # Two restrictions, both from ember. Only one outlet patch may be
-    # throttled, so a grid whose exit is spread over several blocks is refused
-    # rather than over-throttled by the number of them; and the target must be
-    # positive, so an adjustment of -1 or below is refused below.
-    #
-    # DP_adjust still applies alongside this, as the pressure the controller
-    # *starts* from, and achieved() writes the pressure back once the mass flow
-    # has been reached -- so a throttled run archives the operating point it
-    # found, and the next one starts nearer to it.
+    # The other way along a characteristic: target a mass flow,
+    # mdot = mdot_design * (1 + mdot_adjust), and let a controller on the
+    # outlet patch move the exit pressure until it is reached. DP_adjust sets
+    # where the controller starts, and achieved() records where it settled.
+    # None (not 0.0) means no throttle, because asking for a mass flow and
+    # accepting one are different requests. Use it when the design's variables
+    # include mdot. ember allows only one throttled outlet patch, and the
+    # target must be positive.
     mdot_adjust: float | None = None
     """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
@@ -707,20 +641,11 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     for patch in patches_out:
         patch.set_P(P_out)
 
-        # One pressure is imposed across the whole span, and swirling exit flow
-        # does not have one: it carries a centrifugal gradient, dp/dr = rho
-        # Vt^2 / r, rising from hub to casing. Prescribed flat, the boundary
-        # fights that gradient, and what gives way is the outer span, where the
-        # imposed pressure is highest relative to what the flow wants -- it is
-        # pushed back into the domain. An outlet that takes inflow is not a
-        # boundary condition anybody wrote down, and a machine with a tip
-        # clearance feeds the casing exactly the swirl that provokes it.
-        #
-        # So the profile satisfying that equation is added to the level, hub
-        # anchored, re-derived from the solution each step. What `set_P` names
-        # stays the pressure that is actually enforced; the profile says how
-        # the rest of the span stands relative to it, which is what makes this
-        # additional to the throttle rather than in competition with it.
+        # Swirling exit flow has a radial pressure gradient, dp/dr = rho Vt^2/r,
+        # and a flat imposed pressure fights it until flow is pushed back in at
+        # the casing. So a radial-equilibrium profile, anchored at the hub and
+        # updated from the solution each step, is added to the level `set_P`
+        # enforces, which leaves the throttle free to set that level.
         patch.set_adjustment(radial_equilibrium=True, rf=RF_RADIAL_EQUILIBRIUM)
         patch.set_backflow_Po_To(outlet.Po, outlet.To)
         patch.set_backflow_Vt(outlet.Vt)
@@ -991,13 +916,7 @@ def apply_rotation(grid, machine):
 
         logger.debug(f"Row {i_row}: Omega={float(Omega_now):.5g} rad/s")
 
-    # No check that every rotating patch was reached, because there is no way
-    # to miss one: `grid.rows` groups by periodic and mixing connectivity and
-    # puts even a wholly disconnected block in a row of its own, so the loop
-    # above visits every block on the grid. A grid whose rows and mean line
-    # disagree is caught by count above, which is the only failure left.
-    #
-    # Worth knowing that an unvalued patch would be loud rather than quiet
-    # anyway: `RotatingPatch` defaults to Omega=nan, not zero, so one that
-    # never reached here would turn the solution to NaN rather than run a rotor
-    # as though it were stationary. `test_bconds.py` pins that.
+    # No check that every rotating patch was reached: `grid.rows` puts every
+    # block in some row, so the loop above visits them all, and a row count
+    # mismatch is caught above. A missed patch would be loud anyway, because
+    # `RotatingPatch` defaults to Omega=nan rather than zero.

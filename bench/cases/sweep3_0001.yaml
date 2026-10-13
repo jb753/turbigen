@@ -1,0 +1,128 @@
+# Converged design sweep3/batch_0005/0001/iter_0018/output.yaml, a high-turning
+# rotor with a clearance of two per cent of chord: the hardest tip gap
+# of its sweep for the passage mesher. Design and mesh sections only.
+
+mean_line:
+  Ma1_max: 0.7
+  Ma2: 0.7
+  Ma3_rel_max: 0.9
+  Po1: 1600000.0
+  To1: 1600.0
+  Ys:
+  - 0.02934747336809202
+  - 0.06748743795186699
+  fac_Ma3_rel: 1.03
+  mdot: 1900.0
+  phi2: 0.5
+  psi: 2.2
+  r_rms: 2.0
+  type: axial_turbine
+annulus:
+  cx_gap:
+  - 0.1
+  - 0.06
+  - 0.15
+  cx_row:
+  - 0.1
+  - 0.1
+  merge_weight: 1.0
+  nozzle_ratio: 1.0
+  type: fixed_axial_chord
+blades:
+- count:
+    Co: 0.765549083960555
+    spf: 0.5
+    type: Co
+  m_stack: 0.5
+  sections:
+  - camber:
+      exponent: 2.6
+      type: clark
+    dchi_LE: -9.202870784752772
+    dchi_TE: 0.40134447104544146
+    spf: 0.5
+    thickness:
+      R_LE: 0.1496005612799836
+      coeff:
+      - - -0.03966669262308681
+        - 0.15637037011175914
+        - 0.5594471217958461
+        - -0.4178526704335798
+        - 0.2556539156170862
+      - - 0.2955300281856289
+        - 0.3831999047934499
+        - 0.606503902266804
+        - 0.9029419689453076
+        - 0.6641273375751888
+      t_TE: 0.025
+      tanwedge: 0.2613635146752281
+      type: clark
+      round_TE: true
+  theta_offset: 0.0
+  tip_chord: 0.0
+  tip_metre: 0.0
+  tip_span: 0.0
+  vortex_exponent: -0.6
+- count:
+    Co: 0.8017010213685465
+    spf: 0.5
+    type: Co
+  m_stack: 0.5
+  sections:
+  - camber:
+      exponent: 2.6
+      type: clark
+    dchi_LE: 8.669595823935717
+    dchi_TE: -1.9176696214905693
+    spf: 0.5
+    thickness:
+      R_LE: 0.14999999999999997
+      coeff:
+      - - -0.15886593592425086
+        - 0.2700738257885941
+        - 0.5271242326486889
+        - -0.44785160612626657
+        - 0.3690320746796595
+      - - 0.31172081481841163
+        - 0.4355789022589283
+        - 0.6783319132488349
+        - 0.9567643064036021
+        - 0.6664398118942488
+      t_TE: 0.025
+      tanwedge: 0.21948571365291855
+      type: clark
+      round_TE: true
+  theta_offset: 0.0
+  tip_chord: 0.02
+  tip_metre: 0.0
+  tip_span: 0.0
+  vortex_exponent: -0.6
+fluid:
+  Pr: 0.7
+  cp: 1100.0
+  gamma: 1.33
+  mu: 0.0001983
+  type: perfect
+inlet_profile:
+  DAlpha:
+  - 8.398838527686687
+  - 1.9277955110863352
+  - 0.8990014831263585
+  - 2.205561544932218
+  DBeta: []
+  DPo:
+  - 0.061188871831186036
+  - -0.007615129801936449
+  - 0.0021987328923897924
+  - 0.0043254661422093554
+  DTo:
+  - 0.2691441728811286
+  - -0.024958896372364082
+  - 0.013287775088094127
+  - 0.07574910001492988
+  basis: /home/jb753/python/ember-paper/sweep/pod_basis.npz
+  sha256: b52cf56b607e943ae9d969432b65c9de6e7fa2477473066a3222fe06fe2c0874
+  type: pod
+mesh:
+  type: ohp
+  yplus: 30.0
