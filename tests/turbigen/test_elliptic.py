@@ -91,6 +91,8 @@ def test_a_higher_polish_power_works_on_the_worst_cell():
         elliptic.polish(topo, X0, centre, rings=8, X_target=target, power=p)
         for p in (1.0, 4.0)
     )
-    assert _min_angle(topo.scatter(worst_first)[0]) >= _min_angle(
-        topo.scatter(plain)[0]
+    # Both reach about 90 degrees; allow for round-off between platforms.
+    assert (
+        _min_angle(topo.scatter(worst_first)[0])
+        >= _min_angle(topo.scatter(plain)[0]) - 1e-4
     )
