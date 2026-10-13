@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>User manual &#8212; turbigen 3.0.1.dev99+gb973f97b9 documentation</title>
+    <title>User manual &#8212; turbigen 3.0.1.dev167+g40ecbb9f8 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=312744f2"></script>
+    <script src="_static/documentation_options.js?v=ecc8c5e0"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -32,7 +32,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev99+gb973f97b9</p>
+<p class="blurb">Version 3.0.1.dev167+g40ecbb9f8</p>
 
 
 
@@ -369,6 +369,11 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l2"><a class="reference internal" href="blade.html#design-process">Design process</a></li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#evaluating-a-blade">Evaluating a blade</a></li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.FLAT_TURNING"><code class="docutils literal notranslate"><span class="pre">FLAT_TURNING</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.NORMAL_EXPONENT_LE"><code class="docutils literal notranslate"><span class="pre">NORMAL_EXPONENT_LE</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.NORMAL_EXPONENT_TE"><code class="docutils literal notranslate"><span class="pre">NORMAL_EXPONENT_TE</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.normal_fraction"><code class="docutils literal notranslate"><span class="pre">normal_fraction()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.N_CAP"><code class="docutils literal notranslate"><span class="pre">N_CAP</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.N_SPF_KEPT"><code class="docutils literal notranslate"><span class="pre">N_SPF_KEPT</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.to_xrrt"><code class="docutils literal notranslate"><span class="pre">to_xrrt()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign"><code class="docutils literal notranslate"><span class="pre">SectionDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
@@ -376,7 +381,6 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.dchi_TE"><code class="docutils literal notranslate"><span class="pre">dchi_TE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.camber"><code class="docutils literal notranslate"><span class="pre">camber</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.thickness"><code class="docutils literal notranslate"><span class="pre">thickness</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.fac_tangential"><code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.BladeCount"><code class="docutils literal notranslate"><span class="pre">BladeCount</span></code></a><ul>
@@ -419,7 +423,6 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.row_annulus"><code class="docutils literal notranslate"><span class="pre">row_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.spf"><code class="docutils literal notranslate"><span class="pre">spf</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.dchi"><code class="docutils literal notranslate"><span class="pre">dchi</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.fac_tangential"><code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.mean_line_row"><code class="docutils literal notranslate"><span class="pre">mean_line_row</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.vortex_exponent"><code class="docutils literal notranslate"><span class="pre">vortex_exponent</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.cambers"><code class="docutils literal notranslate"><span class="pre">cambers</span></code></a></li>
@@ -427,8 +430,10 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.theta_offset"><code class="docutils literal notranslate"><span class="pre">theta_offset</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.n_section"><code class="docutils literal notranslate"><span class="pre">n_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.round_TE"><code class="docutils literal notranslate"><span class="pre">round_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_TE_cap"><code class="docutils literal notranslate"><span class="pre">evaluate_TE_cap()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_chi"><code class="docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_fac_tangential"><code class="docutils literal notranslate"><span class="pre">evaluate_fac_tangential()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.suction_is_upper"><code class="docutils literal notranslate"><span class="pre">suction_is_upper</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_camber"><code class="docutils literal notranslate"><span class="pre">evaluate_camber()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_section"><code class="docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.evaluate_surface_length"><code class="docutils literal notranslate"><span class="pre">evaluate_surface_length()</span></code></a></li>
@@ -483,8 +488,10 @@ usage instructions, descriptions of the theory involved, and listings of configu
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#thickness-distributions">Thickness distributions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign"><code class="docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.round_TE"><code class="docutils literal notranslate"><span class="pre">round_TE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor"><code class="docutils literal notranslate"><span class="pre">Taylor</span></code></a><ul>
@@ -498,6 +505,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.peak"><code class="docutils literal notranslate"><span class="pre">peak()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness"><code class="docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a><ul>
@@ -506,12 +514,15 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.coeff"><code class="docutils literal notranslate"><span class="pre">coeff</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tanwedge"><code class="docutils literal notranslate"><span class="pre">tanwedge</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.t_TE"><code class="docutils literal notranslate"><span class="pre">t_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.R_LE_lim"><code class="docutils literal notranslate"><span class="pre">R_LE_lim</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.bounded_fields"><code class="docutils literal notranslate"><span class="pre">bounded_fields()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.order"><code class="docutils literal notranslate"><span class="pre">order</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.m_ctl"><code class="docutils literal notranslate"><span class="pre">m_ctl</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tau_coeff"><code class="docutils literal notranslate"><span class="pre">tau_coeff</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.with_tau_coeff"><code class="docutils literal notranslate"><span class="pre">with_tau_coeff()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
 </ul>
 </li>
 </ul>

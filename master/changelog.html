@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Changelog &#8212; turbigen 3.0.1.dev99+gb973f97b9 documentation</title>
+    <title>Changelog &#8212; turbigen 3.0.1.dev167+g40ecbb9f8 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=312744f2"></script>
+    <script src="_static/documentation_options.js?v=ecc8c5e0"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev99+gb973f97b9</p>
+<p class="blurb">Version 3.0.1.dev167+g40ecbb9f8</p>
 
 
 
@@ -177,7 +177,9 @@
 <section id="v3-1-0">
 <h2>v3.1.0<a class="headerlink" href="#v3-1-0" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>Add <code class="docutils literal notranslate"><span class="pre">fac_tangential</span></code> to blend perpendicular and tangential thickness distributions</p></li>
+<li><p>Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold</p></li>
+<li><p>Step every iterator on its declared gain, and drop the Broyden update, which no iterator used</p></li>
+<li><p>Let <code class="docutils literal notranslate"><span class="pre">clark_profile</span></code> recamber the leading edge against the difference in nose loading, in place of an <code class="docutils literal notranslate"><span class="pre">incidence</span></code> iterator</p></li>
 <li><p>Improve H-meshing in pinched tips, and add experimental gridded tip</p></li>
 <li><p>Add H-mesh setting to control aspect ratio at mixing planes</p></li>
 <li><p>Add Bernstein and circluar-arc, camber lines</p></li>
