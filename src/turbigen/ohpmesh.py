@@ -122,6 +122,10 @@ N_SMOOTH_LINES = 10
 """Passes of a three-point average of the O block's cell sizes from one of
 its lines to the next round the blade."""
 
+N_RESETTLE = 100
+"""Sweeps of a control plane, its blade nodes held, once they are moved to
+where mid-span's lie along each piece of the blade."""
+
 N_MINIMAX = 30
 
 EXTRUDE_GAP = 0.3
@@ -1072,14 +1076,14 @@ class OHPassage(Mesher):
                             out["f"].append(fc[a, b])
         return {k: np.array(v) for k, v in out.items()}
 
-    def _sweeps(self, topo, X, n_sweep, plane):
+    def _sweeps(self, topo, X, n_sweep, plane, slide=True):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
         singular nodes from their stencils, the inlet and outlet level with
         the nodes inside, the nodes near the corners drawn in, and the blade
         nodes of `plane` slid along the blade to the foot of the perpendicular
-        from the node outside them.
+        from the node outside them, unless not to `slide`, when they stay.
         """
         pitch = topo.pitch
         W_irr, c_irr = topo.sweep_irr
@@ -1095,6 +1099,13 @@ class OHPassage(Mesher):
             (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
         )
         gid, shift = topo.gid[0], topo.shift[0] * pitch
+        if not slide:
+            none = np.zeros(0, dtype=np.int32)
+            empty = np.zeros(0, dtype=DTYPE)
+            wall = (none, none, empty, empty, np.zeros((2, 2), dtype=DTYPE))
+            wall += (np.zeros(2, dtype=DTYPE), empty, none, none)
+            X, _, _ = ember.elliptic.winslow_sweeps(*args, wall, n_sweep)
+            return X
 
         # The blade as a closed line, and where on it each blade node and the
         # node outside it start.
@@ -1132,6 +1143,25 @@ class OHPassage(Mesher):
         )
         return X
 
+    def _match_blade(self, topo, X, plane, lay, frac):
+        """Return the fractions of each piece of the blade the coarse blade
+        nodes of plane `X` lie at, and `X` with them moved to `frac` of their
+        pieces if given."""
+        xy = topo.scatter(np.asarray(X))
+        wall = plane["wall"]
+        S = util.arc_length(wall)
+        s_c = _wall_arc(wall, xy[0][:, :, 0].astype(float))
+        ends = (0, *lay.i_corners_coarse(), len(s_c) - 1)
+        own = []
+        for a, b in itertools.pairwise(ends):
+            own.append((s_c[a : b + 1] - s_c[a]) / (s_c[b] - s_c[a]))
+        if frac is None:
+            return own, X
+        for (a, b), f in zip(itertools.pairwise(ends), frac):
+            s_c[a : b + 1] = s_c[a] + f * (s_c[b] - s_c[a])
+        xy[0][:, :, 0] = _at_arc(wall, np.mod(s_c, S)).astype(xy[0].dtype)
+        return frac, topo.gather(xy)
+
     def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
         """Return the ember blocks of one row, with a tip gap from `jtip`."""
         lay = self.layout(machine, i_row, spacing)
@@ -1145,10 +1175,21 @@ class OHPassage(Mesher):
         # to the planes between.
         j_ctrl = np.union1d(self.control_planes(spf), [j_mid])
         correction = [None] * len(spf)
-        for j in j_ctrl:
+        # Mid-span first, whose blade nodes the others are spaced as.
+        frac = None
+        for j in sorted(j_ctrl, key=lambda j: j != j_mid):
             # Started from the algebraic plane as it is: the sweeps unfold
             # what folds in it without untangling first.
             X = self._sweeps(topo, X_alg[j], self.n_sweep, planes[j])
+            # The blade nodes at the fractions of each piece of the blade they
+            # lie at mid-span, then the plane swept again round them, still:
+            # the spacing along the blade is fitted at mid-span and carried
+            # to every plane as fractional indices of these nodes, which the
+            # sweeps otherwise slide unlike mid-span's on another plane, and
+            # it steps where the trailing edge meets the surfaces.
+            frac, X = self._match_blade(topo, X, planes[j], lay, frac)
+            if j != j_mid:
+                X = self._sweeps(topo, X, N_RESETTLE, planes[j], slide=False)
             correction[j] = X - X_alg[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
 
