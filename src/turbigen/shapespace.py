@@ -175,19 +175,12 @@ def control_m(order):
     nose rather than in a thickness value, and is `t_TE / 2` at `m = 1`
     whatever the wedge angle does.
 
-    **Where a coefficient moves the thickness, which is a proxy for where it
-    moves the loading.** A thickness bump accelerates the flow over it, but a
-    pressure field is not local, so the two peaks need not coincide exactly.
-    Checked against a finished section rather than against the formula alone.
-    On the suction surface, offset perpendicular to the camber line,
-    perturbing one coefficient displaces the surface most at this `m` to four
-    decimal places, so the annulus lift and the leading-to-trailing edge
-    rescaling do not move it. The pressure surface puts most of its mid-chord
-    thickness on circumferentially (see :mod:`turbigen.blade`), and a
-    circumferential push moves a steeply staggered surface partly along itself
-    rather than off it, so the coefficients there displace the surface most a
-    little ahead of this `m`: by up to about four hundredths of surface
-    length.
+    **Where a coefficient moves the thickness, a proxy for where it moves
+    the loading**, since a pressure field is not local. Checked on a finished
+    section: on the suction surface the displacement peaks at this `m` to four
+    decimal places. The pressure surface takes most of its mid-chord thickness
+    circumferentially (see :mod:`turbigen.blade`), so there the peak sits a
+    little ahead, by up to about four hundredths of surface length.
 
     Parameters
     ----------

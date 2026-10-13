@@ -350,48 +350,29 @@ class DiffusionFactor(Metric):
 class LossBreakdown(Metric):
     r"""Profile and secondary entropy loss of each row.
 
-    The profile loss is what the stream surface through the middle of the span
-    generates, clear of the endwalls: the band carrying the central `band` of
-    the mass flow, found by mass fraction at the row's inlet and exit planes and
-    mixed out at each,
+    The profile loss is what the stream surface carrying the central `band` of
+    the mass flow generates, clear of the endwalls. The band is found by mass
+    fraction at the row's inlet and exit planes, not traced, and mixed out at
+    each. The secondary loss is the rest,
 
     .. math::
-        \Delta s_\mathrm{mid} = s_\mathrm{mix}(\text{exit band})
-            - s_\mathrm{mix}(\text{inlet band}) \,.
+        \Delta s_\mathrm{sec} = \Delta s_\mathrm{total}
+            - \left[s_\mathrm{mix}(\text{exit band})
+            - s_\mathrm{mix}(\text{inlet band})\right] \,,
 
-    The secondary loss is the rest of the row's loss, everything the endwalls,
-    their secondary flows and any tip clearance add to it,
+    where :math:`\Delta s_\mathrm{total}`, from
+    :attr:`~turbigen.result.Result.actual`, is mixed out on the same planes,
+    so mixing is counted in both terms alike.
 
-    .. math::
-        \Delta s_\mathrm{sec} = \Delta s_\mathrm{total} - \Delta s_\mathrm{mid} \,,
-
-    where :math:`\Delta s_\mathrm{total}` is the entropy rise across the row in
-    :attr:`~turbigen.result.Result.actual`. That is mixed out at both ends on
-    the same planes, which is why the bands are mixed out too: an average of
-    one against a mix-out of the other would count mixing in one term only.
-
-    **The band is matched by mass fraction, not traced.** The central tenth of
-    the flow at the exit is taken to be the central tenth at the inlet. Where
-    the flow migrates radially through a row it is not quite the same fluid,
-    and the split shifts accordingly.
-
-    **Two normalisations.** A loss coefficient is referred to the row itself,
-
-    .. math::
-        Y = \frac{T_\mathrm{out}\,\Delta s}{\tfrac{1}{2}V_\mathrm{rel}^2} \,,
-
-    with the static temperature at the row's exit and the relative dynamic head
-    at its characteristic station, as the spanwise plot draws :math:`Y_s`. A
-    lost efficiency is referred to the machine, after Denton (1993),
-
-    .. math::
-        \Delta\eta = \frac{T_\mathrm{exit}\,\Delta s}{|\Delta h_0|} \,,
-
-    with the static temperature at the machine exit and the machine's work.
-    The denominator is the same for every row, so lost efficiencies compare
-    across rows and add. Summed over the rows they fall a little short of the
-    machine's own :math:`T_\mathrm{exit}\,\Delta s/|\Delta h_0|`, because the
-    gaps between the rows belong to none of them.
+    **Two normalisations.** A loss coefficient is referred to the row,
+    :math:`Y = T_\mathrm{out}\,\Delta s / \tfrac{1}{2}V_\mathrm{rel}^2`, with
+    the row exit static temperature and the relative dynamic head at its
+    characteristic station, as the spanwise plot draws :math:`Y_s`. A lost
+    efficiency is referred to the machine, after Denton (1993),
+    :math:`\Delta\eta = T_\mathrm{exit}\,\Delta s / |\Delta h_0|`, with the
+    machine exit static temperature and work, so lost efficiencies compare
+    across rows and add. Their sum falls a little short of the machine's own,
+    because the gaps between rows belong to none of them.
     """
 
     type: ClassVar[str] = "loss_breakdown"
@@ -474,9 +455,8 @@ class LossBudget(Metric):
     r"""Where the machine's lost efficiency comes from, adding up to
     :math:`1 - \eta_\mathrm{tt}`.
 
-    The mixed-out mean line behind :math:`\eta_\mathrm{tt}` is reached by mass
-    averaging the flow along the machine and mixing it out only at the two
-    ends. Its entropy rise is therefore exactly
+    The mean line behind :math:`\eta_\mathrm{tt}` mass averages along the
+    machine and mixes out only at its ends, so its entropy rise is exactly
 
     .. math::
         \Delta s = \sum_\mathrm{rows} \sum_b \frac{\dot{m}_b}{\dot{m}}
@@ -485,42 +465,24 @@ class LossBudget(Metric):
             + \Delta s_\mathrm{mix}(\text{exit})
             - \Delta s_\mathrm{mix}(\text{inlet}) \,,
 
-    with these terms:
+    with no mixing between rows, and these terms:
 
-    - **Bands of each row.** Each row's inlet and exit planes are split by mass
-      fraction into the `fraction` of the flow next to the hub, the same next
-      to the casing, and the main flow between. :math:`\Delta\bar{s}_b` is the
-      rise in the band's mass-averaged entropy across the row.
-    - **Gaps.** The rise in mass-averaged entropy from one row's exit plane to
-      the next row's inlet plane, which on a mixing-plane solution includes
-      what the interface generates.
-    - **Mixing at the ends**, from :attr:`~turbigen.result.Result.Ds_mix`: the
-      mixed-out entropy less the mass average at the machine's exit, which the
-      machine is charged, and at its inlet, which it is credited, its inlet
-      state being the mixed-out one too.
+    - **Bands of each row:** each row's planes split by mass fraction into
+      `fraction` of the flow at the hub, the same at the casing, and the main
+      flow between; :math:`\Delta\bar{s}_b` is a band's mass-averaged rise.
+    - **Gaps:** the mass-averaged rise from one row's exit plane to the next
+      row's inlet, including what a mixing plane generates.
+    - **Mixing at the ends**, from :attr:`~turbigen.result.Result.Ds_mix`,
+      charged at the machine's exit and credited at its inlet.
 
-    Mixing at the planes between rows does not appear: a mass-averaged chain
-    never mixes out there. Mixing out a row's ends, as :class:`LossBreakdown`
-    does, books the same non-uniformity once as a loss at one row's exit and
-    once as a credit at the next row's inlet.
+    **One currency.** Every term is multiplied by the run's
+    :math:`(1 - \eta_\mathrm{tt}) / \Delta s`, so the terms are lost
+    efficiencies adding up to :math:`1 - \eta_\mathrm{tt}`, to a few parts in
+    ten thousand from `mass_band`'s interpolation. The middle band is
+    ``main``, as :class:`LossBreakdown` already writes ``mid``.
 
-    **One currency.** Every term is multiplied by the one factor
-    :math:`(1 - \eta_\mathrm{tt}) / \Delta s` of the run, so the terms are
-    lost efficiencies that add up to :math:`1 - \eta_\mathrm{tt}`, the
-    efficiency itself and not an approximation to it. To the accuracy of the
-    band split, that is: entropy is extensive, so mass averages over the bands
-    add up to that of the plane, but `mass_band` interpolates linearly across
-    the partial strips at its ends, which agrees with the whole plane only to
-    a few parts in ten thousand.
-
-    The middle band is ``main``, not ``mid``, which :class:`LossBreakdown`
-    already writes for its midspan stream surface.
-
-    **The bands are matched by mass fraction, not traced.** The tip band at a
-    row's exit is the outer `fraction` of the flow there, which is not the
-    fluid that entered the row in the outer `fraction`: secondary flows and tip
-    leakage move fluid across the span. A band's loss is the entropy that
-    leaves in it, not the entropy generated in it.
+    **The bands are matched by mass fraction, not traced**, so a band's loss
+    is the entropy that leaves in it, not the entropy generated in it.
     """
 
     type: ClassVar[str] = "loss_budget"
@@ -585,9 +547,7 @@ class LossBudget(Metric):
         s_bar = []
         for i_plane, xr in enumerate(planes):
             try:
-                s_bar.append(
-                    _band_entropies(grid, xr, [*bands.values(), (0.0, 1.0)])
-                )
+                s_bar.append(_band_entropies(grid, xr, [*bands.values(), (0.0, 1.0)]))
             except (ValueError, RuntimeError, AssertionError) as err:
                 logger.debug(f"Plane {i_plane} has no entropy to average: {err}")
                 s_bar.append(None)

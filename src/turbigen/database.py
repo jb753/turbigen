@@ -435,12 +435,9 @@ def _seed_scale(X, xq):
 def _predict(xq, X, U, power):
     """Return the prediction of `U` at `xq`: a plane, and IDW of its misses.
 
-    Chosen over the polynomial surrogate this replaces because the sample count
-    is the binding constraint. A total-order cubic in eight design variables is
-    165 terms against perhaps fifteen finished runs, which is why the old fit
-    needed an adaptive order, a degrees-of-freedom fraction and a train/test
-    split to stop it overfitting, and why it could still return an unmeshable
-    blade outside the sample hull.
+    Chosen over a polynomial fit because the sample count is the binding
+    constraint: a total-order cubic in eight variables is 165 terms against
+    perhaps fifteen finished runs.
 
     Inverse distance weighting alone has nothing to choose, but carries no
     trend: its gradient is zero at every sample, and in six or eight

@@ -1284,7 +1284,9 @@ class IterationPlot(PostChain):
             # The errors are signed, so a knob is converged between the rules.
             if tolerance:
                 for sign in (-1.0, 1.0):
-                    ax.axhline(sign * tolerance, color="k", linestyle="--", linewidth=1.0)
+                    ax.axhline(
+                        sign * tolerance, color="k", linestyle="--", linewidth=1.0
+                    )
 
             ax.legend(fontsize="small", loc="center left", bbox_to_anchor=(1.0, 0.5))
             figures.append(fig)

@@ -1071,50 +1071,30 @@ class ClarkProfile(RowIterator):
 
     Drives a :class:`~turbigen.thickness.ClarkThickness` towards
     :mod:`turbigen.clark` on both surfaces at once, with the leading-edge
-    recamber, and the camber line between, moved with it.
+    recamber and the camber line between.
 
-    **The knobs are shape-space coefficients**
-    (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`): leading edge
-    radius, interior perturbations and wedge angle as one Bernstein curve.
-    Each thickens its surface locally and speeds up the flow over it, so one
-    gain, sign included, covers them all. Each is measured where it acts, at
-    :attr:`~turbigen.thickness.ClarkThickness.m_ctl` mapped to each surface's
-    own fraction of length.
+    **Knobs** are the shape-space coefficients
+    (:attr:`~turbigen.thickness.ClarkThickness.tau_coeff`), each measured
+    where it acts and each speeding up the flow over its surface, so one gain
+    covers them all. One nose radius and wedge angle serve both surfaces, so
+    each end's error is the mean of the two residuals.
 
-    **Shared ends.** One nose radius and one wedge angle serve both surfaces,
-    so each end's error is the mean of the two surfaces' residuals, the
-    least-squares move for one knob. At the trailing edge the cost is that
-    equal and opposite errors read as converged; per-surface control lives in
-    the interior.
+    **The recamber** takes the equal and opposite part at the nose, a loading
+    error only incidence can remove: `dchi_LE` follows the suction residual
+    less the pressure one. This owns the row's `dchi_LE` outright, so it
+    refuses to sit beside an :class:`Incidence` iterator.
 
-    **The nose's other half belongs to the recamber.** Equal and opposite
-    errors at the nose are a leading-edge loading error, which no thickness
-    can remove and incidence can: `dchi_LE` is driven by the suction residual
-    less the pressure one at the first station. Every section of the row is
-    recambered together, as the thickness is, so this owns the row's
-    `dchi_LE` outright and refuses to sit beside an :class:`Incidence`
-    iterator, which would move the same leaves towards a different target.
+    **The blade count** sets the level, since thickness cannot create
+    circulation: `Co` follows the circulation error from
+    :class:`~turbigen.loading.ClarkMeasurement`. The shape knobs see residuals
+    against a target morphed to the circulation drawn (:meth:`morph`).
+    Distances run from the geometric leading edge, so the target does not move
+    with the thickness.
 
-    **The level belongs to the blade count.** Thickness redistributes
-    circulation but cannot create it, so `Co` is driven by the circulation
-    error, integrated over the whole cut by
-    :class:`~turbigen.loading.ClarkMeasurement` in the same units as `Co`. The
-    shape knobs see the residuals against a target morphed to the circulation
-    the blade drew, so the level is taken off where a Clark curve carries it
-    --- the leading-edge ramp and the pressure plateau --- and not at a
-    trailing edge every target pins to one. See :meth:`morph`.
-
-    **Measured from the geometric leading edge**, not the stagnation point, so
-    the target does not move as the thickness does.
-
-    **Several to a row, one per span.** Each measures at a section of its own,
-    :attr:`spf` matching that section's exactly, and moves the sections nearer
-    its span than any other's --- so a lone one moves the whole row, as one
-    measurement can justify no more, and several divide the row between them.
-    Only one may carry the :attr:`level`: the blade count sets the circulation
-    at every span at once, so a second reading of it would be a second opinion
-    on one knob. With more than one on a row, each knob but `Co` is named by
-    its section as well, ``tau_LE[0][2]`` for row zero's third.
+    **Several to a row, one per span.** Each measures at its own :attr:`spf`
+    and moves the sections nearest it, so a lone one moves the whole row. Only
+    one may carry the :attr:`level`. With more than one on a row, knobs but
+    `Co` are named by section too, ``tau_LE[0][2]`` for row zero's third.
     """
 
     type: ClassVar[str] = "clark_profile"
@@ -1308,39 +1288,23 @@ class ClarkProfile(RowIterator):
     """Deprecated: the bounds now live on the thickness [--].
 
     See :attr:`turbigen.thickness.ClarkThickness.R_LE_lim`, which the blade
-    enforces between sections as well as at them, where a bound held here
-    could only reach the sections this iterator steps. Still accepted so that
-    configs written while it lived here load, but only if it agrees with the
-    thickness's: a different value would read as a bound in force when it is
-    not.
+    enforces between sections as well as at them. Still accepted so old
+    configs load, but only if it agrees with the thickness's, since a
+    different value would read as a bound in force when it is not.
 
     **A bound on where the knob arrives, which no clip provides.** `clip`
-    limits one step and not a run of them, so a nose can be thickened by a
-    hundredth every pass and be six times its original size ten passes later
-    without any single step being refused. Measured on a stage whose loading
-    target the nose could not meet: `R_LE` climbed from 0.016 to 0.097 over
-    nine passes, monotonically, and the two iterations that followed diverged
-    in the CFD --- a nose radius of a tenth of a chord is a cylinder rather
-    than a leading edge.
+    limits one step, not a run of them. On a stage whose loading target the
+    nose could not meet, `R_LE` climbed monotonically from 0.016 to 0.097 over
+    nine passes, and the next two iterations diverged in the CFD.
 
-    **Clamped, not refused.** The closed-section guard above returns the
-    config untouched, which is right for a section that cannot be meshed at
-    all; here it would freeze ten other knobs because one reached a limit.
-    Clamping lets the rest move and leaves this one against its bound with its
-    error still in the table, which is where a knob that cannot get what it
-    wants should be visible.
+    **Clamped, not refused.** Refusing would freeze every other knob because
+    one reached a limit; clamping lets the rest move and leaves this one at
+    its bound with its error still in the table.
 
-    **A nose held at a bound is converged.** A radius that walks one way
-    without turning is a target the nose cannot reach: measured on a
-    converged stage, the loading at the first station moves about two in
-    `fac` per unit `R_LE`, so a design asking for a hundredth less than the
-    lower bound is asking for no nose at all. Once held there with an error
-    that would carry it further, the nose has done all it may, and
-    :meth:`error` reports that knob as converged, logging the residual so the
-    shortfall is still on record. Both bounds are therefore statements of
-    what nose is acceptable, not guards against a runaway: the upper one is
-    the bluntest leading edge a converged design may be allowed to finish
-    with.
+    **A nose held at a bound is converged.** Once there with an error that
+    would carry it further, the nose has done all it may, so :meth:`error`
+    reports that knob as converged and logs the residual. The upper bound is
+    thus the bluntest leading edge a converged design may finish with.
     """
 
     def __post_init__(self):
@@ -1436,17 +1400,11 @@ class ClarkProfile(RowIterator):
         if not np.any(shift):
             return config
 
-        # A uniform shift over the sections this owns, for the reason
-        # `_with_sections` gives, but not through it: the moved sections are
-        # checked before being written.
-        #
-        # Through `with_tau_coeff` rather than onto the config leaves, because
-        # moving an end coefficient moves the straight line beneath the whole
-        # curve and every interior perturbation has to be recomputed against
-        # it --- see there.
-        #
-        # Clamped in shape space before the thickness is rebuilt, since a
-        # thickness refuses a nose outside its bounds.
+        # A uniform shift over the sections this owns, as `_with_sections`
+        # makes but checked before writing. Through `with_tau_coeff`, since
+        # moving an end coefficient moves the line beneath every interior
+        # perturbation; clamped first, since a thickness refuses a nose
+        # outside its bounds.
         sections = config.blades[self.i_row].sections
         shifted = tuple(
             dataclasses.replace(
@@ -1560,15 +1518,10 @@ class ClarkProfile(RowIterator):
         d = self.morph(result.machine, measured.length_ratio, measured.Co)
         shape = measured.fac - self._target(measured.z, result.machine, d)
 
-        # What the recamber can answer for and a shared nose radius cannot: the
-        # suction surface running ahead of the pressure one at the first
-        # station, which is the nose loaded too heavily and the flow arriving
-        # too far onto the pressure surface. From `shape`, so the level --- a
-        # `+delta` on one surface and `-delta` on the other --- is not read as
-        # incidence. Turned into the recamber's frame as `Incidence` turns its
-        # target: a rising metal angle takes flow off the pressure surface
-        # where that surface is the lower one, and puts it on where it is the
-        # upper, so the sign flips with the turning. See `gain_dchi_LE`.
+        # What the recamber can answer for and a shared nose cannot: suction
+        # ahead of pressure at the first station. From `shape`, so the level
+        # is not read as incidence. The sign flips with which surface is
+        # upper, as for `Incidence`; see `gain_dchi_LE`.
         loading_LE = float(shape[0][0] - shape[1][0])
         blade = result.machine.rows[self.i_row].blade
         sgn = -1.0 if blade.suction_is_upper else 1.0
@@ -1708,8 +1661,10 @@ class ClarkProfile(RowIterator):
         # Ramp line positive at the nose: Ma_LE (1 + k) > k Ma_peak, with
         # sigma linear in Ma_LE. A bound on Ma_LE from below for a peak behind
         # the ramp's reference station, from above for one ahead of it.
-        k = turbigen.clark.C_RAMP * turbigen.clark.Z_LE / (
-            self.z_peak - turbigen.clark.Z_LE
+        k = (
+            turbigen.clark.C_RAMP
+            * turbigen.clark.Z_LE
+            / (self.z_peak - turbigen.clark.Z_LE)
         )
         bound = k * self.Ma_peak / (1.0 + k) - Ma_LE
         if 1.0 + k > 0.0:

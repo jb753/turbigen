@@ -1091,9 +1091,7 @@ def cmd_batch(args):
     out_dir = _open_batch(args, datum_dir)
 
     members = []
-    for index, member in batch.generate(
-        config, args.number, start, args.edges, taken
-    ):
+    for index, member in batch.generate(config, args.number, start, args.edges, taken):
         member_path = out_dir / batch.member_name(index)
         # A member is a directory, because one directory is one run: it is what
         # gives every member an `output.yaml` of its own to be run into.

@@ -979,9 +979,7 @@ class H(Mesher):
 
         elif self.half_span:
             return util.resample(
-                clusterfunc.single.plateau_free(
-                    dspf_hub, self.dspf_mid, self.ER_span
-                ),
+                clusterfunc.single.plateau_free(dspf_hub, self.dspf_mid, self.ER_span),
                 self.resolution_factor,
                 mult=8,
             )
@@ -1583,8 +1581,7 @@ def add_cusp(xrt, iTE, AR_cusp, ni_cusp, ni_TE, resolution_factor=1.0, dtdx_TE=N
             f = np.linspace(0.0, 1.0, ni_cusp)
         for side in range(2):
             xrrt_cusp[side, :, :, j] = (
-                f * xrrt_point[:, j, None]
-                + (1.0 - f) * xrrt_TE[side, :, -1, j, None]
+                f * xrrt_point[:, j, None] + (1.0 - f) * xrrt_TE[side, :, -1, j, None]
             )
 
     xrrt_new = np.concatenate(

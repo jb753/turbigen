@@ -828,9 +828,7 @@ class Blade:
         if self.n_section == 1:
             dchi = self.dchi[0]
         else:
-            dchi = turbigen.util.interp1d_hold(self.spf, self.dchi)(
-                spf
-            ).reshape(-1)
+            dchi = turbigen.util.interp1d_hold(self.spf, self.dchi)(spf).reshape(-1)
 
         chi = _Alpha_rel(self.mean_line_row, [spf], self.vortex_exponent)[0] + dchi
 
