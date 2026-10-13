@@ -31,7 +31,9 @@ dependencies = [
     # `ember.fluid.Fluid` (it was `_Fluid` through 0.3.x) and carries the
     # real-gas equation of state the RealFluid node needs; 0.4.1 promotes
     # `ember.cut.signed_distance` to public, which `metric` and `util` had
-    # been reaching for as `_signed_distance`, and the private name is gone.
+    # been reaching for as `_signed_distance`, and the private name is gone;
+    # 0.4.5 adds `ember.elliptic`, the grid smoothing kernels the passage
+    # mesher calls.
     # It ships wheels for every platform CI runs on -- which is what lets CI
     # install with --only-binary ember-cfd on runners that have no Fortran
     # toolchain. ember requires numpy 2.5, which is why the numpy and scipy
@@ -39,7 +41,7 @@ dependencies = [
     #
     # Keep in sync with the "ember" intersphinx URL in doc/conf.py, which must
     # point at the docs for the release pinned here.
-    'ember-cfd==0.4.3',
+    'ember-cfd==0.4.5',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
