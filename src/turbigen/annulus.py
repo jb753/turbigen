@@ -321,6 +321,10 @@ class Annulus:
     n_row: int
     """Number of blade rows."""
 
+    m_inviscid: tuple = dataclasses.field(default=(0.0, 0.0, 0.0, 0.0), repr=False)
+    """Where the inviscid stretches of the endwalls end, as the design that made
+    this annulus asks: see :attr:`AnnulusDesign.m_inviscid`."""
+
     #
     # STRUCTURE
     #
@@ -632,6 +636,14 @@ class AnnulusDesign(Node):
     The :doc:`/annulus` page covers the shapes that ship with
     :program:`turbigen` and how a design is run.
     """
+
+    m_inviscid: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0)
+    """Where the endwalls stop being inviscid, slip walls, in normalised
+    meridional coordinate `m`: on the hub and the casing from the inlet, then
+    on the hub and the casing to the outlet. Inviscid from the inlet to the
+    first two, and from the last two to the outlet, so that the duct ahead
+    of and behind the machine grows no boundary layer; 0 for none on that
+    wall. The passage mesher puts each at its nearest grid line."""
 
     def design(self, mean_line) -> Annulus:
         """Return the annulus this design describes for `mean_line`."""

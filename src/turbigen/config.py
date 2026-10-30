@@ -6,6 +6,7 @@ holds no results: designing returns a mean line rather than storing one, so a
 config never accumulates state from a run.
 """
 
+import dataclasses
 from pathlib import Path
 
 import ember.yaml_util
@@ -137,6 +138,16 @@ class Config(Node):
         annulus = None
         if self.annulus is not None:
             annulus = self.annulus.design(mean_line)
+            # The inviscid endwalls where the design asks, whichever kind
+            # made it
+            if len(self.annulus.m_inviscid) != 4:
+                raise ValueError(
+                    f"annulus.m_inviscid={self.annulus.m_inviscid} needs four "
+                    "positions: hub and casing at the inlet, then at the outlet."
+                )
+            annulus = dataclasses.replace(
+                annulus, m_inviscid=tuple(float(m) for m in self.annulus.m_inviscid)
+            )
 
         rows = ()
         if self.blades:

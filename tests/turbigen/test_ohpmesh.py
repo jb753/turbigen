@@ -12,6 +12,8 @@ main blocks, and a guessed flow turned the wrong way in the blocks whose `i`
 does not run downstream.
 """
 
+import dataclasses
+
 import numpy as np
 import pytest
 from test_blade import ROUND, blade, build
@@ -259,3 +261,44 @@ def test_outlet_relaxation_moves_every_block_past_it_alike(machine, grid):
     dn = blocks_of_row(relaxed, len(machine.rows) - 1)["dn"]
     _, spf = annulus.evaluate_mspf(dn.x[-1], dn.r[-1])
     np.testing.assert_allclose(np.diff(spf, axis=0), 1.0 / (dn.shape[1] - 1), atol=1e-5)
+
+
+def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
+    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet and
+    to the outlet, each to its nearest grid line, and the casing over the
+    rotor with a clearance turns only where the casing is not slip."""
+    config = build(
+        blades=[
+            blade(section={"thickness": ROUND}),
+            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip_span=TIP),
+        ],
+        mesh=MESH,
+    )
+    m_inviscid = (0.5, 0.6, 4.4, 4.5)
+    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
+    machine = dataclasses.replace(config, annulus=annulus).design()
+    grid = OHPassage.from_dict(MESH).mesh(machine)
+
+    def patches(block, kind):
+        return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+    up, dn = grid["row0_up"], grid["row1_dn"]
+    inlet, outlet = patches(up, "InviscidPatch"), patches(dn, "InviscidPatch")
+    assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
+    assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
+    for block, patch, m, j in (
+        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
+        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
+        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
+        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+    ):
+        i = patch.ien if patch.ist == 0 else patch.ist
+        m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
+        spacing = np.ptp(machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])[0])
+        assert abs(np.median(m_line) - m) < spacing / (block.shape[0] - 1)
+    (casing,) = patches(dn, "RotatingPatch").values()
+    assert casing.ien == outlet["inviscid_casing_out"].ist
+    assert not patches(up, "RotatingPatch")
+
+    with pytest.raises(ValueError, match="m_inviscid"):
+        OHPassage.from_dict({**MESH, "inviscid_endwalls": True}).mesh(machine)
