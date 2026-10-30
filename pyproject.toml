@@ -22,6 +22,9 @@ classifiers = [
 dependencies = [
     'matplotlib~=3.10.0',
     "numpy~=2.5.0",
+    # As ember pins it, which brings it in anyway; named here because the
+    # annulus's inverse map uses it directly, for its single precision.
+    'pykdtree~=1.4.3',
     'PyYAML~=6.0.0',
     'scipy~=1.18.0',
     # Exact pin, not a compatible-release floor: ember follows semver from

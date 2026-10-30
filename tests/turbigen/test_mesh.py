@@ -672,3 +672,38 @@ def test_a_round_trailing_edge_is_refused():
     config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
     with pytest.raises(ValueError, match="round trailing edge"):
         config.mesh.mesh(config.design())
+
+
+#
+# OUTLET RELAXATION
+#
+
+
+@pytest.mark.parametrize("dm", [0.2, 0.8])
+def test_outlet_relaxation_evens_the_span_at_the_outlet_only(machine, grid, dm):
+    """Nodes upstream of `m_relax_out` stay exactly put; at the outlet the
+    span is evenly spaced."""
+    annulus = machine.annulus
+    m_relax = annulus.m_max - 1.0 + dm
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    relaxed = H.from_dict(mesh).mesh(machine)
+
+    for before, after in zip(grid, relaxed):
+        m, _ = annulus.evaluate_mspf(before.x, before.r)
+        up = m < m_relax
+        np.testing.assert_array_equal(after.x[up], before.x[up])
+        np.testing.assert_array_equal(after.r[up], before.r[up])
+
+    last = relaxed[f"row{len(machine.rows) - 1}"]
+    _, spf = annulus.evaluate_mspf(last.x[-1], last.r[-1])
+    np.testing.assert_allclose(
+        np.diff(spf, axis=0), 1.0 / (last.shape[1] - 1), atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("dm", [-0.5, 1.1])
+def test_outlet_relaxation_outside_the_last_gap_is_refused(machine, dm):
+    m_relax = machine.annulus.m_max - 1.0 + dm
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    with pytest.raises(ValueError, match="m_relax_out"):
+        H.from_dict(mesh).mesh(machine)

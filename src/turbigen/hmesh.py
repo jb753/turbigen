@@ -272,6 +272,11 @@ class H(Mesher):
                 f"nk_tip={self.nk_tip} is not a count a multigrid level can "
                 f"halve; give it nine or more, one above a multiple of eight."
             )
+        if self.inviscid_endwalls and self.half_span:
+            raise ValueError(
+                "half_span clusters at a viscous hub, but inviscid_endwalls "
+                "makes it a slip wall; set one or the other."
+            )
 
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
@@ -301,6 +306,8 @@ class H(Mesher):
                 blocks.append(self._tip_block(machine, i_row, geom, grids, coords))
             del coords
 
+        # The last row's spanwise grid, which reaches the outlet
+        self._relax_outlet(blocks, machine.annulus, grids.span_frac)
         grid = ember.grid.Grid(blocks)
         # The passage blocks alone, in row order: a mixing plane is between two
         # rows, and a tip block is inside one. With a gridded clearance the
@@ -759,6 +766,9 @@ class H(Mesher):
             # so changing speed needs no re-mesh. On a stator it has no effect.
             patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
 
+        # Slip walls along the whole row, hub and casing
+        patches.extend(self._endwall_patches())
+
         block = ember.block.Block(shape=(ni, nj, nk))
         block.set_label(f"row{i_row}")
         block.set_Nb(machine.rows[i_row].n_blade)
@@ -909,8 +919,11 @@ class H(Mesher):
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         """Evaluate a spanwise grid vector given hub and casing spacings.
 
-        ``dspf_casing`` is ignored when :attr:`half_span` is set.
+        ``dspf_casing`` is ignored when :attr:`half_span` is set, and both
+        with :attr:`inviscid_endwalls`, which spaces the span evenly.
         """
+        if self.inviscid_endwalls:
+            return self._uniform_span(self.dspf_mid / self.resolution_factor, tip)
         if tip and self.half_span:
             raise ValueError(
                 "half_span clusters at the hub only, but a tip gap needs "

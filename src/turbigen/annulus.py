@@ -79,7 +79,7 @@ and a span fraction ``spf``. At the inlet, ``m=0``, then 1 at the first row
 leading edge, 2 at its trailing edge, and so on up to
 :attr:`~Annulus.m_max`. Span fraction ``spf`` runs from 0 at the hub to 1 at the casing.
 :meth:`Annulus.evaluate_xr` maps a pair of them to axial and radial
-coordinates.
+coordinates, and :meth:`Annulus.evaluate_mspf` maps back.
 
 .. figure:: /_static/annulus_coordinate.svg
    :width: 100%
@@ -94,6 +94,7 @@ import logging
 from typing import ClassVar
 
 import numpy as np
+from pykdtree.kdtree import KDTree
 from scipy.interpolate import PchipInterpolator
 
 import turbigen.util
@@ -110,6 +111,26 @@ Clear of the row includes the H-mesh trailing edge cusp, which runs on
 ``AR_cusp`` trailing edge thicknesses past the blade: a plane through it cuts
 less than a pitch of fluid.
 """
+
+N_SEED_M = 32
+"""Samples per segment along `m` of the grid that seeds the inverse map."""
+
+N_SEED_SPF = 9
+"""Samples across the span of the grid that seeds the inverse map."""
+
+N_NEWTON = 20
+"""Most Newton steps the inverse map takes to place a point."""
+
+TOL_ENDS = 1e-12
+"""How far, as a fraction of the whole arc-length range, the inverse map may
+place a point beyond the inlet or outlet and still count it inside, on top of
+`ULP_ENDS` of the rounding of its coordinates."""
+
+ULP_ENDS = 8.0
+"""Units in the last place of the coordinates passed to the inverse map, at
+their largest, that a point may lie beyond the inlet or outlet and still count
+inside: a node on the outlet plane stored in single precision rounds to either
+side of it."""
 
 
 def _segment_average(values):
@@ -212,6 +233,9 @@ class RowAnnulus:
     chord: float
     """Meridional chord of the row at mid-span [m]."""
 
+    evaluate_mspf_annulus: object = dataclasses.field(default=None, repr=False)
+    """The inverse of :attr:`evaluate_xr_annulus`."""
+
     def evaluate_xr(self, m, spf):
         """Return meridional coordinates within the row.
 
@@ -236,6 +260,33 @@ class RowAnnulus:
 
         """
         return self.evaluate_xr_annulus(self.m_LE + np.asarray(m, dtype=float), spf)
+
+    def evaluate_mspf(self, x, r, tol=1e-6):
+        """Return row annulus coordinates of meridional points.
+
+        The row-local counterpart of :meth:`Annulus.evaluate_mspf`, and the
+        inverse of :meth:`evaluate_xr`: ``m`` runs 0 at the leading edge to 1
+        at the trailing edge, and beyond either outside the row, so is NaN
+        only outside the whole annulus.
+
+        Parameters
+        ----------
+        x, r : array_like
+            Axial and radial coordinates, broadcast against each other.
+        tol : float
+            Newton step, as a fraction of the whole arc-length range, below
+            which a point is placed. The steps converge quadratically, so the
+            point is then good to about `tol` squared.
+
+        Returns
+        -------
+        mspf : ndarray, shape (2, ...)
+            Row meridional coordinate and span fraction, stacked on the first
+            axis.
+
+        """
+        m, spf = self.evaluate_mspf_annulus(x, r, tol)
+        return np.stack([m - self.m_LE, spf])
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -308,20 +359,116 @@ class Annulus:
             np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
         )
         sq = np.interp(mb, np.arange(len(self.s)), self.s)
-
-        weight = self.merge_weight
-        if weight == 0.0:
-            xhub, rhub, xcas, rcas = self.curves(sq)
-        elif weight == 1.0:
-            xhub, rhub, xcas, rcas = self.curves_merged(sq)
-        else:
-            xhub, rhub, xcas, rcas = (1.0 - weight) * self.curves(
-                sq
-            ) + weight * self.curves_merged(sq)
-
+        xhub, rhub, xcas, rcas = self._hub_casing(sq)
         x = (1.0 - spfb) * xhub + spfb * xcas
         r = (1.0 - spfb) * rhub + spfb * rcas
         return np.stack([x, r])
+
+    def evaluate_mspf(self, x, r, tol=1e-6):
+        """Return annulus coordinates of meridional points.
+
+        The inverse of :meth:`evaluate_xr`, so that
+        ``evaluate_mspf(*evaluate_xr(m, spf))`` gives back ``(m, spf)``.
+
+        At fixed `m` a point is a linear blend of the hub and casing, so `m` is
+        where the point lies on the straight line between them, found by
+        Newton's method in the curves' arc-length parameter from the nearest
+        point of a seed grid; and `spf` is then where along that line it lies.
+        Span fractions beyond 0 and 1 extrapolate across the hub or casing.
+        The seed is found in single precision and the Newton steps taken in
+        double, the splines evaluating in nothing else.
+
+        Parameters
+        ----------
+        x, r : array_like
+            Axial and radial coordinates, broadcast against each other.
+        tol : float
+            Newton step, as a fraction of the whole arc-length range, below
+            which a point is placed. The steps converge quadratically, so the
+            point is then good to about `tol` squared.
+
+        Returns
+        -------
+        mspf : ndarray, shape (2, ...)
+            Normalised meridional coordinate and span fraction, stacked on the
+            first axis, in single precision if `x` and `r` both are, else in
+            double; NaN for a point upstream of the inlet or downstream of the
+            outlet, which :meth:`evaluate_xr` cannot reach.
+
+        """
+        x, r = np.asarray(x), np.asarray(r)
+        dtype = np.result_type(x, r, np.float32)
+        xb, rb = np.broadcast_arrays(x.astype(float), r.astype(float))
+        P = np.stack([xb.ravel(), rb.ravel()])
+
+        tree, m_seed = self._seed_tree
+        _, i_seed = tree.query(np.ascontiguousarray(P.T, dtype=np.float32))
+        sq = np.interp(m_seed[i_seed], np.arange(len(self.s)), self.s)
+
+        # Newton on the cross product of the point, from the hub, with the
+        # line from hub to casing, which is zero where the point lies on it.
+        # In the arc-length parameter, along which the curves are smooth,
+        # rather than in `m`, which is piecewise linear in it.
+        # Each step only on the points not yet placed.
+        S = self.s[-1] - self.s[0]
+        tol = tol * S
+        active = np.arange(sq.size)
+        for _ in range(N_NEWTON):
+            s_a = sq[active]
+            xh, rh, xc, rc = self._hub_casing(s_a)
+            dxh, drh, dxc, drc = self._hub_casing(s_a, nu=1)
+            px, pr = P[0, active] - xh, P[1, active] - rh
+            ax, ar = xc - xh, rc - rh
+            f = px * ar - pr * ax
+            df = -dxh * ar + drh * ax + px * (drc - drh) - pr * (dxc - dxh)
+            step = f / df
+            sq[active] = s_a - step
+            active = active[~(np.abs(step) < tol)]
+            if not active.size:
+                break
+
+        xh, rh, xc, rc = self._hub_casing(sq)
+        ax, ar = xc - xh, rc - rh
+        spf = ((P[0] - xh) * ax + (P[1] - rh) * ar) / (ax**2 + ar**2)
+        m = np.interp(sq, self.s, np.arange(len(self.s), dtype=float))
+
+        # Outside the annulus at either end, by more than the coordinates'
+        # own rounding, or not placed at all
+        ends = TOL_ENDS * S + ULP_ENDS * np.finfo(dtype).eps * np.abs(P).max(
+            initial=0.0
+        )
+        lost = (sq < self.s[0] - ends) | (sq > self.s[-1] + ends)
+        lost[active] = True
+        m[lost] = spf[lost] = np.nan
+
+        return np.stack([m.reshape(xb.shape), spf.reshape(xb.shape)]).astype(dtype)
+
+    def _hub_casing(self, sq, nu=0):
+        """Return ``(x_hub, r_hub, x_cas, r_cas)`` at arc-length parameter
+        `sq`, blended by :attr:`merge_weight`, or their `nu`-th derivative."""
+        weight = self.merge_weight
+        if weight == 0.0:
+            return self.curves(sq, nu)
+        if weight == 1.0:
+            return self.curves_merged(sq, nu)
+        return (1.0 - weight) * self.curves(sq, nu) + weight * self.curves_merged(
+            sq, nu
+        )
+
+    @functools.cached_property
+    def _seed_tree(self):
+        """A k-d tree of a grid of points over the annulus, in single
+        precision, and the `m` of each, from which :meth:`evaluate_mspf`
+        starts its search.
+
+        Cached, as :attr:`_xr_stations` is, being built once per annulus.
+        """
+        m = np.linspace(0.0, self.m_max, N_SEED_M * self.n_segment + 1)
+        spf = np.linspace(0.0, 1.0, N_SEED_SPF)
+        xr = self.evaluate_xr(m[:, None], spf[None, :])
+        m_grid = np.broadcast_to(m[:, None], xr.shape[1:])
+        pts = np.ascontiguousarray(xr.reshape(2, -1).T, dtype=np.float32)
+        return KDTree(pts), m_grid.ravel()
 
     @functools.cached_property
     def _xr_stations(self):
@@ -453,6 +600,7 @@ class Annulus:
             self.evaluate_xr,
             2 * i_row + 1,
             self.evaluate_chords(0.5)[2 * i_row + 1],
+            self.evaluate_mspf,
         )
 
     def to_string(self):

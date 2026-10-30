@@ -236,3 +236,26 @@ def test_the_guess_follows_the_mean_line_in_every_block(machine, grid):
         assert block.Vt.max() < hi + slack, block.label
         W = np.sqrt(block.Vx**2 + block.Vr**2 + (block.Vt - block.U) ** 2)
         assert (W / block.a).max() < 1.05, block.label
+
+
+def test_outlet_relaxation_moves_every_block_past_it_alike(machine, grid):
+    """Relaxed from just past the trailing edge, through the blocks round it
+    and the outlet block: interfaces still match, cells stay positive, nodes
+    upstream stay exactly put, and the outlet is evenly spaced in span."""
+    annulus = machine.annulus
+    m_relax = annulus.m_max - 0.95
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    relaxed = OHPassage.from_dict(mesh).mesh(machine)
+
+    for before, after in zip(grid, relaxed):
+        m, _ = annulus.evaluate_mspf(before.x, before.r)
+        up = m < m_relax
+        np.testing.assert_array_equal(after.x[up], before.x[up])
+        np.testing.assert_array_equal(after.r[up], before.r[up])
+        assert (after.vol_nd > 0.0).all()
+    pairs = relaxed.connectivity.periodic.pair()
+    assert len(pairs) == sum(len(block.patches.periodic) for block in relaxed)
+
+    dn = blocks_of_row(relaxed, len(machine.rows) - 1)["dn"]
+    _, spf = annulus.evaluate_mspf(dn.x[-1], dn.r[-1])
+    np.testing.assert_allclose(np.diff(spf, axis=0), 1.0 / (dn.shape[1] - 1), atol=1e-5)

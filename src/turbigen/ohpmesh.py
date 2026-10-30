@@ -478,6 +478,7 @@ class OHPassage(Mesher):
             blocks.append(self.mesh_row(machine, i_row, spacing, spf, j))
 
         _stitch_mixing_planes([row[: len(self.labels)] for row in blocks], self.labels)
+        self._relax_outlet([b for row in blocks for b in row], machine.annulus, spf)
         grid = ember.grid.Grid([b for row in blocks for b in row])
         grid.connectivity.periodic.pair()
         return grid
@@ -517,8 +518,11 @@ class OHPassage(Mesher):
         With a tip gap, a fraction `tip` of span, two pieces joined at a node
         at the top of the blade: the main span, and at least
         :attr:`njtip_min` nodes across the gap, spaced at the casing spacing
-        or finer, the main span ending as finely as the gap begins.
+        or finer, the main span ending as finely as the gap begins. Evenly
+        spaced, the spacings ignored, with :attr:`inviscid_endwalls`.
         """
+        if self.inviscid_endwalls:
+            return self._uniform_span(self.dspf_mid / self.resolution_factor, tip)
         if not tip:
             return util.resample(
                 clusterfunc.double.free(
@@ -1823,6 +1827,8 @@ class OHPassage(Mesher):
                 Per(k=-1),
             ]
         )
+        for blk in blocks:
+            blk.patches.extend(self._endwall_patches())
         if jtip is None:
             return blocks
 

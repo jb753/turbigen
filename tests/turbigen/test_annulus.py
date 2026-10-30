@@ -589,3 +589,94 @@ def test_cut_planes_span_hub_to_casing():
         assert xr.shape == (2, 2)
         r_hub, r_cas = xr[0][1], xr[1][1]
         assert r_cas > r_hub
+
+
+#
+# INVERSE MAP
+#
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("make", [build, build_AR])
+def test_inverse_map_round_trips(make, weight):
+    """`evaluate_mspf` undoes `evaluate_xr`, across the whole annulus, both
+    ends included, and a little beyond hub and casing: to about the square of
+    its default tolerance, Newton converging quadratically."""
+    annulus = make(merge_weight=weight).design().annulus
+    rng = np.random.default_rng(0)
+    m = np.concatenate([[0.0, annulus.m_max], rng.uniform(0.0, annulus.m_max, 2000)])
+    spf = np.concatenate([[0.0, 1.0], rng.uniform(-0.2, 1.2, 2000)])
+
+    m_back, spf_back = annulus.evaluate_mspf(*annulus.evaluate_xr(m, spf))
+
+    np.testing.assert_allclose(m_back, m, atol=1e-10)
+    np.testing.assert_allclose(spf_back, spf, atol=1e-10)
+
+
+def test_inverse_map_keeps_the_shape_of_its_arguments():
+    annulus = build().design().annulus
+    m = np.linspace(0.5, 4.5, 12).reshape(3, 4)
+
+    mspf = annulus.evaluate_mspf(*annulus.evaluate_xr(m, 0.25))
+
+    assert mspf.shape == (2, 3, 4)
+    np.testing.assert_allclose(mspf[0], m, atol=1e-10)
+    assert annulus.evaluate_mspf(*annulus.evaluate_xr(2.5, 0.3)).shape == (2,)
+
+
+def test_inverse_map_is_nan_beyond_the_inlet_and_outlet():
+    """`evaluate_xr` clamps `m`, so points past the ends have no inverse."""
+    annulus = build().design().annulus
+    (x_in, r_in), (x_out, r_out) = annulus.evaluate_xr([0.0, annulus.m_max], 0.5).T
+
+    mspf = annulus.evaluate_mspf([x_in - 0.01, x_out + 0.01], [r_in, r_out])
+
+    assert np.isnan(mspf).all()
+
+
+def test_inverse_map_keeps_single_precision():
+    """float32 in, float32 out, good to the rounding of the input."""
+    annulus = build().design().annulus
+    m = np.linspace(0.1, annulus.m_max - 0.1, 50)
+    xr = annulus.evaluate_xr(m, 0.5).astype(np.float32)
+
+    m_back, spf_back = annulus.evaluate_mspf(*xr)
+
+    assert m_back.dtype == spf_back.dtype == np.float32
+    np.testing.assert_allclose(m_back, m, atol=1e-5)
+    np.testing.assert_allclose(spf_back, 0.5, atol=1e-5)
+
+
+def test_row_inverse_map_counts_from_the_leading_edge():
+    """A row's `m` runs 0 to 1 over the row, and on into its neighbours."""
+    row = build().design().annulus.extract_row(1)
+    m = np.array([-0.5, 0.0, 0.5, 1.0, 1.5])
+
+    m_back, spf_back = row.evaluate_mspf(*row.evaluate_xr(m, 0.4))
+
+    np.testing.assert_allclose(m_back, m, atol=1e-10)
+    np.testing.assert_allclose(spf_back, 0.4, atol=1e-10)
+
+
+def test_inverse_map_tolerance_can_be_tightened_to_rounding():
+    annulus = build().design().annulus
+    rng = np.random.default_rng(1)
+    m = rng.uniform(0.0, annulus.m_max, 2000)
+    spf = rng.uniform(0.0, 1.0, 2000)
+
+    m_back, spf_back = annulus.evaluate_mspf(*annulus.evaluate_xr(m, spf), tol=1e-12)
+
+    np.testing.assert_allclose(m_back, m, atol=1e-14)
+    np.testing.assert_allclose(spf_back, spf, atol=1e-14)
+
+
+def test_inverse_map_counts_single_precision_outlet_nodes_inside():
+    """A node on the outlet plane rounded to single precision can land a hair
+    beyond it, and is still on it, not NaN."""
+    annulus = build().design().annulus
+    xr = annulus.evaluate_xr(annulus.m_max, np.linspace(0.0, 1.0, 9))
+
+    m, spf = annulus.evaluate_mspf(*xr.astype(np.float32))
+
+    np.testing.assert_allclose(m, annulus.m_max, atol=1e-5)
+    np.testing.assert_allclose(spf, np.linspace(0.0, 1.0, 9), atol=1e-5)
