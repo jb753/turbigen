@@ -1716,9 +1716,13 @@ class OHPassage(Mesher):
         # half its length there.
         f1 = np.clip(_beyond_O(out, lay) / L, 1e-12, 0.5)
         T = L[:, None] * clusterfunc.double.smooth_many(f0, f1, nk)
-        # Every line at once: which coarse segment each new node falls in,
-        # and how far along it.
-        q = np.clip((T[:, :, None] >= s[:, None, 1:-1]).sum(axis=2), 0, len(s[0]) - 2)
+        # Every line at once: which segment each new node falls in, and how
+        # far along it, searched in one sorted run with each line lifted
+        # clear of the one before.
+        inner = s[:, 1:-1]
+        lift = (2.0 * float(s[:, -1].max()) + 1.0) * np.arange(len(s))[:, None]
+        q = np.searchsorted((inner + lift).ravel(), T + lift, side="right")
+        q = np.clip(q - inner.shape[1] * np.arange(len(s))[:, None], 0, len(s[0]) - 2)
         s_lo = np.take_along_axis(s, q, axis=1)
         s_hi = np.take_along_axis(s, q + 1, axis=1)
         w = (T - s_lo) / np.maximum(s_hi - s_lo, 1e-30)

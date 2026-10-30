@@ -173,17 +173,28 @@ def smooth_many(dx0, dx1, N):
     def total(c):
         return np.exp(line + c[:, None] * bump).sum(axis=1)
 
-    # The total grows with the curvature, so bracket it and bisect.
+    # The total grows with the curvature, so bracket it, then take Newton
+    # steps on its log, which is convex in the curvature, bisecting instead
+    # wherever a step would leave the bracket.
     lo = np.full(len(dx), -1.0)
     hi = np.full(len(dx), 1.0)
     for _ in range(60):
-        lo[total(lo) > 1.0] *= 2.0
-        hi[total(hi) < 1.0] *= 2.0
+        below, above = total(lo) > 1.0, total(hi) < 1.0
+        if not (below.any() or above.any()):
+            break
+        lo[below] *= 2.0
+        hi[above] *= 2.0
+    c = 0.5 * (lo + hi)
     for _ in range(100):
-        c = 0.5 * (lo + hi)
-        short = total(c) < 1.0
-        lo[short] = c[short]
-        hi[~short] = c[~short]
+        e = np.exp(line + c[:, None] * bump)
+        T = e.sum(axis=1)
+        g = np.log(T)
+        if np.all(np.abs(g) < 1e-14):
+            break
+        lo = np.where(g < 0.0, c, lo)
+        hi = np.where(g > 0.0, c, hi)
+        step = c - g * T / np.maximum((e * bump).sum(axis=1), 1e-300)
+        c = np.where((step > lo) & (step < hi), step, 0.5 * (lo + hi))
     ds = np.exp(line + c[:, None] * bump)
     x = np.concatenate((np.zeros((len(dx), 1)), np.cumsum(ds, axis=1)), axis=1)
     return x / x[:, -1:]
