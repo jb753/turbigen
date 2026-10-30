@@ -141,6 +141,54 @@ def fixed_many(dx0, dx1, N):
     return out
 
 
+def smooth_many(dx0, dx1, N):
+    """Double-sided clustering of many unit intervals, the expansion ratio
+    varying linearly along each.
+
+    The log of the spacing a quadratic in index, through the boundary
+    spacings at either end, its curvature set so the spacings sum to the
+    interval. The ends are as asked exactly, and the ratio between adjacent
+    spacings changes by the same factor at every point, where Vinokur
+    stretching holds it nearly steady and then changes it all at one end.
+
+    Parameters
+    ----------
+    dx0, dx1: array
+        Boundary spacings at the start and end of each unit interval, shape
+        (m,), summing to less than one.
+    N: int
+        Number of points in each grid vector.
+
+    Returns
+    -------
+    x: array
+        Grid vectors on the unit interval, shape (m, N).
+
+    """
+    dx = np.stack(np.broadcast_arrays(dx0, dx1), axis=1).astype(float)
+    t = np.linspace(0.0, 1.0, N - 1)[None, :]
+    line = np.log(dx[:, :1]) + np.log(dx[:, 1:] / dx[:, :1]) * t
+    bump = t * (1.0 - t)
+
+    def total(c):
+        return np.exp(line + c[:, None] * bump).sum(axis=1)
+
+    # The total grows with the curvature, so bracket it and bisect.
+    lo = np.full(len(dx), -1.0)
+    hi = np.full(len(dx), 1.0)
+    for _ in range(60):
+        lo[total(lo) > 1.0] *= 2.0
+        hi[total(hi) < 1.0] *= 2.0
+    for _ in range(100):
+        c = 0.5 * (lo + hi)
+        short = total(c) < 1.0
+        lo[short] = c[short]
+        hi[~short] = c[~short]
+    ds = np.exp(line + c[:, None] * bump)
+    x = np.concatenate((np.zeros((len(dx), 1)), np.cumsum(ds, axis=1)), axis=1)
+    return x / x[:, -1:]
+
+
 def _vinokur_many(ds, N):
     """Two sided analytic clustering after Vinokur, for many intervals (m, 2)."""
     s0 = 1.0 / N / ds[:, 0]
