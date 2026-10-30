@@ -23,7 +23,7 @@ MESH = {
     "type": "ohp",
     "dspf_mid": 0.1,
     "resolution_factor": 0.5,
-    "n_span_smooth": 3,
+    "n_span_smooth": 4,
 }
 """A deliberately coarse mesh, swept on few planes."""
 

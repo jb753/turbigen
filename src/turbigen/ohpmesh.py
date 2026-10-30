@@ -89,6 +89,13 @@ SLOPE_MAX = 1.0
 """Largest `dtheta/dm'` the initial periodic line is extended at beyond the
 blade, being the tangent of 45 degrees. Only a starting guess: the line floats."""
 
+END_FIT = 0.05
+"""Fraction of chord at each end of the camber line its end slope is fitted
+over, to average out an uneven parameterisation of the annulus."""
+
+N_END_FIT = 101
+"""Samples, evenly spaced in chord, over which each end slope is fitted."""
+
 POLISH_POWER = 4.0
 """Power the polish raises each cell corner's shape measure to, so that the
 worst cells dominate rather than being traded for small gains elsewhere."""
@@ -374,6 +381,11 @@ class OHPassage(Mesher):
     relax from the spacing across the pitch at the cut to even in theta, in
     meridional chords."""
 
+    spf_corners: float = 0.5
+    """Span fraction at which the corners of the O block are found, by the
+    rules of :meth:`_wall`, and kept at every span as the same fractions of
+    the way round the blade."""
+
     stagger_max: float = 30.0
     """Most the bounding box that places the corners is turned, degrees."""
 
@@ -425,6 +437,8 @@ class OHPassage(Mesher):
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
+        if not 0.0 <= self.spf_corners <= 1.0:
+            raise ValueError(f"spf_corners={self.spf_corners} must be from 0 to 1.")
         if not 0.0 <= self.polish_below < 90.0:
             raise ValueError(
                 f"polish_below={self.polish_below} must be from zero to 90 degrees."
@@ -567,16 +581,16 @@ class OHPassage(Mesher):
     def control_planes(self, spf):
         """Return the indices of the spanwise planes that are smoothed.
 
-        Evenly spaced in index, so following the spanwise clustering, and
-        always including the hub and the casing. Every plane if
-        :attr:`n_span_smooth` is zero.
+        The planes nearest even steps in span fraction, rather than even
+        steps in index, which would follow the spanwise clustering and crowd
+        them at the endwalls; always including the hub and the casing. Every
+        plane if :attr:`n_span_smooth` is zero.
         """
         nj = len(spf)
         if not self.n_span_smooth or self.n_span_smooth >= nj:
             return np.arange(nj)
-        return np.unique(
-            np.round(np.linspace(0, nj - 1, self.n_span_smooth)).astype(int)
-        )
+        target = np.linspace(spf[0], spf[-1], self.n_span_smooth)
+        return np.unique(np.argmin(np.abs(spf[:, None] - target), axis=0))
 
     #
     # GEOMETRY
@@ -593,7 +607,10 @@ class OHPassage(Mesher):
         fractions of the way round, if given; else C3 and C1 from the bounding
         box, C2 at the throat, the point of the upper side's outline nearest
         C3 on the next blade `pitch` above, and C4 where the normal out of C1
-        on the blade below lands on the lower side's.
+        on the blade below lands on the lower side's; or, where theta rises
+        along the chord, mirrored: C2 and C4 from the box, C3 at the point of
+        the lower side's outline nearest C2 on the blade below, and C1 where
+        the normal out of C4 on the blade above lands on the upper side's.
         """
         upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
         s_te = util.cum_arc_length(te)
@@ -647,32 +664,49 @@ class OHPassage(Mesher):
             k: s[int(np.argmin(np.hypot(rot[0] - b[0], rot[1] - b[1])))]
             for k, b in box.items()
         }
-        # Clear of the trailing edge, and in order round the blade.
         gap = 0.02 * S
-        s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_up - 3 * gap)
-        s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
-        # The passage block's rear edge, from C2 across to C3 on the next
-        # blade, leaves the O block square: on a staggered blade the box's
-        # corner can sit far up the upper side, its edge to C3 running along
-        # the blade, and the blocks round C2 starting as slivers.
-        upper = (s > s_up + 3 * gap) & (s < s_hi - gap)
-        i_C3 = int(np.argmin(np.abs(s - s_C["C3"])))
-        to_C3 = outline - (outline[:, i_C3] + pitch * _J)[:, None]
-        s_C["C2"] = s[upper][np.argmin(np.hypot(*to_C3[:, upper]))]
-        s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
-        # Likewise its front edge, from C1 on the blade below across to C4:
-        # C4 where the normal out of C1 lands on the lower side's outline, if
-        # it does, so the edge leaves C1 square too. The nearest point to C1
-        # instead can lie far back along a staggered blade's pressure side.
-        lower = (s > s_C["C3"] + gap) & (s < s_up - gap)
-        i_C1 = int(np.argmin(np.abs(s - s_C["C1"])))
-        A = outline[:, i_C1] - pitch * _J
-        n = _outward_normals(wall)[:, i_C1]
-        rel = outline[:, lower] - A[:, None]
-        ahead = rel[0] * n[0] + rel[1] * n[1] > 0.0
-        off = np.abs(rel[0] * n[1] - rel[1] * n[0])
-        if ahead.any():
-            s_C["C4"] = s[lower][ahead][np.argmin(off[ahead])]
+        normals = _outward_normals(wall)
+
+        def nearest(name, side, other, shift):
+            """Corner `name` at the point of the outline in `side` nearest
+            corner `other` on the blade `shift` pitches above."""
+            i = int(np.argmin(np.abs(s - s_C[other])))
+            to = outline - (outline[:, i] + shift * pitch * _J)[:, None]
+            s_C[name] = s[side][np.argmin(np.hypot(*to[:, side]))]
+
+        def normal_lands(name, side, other, shift):
+            """Corner `name` where the normal out of corner `other` on the
+            blade `shift` pitches above lands on the outline in `side`, if it
+            does."""
+            i = int(np.argmin(np.abs(s - s_C[other])))
+            A = outline[:, i] + shift * pitch * _J
+            n = normals[:, i]
+            rel = outline[:, side] - A[:, None]
+            ahead = rel[0] * n[0] + rel[1] * n[1] > 0.0
+            off = np.abs(rel[0] * n[1] - rel[1] * n[0])
+            if ahead.any():
+                s_C[name] = s[side][ahead][np.argmin(off[ahead])]
+
+        # The passage block's edges, corner to corner across the passage,
+        # leave the O block square, where a box corner far along a staggered
+        # blade would start the blocks round it as slivers: at the rear, one
+        # side's corner nearest the other's on the next blade; at the front,
+        # one side's where the normal out of the other's on the next blade
+        # lands. With theta falling along the chord, or unstaggered, these
+        # place the upper rear and lower front corners; rising, mirrored.
+        if np.arctan2(chord[1], chord[0]) <= 0.0:
+            # Clear of the trailing edge, and in order round the blade.
+            s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_up - 3 * gap)
+            s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
+            nearest("C2", (s > s_up + 3 * gap) & (s < s_hi - gap), "C3", 1)
+            s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
+            normal_lands("C4", (s > s_C["C3"] + gap) & (s < s_up - gap), "C1", -1)
+        else:
+            s_C["C2"] = np.clip(s_C["C2"], s_up + 3 * gap, s_hi - gap)
+            s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
+            nearest("C3", (s > s_lo + gap) & (s < s_up - 3 * gap), "C2", -1)
+            s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
+            normal_lands("C1", (s > s_up + gap) & (s < s_C["C2"] - gap), "C4", 1)
 
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4), s_LE
@@ -737,20 +771,22 @@ class OHPassage(Mesher):
 
         cmap = ConformalMap(machine.annulus, 0.5, m_in, m_out)
         r_ref = float(np.mean(_by_theta(blade, 0.5)[0][1]))
-        to_c = blade.evaluate_chord(0.5) / r_ref / self.resolution_factor
+        to_c = _chord(blade, 0.5) / self.resolution_factor
         h, h_LE, H = self.ds * to_c, self.ds_LE * to_c, self.ds_free * to_c
         h_TE = self.ds_TE * to_c
         t_O = self.t_O * pitch
 
         # Coarse along the blade: the free stream size, or less where it
         # turns sharply; the two sides of the passage block alike.
-        # The corners found at mid-span, and kept as fractions of the way
+        # The corners found at spf_corners, and kept as fractions of the way
         # round at every span: found at each, the nearest point to a corner of
         # the box can jump from one part of the blade to another between
         # spans, and the planes either side no longer fit together.
-        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, pitch=pitch)
+        cmap_C = ConformalMap(machine.annulus, self.spf_corners, m_in, m_out)
+        _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
+        corners = tuple(float(x) for x in marks_C[1:5] / marks_C[-1])
+        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, corners)
         S = marks[-1]
-        corners = tuple(float(x) for x in marks[1:5] / S)
         s = np.linspace(0.0, S, N_WALL)
         density = _coarse_density(wall, H, np.radians(self.turn_max))
         i3, i4, i1, _ = i_C
@@ -2441,6 +2477,13 @@ def _at_arc(curve, s):
     return np.stack([np.interp(s, s_curve, c) for c in curve])
 
 
+def _chord(blade, spf):
+    """Return the meridional chord of the section at `spf`, in conformal
+    units, over the mean radius of the section."""
+    r_ref = float(np.mean(_by_theta(blade, spf)[0][1]))
+    return blade.evaluate_chord(spf) / r_ref
+
+
 def _norm_arc(curve):
     """Return normalised arc length along a polyline (2, n)."""
     s = util.cum_arc_length(curve)
@@ -2469,10 +2512,7 @@ def _periodic_line(blade, cmap, pitch):
     mp = cmap.mp_from_xr(cam[:2])
     theta = cam[2] + 0.5 * pitch
     slope = np.clip(
-        [
-            (theta[1] - theta[0]) / (mp[1] - mp[0]),
-            (theta[-1] - theta[-2]) / (mp[-1] - mp[-2]),
-        ],
+        [_end_slope(blade, cmap, 0.0, END_FIT), _end_slope(blade, cmap, 1.0, -END_FIT)],
         -SLOPE_MAX,
         SLOPE_MAX,
     )
@@ -2485,6 +2525,21 @@ def _periodic_line(blade, cmap, pitch):
         return out
 
     return periodic
+
+
+def _end_slope(blade, cmap, m_end, dm):
+    """Return `dtheta/dm'` of the camber line at its end `m_end`.
+
+    From a quadratic fitted over `dm` of chord, not differenced between the
+    end's first two samples: an annulus whose `m` runs on unevenly over a
+    small fraction of chord puts those a few percent out of true in `m'`, by
+    an amount that jumps from span to span. Extended a chord beyond the blade,
+    that shears the periodic surface by a degree where the planes crowd the
+    endwalls.
+    """
+    cam = blade.evaluate_camber(cmap.spf, m=np.linspace(m_end, m_end + dm, N_END_FIT))
+    mp = cmap.mp_from_xr(cam[:2])
+    return np.polyfit(mp - mp[0], cam[2], 2)[1]
 
 
 def _line(a, b, f):
