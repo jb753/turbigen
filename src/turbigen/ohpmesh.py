@@ -51,6 +51,7 @@ leading edge to the trailing edge. See :meth:`OHPassage._tip_gap`.
 """
 
 import dataclasses
+import functools
 import itertools
 import logging
 from typing import ClassVar
@@ -183,7 +184,7 @@ N_SMOOTH_TURN = 5
 the coarse spacing round its edges: few, so the curvature of an edge much
 smaller than a cell is not averaged away."""
 
-N_SPLINE_O = 64
+N_SPLINE_O = 16
 """Samples per coarse cell of the spline along each line of the O block that
 its refined nodes are respaced along."""
 
@@ -1665,9 +1666,7 @@ class OHPassage(Mesher):
             a, b = e[j], e[j + 1]
             s_f = S * _by_density(t, d_eff, c[j], c[j + 1], m)
             q = np.linspace(0.0, b - a, 64 * (b - a) + 1)
-            s_q = scipy.interpolate.PchipInterpolator(
-                np.arange(b - a + 1), s_c[a : b + 1]
-            )(q)
+            s_q = _pchip_unit(s_c[a : b + 1], q)
             u = np.interp(s_f, s_q, q)
             u[0], u[-1] = 0.0, b - a
             return u
@@ -1821,9 +1820,7 @@ class OHPassage(Mesher):
         s_c = _wall_arc(plane, xy[0][:, :, 0])
         s_f = np.concatenate(
             [
-                scipy.interpolate.PchipInterpolator(
-                    np.arange(a, b + 1), s_c[a : b + 1]
-                )(a + v)[(0 if j == 0 else 1) :]
+                _pchip_unit(s_c[a : b + 1], v)[(0 if j == 0 else 1) :]
                 for j, (a, b, v) in enumerate(self._wall_pieces(lay))
             ]
         )
@@ -1852,16 +1849,16 @@ class OHPassage(Mesher):
         # blade along its normal, sampled finely, so the nodes respaced along
         # it leave the blade square and do not cut the corners where the
         # lines between coarse nodes bend.
-        nc = O.shape[2]
-        u = np.linspace(0.0, nc - 1.0, N_SPLINE_O * (nc - 1) + 1)
         O = O.astype(float)
         speed = np.linalg.norm(O[:, :, 1] - O[:, :, 0], axis=0)
-        start = ((1, _wall_normals(wall, s_f) * speed), "not-a-knot")
-        O = scipy.interpolate.CubicSpline(np.arange(nc), O, axis=2, bc_type=start)(u)
+        start = _wall_normals(wall, s_f) * speed
+        O = np.concatenate((O, start[:, :, None]), axis=2) @ _spline_O(O.shape[2]).T
         nk = lay.nk_O
         d_wall = lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]
-        seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
-        s = np.concatenate((np.zeros((len(seg), 1)), np.cumsum(seg, axis=1)), axis=1)
+        d = np.diff(O, axis=2)
+        d *= d
+        s = np.zeros(O.shape[1:])
+        np.cumsum(np.sqrt(d[0] + d[1]), axis=1, out=s[:, 1:])
         L = s[:, -1]
         # Double-sided stretching along each line, from the wall spacing, no
         # coarser than even, to the first cell of the block beyond, its
@@ -2579,6 +2576,53 @@ def _grow_limited(h, s, g):
     back = -g * x + np.minimum.accumulate((H + g * x)[::-1])[::-1]
     n = len(s) - 1
     return np.minimum(fwd, back)[n : 2 * n + 1]
+
+
+def _pchip_unit(y, t):
+    """Return the PCHIP through `y` at knots 0, 1, ..., n - 1 at `t`.
+
+    As :class:`scipy.interpolate.PchipInterpolator` makes it, to rounding,
+    without the cost of building one, which on a few knots is most of it.
+    """
+    m = np.diff(y)
+    if len(y) == 2:
+        d = np.array([m[0], m[0]])
+    else:
+        # Interior slopes the harmonic mean of the chords either side, or
+        # flat at a turn; each end's a one-sided estimate kept in shape.
+        d = np.zeros_like(y)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            whmean = (3.0 / m[:-1] + 3.0 / m[1:]) / 6.0
+        ok = (np.sign(m[1:]) == np.sign(m[:-1])) & (m[1:] != 0) & (m[:-1] != 0)
+        d[1:-1][ok] = 1.0 / whmean[ok]
+        for i, m0, m1 in ((0, m[0], m[1]), (-1, m[-1], m[-2])):
+            e = (3.0 * m0 - m1) / 2.0
+            if np.sign(e) != np.sign(m0):
+                e = 0.0
+            elif np.sign(m0) != np.sign(m1) and abs(e) > 3.0 * abs(m0):
+                e = 3.0 * m0
+            d[i] = e
+    k = np.clip(np.floor(t).astype(int), 0, len(y) - 2)
+    x = t - k
+    c2 = 3.0 * m[k] - 2.0 * d[k] - d[k + 1]
+    c3 = d[k] + d[k + 1] - 2.0 * m[k]
+    return ((c3 * x + c2) * x + d[k]) * x + y[k]
+
+
+@functools.cache
+def _spline_O(nc):
+    """Return the samples (n, nc + 1), `N_SPLINE_O` per coarse cell, of the
+    cubic spline through `nc` evenly spaced values with a given slope at the
+    first and not-a-knot at the last, per unit of each value and the slope.
+
+    The same at every plane, so each O block's lines are splined by one
+    product with their coarse nodes and the slopes off the blade.
+    """
+    u = np.linspace(0.0, nc - 1.0, N_SPLINE_O * (nc - 1) + 1)
+    e = np.eye(nc + 1)
+    start = ((1, e[nc]), "not-a-knot")
+    spline = scipy.interpolate.CubicSpline(np.arange(nc), e[:nc], bc_type=start)
+    return np.ascontiguousarray(spline(u))
 
 
 def _refine_matrix(n, pieces, dtype):
