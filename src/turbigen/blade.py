@@ -1015,10 +1015,12 @@ class Blade:
         mcam_ptp = mcam_TE - mcam_LE
         m_LTE = np.stack(((ms - mcam_LE) / mcam_ptp, (mp - mcam_LE) / mcam_ptp))
         mcam = (m - mcam_LE) / mcam_ptp
-        chord = turbigen.util.arc_length(self.row_annulus.evaluate_xr(mcam, 0.5))
-
-        # Meridional coordinates of the camber line
-        xr = self.row_annulus.evaluate_xr(mcam, spf)
+        # Meridional coordinates of the camber line at mid-span, for the chord,
+        # and here, in one evaluation of the annulus at `mcam`
+        xr_mid, xr = np.moveaxis(
+            self.row_annulus.evaluate_xr(mcam, np.array([[0.5], [spf]])), 1, 0
+        )
+        chord = turbigen.util.arc_length(xr_mid)
 
         # Project the camber angle onto the annulus
         theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
@@ -1095,11 +1097,11 @@ class Blade:
         xrt, m_LTE, Dy, chord = self._section_layout(spf, m)
         xr, theta = xrt[:2], xrt[2]
 
-        surfaces = []
-        for m_surf, Dy_surf in zip(m_LTE, Dy):
-            # Meridional coordinates of this surface
-            xr_surf = self.row_annulus.evaluate_xr(m_surf, spf)
+        # Meridional coordinates of both surfaces, in one evaluation
+        xr_both = np.moveaxis(self.row_annulus.evaluate_xr(m_LTE, spf), 1, 0)
 
+        surfaces = []
+        for m_surf, Dy_surf, xr_surf in zip(m_LTE, Dy, xr_both):
             # Angular offset to it, at the mean radius between the camber line
             # and the surface
             dt = Dy_surf * chord / xr[1]

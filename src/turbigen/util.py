@@ -74,6 +74,12 @@ def cumsum0(x, axis=None):
 
 def cumtrapz0(x, *args, axis=-1):
     """Return the cumulative integral of `x`, starting from an explicit zero."""
+    x = np.asarray(x)
+    if x.ndim == 1 and len(args) == 1 and np.ndim(args[0]) == 1:
+        # Along one curve, summed as `cumulative_trapezoid` sums it, without
+        # its checks, which on a mesher's thousands of calls cost the most.
+        d = np.diff(args[0])
+        return cumsum0(d * (x[1:] + x[:-1]) / 2.0)
     return np.insert(cumulative_trapezoid(x, *args, axis=axis), 0, 0.0, axis=axis)
 
 
