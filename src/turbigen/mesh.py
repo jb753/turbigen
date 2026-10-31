@@ -24,6 +24,7 @@ import logging
 
 import ember.patch
 import numpy as np
+from scipy.spatial import cKDTree
 
 from turbigen.node import Node
 
@@ -173,6 +174,60 @@ class Mesher(Node):
             ember.patch.InviscidPatch(j=-1, label="inviscid_casing"),
         ]
 
+    def _check_inviscid_ducts(self, annulus):
+        """Refuse `annulus.m_inviscid` together with :attr:`inviscid_endwalls`."""
+        if self.inviscid_endwalls and any(annulus.m_inviscid):
+            raise ValueError(
+                "inviscid_endwalls already makes every endwall a slip wall, "
+                "so annulus.m_inviscid would overlap it; leave that unset."
+            )
+
+    def _inviscid_ducts(self, machine, i_row, up, dn, i_le=None, i_te=None):
+        """Add inviscid patches to the endwalls of block `up`, ahead of the
+        first row, and `dn`, behind the last, from the inlet to the grid line
+        nearest `annulus.m_inviscid`'s first two positions, on the hub and the
+        casing, and from those nearest its last two to the outlet. The lines
+        must lie inside the blocks, and no further in than `i_le` and `i_te`.
+
+        Returns the range of `i` the casing of each block, by `id`, is not
+        inviscid over, for its rotating patch.
+        """
+        annulus = machine.annulus
+        last = len(machine.rows) - 1
+        hub_in, cas_in, hub_out, cas_out = annulus.m_inviscid
+        rotating = {}
+        for blk, m, j, inlet, here in (
+            (up, hub_in, 0, True, i_row == 0),
+            (up, cas_in, -1, True, i_row == 0),
+            (dn, hub_out, 0, False, i_row == last),
+            (dn, cas_out, -1, False, i_row == last),
+        ):
+            if not m or not here:
+                continue
+            i = _i_at_m(blk, annulus, j, m)
+            ni = blk.shape[0]
+            lo = 1 if inlet or i_te is None else i_te
+            hi = ni - 2 if not inlet or i_le is None else i_le
+            if not lo <= i <= hi:
+                raise ValueError(
+                    f"annulus.m_inviscid {m} is not inside the duct "
+                    f"{'ahead of the first row' if inlet else 'behind the last row'}."
+                )
+            wall = "hub" if j == 0 else "casing"
+            end = "in" if inlet else "out"
+            i_range = (0, i) if inlet else (i, -1)
+            blk.patches.append(
+                ember.patch.InviscidPatch(
+                    i=i_range, j=j, label=f"inviscid_{wall}_{end}"
+                )
+            )
+            if j == -1:
+                # One block can hold both ends, in a machine of one H row
+                ist, ien = rotating.get(id(blk), (0, ni - 1))
+                rotating[id(blk)] = (i, ien) if inlet else (ist, i)
+            logger.debug(f"Inviscid {wall} at the {end}let to grid line {i} of {ni}")
+        return rotating
+
     #
     # OUTLET
     #
@@ -269,3 +324,17 @@ class Mesher(Node):
         d_annulus = float(np.mean(d_surf))
 
         return WallSpacing(surface=d_surf, hub=d_annulus, casing=d_annulus)
+
+
+def _i_at_m(block, annulus, j, m):
+    """Return the `i` of `block` whose grid line along endwall `j`, 0 the hub
+    or -1 the casing, lies nearest normalised meridional position `m`, its
+    nodes' `m` averaged across the pitch."""
+    spf = 0.0 if j == 0 else 1.0
+    m_wall = np.linspace(0.0, annulus.m_max, 20001)
+    xr_wall = np.asarray(annulus.evaluate_xr(m_wall, spf)).reshape(2, -1)
+    x = np.asarray(block.x[:, j, :], dtype=float)
+    r = np.asarray(block.r[:, j, :], dtype=float)
+    _, idx = cKDTree(xr_wall.T).query(np.stack((x.ravel(), r.ravel()), axis=1))
+    m_line = m_wall[idx].reshape(x.shape).mean(axis=1)
+    return int(np.argmin(np.abs(m_line - m)))

@@ -517,11 +517,7 @@ class OHPassage(Mesher):
                 )
 
         tip = self._tip_fraction(machine)
-        if self.inviscid_endwalls and any(machine.annulus.m_inviscid):
-            raise ValueError(
-                "inviscid_endwalls already makes every endwall a slip wall, "
-                "so annulus.m_inviscid would overlap it; leave that unset."
-            )
+        self._check_inviscid_ducts(machine.annulus)
         span_ref = machine.annulus.evaluate_span(1)
         spf = self.spanwise_grid(spacing.hub / span_ref, spacing.casing / span_ref, tip)
         logger.debug(f"{type(self).__name__} spanwise points: {len(spf)}")
@@ -2096,7 +2092,7 @@ class OHPassage(Mesher):
         )
         for blk in blocks:
             blk.patches.extend(self._endwall_patches())
-        casing = self._inviscid(machine, i_row, up, dn)
+        casing = self._inviscid_ducts(machine, i_row, up, dn)
         if jtip is None:
             return blocks
 
@@ -2142,61 +2138,6 @@ class OHPassage(Mesher):
             i_rot = casing.get(id(blk), (0, -1))
             blk.patches.append(ember.patch.RotatingPatch(i=i_rot, j=-1, label="casing"))
         return blocks
-
-    def _inviscid(self, machine, i_row, up, dn):
-        """Add inviscid patches to the endwalls of the blocks ahead of the
-        first row and behind the last, from the inlet to the grid line nearest
-        `annulus.m_inviscid`'s first two positions, on the hub and the casing,
-        and from those nearest its last two to the outlet.
-
-        Returns the range of `i` the casing of each block, by `id`, is not
-        inviscid over, for its rotating patch.
-        """
-        annulus = machine.annulus
-        last = len(machine.rows) - 1
-        hub_in, cas_in, hub_out, cas_out = annulus.m_inviscid
-        rotating = {}
-        for blk, m, j, inlet, here in (
-            (up, hub_in, 0, True, i_row == 0),
-            (up, cas_in, -1, True, i_row == 0),
-            (dn, hub_out, 0, False, i_row == last),
-            (dn, cas_out, -1, False, i_row == last),
-        ):
-            if not m or not here:
-                continue
-            i = _i_at_m(blk, annulus, j, m)
-            ni = blk.shape[0]
-            if not 0 < i < ni - 1:
-                raise ValueError(
-                    f"annulus.m_inviscid {m} is not inside the block "
-                    f"{'ahead of the first row' if inlet else 'behind the last row'}."
-                )
-            wall = "hub" if j == 0 else "casing"
-            end = "in" if inlet else "out"
-            i_range = (0, i) if inlet else (i, -1)
-            blk.patches.append(
-                ember.patch.InviscidPatch(
-                    i=i_range, j=j, label=f"inviscid_{wall}_{end}"
-                )
-            )
-            if j == -1:
-                rotating[id(blk)] = (i, -1) if inlet else (0, i)
-            logger.debug(f"Inviscid {wall} at the {end}let to grid line {i} of {ni}")
-        return rotating
-
-
-def _i_at_m(block, annulus, j, m):
-    """Return the `i` of `block` whose grid line along endwall `j`, 0 the hub
-    or -1 the casing, lies nearest normalised meridional position `m`, its
-    nodes' `m` averaged across the pitch."""
-    spf = 0.0 if j == 0 else 1.0
-    m_wall = np.linspace(0.0, annulus.m_max, 20001)
-    xr_wall = np.asarray(annulus.evaluate_xr(m_wall, spf)).reshape(2, -1)
-    x = np.asarray(block.x[:, j, :], dtype=float)
-    r = np.asarray(block.r[:, j, :], dtype=float)
-    _, idx = cKDTree(xr_wall.T).query(np.stack((x.ravel(), r.ravel()), axis=1))
-    m_line = m_wall[idx].reshape(x.shape).mean(axis=1)
-    return int(np.argmin(np.abs(m_line - m)))
 
 
 def _plane_topology(xy, pitch, stencils=True):

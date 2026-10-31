@@ -643,7 +643,7 @@ class AnnulusDesign(Node):
     on the hub and the casing to the outlet. Inviscid from the inlet to the
     first two, and from the last two to the outlet, so that the duct ahead
     of and behind the machine grows no boundary layer; 0 for none on that
-    wall. The passage mesher puts each at its nearest grid line."""
+    wall. Both meshers put each at its nearest grid line."""
 
     def design(self, mean_line) -> Annulus:
         """Return the annulus this design describes for `mean_line`."""
