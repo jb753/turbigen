@@ -263,7 +263,6 @@ answers:
                             config files are given
 -Q, --queue                 submit to the queue the job: section names,
                             instead of running here
---restart [NPZ]             start the solve from a stored field
 ```
 
 Everything else that could be a flag is a *value*, and values live in the
@@ -410,7 +409,7 @@ command, no flags, whatever depth of case you point it at:
 
 Each standard processor draws nothing when what it needs is absent, so there is
 no mode to select. **Re-plotting a finished run is the same command as plotting
-a fresh one** — no `--restart`, because a report of a run that has a field
+a fresh one** — and it ignores `restart:`, because a report of a run that has a field
 always wants it and there is nothing else it could mean.
 
 The grid itself is **not** written. How a mesh is serialised is a property of
@@ -455,9 +454,25 @@ drifting apart is precisely what happened to `turbigen.main`.
 
 Everything lands beside the config, so there is nothing to name -- or beside
 the copy `-o` makes, which is how a variant is run without replacing the answer
-already there. A bare `--restart` still means the field beside the config *you
-named*, not the workdir being created, so continuing from what you have while
-writing somewhere new is the two flags together and nothing more.
+already there.
+
+Which field a run starts from is a value, not a flag, so it lives in the config
+as `restart:`, where a sweep cannot forget it and an archived case records it.
+It resolves as an `include:` does, relative to the file that names it, and
+turbigen writes it relative to wherever it writes the config next --- the copy
+`-o` makes, an iteration's `input.yaml` --- so a case and its field move
+together. `-s restart=PATH` sets it relative to where you typed it, and
+`-s restart=null` clears it. A field that is named but not there is an error,
+raised before `-o` claims a number, never a quiet fall back to the meridional
+guess.
+
+In a config you write, `restart:` is the field to start *from*. In an
+`input.yaml` or `output.yaml` turbigen wrote, it is the field that run *started*
+from, or null for the guess, so re-solving any one iteration or chic point
+alone starts where it did. An `output.yaml`'s is a record: once a settled
+design is pruned it names a field that is gone, and only a config's is ever
+read. A settled iteration's `input.yaml` that names a pruned field has the key
+cleared, so re-solving it alone starts from the guess rather than refusing.
 
 Several config files run one after another, which is the bash loop this saves
 you writing, or become one submission with `--queue`.
@@ -520,9 +535,17 @@ hiload/iter_0001/      input.yaml
 
 The last iteration's artefacts are **moved** to the root, so `output.yaml`
 means "what this run achieved" whichever verb produced it and a database glob,
-a script reading a result and a `--restart` need not know whether a design took
+a script reading a result and a `restart:` need not know whether a design took
 one solve or six. Its own directory is left holding the config that produced
 it, that answer having become the run's.
+
+Under `-o`, and in a job queued from one, the root config is turbigen's own
+copy, so the settled iteration's config is written over it too, with
+`restart: restart.npz`: the config beside the field is then the design that
+field solves, `report` on it reaches the answer, and re-running it continues
+from its own solution. The starting design is still in `iter_0000/input.yaml`.
+A config handed over in place is somebody's own file and is left alone, with a
+note in the log naming where the settled design's config is.
 
 The iterations before it keep their config, their answer and their march --- a
 few kilobytes each, and the only record of how the design moved --- and lose
@@ -775,21 +798,26 @@ That is the same two-part test `database` uses to decide whether a finished run
 counts as a sample, so "this design is finished" means one thing package-wide.
 Both branches are logged with their reason.
 
-`--restart` keeps meaning only *here is the field*. Overloading it to also
-truncate the pipeline would make one flag mean two things depending on the verb,
-where `run --restart` truncates nothing.
+`restart:` keeps meaning only *here is the field*. Overloading it to also
+truncate the pipeline would make one key mean two things depending on the verb,
+where `run` with a `restart:` truncates nothing.
 
 ### Sweeping a design converged earlier
 
 ```
 mkdir chic && cp case/output.yaml chic/input.yaml
-turbigen chic chic/input.yaml --restart case/restart.npz
+turbigen chic chic/input.yaml -s restart=case/restart.npz
 ```
 
 A directory of its own because one directory is one run. The copied config
 carries the converged `result:`, so the design phase is skipped. Both files
 being at the root of `case` is what a settled design leaves; if they are not
 there, it did not settle, and there is no converged design to sweep.
+
+The `restart:` the copy carries is the converged run's record of where *it*
+started, relative to `case`, so it is wrong in `chic` and names a pruned field
+anyway: hence the `-s`, which overrides it. Forgetting it is an error naming
+the missing field, not a sweep from the guess.
 
 Note the copy is renamed on the way in. `output.yaml` is not a name turbigen
 will read back, so adopting one as an input is a thing you do deliberately.

@@ -340,8 +340,15 @@ def _march(config, restart_path, warm, soft, retry):
         if config.solver.converged(history):
             history = None
 
+    # The solver's start-up ramp is for an initial guess. A restart field is a
+    # solution, and a soft pass has already done the starting, so either way the
+    # ramp would only kick the field the production march begins from.
+    production = config.solver
+    if restart_path is not None or soft_ran:
+        production = production.restart()
+
     if history is None:
-        history = config.solver.solve(grid)
+        history = production.solve(grid)
 
         # A hard start that diverged gets one more go. Only one that had no
         # soft start: a soft pass that ran and still led here is not helped by
@@ -365,7 +372,7 @@ def _march(config, restart_path, warm, soft, retry):
 
             history = soft_start(config.solver, grid, config.solver.n_step_retry)
             if config.solver.converged(history):
-                history = config.solver.solve(grid)
+                history = config.solver.restart().solve(grid)
 
     return config, machine, grid, history
 
@@ -527,6 +534,12 @@ def solve(
     `chic` point that diverges is an answer rather than a failure.
     """
     config, machine, grid, history = _march(config, restart_path, warm, soft, retry)
+
+    # What `output.yaml` records is the field this run started from, whatever
+    # the config it was handed said, so the record is of what happened.
+    start = str(Path(restart_path).resolve()) if restart_path is not None else None
+    config = dataclasses.replace(config, restart=start)
+
     _save_field(out_dir, config, grid, history)
     config, result = _measure(config, machine, grid, history, out_dir)
     _log_answer(config, result)

@@ -10,6 +10,7 @@ import logging
 import textwrap
 
 import pytest
+import yaml
 
 from turbigen import cli, iterate, loop, pipeline, plugins, restart
 
@@ -574,14 +575,23 @@ def test_a_restarted_run_still_soft_starts(run_case, marches):
     """A field is not proof that this design has been marched.
 
     It may be a neighbour's, or this design's own from before the geometry
-    moved. Both are exactly what a robust pass is for, so `--restart` is no
+    moved. Both are exactly what a robust pass is for, so `restart:` is no
     reason to skip one -- unlike a loop's own previous iteration, which is.
     """
     assert cli.main(["run", str(run_case)]) == 0
     marches.clear()
 
+    field = run_case.parent / cli.RESTART_NAME
     code = cli.main(
-        ["run", str(run_case), "--restart", "-f", "-s", "solver.n_step_soft=5"]
+        [
+            "run",
+            str(run_case),
+            "-f",
+            "-s",
+            "solver.n_step_soft=5",
+            "-s",
+            f"restart={field}",
+        ]
     )
 
     assert code == 0
@@ -1124,26 +1134,34 @@ def test_out_dir_is_not_created_for_a_broken_config(case, tmp_path, capsys):
     assert not workdir.exists()
 
 
-def test_out_dir_restarts_from_beside_the_config_it_was_given(
-    run_case, tmp_path, caplog
-):
-    """`-o` must not change what a bare `--restart` points at.
+def test_out_dir_keeps_the_field_a_restart_key_names(run_case, tmp_path, caplog):
+    """`-o` must not change what a `restart:` points at.
 
-    Resolved before the redirect, or it would look in the workdir being
-    created, which never holds a field -- so the two flags together could not
-    be used at all. Continuing from what you have while writing somewhere new
-    is the whole of a warm start.
+    Relative to the file that names it, like an include, and written relative
+    to the copy -- so the copy still names the same field from deeper down.
+    Continuing from what you have while writing somewhere new is the whole of a
+    warm start.
     """
     assert cli.main(["run", str(run_case)]) == 0
     field = run_case.parent / cli.RESTART_NAME
+    with open(run_case, "a") as stream:
+        stream.write(f"\nrestart: {cli.RESTART_NAME}\n")
 
+    warm = tmp_path / "warm"
     with caplog.at_level("INFO", logger="turbigen"):
-        status = cli.main(
-            ["run", str(run_case), "-o", str(tmp_path / "warm"), "--restart"]
-        )
+        status = cli.main(["run", str(run_case), "-o", str(warm)])
 
     assert status == 0
     assert f"Started from the restart field in {field}" in caplog.text
+
+    from turbigen import batch
+
+    copied = yaml.safe_load((warm / batch.INPUT_NAME).read_text())
+    assert copied["restart"] == f"../cascade/{cli.RESTART_NAME}"
+
+    # And the answer records the field it started from, relative to itself.
+    output = yaml.safe_load((warm / cli.OUTPUT_NAME).read_text())
+    assert output["restart"] == f"../cascade/{cli.RESTART_NAME}"
 
 
 def test_out_dir_will_not_replace_a_config_it_did_not_write(run_case, tmp_path, capsys):
@@ -1669,6 +1687,97 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
         assert kept == sorted(loop.KEPT_PER_ITERATION)
 
 
+def test_a_copied_config_is_replaced_by_the_settled_design(tmp_path):
+    """Under -o the root config is turbigen's own, so the settled design's goes
+    over it, starting from the field promoted beside it; otherwise the root
+    config is someone's file and is left alone."""
+    from turbigen import batch
+
+    for promote, expected in ((True, "settled"), (False, "start")):
+        out = tmp_path / str(promote)
+        iter_dir = out / "iter_0000"
+        iter_dir.mkdir(parents=True)
+        (out / batch.INPUT_NAME).write_text(yaml.safe_dump({"design": "start"}))
+        (iter_dir / batch.INPUT_NAME).write_text(
+            yaml.safe_dump({"design": "settled", "restart": None})
+        )
+        (iter_dir / cli.RESTART_NAME).write_text("field")
+
+        loop.promote_final(out, iter_dir, converged=True, promote_input=promote)
+
+        root = yaml.safe_load((out / batch.INPUT_NAME).read_text())
+        assert root["design"] == expected
+        if promote:
+            assert root["restart"] == cli.RESTART_NAME
+            assert (out / cli.RESTART_NAME).is_file()
+
+        # The iteration keeps its own config either way.
+        kept = yaml.safe_load((iter_dir / batch.INPUT_NAME).read_text())
+        assert kept["design"] == "settled"
+
+
+def test_a_settled_copy_re_runs_from_its_own_field(settled_case, tmp_path, caplog):
+    """The whole point: the promoted config and its field go together."""
+    from turbigen import batch
+
+    out = tmp_path / "copy"
+    assert cli.main(["iterate", str(settled_case), "-o", str(out)]) == 0
+
+    root = out / batch.INPUT_NAME
+    assert yaml.safe_load(root.read_text())["restart"] == cli.RESTART_NAME
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        assert cli.main(["run", str(root), "-f"]) == 0
+    assert f"Started from the restart field in {out / cli.RESTART_NAME}" in caplog.text
+
+
+def test_promotion_keeps_each_restart_record_pointing_somewhere_true(tmp_path):
+    """What each file says it started from survives the move and the prune.
+
+    The promoted `output.yaml` still names the field its run started from,
+    rebased onto where it now sits, though pruning has removed it: a record.
+    An input whose field was pruned is cleared, so re-solving it alone starts
+    from the guess rather than refusing; one whose field survives keeps it.
+    """
+    from turbigen import batch
+
+    seed = tmp_path / "seed.npz"
+    seed.write_text("seed")
+    starts = [str(seed), "../iter_0000/restart.npz", "../iter_0001/restart.npz"]
+    for i_iter, start in enumerate(starts):
+        iter_dir = tmp_path / f"iter_{i_iter:04d}"
+        iter_dir.mkdir()
+        for name in (batch.INPUT_NAME, cli.OUTPUT_NAME):
+            (iter_dir / name).write_text(yaml.safe_dump({"restart": start}))
+        (iter_dir / cli.RESTART_NAME).write_text(f"{i_iter}")
+
+    loop.promote_final(tmp_path, tmp_path / "iter_0002", converged=True)
+
+    def restart(path):
+        return yaml.safe_load(path.read_text())["restart"]
+
+    assert restart(tmp_path / cli.OUTPUT_NAME) == "iter_0001/restart.npz"
+    assert restart(tmp_path / "iter_0000" / batch.INPUT_NAME) == str(seed)
+    for i_iter in (1, 2):
+        iter_dir = tmp_path / f"iter_{i_iter:04d}"
+        assert restart(iter_dir / batch.INPUT_NAME) is None
+    assert restart(tmp_path / "iter_0001" / cli.OUTPUT_NAME) == starts[1]
+
+
+def test_each_iteration_records_the_field_it_started_from(iterate_case):
+    """So that re-solving one alone starts where it did."""
+    from turbigen import batch
+
+    out = iterate_case.parent
+    assert cli.main(["iterate", str(iterate_case), "-s", "iterate.max_iter=2"]) == 2
+
+    for name in (batch.INPUT_NAME, cli.OUTPUT_NAME):
+        first = yaml.safe_load((out / "iter_0000" / name).read_text())
+        second = yaml.safe_load((out / "iter_0001" / name).read_text())
+        assert first["restart"] is None
+        assert second["restart"] == f"../iter_0000/{cli.RESTART_NAME}"
+
+
 def test_an_unsettled_design_is_pruned_of_nothing(tmp_path):
     from turbigen import batch
 
@@ -1971,7 +2080,9 @@ def test_batch_fill_picks_the_margin_a_widened_bound_adds(batch_case):
     assert cli.main(["batch", str(batch_case), "-n", "2", "--fill"]) == 0
 
     datum = batch_case.parent
-    run = [Config.from_file(m).mean_line.psi for m in datum.glob("batch_0000/*/input.yaml")]
+    run = [
+        Config.from_file(m).mean_line.psi for m in datum.glob("batch_0000/*/input.yaml")
+    ]
     filled = sorted((datum / "batch_0001").glob("*/input.yaml"))
     assert len(filled) == 2
     for member in filled:
@@ -2176,11 +2287,48 @@ def test_no_history_beside_a_restart_is_not_fatal(tmp_path):
     assert pipeline.read_history(tmp_path / cli.HISTORY_NAME) is None
 
 
-def test_bare_restart_says_when_there_is_nothing_to_read(run_case, capsys):
-    """`run --restart` still names a field explicitly, so it can still miss."""
-    assert cli.main(["run", str(run_case), "--restart"]) == 1
+def test_a_restart_naming_nothing_is_an_error(run_case, tmp_path, capsys):
+    """Never a quiet start from the guess, and refused before `-o` claims a
+    number, so a typo does not leave an empty numbered directory behind."""
+    args = ["run", str(run_case), "-s", "restart=nothing.npz"]
+    assert cli.main(args) == 1
+    assert "No flow field at" in capsys.readouterr().err
 
-    assert "No restart.npz" in capsys.readouterr().err
+    out = tmp_path / "runs" / "run_%"
+    assert cli.main([*args, "-o", str(out)]) == 1
+    assert not (tmp_path / "runs").exists() or not any((tmp_path / "runs").iterdir())
+
+
+def test_a_restart_key_can_be_cleared_from_the_command_line(run_case, caplog):
+    """`-s restart=null` starts from the guess whatever the file says."""
+    with open(run_case, "a") as stream:
+        stream.write("\nrestart: nothing.npz\n")
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        assert cli.main(["run", str(run_case), "-s", "restart=null"]) == 0
+
+    assert "Started from the restart field" not in caplog.text
+    output = yaml.safe_load((run_case.parent / cli.OUTPUT_NAME).read_text())
+    assert output["restart"] is None
+
+
+def test_a_case_moved_with_its_field_still_restarts(run_case, tmp_path, caplog):
+    """The point of resolving like an include: the two move together."""
+    assert cli.main(["run", str(run_case)]) == 0
+    seed = run_case.parent / "seed"
+    seed.mkdir()
+    (run_case.parent / cli.RESTART_NAME).rename(seed / cli.RESTART_NAME)
+    with open(run_case, "a") as stream:
+        stream.write(f"\nrestart: seed/{cli.RESTART_NAME}\n")
+
+    moved = tmp_path / "elsewhere"
+    run_case.parent.rename(moved)
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        assert cli.main(["run", str(moved / run_case.name), "-f"]) == 0
+
+    field = moved / "seed" / cli.RESTART_NAME
+    assert f"Started from the restart field in {field}" in caplog.text
 
 
 def test_a_failing_plot_cannot_lose_the_solution(run_case, tmp_path, monkeypatch):
@@ -2489,10 +2637,12 @@ def test_iterate_leaves_a_field_where_restart_looks_for_it(settled_case):
     field = settled_case.parent / cli.RESTART_NAME
     assert field.is_file() and not field.is_symlink()
 
-    # Which is exactly what the flag resolves, so the two agree by test rather
-    # than by inspection.
-    args = type("A", (), {"restart": True})()
-    assert cli.resolve_restart(args, settled_case) == field
+    # Which is exactly what a `restart:` naming it resolves to, so the two
+    # agree by test rather than by inspection.
+    config = cli.load_config(
+        settled_case, type("A", (), {"overrides": [f"restart={field}"]})()
+    )
+    assert cli.resolve_restart(config) == field
 
 
 def test_chic_solves_the_design_point_then_sweeps(chic_case):
@@ -2570,6 +2720,38 @@ def test_chic_skips_a_design_that_has_already_settled(chic_case, capsys):
     assert "Sweeping straight away" in printed
     assert not (settled / "iter_0000").exists()
     assert (settled / "chic_0000").is_dir()
+
+
+def test_chic_sweeps_a_settled_copy_straight_away(chic_iterate_case, tmp_path, caplog):
+    """A settled `-o` copy has its answer in the `output.yaml` beside it, not in
+    the config, and a field stamped as its solution says the two go together."""
+    out = tmp_path / "copy"
+    assert cli.main(["iterate", str(chic_iterate_case), "-o", str(out)]) == 0
+    root = out / "input.yaml"
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        cli.main(["chic", str(root), "-f"])
+
+    assert "Sweeping straight away" in caplog.text
+    assert f"Started from the restart field in {out / cli.RESTART_NAME}" in (
+        caplog.text
+    )
+    assert (out / "chic_0000").is_dir()
+
+
+def test_chic_does_not_take_an_answer_for_another_design(
+    chic_iterate_case, tmp_path, caplog
+):
+    """The stamp sees an override that moves the design off the stored answer,
+    which a config's own `result:` cannot."""
+    out = tmp_path / "copy"
+    assert cli.main(["iterate", str(chic_iterate_case), "-o", str(out)]) == 0
+
+    with caplog.at_level("INFO", logger="turbigen"):
+        cli.main(["chic", str(out / "input.yaml"), "-f", "-s", "mean_line.Ma2=0.55"])
+
+    assert "is not this design's" in caplog.text
+    assert "Converging the design first" in caplog.text
 
 
 def test_chic_without_a_chic_section_says_so(iterate_case, capsys):

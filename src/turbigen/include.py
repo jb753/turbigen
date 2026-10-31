@@ -29,6 +29,7 @@ includes is a hierarchy, and is the whole reason the merge is a level deep.
 """
 
 import logging
+import os
 from pathlib import Path
 
 import ember.yaml_util
@@ -64,6 +65,50 @@ Dropped rather than refused, because the workflow is worth supporting. This
 duplicates the string in :data:`turbigen.case.RESULT_KEY`, which cannot be
 imported here without a cycle; `test_include.py` asserts the two agree.
 """
+
+
+PATH_KEYS = ("restart",)
+"""Top-level keys naming a file, which resolve exactly as an include does.
+
+Relative to the file that wrote them, never to the working directory, and for
+the same reason: a case and the field it starts from can then be copied
+anywhere together, and one file cannot mean two fields depending on where it
+was invoked from. Made absolute as each file is read, so that a key an
+included file contributes still names the file it meant, and written relative
+again by :func:`relative` against wherever the document lands.
+"""
+
+
+def anchor(data, base):
+    """Return `data` with each relative :data:`PATH_KEYS` value made absolute
+    against the directory `base`. Absolute values, and None, are left alone."""
+    anchored = dict(data)
+
+    for key in PATH_KEYS:
+        value = anchored.get(key)
+        if value is not None and not Path(value).is_absolute():
+            anchored[key] = str((Path(base) / value).resolve())
+
+    return anchored
+
+
+def relative(data, base):
+    """Return `data` with each :data:`PATH_KEYS` value written relative to the
+    directory `base`, for a document about to be written into it.
+
+    The inverse of :func:`anchor`, so a document read, written somewhere else
+    and read back names the same file. Relative even when that takes ``..``,
+    because the point is that the two move together.
+    """
+    written = dict(data)
+
+    for key in PATH_KEYS:
+        value = written.get(key)
+        if value is not None:
+            target = Path(base) / value
+            written[key] = os.path.relpath(target.resolve(), Path(base).resolve())
+
+    return written
 
 
 def merge(base, overlay):
@@ -129,7 +174,7 @@ def _read(path, chain):
         loop = " -> ".join(str(link) for link in (*chain, path))
         raise ValueError(f"Config files include each other in a loop: {loop}.")
 
-    data = _load(path)
+    data = anchor(_load(path), path.parent)
     names = _names(data.pop(INCLUDE_KEY, []), path)
 
     merged = {}

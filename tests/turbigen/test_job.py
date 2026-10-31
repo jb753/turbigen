@@ -367,6 +367,27 @@ def test_a_submitted_invocation_carries_force(batch):
     assert "--force" in options
     assert "-o" not in options and "--out-dir" not in options
 
+    # But the job must still know its config is the copy, and so turbigen's
+    # to replace with a settled design's.
+    assert "--copied" in options
+
+
+def test_a_submitted_restart_names_the_same_field(batch, tmp_path, monkeypatch):
+    """`-s restart=` is relative to where it was typed, and a queued job runs
+    somewhere else, so it goes to the queue absolute."""
+    monkeypatch.chdir(tmp_path)
+    parser = cli._make_parser()
+    args = parser.parse_args(
+        ["run", str(batch[0]), "-s", "restart=a/restart.npz", "-s", "x=y/z", "-Q"]
+    )
+
+    assert cli.task_options(args) == [
+        "-s",
+        f"restart={(tmp_path / 'a' / 'restart.npz').resolve()}",
+        "-s",
+        "x=y/z",
+    ]
+
 
 #
 # BATCH

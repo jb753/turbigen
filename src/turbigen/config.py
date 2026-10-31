@@ -65,6 +65,25 @@ class Config(Node):
     over `operating_point.DP_adjust` would copy the whole profile into every
     member."""
 
+    restart: str | None = None
+    """Flow field to start the march from, a ``restart.npz`` written by a
+    previous run, instead of the meridional guess.
+
+    A path that resolves as an ``include:`` does: relative to the file that
+    names it, and written relative to wherever turbigen writes the config
+    next, so a case and its field move together. Absolute in memory. Set from
+    the command line with ``-s restart=PATH``, relative to the working
+    directory, or ``-s restart=null`` to start from the guess. A field named
+    but not there is an error rather than a quiet start from the guess.
+
+    In a config, the field this run *starts* from. In an ``output.yaml`` or an
+    ``input.yaml`` turbigen wrote, the field the run it records *started* from,
+    or null for the guess --- a record, which may name a field since pruned.
+    Seeds only the first march of ``iterate`` and ``chic``: each later one
+    starts from the one before. Not stamped, so changing it neither re-meshes
+    nor disowns a stored field. ``report`` ignores it, taking its field from
+    beside the config."""
+
     iterate: Iteration = Iteration()
     """Closing the loop between the design and its CFD. Only needed by the
     command that iterates, but the errors it names are measured by every run
@@ -118,7 +137,8 @@ class Config(Node):
 
     def to_file(self, path):
         """Write this config to a YAML file, defaults included."""
-        ember.yaml_util.write_yaml(self.to_dict(), Path(path))
+        path = Path(path)
+        ember.yaml_util.write_yaml(include.relative(self.to_dict(), path.parent), path)
 
     def design(self) -> Machine:
         """Return the machine this config describes.

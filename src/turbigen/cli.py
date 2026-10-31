@@ -362,7 +362,10 @@ def load_document(config_path, args):
     # reach into a previous run's answer. Re-running a case rewrites it anyway.
     data.pop(case.RESULT_KEY, None)
 
+    # A field named by `-s` has no file to be relative to, so it is relative to
+    # where it was typed. Anything the file named is absolute by now.
     apply_overrides(data, args.overrides)
+    data = include.anchor(data, Path.cwd())
 
     return data
 
@@ -570,6 +573,10 @@ def _copy_into_workdir(args, config_path, workdir):
     # no business being copied anywhere.
     Config.from_dict(data)
 
+    # A field it names goes down relative to the copy, as an include would, so
+    # it still names the same file from the directory it is copied into.
+    data = include.relative(data, workdir)
+
     copied = workdir / batch.INPUT_NAME
     _check_not_someone_elses(args, copied, data)
 
@@ -652,19 +659,12 @@ def each(args, one):
         # behind and consume a number to say nothing. `_copy_into_workdir`
         # validates again on the document it actually writes; this is the same
         # check moved early, not a second opinion.
+        # A `restart:` naming a field that is not there is caught here too,
+        # for the same reason.
         for path in paths:
-            Config.from_dict(load_document(path, args))
+            resolve_restart(Config.from_dict(load_document(path, args)))
 
         args.workdir = str(resolve_workdir(args.workdir))
-
-        # A bare `--restart` means the field beside the config you named, and
-        # `-o` must not change what it points at. Resolved before the redirect,
-        # or it would look in the workdir being created -- which never holds a
-        # field, so the two flags together could not be used at all. Continuing
-        # from what you have while writing somewhere new is the whole of a warm
-        # start, and the obvious reason to combine them.
-        if getattr(args, "restart", None) is True and len(paths) == 1:
-            args.restart = str(resolve_restart(args, paths[0]))
 
     # Checked against where the work will land, and before `redirect` creates
     # anything there.
@@ -768,7 +768,7 @@ def task_options(args):
         options.append("--force")
 
     for override in args.overrides:
-        options += ["-s", override]
+        options += ["-s", _anchored_override(override)]
 
     if args.verbose:
         options.append("-v")
@@ -776,13 +776,36 @@ def task_options(args):
     if getattr(args, "svg", False):
         options.append("--svg")
 
-    restart = getattr(args, "restart", None)
-    if restart is True:
-        options.append("--restart")
-    elif restart:
-        options += ["--restart", str(Path(restart).resolve())]
+    # In place of `-o`, so a queued iterate or chic still promotes its settled
+    # design's config over the copy, as it would have run here.
+    if is_copy(args):
+        options.append("--copied")
 
     return options
+
+
+def _anchored_override(override):
+    """Return `override` with a relative path it sets made absolute.
+
+    A field named by `-s` is relative to where it was typed, and a queued job
+    runs somewhere else, so it goes to the queue absolute. Every other override
+    passes through as typed.
+    """
+    key, _, raw = override.partition("=")
+    if key not in include.PATH_KEYS:
+        return override
+
+    anchored = include.anchor({key: yaml.safe_load(raw)}, Path.cwd())[key]
+    return override if anchored is None else f"{key}={anchored}"
+
+
+def is_copy(args):
+    """Return whether the config being run is the copy `-o` made of one.
+
+    Directly, with `-o` on this command line, or on the one that submitted
+    this job and made the copy before it was queued.
+    """
+    return getattr(args, "workdir", None) is not None or getattr(args, "copied", False)
 
 
 #
@@ -886,24 +909,21 @@ def _design_one(args, config_path):
     return 0
 
 
-def resolve_restart(args, config_path):
-    """Return the flow field to start from, if one was asked for.
+def resolve_restart(config):
+    """Return the flow field `config` starts from, or None for the guess.
 
-    Bare `--restart` means the field a run left beside the config it was given,
-    which is what makes re-plotting one in place a flag rather than a path to
-    type. A named file still wins, so a field can come from anywhere.
+    Its `restart:`, which reading the config has already made absolute. A field
+    named but not there is an error rather than a quiet start from the
+    meridional guess, whose answer differs.
     """
-    if not args.restart:
+    if config.restart is None:
         return None
 
-    if args.restart is not True:
-        return Path(args.restart)
-
-    restart_path = Path(config_path).resolve().parent / RESTART_NAME
+    restart_path = Path(config.restart)
     if not restart_path.is_file():
         raise ValueError(
-            f"No {RESTART_NAME} beside {config_path} to restart from. Point at "
-            "a config a run has written beside, or name a field file to read."
+            f"No flow field at {restart_path} to restart from, as the config's "
+            "restart: names. Set restart: null to start from the guess."
         )
     return restart_path
 
@@ -1003,7 +1023,7 @@ def _run_one(args, config_path):
         result = pipeline.solve(
             config,
             out_dir,
-            resolve_restart(args, config_path),
+            resolve_restart(config),
             svg=args.svg,
             soft=True,
             retry=True,
@@ -1022,8 +1042,10 @@ def _iterate_one(args, config_path):
 
         require(config, args.command)
 
+        # Only a config -o copied, here or before it was queued, is turbigen's
+        # to replace with the settled design's.
         _, result, converged, _ = loop.converge_design(
-            config, out_dir, resolve_restart(args, config_path)
+            config, out_dir, resolve_restart(config), promote_input=is_copy(args)
         )
 
         # The answer, on a console that has been shown only the iteration
@@ -1042,10 +1064,12 @@ def _chic_one(args, config_path):
 
         require(config, args.command)
 
-        previous = resolve_restart(args, config_path)
+        previous = resolve_restart(config)
 
-        settled = loop.design_is_settled(config_path, config)
-        points, _ = loop.characteristic(config, out_dir, previous, settled)
+        settled = loop.settled_design(config_path, config)
+        points, _ = loop.characteristic(
+            settled or config, out_dir, previous, settled is not None, is_copy(args)
+        )
 
     # The sweep did its job whenever it bracketed something, which is what the
     # verb is for -- a point that refused to converge is the answer here rather
@@ -1476,6 +1500,11 @@ def _add_out_dir_argument(parser):
         ),
     )
 
+    # What a submission passes on in place of -o: the copy has already been
+    # made, so the job must not make it again, but it must still know the
+    # config it was handed is turbigen's own and so its to replace.
+    parser.add_argument("--copied", action="store_true", help=argparse.SUPPRESS)
+
 
 def _add_queue_argument(parser):
     """Add --queue, for the verbs that cost enough time to be worth queueing.
@@ -1491,32 +1520,6 @@ def _add_queue_argument(parser):
         help=(
             "submit to the queue named by the job: section instead of running "
             "here; every config becomes one submission"
-        ),
-    )
-
-
-def _add_restart_argument(parser):
-    """Add --restart, for the verbs that march a grid rather than just draw one.
-
-    Not on the common parent, and the two verbs left out are left out for
-    different reasons. `design` never makes a grid to put a field on, so the
-    flag would do nothing. `report` makes one, but takes its field from beside
-    the config and nowhere else, deliberately: that is what makes a report a
-    consistent picture of one directory. A field named from elsewhere is
-    guaranteed not to match the stamp, so it could only ever draw a hybrid and
-    refuse to record it --- flexibility that has nothing behind it.
-    """
-    parser.add_argument(
-        "--restart",
-        metavar="NPZ",
-        nargs="?",
-        const=True,
-        help=(
-            "load the flow field in NPZ, as written by a previous run, "
-            "instead of the meridional guess; interpolated in index space if "
-            "the mesh resolution has changed. With no NPZ given, reads "
-            f"{RESTART_NAME} from beside the config file, which re-plots a run "
-            "in place"
         ),
     )
 
@@ -1566,7 +1569,6 @@ VERBS = (
             _add_force_argument,
             _add_out_dir_argument,
             _add_queue_argument,
-            _add_restart_argument,
             _add_svg_argument,
         ),
         needs=("solver",),
@@ -1587,7 +1589,6 @@ VERBS = (
             _add_force_argument,
             _add_out_dir_argument,
             _add_queue_argument,
-            _add_restart_argument,
         ),
         needs=("solver", "iterate"),
         quiet=True,
@@ -1610,7 +1611,6 @@ VERBS = (
             _add_force_argument,
             _add_out_dir_argument,
             _add_queue_argument,
-            _add_restart_argument,
         ),
         needs=("solver", "chic"),
         quiet=True,
