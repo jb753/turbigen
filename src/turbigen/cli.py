@@ -482,6 +482,29 @@ def out_dirs(args, paths):
     return [path.resolve().parent for path in paths]
 
 
+def clobbered_dirs(args, paths):
+    """Return the directories whose answers this invocation would replace.
+
+    Where each target will be worked in, except for a `chic` of a design that
+    has already settled, run in place: that sweeps straight away and leaves
+    the `output.yaml` beside the config alone, so what it would replace is the
+    points of an earlier sweep, the `chic_*` directories already there.
+    """
+    directories = out_dirs(args, paths)
+    if getattr(args, "command", None) != "chic" or getattr(args, "workdir", None):
+        return directories
+
+    replaced = []
+    for path, directory in zip(paths, directories):
+        config = load_config(path, args)
+        if loop.settled_design(path, config, quiet=True) is None:
+            replaced.append(directory)
+        else:
+            replaced += sorted(d for d in directory.glob("chic_*") if d.is_dir())
+
+    return replaced
+
+
 def check_clobber(args, directories):
     """Raise if this invocation would replace an answer already recorded.
 
@@ -668,7 +691,7 @@ def each(args, one):
 
     # Checked against where the work will land, and before `redirect` creates
     # anything there.
-    check_clobber(args, out_dirs(args, paths))
+    check_clobber(args, clobbered_dirs(args, paths))
 
     paths = redirect(args, paths)
 

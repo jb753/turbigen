@@ -59,7 +59,7 @@ def write_input(config, out_dir, start=None):
     return path
 
 
-def settled_design(config_path, config):
+def settled_design(config_path, config, quiet=False):
     """Return `config` ready to sweep if its design has already converged, or
     None if it has to be converged first.
 
@@ -83,13 +83,15 @@ def settled_design(config_path, config):
     where the field was marched to rather than from the guess.
 
     Logged with its reason, as `batch_verb` logs its choice, so "why did this
-    iterate" and "why did this not" are both answerable from the log file.
+    iterate" and "why did this not" are both answerable from the log file;
+    at debug level when `quiet`, for a caller only looking ahead.
     """
     config_path = Path(config_path)
+    say = logger.debug if quiet else logger.info
 
     found = _stored(config_path)
     if found is None:
-        found = _stored_beside(config_path, config)
+        found = _stored_beside(config_path, config, say)
         if found is not None:
             config = dataclasses.replace(
                 config, operating_point=found[0].operating_point
@@ -97,17 +99,17 @@ def settled_design(config_path, config):
 
     result = found[1] if found is not None else None
     if result is None or not result.converged:
-        logger.info("Converging the design first: this case has no converged run.")
+        say("Converging the design first: this case has no converged run.")
         return None
 
     if not iterate.converged(config, result):
-        logger.info(
+        say(
             "Converging the design first: the stored run finished, but its "
             "design errors are outside their tolerances."
         )
         return None
 
-    logger.info(
+    say(
         "Sweeping straight away: the stored run converged with its design "
         "errors inside their tolerances."
     )
@@ -126,7 +128,7 @@ def _stored(path):
     return None if result is None else (stored, result)
 
 
-def _stored_beside(config_path, config):
+def _stored_beside(config_path, config, say):
     """Return the config and result of the `output.yaml` beside `config_path`,
     or None unless the field beside it is stamped as `config`'s solution."""
     output = config_path.parent / OUTPUT_NAME
@@ -135,7 +137,7 @@ def _stored_beside(config_path, config):
         return None
 
     if restart.read_stamp(field) != restart.design_stamp(iterate.resolve(config)):
-        logger.info(
+        say(
             f"The answer in {output} is not this design's, its field being "
             "stamped for another, so it does not count as settled."
         )

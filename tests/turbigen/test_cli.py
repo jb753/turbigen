@@ -2730,13 +2730,28 @@ def test_chic_sweeps_a_settled_copy_straight_away(chic_iterate_case, tmp_path, c
     root = out / "input.yaml"
 
     with caplog.at_level("INFO", logger="turbigen"):
-        cli.main(["chic", str(root), "-f"])
+        assert cli.main(["chic", str(root)]) == 0
 
     assert "Sweeping straight away" in caplog.text
     assert f"Started from the restart field in {out / cli.RESTART_NAME}" in (
         caplog.text
     )
     assert (out / "chic_0000").is_dir()
+
+
+def test_a_settled_sweep_refuses_to_replace_an_earlier_one(
+    chic_iterate_case, tmp_path, capsys
+):
+    """No -f needed to sweep a settled design, whose `output.yaml` is left
+    alone, but the points of an earlier sweep are answers it would replace."""
+    out = tmp_path / "copy"
+    assert cli.main(["iterate", str(chic_iterate_case), "-o", str(out)]) == 0
+    root = out / "input.yaml"
+    assert cli.main(["chic", str(root)]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["chic", str(root)]) == 1
+    assert "chic_0000" in capsys.readouterr().err
 
 
 def test_chic_does_not_take_an_answer_for_another_design(

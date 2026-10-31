@@ -798,6 +798,13 @@ That is the same two-part test `database` uses to decide whether a finished run
 counts as a sample, so "this design is finished" means one thing package-wide.
 Both branches are logged with their reason.
 
+The answer it looks for is the config's own `result:`, or the `output.yaml`
+beside it when the field there is stamped as this design's solution --- which
+is what a settled `-o` copy leaves, and what an override moving the design
+fails. A sweep that starts straight away leaves that `output.yaml` alone, so it
+needs no `-f` for it; what it would replace is an earlier sweep's `chic_*`
+points, and those it refuses to replace without one.
+
 `restart:` keeps meaning only *here is the field*. Overloading it to also
 truncate the pipeline would make one key mean two things depending on the verb,
 where `run` with a `restart:` truncates nothing.
