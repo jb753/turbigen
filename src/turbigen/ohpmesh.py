@@ -132,6 +132,11 @@ POLISH_FINE_RINGS = 3
 HOLD_FINE = 3
 """Layers of cells off the blade the polish of the refined plane leaves be."""
 
+POLISH_FINE_BELOW = 30.0
+"""Worst cell corner, degrees, under which a refined control plane is
+polished again: the polish of the swept plane leaves most above it, and
+polishing the few just under costs more time than the corner gains."""
+
 DTYPE = np.float32
 """Precision the planes are held, swept, refined and polished in: the
 finished grid is stored in single precision, and the sweeps run faster in
@@ -464,10 +469,10 @@ class OHPassage(Mesher):
     """Nodes along each side of the patch drawn in towards a corner."""
 
     polish_below: float = 32.0
-    """Once swept, and again once refined, the nodes of each control plane
-    near any cell whose worst corner angle, folded onto 0 to 90 degrees, is
-    under this are polished: within a few cells of it, short of the O
-    block's first layers. None if zero."""
+    """Once swept, the nodes of each control plane near any cell whose worst
+    corner angle, folded onto 0 to 90 degrees, is under this are polished:
+    within a few cells of it, short of the O block's first layers; and again
+    once refined, where one is under `POLISH_FINE_BELOW`. None if zero."""
 
     njtip_min: int = 9
     """Least number of spanwise nodes across a tip gap, one more than a
@@ -1443,14 +1448,25 @@ class OHPassage(Mesher):
 
         # The control planes are polished once refined, and how far that
         # moves each node carried to the planes between, as the smoothing is.
+        # Only those with a cell well under `polish_below`, see
+        # `POLISH_FINE_BELOW`; the rest still gathered and scattered, which
+        # makes the nodes the blocks share agree to the last bit.
+        poor = [
+            j
+            for j in j_ctrl
+            if min(_cell_angles(B).min() for B in per_plane[j]) < POLISH_FINE_BELOW
+        ]
         if self.polish_below:
             fine = _plane_topology(per_plane[j_mid], lay.pitch, stencils=False)
             hold = fine.gid[0][:, : HOLD_FINE + 1].ravel()
             shift = [None] * len(spf)
             for j in j_ctrl:
-                shift[j] = self._polish_shift(
-                    fine, hold, per_plane[j], POLISH_FINE_RINGS
-                )
+                if j in poor:
+                    shift[j] = self._polish_shift(
+                        fine, hold, per_plane[j], POLISH_FINE_RINGS
+                    )
+                else:
+                    shift[j] = np.zeros_like(fine.gather(per_plane[j]))
             for j, d in enumerate(between(shift)):
                 per_plane[j] = fine.scatter(fine.gather(per_plane[j]) + d)
 
