@@ -630,7 +630,7 @@ def test_shape_factor_line_starts_where_the_flow_falls_subsonic():
 
 
 def test_shape_factor_line_starts_behind_the_spike_the_shock_raises():
-    """At the least shape factor behind the sonic point, as in Lefas's figure."""
+    """At the least shape factor behind the sonic point, not at it."""
     zeta = np.linspace(0.0, 1.0, 1001)
     mas = np.where(zeta < 0.4, 0.8 + zeta, 1.2 - 2.0 * (zeta - 0.4))
     h = 1.6 + 0.5 * np.exp(-(((zeta - 0.45) / 0.05) ** 2)) + (zeta - 0.65) ** 2

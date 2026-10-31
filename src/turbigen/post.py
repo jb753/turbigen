@@ -1065,10 +1065,9 @@ class ShapeFactorPlot(Post):
     the spans its blade is defined at."""
 
     line: bool = False
-    """Draw Lefas's linear target from behind the shock to the trailing edge,
+    """Draw the linear target from behind the shock to the trailing edge,
     :func:`~turbigen.util.shape_factor_line`, with the points at a third and
-    two thirds of the way along it, and give Lefas's subsonic Mach smoothness
-    area,
+    two thirds of the way along it, and give the subsonic Mach smoothness area,
     :func:`~turbigen.util.mach_smoothness`, in the legend."""
 
     def report(self, config, result):

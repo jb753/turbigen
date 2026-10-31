@@ -1771,8 +1771,7 @@ def suction_surface(grid, machine, i_row, spf, H=None, surfaces=None):
 
 
 def shape_factor_line(zeta, mas, h, zeta_TE=0.97):
-    """Return the ends of Lefas's linear shape factor target, after
-    :cite:`Lefas2021`.
+    """Return the ends of a linear shape factor target along the suction side.
 
     A straight line in shape factor against surface distance, from where the
     flow behind the shock has recovered to the trailing edge: it starts at the
@@ -1783,11 +1782,9 @@ def shape_factor_line(zeta, mas, h, zeta_TE=0.97):
     boundary layer growing linearly between the two diffuses evenly, with no
     part of the surface working harder than the rest.
 
-    Behind the spike the shock raises, not at the sonic point. Lefas's text
-    puts the start where the flow goes subsonic, but his Fig. 4.2(b) draws it
-    at the minimum after the spike, and the figure is the one that can be met:
-    from the sonic point, the line runs over the layer relaxing from the
-    shock, which no camber removes.
+    Behind the spike the shock raises, not at the sonic point: from the sonic
+    point, the line would run over the layer relaxing from the shock, which no
+    camber removes.
 
     Returns
     -------
@@ -1810,7 +1807,7 @@ def shape_factor_line(zeta, mas, h, zeta_TE=0.97):
 
 
 def mach_smoothness(zeta, mas, zeta_TE=0.97):
-    """Return Lefas's subsonic smoothness area, after :cite:`Lefas2021`.
+    """Return the subsonic smoothness area of a suction surface Mach number.
 
     The area between the suction surface isentropic Mach number and a cubic
     fitted to it by least squares, from where the flow behind the shock is
@@ -1818,9 +1815,9 @@ def mach_smoothness(zeta, mas, zeta_TE=0.97):
     `zeta_TE`. Zero for a distribution with no bumps; it says how bumpy, not
     which way to move, so it is a monitor rather than something to step on.
 
-    Lefas fits his cubic from the peak, which puts the shock in it. From the
-    subsonic point, because no cubic follows a shock and the area would then
-    measure the shock rather than the diffusion behind it.
+    From the subsonic point rather than the peak, because no cubic follows a
+    shock and the area would then measure the shock rather than the diffusion
+    behind it.
 
     Returns
     -------
