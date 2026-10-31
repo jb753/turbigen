@@ -238,7 +238,6 @@ class ConformalMap:
         ds = np.linalg.norm(np.diff(self.xr, axis=1), axis=0)
         r_mid = 0.5 * (self.xr[1, 1:] + self.xr[1, :-1])
         self.mp = np.concatenate(([0.0], np.cumsum(ds / r_mid)))
-        self._tree = cKDTree(self.xr.T)
 
     def m_from_mp(self, mp):
         """Return annulus meridional coordinate at conformal coordinate `mp`."""
@@ -263,6 +262,11 @@ class ConformalMap:
             raise ValueError("Conformal coordinate outside the mapped range.")
         mp = np.clip(mp, self.mp[0], self.mp[-1])
         return self.annulus.evaluate_xr(self.m_from_mp(mp), self.spf)
+
+    @functools.cached_property
+    def _tree(self):
+        """A search tree of the samples, built only if asked for."""
+        return cKDTree(self.xr.T)
 
     def mp_from_xr(self, xr):
         """Return the conformal coordinate of points (2, n) on the surface.
