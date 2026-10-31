@@ -19,7 +19,7 @@ import pytest
 from test_blade import ROUND, blade, build
 
 from turbigen import OHPassage, guess, util
-from turbigen.ohpmesh import _cell_angles
+from turbigen.ohpmesh import ConformalMap, _cell_angles
 
 MESH = {
     "type": "ohp",
@@ -302,3 +302,17 @@ def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_th
 
     with pytest.raises(ValueError, match="m_inviscid"):
         OHPassage.from_dict({**MESH, "inviscid_endwalls": True}).mesh(machine)
+
+
+def test_the_conformal_map_is_exact_across_the_joins_of_the_annulus(machine):
+    # The annulus's m runs on at a different rate either side of each join
+    # between its segments, so m' found from m and from x, r agree there only
+    # if the map samples the joins themselves.
+    # A range whose evenly spaced samples miss the joins, and points close
+    # either side of each.
+    cmap = ConformalMap(machine.annulus, 0.3, 0.2, 2.8)
+    m = (np.array([1.0, 2.0])[:, None] + np.linspace(-3e-4, 3e-4, 61)).ravel()
+    xr = machine.annulus.evaluate_xr(m, 0.3)
+    mp = cmap.mp_from_xr(xr)
+    np.testing.assert_allclose(cmap.mp_from_m(m), mp, rtol=0, atol=1e-9 * np.ptp(mp))
+    np.testing.assert_allclose(cmap.m_from_mp(mp), m, rtol=0, atol=1e-9)

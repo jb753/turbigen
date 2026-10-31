@@ -248,8 +248,12 @@ def normal_fraction(m):
     return (1.0 - m) ** NORMAL_EXPONENT_LE + m**NORMAL_EXPONENT_TE
 
 
-N_CAP = 20001
-"""Samples over the rear half of chord on which the round trailing edge is fitted."""
+N_CAP = 201
+"""Samples over the rear half of chord on which the round trailing edge's
+tangent point is first bracketed."""
+
+N_CAP_FINE = 401
+"""Samples across that bracket on which the tangent point is then found."""
 
 N_SPF_KEPT = 1024
 """Span fractions a blade keeps its sections' parameters at, before it forgets
@@ -280,26 +284,42 @@ def _TE_caps(thickness, tanchi_TE):
 
     """
     k = np.sqrt(1.0 + tanchi_TE**2)
-    m = np.linspace(0.5, 1.0, N_CAP)
-    caps = []
-    for t in thickness.thick_both(m):
+
+    def last_crossing(m, t):
+        """Where on `m` the closing condition is last met, and the surface's
+        thickness and slope there, by linear interpolation; or None."""
         dt = np.gradient(t, m)
         r = t * np.sqrt(1.0 + (dt / k) ** 2)
         miss = m + t * dt / k**2 + r / k - 1.0
         # Positive at the trailing edge, where the blunt surface has not yet
         # closed; the last sign change ahead of it is the tangent point.
-        below = np.flatnonzero(miss < 0.0)
+        below = np.flatnonzero(miss[:-1] < 0.0)
         if not len(below):
+            return None
+        i = below[-1]
+        w = miss[i] / (miss[i] - miss[i + 1])
+        return i, (
+            m[i] + w * (m[i + 1] - m[i]),
+            *(a[i] + w * (a[i + 1] - a[i]) for a in (t, dt)),
+        )
+
+    # Bracketed on a coarse grid, then found on a fine one across the bracket,
+    # a cell either side, which costs a fraction of one fine grid throughout.
+    m = np.linspace(0.5, 1.0, N_CAP)
+    h = m[1] - m[0]
+    caps = []
+    for side, t in enumerate(thickness.thick_both(m)):
+        found = last_crossing(m, t)
+        if found is None:
             raise ValueError(
                 "No circle tangent to the surface closes the trailing edge "
                 "within the rear half of chord; the trailing edge is too thick "
                 "to round off."
             )
-        i = below[-1]
-        w = miss[i] / (miss[i] - miss[i + 1])
-        m_t = m[i] + w * (m[i + 1] - m[i])
-        t_t = t[i] + w * (t[i + 1] - t[i])
-        dt_t = dt[i] + w * (dt[i + 1] - dt[i])
+        i = found[0]
+        fine = np.linspace(max(m[i] - h, 0.5), min(m[i + 1] + h, 1.0), N_CAP_FINE)
+        refined = last_crossing(fine, thickness.thick_both(fine)[side])
+        m_t, t_t, dt_t = (found if refined is None else refined)[1]
         caps.append(
             (m_t, m_t + t_t * dt_t / k**2, t_t * np.sqrt(1.0 + (dt_t / k) ** 2))
         )
@@ -1065,7 +1085,13 @@ class Blade:
         """
         if m is None:
             m = turbigen.util.cluster_cosine(nchord)
+        return tuple(surf[:3] for surf in self._evaluate_section_m(spf, m))
 
+    def _evaluate_section_m(self, spf, m):
+        """Return the two surfaces at `spf` as :meth:`evaluate_section` does,
+        each with a fourth row, the annulus meridional coordinate of its
+        points, which places them exactly where a search for them in `x, r`
+        only nearly would."""
         xrt, m_LTE, Dy, chord = self._section_layout(spf, m)
         xr, theta = xrt[:2], xrt[2]
 
@@ -1080,7 +1106,13 @@ class Blade:
             drt = dt * 0.5 * (xr[1] + xr_surf[1])
 
             surfaces.append(
-                np.stack((*xr_surf, (theta * xr_surf[1] + drt) / xr_surf[1]))
+                np.stack(
+                    (
+                        *xr_surf,
+                        (theta * xr_surf[1] + drt) / xr_surf[1],
+                        self.row_annulus.m_LE + m_surf,
+                    )
+                )
             )
 
         return tuple(surfaces)

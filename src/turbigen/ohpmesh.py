@@ -225,7 +225,15 @@ class ConformalMap:
     def __init__(self, annulus, spf, m_lo, m_hi):
         self.annulus = annulus
         self.spf = spf
-        self.m = np.linspace(m_lo, m_hi, N_MERID)
+        # With the joins between the annulus's segments among the samples:
+        # `m` runs on at a different rate either side of one, so `m'`, linear
+        # in `m` between samples, would cut the corner there.
+        # Less any sample a rounding error from one, which would leave a
+        # segment of no length.
+        joins = np.arange(np.ceil(m_lo), np.floor(m_hi) + 1.0)
+        m = np.linspace(m_lo, m_hi, N_MERID)
+        near = np.isclose(m[:, None], joins[None, :], rtol=0.0, atol=1e-9).any(axis=1)
+        self.m = np.union1d(m[~near], joins)
         self.xr = annulus.evaluate_xr(self.m, spf)
         ds = np.linalg.norm(np.diff(self.xr, axis=1), axis=0)
         r_mid = 0.5 * (self.xr[1, 1:] + self.xr[1, :-1])
@@ -2673,18 +2681,23 @@ _J = np.array([0.0, 1.0])
 
 
 def _section(blade, spf):
-    """Return the two surfaces (3, `N_CHORD`) at `spf`, higher-theta first."""
-    return _by_theta(blade, spf, m=util.cluster_cosine(N_CHORD))
+    """Return the two surfaces (4, `N_CHORD`) at `spf`, higher-theta first:
+    `x`, `r`, `theta`, and the annulus meridional coordinate."""
+    upper, lower = blade._evaluate_section_m(spf, util.cluster_cosine(N_CHORD))
+    if upper[2].mean() < lower[2].mean():
+        upper, lower = lower, upper
+    return upper, lower
 
 
 def _surfaces(blade, cmap, spf, section=None):
     """Return the two surfaces in conformal coordinates, higher-theta first.
 
     Each (2, n), from the leading edge to its trailing edge corner; of
-    `section`, as :func:`_section` returns it, if given.
+    `section`, as :func:`_section` returns it, if given. Mapped from where
+    the blade put each point along the annulus, not searched for.
     """
     upper, lower = _section(blade, spf) if section is None else section
-    return tuple(np.stack((cmap.mp_from_xr(s[:2]), s[2])) for s in (upper, lower))
+    return tuple(np.stack((cmap.mp_from_m(s[3]), s[2])) for s in (upper, lower))
 
 
 def _blade_pieces(blade, cmap, spf, section=None):
