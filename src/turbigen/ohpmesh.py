@@ -114,6 +114,12 @@ CORNER_COS, CORNER_SIN = np.cos(np.pi / 3.0), np.sin(np.pi / 3.0)
 """Direction of an edge out of a corner of the O block, against the O block's
 face and its outward normal there."""
 
+POLISH_COARSE_RINGS = 2
+"""How many cells out from each poor cell of a swept plane are polished."""
+
+HOLD_COARSE = 1
+"""Layers of cells off the blade the polish of a swept plane leaves be."""
+
 POLISH_FINE_RINGS = 3
 """How many cells out from each poor cell of the refined plane are polished."""
 
@@ -440,9 +446,10 @@ class OHPassage(Mesher):
     """Nodes along each side of the patch drawn in towards a corner."""
 
     polish_below: float = 32.0
-    """Once refined, the nodes near any cell whose worst corner angle, folded
-    onto 0 to 90 degrees, is under this are polished: within three cells of
-    it, short of the O block's first layers. None if zero."""
+    """Once swept, and again once refined, the nodes of each control plane
+    near any cell whose worst corner angle, folded onto 0 to 90 degrees, is
+    under this are polished: within a few cells of it, short of the O
+    block's first layers. None if zero."""
 
     njtip_min: int = 9
     """Least number of spanwise nodes across a tip gap, one more than a
@@ -1316,6 +1323,7 @@ class OHPassage(Mesher):
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
 
         topo = self._sweep_operators(_plane_topology(planes[j_mid]["xy"], lay.pitch))
+        hold = topo.gid[0][:, : HOLD_COARSE + 1].ravel()
         X_alg = [topo.gather(p["xy"]) for p in planes]
 
         # Swept on the control planes, and the correction that made carried
@@ -1330,6 +1338,13 @@ class OHPassage(Mesher):
             # Started from the algebraic plane as it is: the sweeps unfold
             # what folds in it without untangling first.
             X = self._sweeps(topo, X_alg[j], self.n_sweep, planes[j])
+            # Polished before it is refined too: what the refined plane's
+            # polish is then left to do steps the spacing less across the O
+            # block's outer face.
+            if self.polish_below:
+                X += self._polish_shift(
+                    topo, hold, topo.scatter(X), POLISH_COARSE_RINGS
+                )
             own, _ = self._match_blade(topo, X, planes[j], lay, None)
             fracs[j] = np.concatenate(own)
             correction[j] = X - X_alg[j]
@@ -1397,7 +1412,9 @@ class OHPassage(Mesher):
             hold = fine.gid[0][:, : HOLD_FINE + 1].ravel()
             shift = [None] * len(spf)
             for j in j_ctrl:
-                shift[j] = self._polish_shift(fine, hold, per_plane[j])
+                shift[j] = self._polish_shift(
+                    fine, hold, per_plane[j], POLISH_FINE_RINGS
+                )
             for j, d in enumerate(between(shift)):
                 per_plane[j] = fine.scatter(fine.gather(per_plane[j]) + d)
 
@@ -1848,14 +1865,13 @@ class OHPassage(Mesher):
         out[0] = (lo + w[None] * (hi - lo)).astype(dtype)
         return out
 
-    def _polish_shift(self, topo, hold, xy):
-        """Return how far polishing moves each node of refined blocks `xy`.
+    def _polish_shift(self, topo, hold, xy, rings):
+        """Return how far polishing moves each node of blocks `xy`.
 
-        The nodes within `POLISH_FINE_RINGS` cells of every cell whose worst
-        corner is under :attr:`polish_below`, against cells the size they
-        are; the nodes `hold`, the O block's first `HOLD_FINE` layers of
-        cells off the blade, held so its spacing and squareness there stay as
-        clustered.
+        The nodes within `rings` cells of every cell whose worst corner is
+        under :attr:`polish_below`, against cells the size they are; the
+        nodes `hold`, the O block's first layers of cells off the blade, held
+        so its spacing and squareness there stay as clustered.
         """
         poor = []
         for B, g in zip(xy, topo.gid):
@@ -1870,7 +1886,7 @@ class OHPassage(Mesher):
             topo,
             X,
             poor,
-            rings=POLISH_FINE_RINGS,
+            rings=rings,
             power=POLISH_POWER,
             hold=hold,
         )
