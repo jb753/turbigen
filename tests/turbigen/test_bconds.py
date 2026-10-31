@@ -397,6 +397,19 @@ def test_the_target_scales_with_the_adjustment(shrouded, adjust):
     assert mdot / mdot_design == pytest.approx(1.0 + adjust)
 
 
+def test_the_throttle_gains_reach_the_patch(shrouded):
+    """Its own defaults unless the operating point says otherwise."""
+    machine, grid = shrouded
+    (patch,) = grid.patches.outlet
+
+    bconds.apply(grid, machine, bconds.OperatingPoint(mdot_adjust=0.0))
+    assert (patch.Kp, patch.Ki) == pytest.approx((0.5, 0.002))
+
+    point = bconds.OperatingPoint(mdot_adjust=0.0, throttle_Kp=25.0, throttle_Ki=0.1)
+    bconds.apply(grid, machine, point)
+    assert (patch.Kp, patch.Ki) == pytest.approx((25.0, 0.1))
+
+
 def test_the_target_reaching_the_patch_is_per_passage(shrouded):
     """The one unit conversion in this, and the one that fails quietly: ember
     integrates the faces the mesh has, which is one passage, while the mean
@@ -544,7 +557,9 @@ def test_the_pressure_a_throttle_settled_at_comes_back_as_DP_adjust(shrouded):
 
     now = bconds.achieved(grid, machine, point)
 
-    assert bconds.exit_pressure(machine, now) == pytest.approx(design - 1000.0, rel=1e-6)
+    assert bconds.exit_pressure(machine, now) == pytest.approx(
+        design - 1000.0, rel=1e-6
+    )
     # And it is still the same run: the throttle is not cleared by reading it.
     assert now.mdot_adjust == 0.0
 
@@ -946,7 +961,11 @@ def test_the_weighted_fit_does_not_depend_on_how_the_span_is_sampled():
     from numpy.polynomial import legendre
 
     def profile(spf):
-        return -np.exp(-spf / 0.08) - 0.5 * np.exp(-(1 - spf) / 0.05) + 0.2 * np.sin(np.pi * spf)
+        return (
+            -np.exp(-spf / 0.08)
+            - 0.5 * np.exp(-(1 - spf) / 0.05)
+            + 0.2 * np.sin(np.pi * spf)
+        )
 
     n = 137
     uniform = (np.arange(n) + 0.5) / n
@@ -976,7 +995,9 @@ def test_a_pod_profile_is_its_modes(tmp_path):
     profile = bconds.Pod(basis=path, sha256=sha, DPo=(0.0, 2.0))
     modes = bconds.PodModes(path, sha)
 
-    assert profile.column("DPo", modes.spf) == pytest.approx(2.0 * modes.table["DPo"][1])
+    assert profile.column("DPo", modes.spf) == pytest.approx(
+        2.0 * modes.table["DPo"][1]
+    )
     assert profile.column("DTo", modes.spf) == pytest.approx(np.zeros(modes.spf.size))
     assert profile.identity == sha
 
@@ -1033,7 +1054,8 @@ def test_the_pod_profile_round_trips(tmp_path):
 
     path, sha = basis_file(tmp_path)
     config = dataclasses.replace(
-        build(mesh=MESH), inlet_profile=bconds.Pod(basis=path, sha256=sha, DPo=(0.4, -0.25))
+        build(mesh=MESH),
+        inlet_profile=bconds.Pod(basis=path, sha256=sha, DPo=(0.4, -0.25)),
     )
 
     assert Config.from_dict(config.to_dict()) == config

@@ -77,6 +77,11 @@ the answer afterwards (`post_process`, `job`).
 """
 
 
+UNSTAMPED_OPERATING_POINT = ("throttle_Kp", "throttle_Ki")
+"""Operating point settings that decide how the field was reached, not what it
+is, and so are left out of the stamp as `solver` is: the throttle's gains."""
+
+
 def design_stamp(config):
     """Return a digest of the part of `config` that determines a flow field.
 
@@ -93,6 +98,15 @@ def design_stamp(config):
     """
     data = config.to_dict()
     subset = {key: data[key] for key in STAMPED if key in data}
+
+    # How a throttle reaches its mass flow, not where it ends up, so out for
+    # the reason `solver` is
+    if isinstance(subset.get("operating_point"), dict):
+        subset["operating_point"] = {
+            key: value
+            for key, value in subset["operating_point"].items()
+            if key not in UNSTAMPED_OPERATING_POINT
+        }
 
     # Sorted and canonically separated so the digest depends on the values and
     # not on field order or on how the dict happened to be built. `default`

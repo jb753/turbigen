@@ -552,6 +552,14 @@ class OperatingPoint(Node):
     mdot_adjust: float | None = None
     """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
+    # The controller's gains, as ember.patch.OutletPatch.set_throttle takes
+    # them, dimensionless; its defaults. Read only when mdot_adjust is set.
+    throttle_Kp: float = 0.5
+    """Proportional gain of the throttle [--]."""
+
+    throttle_Ki: float = 0.002
+    """Integral gain of the throttle [--]."""
+
     def __post_init__(self):
         # Checked when the config is read, because it needs no design.
         if self.mdot_adjust is None:
@@ -789,7 +797,9 @@ def apply_throttle(patches_out, machine, operating_point=None):
     # row. `Nb` is the same number `mixout` multiplies by to get back to the
     # annulus, so the two agree by construction.
     Nb = int(patch.block.Nb)
-    patch.set_throttle(mdot / Nb)
+    patch.set_throttle(
+        mdot / Nb, Kp=operating_point.throttle_Kp, Ki=operating_point.throttle_Ki
+    )
 
     logger.debug(
         f"Throttling {patch.label!r} to {mdot / Nb:.5g} kg/s per passage, Nb={Nb}."
