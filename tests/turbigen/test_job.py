@@ -148,6 +148,18 @@ def test_slurm_states_what_it_was_given():
     assert "#SBATCH --qos=high" in script
 
 
+def test_slurm_runs_where_it_was_submitted(tmp_path, monkeypatch):
+    """The array runs from the submitting directory, not the tasks' parent,
+    so the same matplotlibrc and relative paths apply as on a local run."""
+    monkeypatch.chdir(tmp_path)
+    tasks = tmp_path / "runs" / job.TASKS_NAME
+
+    script = job.Slurm().script("b", "run", (), tasks)
+
+    assert f"cd {tmp_path}" in script
+    assert f'sed -n "${{SLURM_ARRAY_TASK_ID}}p" {tasks}' in script
+
+
 @pytest.mark.parametrize(
     ("hours", "expected"),
     [(1.0, "01:00:00"), (1.5, "01:30:00"), (0.25, "00:15:00"), (36.0, "36:00:00")],
@@ -389,17 +401,42 @@ def test_a_submitted_restart_names_the_same_field(batch, tmp_path, monkeypatch):
     ]
 
 
+def test_a_submitted_copy_still_knows_it_is_one(batch):
+    """`-o` is not passed on, but what it implies about the config is.
+
+    The job runs the copy in the workdir, and a settled iterate or chic
+    promotes its design's config over the copy only when the config is
+    turbigen's own. Without this, every queued one left its starting design
+    at the root beside its settled field.
+    """
+    parser = cli._make_parser()
+    copied = parser.parse_args(
+        ["iterate", str(batch[0]), "-o", str(batch[0].parent), "-Q"]
+    )
+    plain = parser.parse_args(["iterate", str(batch[0]), "-Q"])
+
+    assert "--copied" in cli.task_options(copied)
+    assert "--copied" not in cli.task_options(plain)
+
+    # And the job, reading the options back, sees a copy
+    job = parser.parse_args(["iterate", str(batch[0]), *cli.task_options(copied)])
+    assert cli.is_copy(job)
+
+
 #
 # BATCH
 #
 
 
-BATCH_CASE = CASE + """
+BATCH_CASE = (
+    CASE
+    + """
 batch:
   seed: 0
   bounds:
     mean_line.psi: [1.4, 1.8]
 """
+)
 
 
 @pytest.fixture
