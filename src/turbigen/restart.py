@@ -77,9 +77,10 @@ the answer afterwards (`post_process`, `job`).
 """
 
 
-UNSTAMPED_OPERATING_POINT = ("throttle_Kp", "throttle_Ki")
-"""Operating point settings that decide how the field was reached, not what it
-is, and so are left out of the stamp as `solver` is: the throttle's gains."""
+UNSTAMPED_OPERATING_POINT = ("throttle_Kp", "throttle_Ki", "throttle_tol")
+"""Operating point settings that decide how the field was reached, or whether
+its pressure is recorded, not what it is, and so are left out of the stamp as
+`solver` is: the throttle's gains and its tolerance."""
 
 
 def design_stamp(config):

@@ -16,7 +16,17 @@ import ember.average
 import ember.convergence_history
 import numpy as np
 
-from turbigen import bconds, case, guess, iterate, metric, mixout, post, restart
+from turbigen import (
+    bconds,
+    case,
+    guess,
+    iterate,
+    metric,
+    mixout,
+    nozzle,
+    post,
+    restart,
+)
 from turbigen.result import Result
 
 logger = logging.getLogger("turbigen")
@@ -114,6 +124,11 @@ def prepare(config, restart_path=None, warm=None):
 
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
+
+    # An exit nozzle is part of the operating point, not the design, so it is
+    # morphed into the grid the design meshed, and a report of a nozzle point
+    # draws the grid that was solved.
+    nozzle.morph(grid, machine, config.operating_point)
 
     bconds.apply(grid, machine, config.operating_point, config.inlet_profile)
     guess.apply(grid, machine)

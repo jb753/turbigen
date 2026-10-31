@@ -35,7 +35,7 @@ def grid(machine):
     been through both.
     """
     grid = H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(machine)
-    bconds.apply_rotation(grid, machine)
+    bconds.apply_rotation(grid, machine.mean_line.Omega[0])
     guess.apply(grid, machine)
     return grid
 

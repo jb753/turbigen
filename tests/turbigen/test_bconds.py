@@ -223,10 +223,8 @@ def test_a_placed_patch_is_unvalued_until_bconds_runs():
 def test_the_row_count_must_match(shrouded):
     machine, grid = shrouded
 
-    one_row = machine.mean_line.copy()[:, :1]
-
     with pytest.raises(ValueError, match="one speed per row"):
-        bconds.apply_rotation(grid, dataclasses.replace(machine, mean_line=one_row))
+        bconds.apply_rotation(grid, machine.mean_line.Omega[0, :1])
 
 
 #

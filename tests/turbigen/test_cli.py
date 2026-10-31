@@ -2610,8 +2610,8 @@ def test_a_run_writes_its_includes_out_expanded(run_case):
 
 SWEEP = """
 chic:
-  step: 0.4
-  step_min: 0.2
+  step_coarse: 0.4
+  step_fine: 0.2
   max_points: 3
 """
 """Deliberately coarse, so a sweep is three short runs rather than ten.

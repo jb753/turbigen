@@ -781,15 +781,37 @@ turbigen chic case/input.yaml
 ```
 
 Converge the design, then hold its geometry fixed and step the back pressure
-until a point will not converge — halving the step and coming back at it from
-the last good field, until the limit is pinned to `chic.step_min`.
+by `step_coarse` until a point will not converge, then come back to the last
+good field and march on from it by `step_fine` until one fails again. Every
+point is a point on the characteristic, and they are finest near the limit.
 
 ```yaml
 chic:
-  step: 0.05        # DP_adjust per point
-  step_min: 0.01    # the resolution of the answer
+  step_coarse: 0.05   # DP_adjust per point, until one fails
+  step_fine: 0.01     # then from the last good one; the resolution
   max_points: 20
 ```
+
+Three more things it can do, each off by default:
+
+- **`nozzle: true`** throttles with a choked exit nozzle instead of a back
+  pressure. The exit duct of the mesh is morphed into a converging-diverging
+  nozzle (`turbigen/nozzle.py`), its throat sized one-dimensionally to pass
+  the design point's flow and solved once, and the sweep closes the throat by
+  fractions of that area. A choked throat fixes `mdot sqrt(To) / Po`, which
+  crosses the characteristic once even near its peak, where one back pressure
+  admits a range of flows.
+- **`choke: true`** adds a leg from the datum the other way, lowering the back
+  pressure by `step_choke` (else `step_coarse`) and then `step_choke_fine`,
+  until a point does not converge or raises the mass flow by less than
+  `choke_mdot` over a coarse step. With a nozzle, which cannot be opened far
+  enough to choke the machine, the open duct is first throttled to the flow the
+  datum throat passed. `stall: false` runs the choke leg alone.
+- **`speeds: [0.8, 1.0, 1.05]`** sweeps a speedline at each fraction of the
+  design shaft speed, the blades keeping their design shape. Each departs from
+  the throat sized at the design speed, so this needs a nozzle; a new speed's
+  datum is soft started from the nearest speed already run, and its points go
+  under `speed_S.SSS/`.
 
 **Whether it iterates first is inferred, never asked for.** A case whose stored
 `result:` says the design has converged *and* its iterators are inside their
@@ -851,9 +873,10 @@ stall is unsteady. The report says so rather than leaving it to be assumed.
 
 Near the peak of a characteristic `dPR/dmdot` tends to zero, so a pressure
 bracket of a given width spans a wide range of mass flow — the limiting
-*pressure* is resolved to `step_min` and the limiting *mass flow* it implies
+*pressure* is resolved to `step_fine` and the limiting *mass flow* it implies
 rather less, which is unfortunate given the mass flow is the number of
-interest.
+interest. The `nozzle` is the way round that: a throat closed by a fraction of
+its area moves the flow by about that fraction.
 
 The stable side of the characteristic needs no feedback and is already a batch:
 

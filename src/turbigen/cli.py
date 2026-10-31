@@ -488,7 +488,8 @@ def clobbered_dirs(args, paths):
     Where each target will be worked in, except for a `chic` of a design that
     has already settled, run in place: that sweeps straight away and leaves
     the `output.yaml` beside the config alone, so what it would replace is the
-    points of an earlier sweep, the `chic_*` directories already there.
+    points of an earlier sweep, the `chic_*` directories already there, on
+    their own or under a speedline's `speed_*`.
     """
     directories = out_dirs(args, paths)
     if getattr(args, "command", None) != "chic" or getattr(args, "workdir", None):
@@ -500,7 +501,12 @@ def clobbered_dirs(args, paths):
         if loop.settled_design(path, config, quiet=True) is None:
             replaced.append(directory)
         else:
-            replaced += sorted(d for d in directory.glob("chic_*") if d.is_dir())
+            replaced += sorted(
+                d
+                for pattern in ("chic_*", "speed_*/chic_*")
+                for d in directory.glob(pattern)
+                if d.is_dir()
+            )
 
     return replaced
 
@@ -1089,9 +1095,9 @@ def _chic_one(args, config_path):
 
         previous = resolve_restart(config)
 
-        settled = loop.settled_design(config_path, config)
+        config, design = loop.settled_design(config_path, config) or (config, None)
         points, _ = loop.characteristic(
-            settled or config, out_dir, previous, settled is not None, is_copy(args)
+            config, out_dir, previous, design, is_copy(args)
         )
 
     # The sweep did its job whenever it bracketed something, which is what the
@@ -1622,9 +1628,12 @@ VERBS = (
         help="sweep a characteristic until the solution will not stand up",
         description=(
             "Converge the design, then hold its geometry fixed and step the "
-            "back pressure until a point will not converge, halving the step "
-            "and coming back at it from the last good field until the limit "
-            "is pinned to chic.step_min. Each point is an ordinary run in a "
+            "back pressure by chic.step_coarse until a point will not "
+            "converge, then march on from the last good field by "
+            "chic.step_fine until one fails again; chic.nozzle, chic.choke "
+            "and chic.speeds throttle with a choked exit nozzle, add a leg "
+            "towards choke and sweep other speedlines. Each point is an "
+            "ordinary run in a "
             "directory of its own. A case whose stored result says the design "
             "has already settled skips straight to the sweep. Needs a chic: "
             "section. What it finds is where a steady solver stops "
