@@ -647,7 +647,7 @@ class OHPassage(Mesher):
     # GEOMETRY
     #
 
-    def _wall(self, blade, cmap, t_O, corners=None, pitch=None):
+    def _wall(self, blade, cmap, t_O, corners=None, pitch=None, section=None):
         """Return the blade and where the corners of the O block sit on it.
 
         The blade as one closed line (2, N_WALL), evenly spaced in arc length,
@@ -663,7 +663,7 @@ class OHPassage(Mesher):
         the lower side's outline nearest C2 on the blade below, and C1 where
         the normal out of C4 on the blade above lands on the upper side's.
         """
-        upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
+        upper, lower, te = _blade_pieces(blade, cmap, cmap.spf, section)
         s_te = util.cum_arc_length(te)
         half = 0.5 * s_te[-1]
         wall = np.concatenate(
@@ -992,7 +992,7 @@ class OHPassage(Mesher):
         )
         return dataclasses.replace(layout, n_wall=tuple(n))
 
-    def plane(self, machine, i_row, layout, cmap, blade_wall, density):
+    def plane(self, machine, i_row, layout, cmap, blade_wall, density, section):
         """Return the coarse algebraic mesh of the constant-span plane of
         `cmap`, its blade as :meth:`_wall` returns it and the density of
         coarse cells along it."""
@@ -1129,7 +1129,7 @@ class OHPassage(Mesher):
             "wall": g["wall"],
             "s_loop": g["s_loop"],
             "sigma_LE": g["sigma_LE"],
-            "chord_frac": _chord(blade, spf) / util.arc_length(g["wall"]),
+            "chord_frac": _chord(blade, spf, section) / util.arc_length(g["wall"]),
         }
 
     #
@@ -1327,11 +1327,16 @@ class OHPassage(Mesher):
         # Each plane's blade evaluated once, for its coarse counts and nodes
         blade = machine.rows[i_row].blade
         cmaps = [ConformalMap(machine.annulus, s, lay.m_in, lay.m_out) for s in spf]
-        walls = [self._wall(blade, c, lay.t_O, lay.corners) for c in cmaps]
+        sections = [_section(blade, s) for s in spf]
+        walls = [
+            self._wall(blade, c, lay.t_O, lay.corners, section=sec)
+            for c, sec in zip(cmaps, sections)
+        ]
         dens = [self._wall_coarse_density(w, lay) for w in walls]
         lay = self._coarse_counts(i_row, lay, walls, dens)
         planes = [
-            self.plane(machine, i_row, lay, *cwd) for cwd in zip(cmaps, walls, dens)
+            self.plane(machine, i_row, lay, *cwds)
+            for cwds in zip(cmaps, walls, dens, sections)
         ]
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
 
@@ -2617,16 +2622,22 @@ _J = np.array([0.0, 1.0])
 """Unit vector in the direction of increasing `theta` in the conformal plane."""
 
 
-def _surfaces(blade, cmap, spf):
+def _section(blade, spf):
+    """Return the two surfaces (3, `N_CHORD`) at `spf`, higher-theta first."""
+    return _by_theta(blade, spf, m=util.cluster_cosine(N_CHORD))
+
+
+def _surfaces(blade, cmap, spf, section=None):
     """Return the two surfaces in conformal coordinates, higher-theta first.
 
-    Each (2, n), from the leading edge to its trailing edge corner.
+    Each (2, n), from the leading edge to its trailing edge corner; of
+    `section`, as :func:`_section` returns it, if given.
     """
-    upper, lower = _by_theta(blade, spf, m=util.cluster_cosine(N_CHORD))
+    upper, lower = _section(blade, spf) if section is None else section
     return tuple(np.stack((cmap.mp_from_xr(s[:2]), s[2])) for s in (upper, lower))
 
 
-def _blade_pieces(blade, cmap, spf):
+def _blade_pieces(blade, cmap, spf, section=None):
     """Return the two surfaces and the trailing edge in conformal coordinates.
 
     Each surface (2, n) from the leading edge to its trailing edge corner,
@@ -2634,7 +2645,7 @@ def _blade_pieces(blade, cmap, spf):
     the lower. On a round trailing edge, the corners are where each surface's
     arc begins, and the trailing edge is the arc.
     """
-    upper, lower = _surfaces(blade, cmap, spf)
+    upper, lower = _surfaces(blade, cmap, spf, section)
     caps = blade.evaluate_TE_cap(spf)
     if caps is None:
         t = np.linspace(0.0, 1.0, 101)[None]
@@ -2719,11 +2730,12 @@ def _wall_normals(wall, s):
     return np.stack((-t[1], t[0]))
 
 
-def _chord(blade, spf):
+def _chord(blade, spf, section=None):
     """Return the meridional chord of the section at `spf`, in conformal
-    units, over the mean radius of the section."""
+    units, over the mean radius of the section; of `section`, as
+    :func:`_section` returns it, if given."""
     # One section for both, as `Blade.evaluate_chord` measures it
-    upper, lower = _by_theta(blade, spf)
+    upper, lower = _by_theta(blade, spf) if section is None else section
     r_ref = float(np.mean(upper[1]))
     chord = util.arc_length(np.stack((upper, lower)).mean(axis=0)[:2])
     return chord / r_ref
