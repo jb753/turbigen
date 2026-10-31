@@ -762,14 +762,14 @@ class OHPassage(Mesher):
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4), s_LE
 
-    def _geometry(self, blade, cmap, t_O, corners, f_wall):
+    def _geometry(self, blade_wall, t_O, f_wall):
         """Return the blade, its coarse nodes, and the O block outline.
 
-        The corners of the O block at `corners`, fractions of the way round
-        the blade, and the nodes at fractions `f_wall` of each piece of it
-        between them, the same at every span.
+        The blade and its corners as :meth:`_wall` returns them, and the
+        nodes at fractions `f_wall` of each piece of it between them, the
+        same at every span.
         """
-        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, corners)
+        wall, marks, i_C, s_LE = blade_wall
         s = np.linspace(0.0, marks[-1], N_WALL)
         n_wall = [len(f) - 1 for f in f_wall]
         s_loop = np.concatenate(
@@ -837,7 +837,8 @@ class OHPassage(Mesher):
         cmap_C = ConformalMap(machine.annulus, self.spf_corners, m_in, m_out)
         _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
         corners = tuple(float(x) for x in marks_C[1:5] / marks_C[-1])
-        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, corners)
+        blade_wall = self._wall(blade, cmap, t_O, corners)
+        wall, marks, i_C, s_LE = blade_wall
         S = marks[-1]
         s = np.linspace(0.0, S, N_WALL)
         # The coarse mesh, uniformly finer than the free stream.
@@ -852,7 +853,7 @@ class OHPassage(Mesher):
             (_by_density(s, density, a, b, k) - a) / (b - a)
             for (a, b), k in zip(_pairs(marks), n)
         )
-        geo = self._geometry(blade, cmap, t_O, corners, f_wall)
+        geo = self._geometry(blade_wall, t_O, f_wall)
 
         # Refined along the blade: down to h_LE at the leading edge and h_TE
         # at the middle of the trailing edge, growing at ER_surf to h between.
@@ -950,19 +951,24 @@ class OHPassage(Mesher):
     # ONE PLANE
     #
 
-    def _coarse_wall(self, blade, cmap, layout, counts=None):
-        """Return coarse cells along each piece of the blade on the plane of
-        `cmap`, as many as its curvature asks for, or with `counts`, where
-        they lie along each piece as fractions of its length.
+    def _wall_coarse_density(self, blade_wall, layout):
+        """Return the density of coarse cells along the blade on one plane, as
+        :meth:`_wall` returns it, at its `N_WALL` samples.
 
         By :attr:`turn_max` round the blade's own edges on this plane, which
         sharpen and move round it along the span. See :func:`_coarse_density`.
         """
-        wall, marks, _, _ = self._wall(blade, cmap, layout.t_O, layout.corners)
-        s = np.linspace(0.0, marks[-1], N_WALL)
-        density = _coarse_density(
-            wall, layout.H_coarse, np.radians(self.turn_max), ER_COARSE
+        return _coarse_density(
+            blade_wall[0], layout.H_coarse, np.radians(self.turn_max), ER_COARSE
         )
+
+    def _coarse_wall(self, blade_wall, density, counts=None):
+        """Return coarse cells along each piece of the blade on one plane, as
+        :meth:`_wall` returns it, as many as `density` asks for, or with
+        `counts`, where they lie along each piece as fractions of its length.
+        """
+        _, marks, _, _ = blade_wall
+        s = np.linspace(0.0, marks[-1], N_WALL)
         if counts is None:
             return [_integral(s, density, a, b) for a, b in _pairs(marks)]
         return tuple(
@@ -970,15 +976,13 @@ class OHPassage(Mesher):
             for (a, b), k in zip(_pairs(marks), counts)
         )
 
-    def _coarse_counts(self, machine, i_row, layout, spf):
+    def _coarse_counts(self, i_row, layout, blade_walls, densities):
         """Return `layout` with the coarse cells along each piece of the blade
-        the most any plane at `spf` asks for; the two sides of the passage
-        block alike."""
-        blade = machine.rows[i_row].blade
+        the most any plane of `blade_walls`, at `densities`, asks for; the two
+        sides of the passage block alike."""
         need = np.zeros(len(layout.n_wall))
-        for s in spf:
-            cmap = ConformalMap(machine.annulus, s, layout.m_in, layout.m_out)
-            need = np.maximum(need, self._coarse_wall(blade, cmap, layout))
+        for blade_wall, density in zip(blade_walls, densities):
+            need = np.maximum(need, self._coarse_wall(blade_wall, density))
         n = [max(1, round(x)) for x in need]
         i3, _, i1, _ = layout.i_wall
         n[i3] = n[i1] = max(n[i3], n[i1])
@@ -988,17 +992,19 @@ class OHPassage(Mesher):
         )
         return dataclasses.replace(layout, n_wall=tuple(n))
 
-    def plane(self, machine, i_row, layout, spf):
-        """Return the coarse algebraic mesh of one constant-span plane."""
+    def plane(self, machine, i_row, layout, cmap, blade_wall, density):
+        """Return the coarse algebraic mesh of the constant-span plane of
+        `cmap`, its blade as :meth:`_wall` returns it and the density of
+        coarse cells along it."""
         blade = machine.rows[i_row].blade
+        spf = cmap.spf
         pitch = layout.pitch
         pJ = pitch * _J
-        cmap = ConformalMap(machine.annulus, spf, layout.m_in, layout.m_out)
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
             [layout.m_in, layout.m_Zin, layout.m_Zout, layout.m_out]
         )
-        f_wall = self._coarse_wall(blade, cmap, layout, layout.n_wall)
-        g = self._geometry(blade, cmap, layout.t_O, layout.corners, f_wall)
+        f_wall = self._coarse_wall(blade_wall, density, layout.n_wall)
+        g = self._geometry(blade_wall, layout.t_O, f_wall)
         loop, outer = g["loop"], g["outer"]
         C1, C2, C3, C4 = (g[k] for k in ("C1", "C2", "C3", "C4"))
         i3, i4, i1, i2 = layout.i_corners_coarse()
@@ -1303,7 +1309,7 @@ class OHPassage(Mesher):
         xy = topo.scatter(np.asarray(X))
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0].astype(float))
+        s_c = _wall_arc(plane, xy[0][:, :, 0].astype(float))
         ends = (0, *lay.i_corners_coarse(), len(s_c) - 1)
         own = []
         for a, b in itertools.pairwise(ends):
@@ -1318,8 +1324,15 @@ class OHPassage(Mesher):
     def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
         """Return the ember blocks of one row, with a tip gap from `jtip`."""
         lay = self.layout(machine, i_row, spacing)
-        lay = self._coarse_counts(machine, i_row, lay, spf)
-        planes = [self.plane(machine, i_row, lay, s) for s in spf]
+        # Each plane's blade evaluated once, for its coarse counts and nodes
+        blade = machine.rows[i_row].blade
+        cmaps = [ConformalMap(machine.annulus, s, lay.m_in, lay.m_out) for s in spf]
+        walls = [self._wall(blade, c, lay.t_O, lay.corners) for c in cmaps]
+        dens = [self._wall_coarse_density(w, lay) for w in walls]
+        lay = self._coarse_counts(i_row, lay, walls, dens)
+        planes = [
+            self.plane(machine, i_row, lay, *cwd) for cwd in zip(cmaps, walls, dens)
+        ]
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
 
         topo = self._sweep_operators(_plane_topology(planes[j_mid]["xy"], lay.pitch))
@@ -1522,7 +1535,7 @@ class OHPassage(Mesher):
         need = np.zeros(len(lay.n_wall))
         for plane, xy in zip(planes, xys):
             S = util.arc_length(plane["wall"])
-            s_c = _wall_arc(plane["wall"], xy[0][:, :, 0])
+            s_c = _wall_arc(plane, xy[0][:, :, 0])
             c = s_c[np.cumsum((0, *lay.n_wall))] / S
             sigma, dens = self._plane_density(lay, plane)
             sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
@@ -1589,7 +1602,7 @@ class OHPassage(Mesher):
         """
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0])
+        s_c = _wall_arc(plane, xy[0][:, :, 0])
         e = np.cumsum((0, *lay.n_wall))
         m = dict(zip(("rl", "side_lo", "front", "side_up", "ru"), lay.nf_wall))
         counts = np.array(lay.nf_wall)
@@ -1794,7 +1807,7 @@ class OHPassage(Mesher):
         # blade, monotonically, so they stay on it and in order round it.
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0])
+        s_c = _wall_arc(plane, xy[0][:, :, 0])
         s_f = np.concatenate(
             [
                 scipy.interpolate.PchipInterpolator(
@@ -2192,12 +2205,17 @@ def _project(wall, s_wall, tree, pts):
     return best_s
 
 
-def _wall_arc(wall, nodes):
-    """Return where `nodes` (2, n) lie along closed line `wall` (2, N),
-    unwrapped to increase from the first, which the last closes on."""
-    s_wall = util.cum_arc_length(wall)
+def _wall_arc(plane, nodes):
+    """Return where `nodes` (2, n) lie along the closed line of `plane`'s
+    blade, unwrapped to increase from the first, which the last closes on."""
+    wall = plane["wall"]
+    # Kept with the plane, which asks for them several times
+    if "wall_tree" not in plane:
+        plane["wall_s"] = util.cum_arc_length(wall)
+        plane["wall_tree"] = cKDTree(wall.T)
+    s_wall = plane["wall_s"]
     S = s_wall[-1]
-    s_c = _unwrap(_project(wall, s_wall, cKDTree(wall.T), nodes.T), S)
+    s_c = _unwrap(_project(wall, s_wall, plane["wall_tree"], nodes.T), S)
     s_c[-1] = s_c[0] + S
     return s_c
 
@@ -2653,7 +2671,7 @@ def _O_frame(plane, O):
     """Return the blade node, and the blade's unit tangent and outward normal
     there, (2, ni) each, at the blade end of each line of O block `O`."""
     wall = plane["wall"]
-    n = _wall_normals(wall, _wall_arc(wall, O[:, :, 0]))
+    n = _wall_normals(wall, _wall_arc(plane, O[:, :, 0]))
     return O[:, :, 0], np.stack((n[1], -n[0])), n
 
 
@@ -2704,8 +2722,11 @@ def _wall_normals(wall, s):
 def _chord(blade, spf):
     """Return the meridional chord of the section at `spf`, in conformal
     units, over the mean radius of the section."""
-    r_ref = float(np.mean(_by_theta(blade, spf)[0][1]))
-    return blade.evaluate_chord(spf) / r_ref
+    # One section for both, as `Blade.evaluate_chord` measures it
+    upper, lower = _by_theta(blade, spf)
+    r_ref = float(np.mean(upper[1]))
+    chord = util.arc_length(np.stack((upper, lower)).mean(axis=0)[:2])
+    return chord / r_ref
 
 
 def _norm_arc(curve):
