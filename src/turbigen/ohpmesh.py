@@ -86,8 +86,13 @@ N_SMOOTH_NORMAL = 10
 extruded along, so they fan round corners rather than cross."""
 
 SLOPE_MAX = 1.0
-"""Largest `dtheta/dm'` the initial periodic line is extended at beyond the
+"""Largest `dtheta/dm'` the initial periodic line is extended at behind the
 blade, being the tangent of 45 degrees. Only a starting guess: the line floats."""
+
+SLOPE_MAX_LE = 0.5
+"""Largest `dtheta/dm'` the initial periodic line is extended at ahead of the
+blade, about 27 degrees: at a steeper inlet metal angle, it skews the blocks
+there more than the sweeps undo."""
 
 END_FIT = 0.05
 """Fraction of chord at each end of the camber line its end slope is fitted
@@ -2764,15 +2769,25 @@ def _periodic_line(blade, cmap, pitch):
     """Return `theta(m')` of the initial periodic line above the blade.
 
     Half a pitch above the camber line, extended straight beyond it at the
-    end slopes of the camber line, limited to 45 degrees.
+    end slopes of the camber line, limited to `SLOPE_MAX_LE` ahead and
+    `SLOPE_MAX` behind.
     """
-    cam = blade.evaluate_camber(cmap.spf, m=util.cluster_cosine(400))
-    mp = cmap.mp_from_xr(cam[:2])
-    theta = cam[2] + 0.5 * pitch
-    slope = np.clip(
-        [_end_slope(blade, cmap, 0.0, END_FIT), _end_slope(blade, cmap, 1.0, -END_FIT)],
-        -SLOPE_MAX,
-        SLOPE_MAX,
+    # The camber line along the chord and over each end evaluated together:
+    # evaluated alone, an end would be stretched over the whole chord.
+    m_line = util.cluster_cosine(400)
+    m_ends = (
+        np.linspace(0.0, END_FIT, N_END_FIT),
+        np.linspace(1.0 - END_FIT, 1.0, N_END_FIT),
+    )
+    m_all, inverse = np.unique(np.concatenate((m_line, *m_ends)), return_inverse=True)
+    cam = blade.evaluate_camber(cmap.spf, m=m_all)
+    mp_all = cmap.mp_from_xr(cam[:2])
+    i_line, i_LE, i_TE = np.split(inverse, np.cumsum([len(m_line), N_END_FIT]))
+    mp, theta = mp_all[i_line], cam[2][i_line] + 0.5 * pitch
+    i_TE = i_TE[::-1]
+    slope = (
+        np.clip(_end_slope(mp_all[i_LE], cam[2][i_LE]), -SLOPE_MAX_LE, SLOPE_MAX_LE),
+        np.clip(_end_slope(mp_all[i_TE], cam[2][i_TE]), -SLOPE_MAX, SLOPE_MAX),
     )
 
     def periodic(mq):
@@ -2785,19 +2800,18 @@ def _periodic_line(blade, cmap, pitch):
     return periodic
 
 
-def _end_slope(blade, cmap, m_end, dm):
-    """Return `dtheta/dm'` of the camber line at its end `m_end`.
+def _end_slope(mp, theta):
+    """Return `dtheta/dm'` of the camber line at the end its samples `mp`,
+    `theta` over the last part of chord start from.
 
-    From a quadratic fitted over `dm` of chord, not differenced between the
+    From a quadratic fitted over them, not differenced between the
     end's first two samples: an annulus whose `m` runs on unevenly over a
     small fraction of chord puts those a few percent out of true in `m'`, by
     an amount that jumps from span to span. Extended a chord beyond the blade,
     that shears the periodic surface by a degree where the planes crowd the
     endwalls.
     """
-    cam = blade.evaluate_camber(cmap.spf, m=np.linspace(m_end, m_end + dm, N_END_FIT))
-    mp = cmap.mp_from_xr(cam[:2])
-    return np.polyfit(mp - mp[0], cam[2], 2)[1]
+    return np.polyfit(mp - mp[0], theta, 2)[1]
 
 
 def _line(a, b, f):
