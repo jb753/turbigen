@@ -2749,8 +2749,12 @@ def _chord(blade, spf, section=None):
 
 def _norm_arc(curve):
     """Return normalised arc length along a polyline (2, n)."""
-    s = util.cum_arc_length(curve)
-    return s / s[-1]
+    d = np.diff(curve, axis=1)
+    s = np.empty(curve.shape[1])
+    s[0] = 0.0
+    np.cumsum(np.sqrt(d[0] * d[0] + d[1] * d[1]), out=s[1:])
+    s /= s[-1]
+    return s
 
 
 def _outward_normals(loop):
@@ -2828,27 +2832,33 @@ def _tfi(bottom, top, left, right):
     corners must agree. Blended on normalised arc length rather than index, so
     a clustered edge pulls the interior with it.
     """
+    c00, c10, c01, c11 = bottom[:, 0], bottom[:, -1], top[:, 0], top[:, -1]
     for a, b in (
-        (bottom[:, 0], left[:, 0]),
-        (bottom[:, -1], right[:, 0]),
-        (top[:, 0], left[:, -1]),
-        (top[:, -1], right[:, -1]),
+        (c00, left[:, 0]),
+        (c10, right[:, 0]),
+        (c01, left[:, -1]),
+        (c11, right[:, -1]),
     ):
-        assert np.allclose(a, b, rtol=0.0, atol=1e-12), f"TFI corners disagree {a} {b}"
+        assert np.abs(a - b).max() <= 1e-12, f"TFI corners disagree {a} {b}"
 
     sb = _norm_arc(bottom)[:, None]
     st = _norm_arc(top)[:, None]
     tl = _norm_arc(left)[None, :]
     tr = _norm_arc(right)[None, :]
-    u = (sb + (st - sb) * tl) / (1.0 - (st - sb) * (tr - tl))
-    v = tl + (tr - tl) * u
+    dst = st - sb
+    u = (sb + dst * tl) / (1.0 - dst * (tr - tl))
+    v = (tr - tl) * u
+    v += tl
 
-    B, T = bottom[:, :, None], top[:, :, None]
-    L, R = left[:, None, :], right[:, None, :]
-    c00, c10 = bottom[:, 0, None, None], bottom[:, -1, None, None]
-    c01, c11 = top[:, 0, None, None], top[:, -1, None, None]
-    xy = (1 - v) * B + v * T + (1 - u) * L + u * R
-    xy -= (1 - u) * (1 - v) * c00 + u * (1 - v) * c10 + (1 - u) * v * c01 + u * v * c11
+    # The blend of the four edges less the bilinear one of the corners,
+    # gathered by what each multiplies: `v` varies along `k`, `u` along `i`.
+    Q = (top - bottom - (c01 - c00)[:, None])[:, :, None]
+    R = (right - left - (c10 - c00)[:, None])[:, None, :]
+    K = (c11 - c10 - c01 + c00)[:, None, None]
+    xy = v * Q
+    xy += (bottom - c00[:, None])[:, :, None]
+    xy += left[:, None, :]
+    xy += u * (R - v * K)
 
     # Edges exactly as given, so shared edges are bit-identical between blocks.
     xy[:, :, 0], xy[:, :, -1] = bottom, top

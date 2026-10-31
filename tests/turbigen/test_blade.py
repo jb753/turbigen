@@ -9,6 +9,7 @@ check that none of that state exists any more.
 """
 
 import dataclasses
+import pickle
 
 import numpy as np
 import pytest
@@ -1420,3 +1421,15 @@ def test_sections_must_agree_on_a_round_trailing_edge():
     )
     with pytest.raises(ValueError, match="round_TE"):
         config.design().rows[0].blade.evaluate_section(0.5)
+
+
+def test_a_blade_pickles_once_evaluated_and_evaluates_alike_after():
+    # A blade keeps what it has fitted to its sections, and some of that is
+    # functions, which do not pickle: they are left out and fitted again.
+    machine = build().design()
+    before = machine.rows[0].blade
+    section, chi = before.evaluate_section(0.3), before.evaluate_chi(0.3)
+    after = pickle.loads(pickle.dumps(machine)).rows[0].blade
+    for a, b in zip(section, after.evaluate_section(0.3)):
+        np.testing.assert_array_equal(a, b)
+    np.testing.assert_array_equal(chi, after.evaluate_chi(0.3))

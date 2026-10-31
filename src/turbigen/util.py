@@ -59,7 +59,17 @@ def sind(x):
 
 def cumsum0(x, axis=None):
     """Return the cumulative sum of `x`, starting from an explicit zero."""
-    return np.insert(np.cumsum(x, axis=axis), 0, 0.0, axis=axis)
+    x = np.asarray(x)
+    if axis is None:
+        x, axis = x.ravel(), 0
+    c = np.cumsum(x, axis=axis)
+    # Into a preallocated array, which `np.insert` takes several times as long
+    shape = list(c.shape)
+    shape[axis] += 1
+    out = np.empty(shape, dtype=c.dtype)
+    out[(slice(None),) * (axis % c.ndim) + (slice(0, 1),)] = 0
+    out[(slice(None),) * (axis % c.ndim) + (slice(1, None),)] = c
+    return out
 
 
 def cumtrapz0(x, *args, axis=-1):

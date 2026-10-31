@@ -359,14 +359,18 @@ class Annulus:
             Axial and radial coordinates, stacked on the first axis.
 
         """
-        mb, spfb = np.broadcast_arrays(
-            np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
-        )
-        sq = np.interp(mb, np.arange(len(self.s)), self.s)
+        m = np.asarray(m, dtype=float)
+        spf = np.asarray(spf, dtype=float)
+        # The curves at `m` alone and broadcast against `spf` in the blend,
+        # into the output, rather than at `m` broadcast first: a mesher calls
+        # this thousands of times, and on short arrays that halves the cost.
+        sq = np.interp(m, np.arange(len(self.s)), self.s)
         xhub, rhub, xcas, rcas = self._hub_casing(sq)
-        x = (1.0 - spfb) * xhub + spfb * xcas
-        r = (1.0 - spfb) * rhub + spfb * rcas
-        return np.stack([x, r])
+        xr = np.empty((2, *np.broadcast_shapes(m.shape, spf.shape)))
+        w = 1.0 - spf
+        np.add(w * xhub, spf * xcas, out=xr[0, ...])
+        np.add(w * rhub, spf * rcas, out=xr[1, ...])
+        return xr
 
     def evaluate_mspf(self, x, r, tol=1e-6):
         """Return annulus coordinates of meridional points.

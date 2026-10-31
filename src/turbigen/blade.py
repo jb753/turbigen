@@ -349,6 +349,15 @@ def _nested(values):
 def _interpolate(nodes, spf_sections, spf):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
+    See :func:`_interpolator`, which this builds and evaluates once.
+    """
+    return _interpolator(nodes, spf_sections)(spf)
+
+
+def _interpolator(nodes, spf_sections):
+    """Return a function interpolating like-typed Nodes field-wise onto a
+    span fraction, checked and fitted once for every span it is asked for.
+
     Every section must use the same design, because there is no meaning to
     blending a quadratic camber line into a quartic one. The parameters of one
     design are interpolated between the sections, and held at the nearest end
@@ -368,7 +377,7 @@ def _interpolate(nodes, spf_sections, spf):
 
     names = [field.name for field in dataclasses.fields(cls)]
     if len(nodes) == 1 or not names:
-        return nodes[0]
+        return lambda spf: nodes[0]
 
     # A switch has no value between on and off, so the sections must agree.
     for name in names:
@@ -408,40 +417,51 @@ def _interpolate(nodes, spf_sections, spf):
     # type the field was declared with -- a Bernstein order is an integer, and
     # a float in its place is not a valid one.
     values = np.array([np.concatenate([part.ravel() for part in row]) for row in rows])
-    interpolated = turbigen.util.interp1d_hold(spf_sections, values)(spf)
-    interpolated = np.asarray(interpolated).reshape(-1)
-
-    moved = {}
-    for name, shape, width, start in zip(
-        names, shapes, widths, np.cumsum([0, *widths])
-    ):
-        original = getattr(nodes[0], name)
-        # `array_equal` rather than `==`, which on an array field would give an
-        # array of answers and no way to reduce it.
-        if all(np.array_equal(getattr(node, name), original) for node in nodes):
-            moved[name] = original
-            continue
-
-        chunk = interpolated[start : start + width]
-        if width > 1 or _is_sequence(original):
-            moved[name] = type(original)(_nested(chunk.reshape(shape)))
-        else:
-            moved[name] = chunk[0]
-
+    spline = turbigen.util.interp1d_hold(spf_sections, values)
+    starts = np.cumsum([0, *widths])
+    # `array_equal` rather than `==`, which on an array field would give an
+    # array of answers and no way to reduce it.
+    agreed = [
+        all(
+            np.array_equal(getattr(node, name), getattr(nodes[0], name))
+            for node in nodes
+        )
+        for name in names
+    ]
     bounded_fields = getattr(cls, "bounded_fields", None)
-    if bounded_fields is not None:
-        moved = bounded_fields(moved)
 
-    try:
-        return cls(**moved)
-    except ValueError as err:
-        # Interpolating between two valid sections can land on an invalid one,
-        # since nothing constrains the path between them. Say where, or the
-        # message describes parameters that appear nowhere in the config file.
-        raise ValueError(
-            f"Interpolating the {cls.__name__} sections onto spf={spf} gives a "
-            f"section that is not valid: {err}"
-        ) from err
+    def at(spf):
+        interpolated = np.asarray(spline(spf)).reshape(-1)
+        moved = {}
+        for name, shape, width, start, same in zip(
+            names, shapes, widths, starts, agreed
+        ):
+            original = getattr(nodes[0], name)
+            if same:
+                moved[name] = original
+                continue
+            chunk = interpolated[start : start + width]
+            if width > 1 or _is_sequence(original):
+                moved[name] = type(original)(_nested(chunk.reshape(shape)))
+            else:
+                moved[name] = chunk[0]
+
+        if bounded_fields is not None:
+            moved = bounded_fields(moved)
+
+        try:
+            return cls(**moved)
+        except ValueError as err:
+            # Interpolating between two valid sections can land on an invalid
+            # one, since nothing constrains the path between them. Say where,
+            # or the message describes parameters that appear nowhere in the
+            # config file.
+            raise ValueError(
+                f"Interpolating the {cls.__name__} sections onto spf={spf} gives "
+                f"a section that is not valid: {err}"
+            ) from err
+
+    return at
 
 
 class SectionDesign(Node):
@@ -789,6 +809,28 @@ class Blade:
         """
         return self._at_spf(spf)[:2]
 
+    def __getstate__(self):
+        """Return what pickles a blade: all but its fitted interpolants, which
+        are functions that do not pickle and are fitted again when used."""
+        state = self.__dict__.copy()
+        for name in ("_interpolators", "_dchi_at"):
+            state.pop(name, None)
+        return state
+
+    @functools.cached_property
+    def _interpolators(self):
+        """The sections' camber lines and thicknesses as functions of span
+        fraction, fitted once; safe to keep because a blade is frozen."""
+        return (
+            _interpolator(self.cambers, self.spf),
+            _interpolator(self.thicknesses, self.spf),
+        )
+
+    @functools.cached_property
+    def _dchi_at(self):
+        """The sections' recambers as a function of span fraction, fitted once."""
+        return turbigen.util.interp1d_hold(self.spf, self.dchi)
+
     @functools.cached_property
     def _by_spf(self):
         """What :meth:`_at_spf` has worked out, by span fraction."""
@@ -808,8 +850,8 @@ class Blade:
         if key not in self._by_spf:
             if len(self._by_spf) >= N_SPF_KEPT:
                 self._by_spf.clear()
-            camber = _interpolate(self.cambers, self.spf, spf)
-            thickness = _interpolate(self.thicknesses, self.spf, spf)
+            camber = self._interpolators[0](spf)
+            thickness = self._interpolators[1](spf)
             camber = CamberLine(camber, *turbigen.util.tand(self.evaluate_chi(spf)))
             caps = None
             if thickness.round_TE:
@@ -828,7 +870,7 @@ class Blade:
         if self.n_section == 1:
             dchi = self.dchi[0]
         else:
-            dchi = turbigen.util.interp1d_hold(self.spf, self.dchi)(spf).reshape(-1)
+            dchi = self._dchi_at(spf).reshape(-1)
 
         chi = _Alpha_rel(self.mean_line_row, [spf], self.vortex_exponent)[0] + dchi
 
