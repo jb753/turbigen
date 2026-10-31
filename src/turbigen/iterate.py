@@ -2333,6 +2333,46 @@ def exit_profile(result, modes, order, offset=None):
     }
 
 
+def _station_cut(result, k, offset=None):
+    """Return the cut at station `k` of `result`, raw and structured.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    k : int
+        Index into :meth:`~turbigen.annulus.Annulus.cut_planes`: twice the
+        row index for its inlet, one more for its outlet, -1 for the exit.
+    offset : float or None
+        Cut plane offset in blade chords; `annulus.CUT_OFFSET` by default.
+
+    Returns
+    -------
+    cut : ember.block.Block
+        The unstructured cut, for mixing out.
+    structured : ember.block.Block
+        The same cut regridded with span along axis 0 and pitch along axis 1,
+        so that the pitch is an axis to average over.
+    spf : (nspan,) array
+        Span fraction of each spanwise face of `structured`.
+
+    """
+    from turbigen import annulus
+
+    if offset is None:
+        offset = annulus.CUT_OFFSET
+    xr = result.machine.annulus.cut_planes(offset)[k]
+
+    cut = ember.cut.unstructured(result.grid, xr)
+    if cut is None:
+        raise ValueError(f"The cut plane at {xr.tolist()} misses the grid.")
+
+    nj, nk = 137, 113  # Brute force to avoid any loss of resolution
+    structured = ember.cut.interpolate_to_structured(cut, (nj, nk))
+
+    return cut, structured, span_fractions(structured)
+
+
 def exit_deficit(result, offset=None):
     """Return the pitch-averaged spanwise profile leaving `result`, unfitted.
 

@@ -614,3 +614,53 @@ def test_interp1d_hold_holds_the_end_values_beyond_the_data():
     np.testing.assert_allclose(held(inside), free(inside))
     np.testing.assert_allclose(held(np.array([0.0, -1.0])), [y[0], y[0]])
     np.testing.assert_allclose(held(np.array([1.0, 2.0])), [y[-1], y[-1]])
+
+
+def test_shape_factor_line_starts_where_the_flow_falls_subsonic():
+    """Behind the peak, at the first point back below one, to zeta_TE."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.where(zeta < 0.4, 0.8 + zeta, 1.2 - 2.0 * (zeta - 0.4))
+    h = 1.5 + zeta
+
+    (z0, h0), (z1, h1) = util.shape_factor_line(zeta, mas, h)
+
+    assert z0 == pytest.approx(0.5, abs=2e-3)
+    assert h0 == pytest.approx(1.5 + z0)
+    assert (z1, h1) == pytest.approx((0.97, 2.47))
+
+
+def test_shape_factor_line_starts_behind_the_spike_the_shock_raises():
+    """At the least shape factor behind the sonic point, as in Lefas's figure."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.where(zeta < 0.4, 0.8 + zeta, 1.2 - 2.0 * (zeta - 0.4))
+    h = 1.6 + 0.5 * np.exp(-(((zeta - 0.45) / 0.05) ** 2)) + (zeta - 0.65) ** 2
+
+    (z0, h0), _ = util.shape_factor_line(zeta, mas, h)
+
+    assert z0 == pytest.approx(0.65, abs=0.01)
+
+
+def test_shape_factor_line_without_a_shock_starts_at_least_shape_factor():
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.full_like(zeta, 0.7)
+    h = 1.6 + (zeta - 0.3) ** 2
+
+    (z0, h0), _ = util.shape_factor_line(zeta, mas, h)
+
+    assert (z0, h0) == pytest.approx((0.3, 1.6), abs=2e-3)
+
+
+def test_mach_smoothness_is_zero_for_a_cubic_and_sees_a_bump():
+    """Fitted from the first subsonic point behind the peak to zeta_TE."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    behind = 0.99 - 0.3 * (zeta - 0.5) + 0.2 * (zeta - 0.5) ** 3
+    mas = np.where(zeta < 0.4, 0.8 + zeta, np.where(zeta < 0.5, 1.2, behind))
+    bump = 0.01 * np.exp(-(((zeta - 0.75) / 0.03) ** 2))
+
+    area, z, _ = util.mach_smoothness(zeta, mas)
+    bumpy, _, _ = util.mach_smoothness(zeta, mas + bump)
+
+    assert z[0] == pytest.approx(0.5, abs=2e-3)
+    assert z[-1] <= 0.97
+    assert area == pytest.approx(0.0, abs=1e-8)
+    assert bumpy > 1e-4
