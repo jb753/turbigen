@@ -513,9 +513,9 @@ def marches(monkeypatch):
     seen = []
     real = Ember.solve
 
-    def spy(self, grid):
+    def spy(self, grid, workdir=None):
         seen.append(self)
-        return real(self, grid)
+        return real(self, grid, workdir)
 
     monkeypatch.setattr(Ember, "solve", spy)
     return seen
@@ -598,6 +598,33 @@ def test_a_restarted_run_still_soft_starts(run_case, marches):
     assert [march.n_step for march in marches] == [5, 10]
 
 
+def test_every_march_is_given_the_run_s_solver_directory(run_case, monkeypatch):
+    """A solver that runs outside the process keeps its files per run, soft
+    passes included, rather than wherever its one config would put them."""
+    from turbigen.solver import Ember
+
+    seen = []
+    real = Ember.solve
+
+    def spy(self, grid, workdir=None):
+        seen.append(workdir)
+        return real(self, grid, workdir)
+
+    monkeypatch.setattr(Ember, "solve", spy)
+    assert cli.main(["run", str(run_case), "-s", "solver.n_step_soft=5"]) == 0
+
+    expected = run_case.parent / pipeline.SOLVER_DIR
+    assert seen == [expected, expected]
+
+
+def test_a_run_logs_how_close_its_exit_is_to_choking(run_case, caplog):
+    """Whatever the solver: read off the outlet boundary after the march."""
+    with caplog.at_level("INFO", logger="turbigen"):
+        assert cli.main(["run", str(run_case)]) == 0
+
+    assert "Outlet" in caplog.text and "area-averaged Ma_m=" in caplog.text
+
+
 def test_a_diverged_soft_start_stops_before_the_real_march(
     run_case, marches, monkeypatch
 ):
@@ -610,11 +637,11 @@ def test_a_diverged_soft_start_stops_before_the_real_march(
 
     real_soft_start = pipeline.soft_start
 
-    def diverging(solver, grid):
+    def diverging(solver, grid, workdir=None):
         # The real pass, reported as having blown up. A genuine divergence
         # would leave NaNs that the mix-out and the report would then be tested
         # against, which is a different test from this one.
-        history = real_soft_start(solver, grid)
+        history = real_soft_start(solver, grid, workdir=workdir)
         history.diverged = True
         return history
 
@@ -656,8 +683,8 @@ def diverge(monkeypatch, *which):
     marched = Ember.solve
     count = [0]
 
-    def solve(self, grid):
-        history = marched(self, grid)
+    def solve(self, grid, workdir=None):
+        history = marched(self, grid, workdir)
         if count[0] in which:
             history.diverged = True
         count[0] += 1
