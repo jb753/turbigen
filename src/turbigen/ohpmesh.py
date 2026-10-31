@@ -107,7 +107,7 @@ N_MATCH_REAR = 4
 """Corrections of the blade's spacing at the corners behind it, to match
 the cells across the passage there."""
 
-N_WALL = 20001
+N_WALL = 5001
 """Samples along the blade, which nodes on it are placed on."""
 
 CORNER_COS, CORNER_SIN = np.cos(np.pi / 3.0), np.sin(np.pi / 3.0)
@@ -1646,9 +1646,10 @@ class OHPassage(Mesher):
             scale = np.empty(len(t))
             for j, (inside, w) in enumerate(pieces):
                 lin = g[j] * (1.0 - w) + g[j + 1] * w
-                # Over the cells' length, so the count is made up where they
-                # are long, and those at an edge kept as asked.
-                bow = w * (1.0 - w) / d[inside]
+                # On the scale, not over the cells' length: weighted to the
+                # long cells, the bow of a short piece whose density changes
+                # sharply lands at its coarse end and steps the spacing there.
+                bow = w * (1.0 - w)
                 q = (
                     counts[j] - np.trapezoid(d[inside] * lin, t[inside])
                 ) / np.trapezoid(d[inside] * bow, t[inside])
