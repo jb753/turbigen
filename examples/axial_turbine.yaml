@@ -131,8 +131,6 @@ solver:
   fac_mgrid: 0.2
   n_levels: 3
   dampin: 25.0
-  gain_filt: 1
-  delta_filt: 0.1
 
 # Entropy generated in the boundary layers on every wetted wall, broken down by
 # row and by whether it was made on the endwalls or on the blades.

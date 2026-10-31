@@ -171,10 +171,8 @@ solver:
   dampin: 25.0
   n_step_soft: 500
   n_step_retry: 500
-  delta_filt: 0.1
   expon_mgrid: 2
   fac_mgrid: 0.2
-  gain_filt: 1
   n_levels: 3
   n_stage: 4
   n_step: 800
