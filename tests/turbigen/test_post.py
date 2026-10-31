@@ -1080,6 +1080,26 @@ def test_mesh_plot_slices_at_mid_pitch_and_mid_span(bladed, meshed):
     np.testing.assert_allclose(rt, block.rt[:, nj // 2, 0])
 
 
+def test_mesh_plot_draws_the_periodic_surface_of_an_ohp_mesh():
+    """One surface per row from inlet to outlet, every grid line of it."""
+    from test_blade import ROUND, blade
+
+    from turbigen import util
+
+    config = build(
+        blades=[blade(section={"thickness": ROUND})] * 2,
+        mesh={"type": "ohp", "dspf_mid": 0.1, "resolution_factor": 0.5},
+    )
+    _, machine, grid = pipeline.prepare(config)
+
+    meridional, _ = MeshPlot().report(config, Result(machine=machine, grid=grid))
+
+    surfaces = [surface for row in util.cut_periodic(grid) for surface in row]
+    assert len(surfaces) == 2
+    assert meridional.axes[0].get_title() == "Meridional Grid, Periodic Surface"
+    assert len(meridional.axes[0].lines) == sum(sum(s.shape) for s in surfaces)
+
+
 def test_mesh_plot_without_a_grid_is_empty(config, result):
     assert MeshPlot().report(config, result) == []
 

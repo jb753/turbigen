@@ -1017,6 +1017,118 @@ def cut_blade_tips(grid, offset=0):
     return tips
 
 
+def cut_periodic(grid):
+    """Return the pitchwise-periodic surface of each row, joined where it runs on.
+
+    Read off the periodic patches rather than found by geometry: of each pair
+    a pitch apart, the side whose partner lies a pitch above, which is the
+    lower bound of the passage. Pairs that join blocks in place, with no pitch
+    between them, are interfaces and not this surface, so the joins of an O-H
+    mesh's blocks and its tip gap are passed over without asking which they
+    are. Pieces that meet end to end are joined into one surface, so an O-H
+    mesh's runs from inlet to outlet unbroken, over the blade as the passage
+    block's face against the next blade's O block. An H mesh's stops at the
+    leading and trailing edges, where the blade takes over the same face, and
+    comes back as the two pieces either side.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A meshed grid.
+
+    Returns
+    -------
+    list
+        One list per row of 2D ``(n, nj)`` cuts, streamwise along the first
+        axis and hub to casing along the second, upstream first.
+
+    """
+    pairs = grid.connectivity.periodic.pair()
+    blocks = list(grid)
+
+    surfs = []
+    for row in grid.rows:
+        in_row = {id(block) for block in row}
+        faces = []
+        for (i_block, i_patch), ((i_mate, i_mate_patch), _) in pairs.items():
+            block, mate = blocks[i_block], blocks[i_mate]
+            if id(block) not in in_row:
+                continue
+            patch = block.patches[i_patch]
+            mate_patch = mate.patches[i_mate_patch]
+            if _pitches_apart(block, patch, mate, mate_patch) == 1:
+                faces.append(_patch_face(block, patch))
+        surfs.append(_join_faces(faces))
+
+    return surfs
+
+
+def _pitches_apart(block, patch, mate, mate_patch):
+    """Return how many pitches above the nodes of `patch` those of `mate_patch`
+    lie, to the nearest whole pitch."""
+    t = np.mean(block.t[_patch_slices(patch)])
+    t_mate = np.mean(mate.t[_patch_slices(mate_patch)])
+    return round((t_mate - t) * block.Nb / (2.0 * np.pi))
+
+
+def _patch_slices(patch):
+    """Return the index of the nodes of `patch` in its block."""
+    lim = patch.ijk_lim_abs
+    return tuple(
+        int(start) if dim == patch.const_dim else slice(start, end + 1)
+        for dim, (start, end) in enumerate(lim)
+    )
+
+
+def _patch_face(block, patch):
+    """Return the nodes of `patch` as a 2D cut, hub to casing along axis 1.
+
+    Copied, not sliced, so the cut owns its data and carries no patches, and
+    given its block's frame, so a relative quantity read off it is in the
+    frame of the flow it was cut from.
+    """
+    face = block[_patch_slices(patch)].copy(keep_patches=False)
+    face.patches.clear()
+    face.set_Omega(block.Omega)
+    # Every block runs hub to casing in `j`, so a face of constant `i` has it
+    # first and is turned round.
+    if patch.const_dim == 0:
+        face = face.transpose((1, 0))
+    return face
+
+
+def _join_faces(faces):
+    """Return `faces` joined end to end where they share a line of nodes.
+
+    Each runs downstream first, by its mean axial coordinate, and the pieces
+    are taken in streamwise order, each joined to the surface whose last line
+    is its first.
+    """
+    downstream = [
+        face if np.mean(face.x[0]) <= np.mean(face.x[-1]) else face.flip(axis=0)
+        for face in faces
+    ]
+    downstream.sort(key=lambda face: np.mean(face.x[0]))
+
+    joined = []
+    for face in downstream:
+        for i, surf in enumerate(joined):
+            if surf.shape[1] == face.shape[1] and _same_line(surf, -1, face, 0):
+                joined[i] = ember.block_util.concatenate(surf, face[1:], axis=0)
+                break
+        else:
+            joined.append(face)
+
+    return joined
+
+
+def _same_line(a, ia, b, ib):
+    """Return whether line `ia` of `a` and line `ib` of `b` are the same nodes."""
+    xrt_a, xrt_b = a.xrt[ia], b.xrt[ib]
+    scale = np.max(np.abs(xrt_a[..., :2]))
+    return np.allclose(xrt_a, xrt_b, rtol=0.0, atol=1e-6 * scale)
+
+
 #
 # SURFACE DISTRIBUTIONS
 #

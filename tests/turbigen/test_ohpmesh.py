@@ -316,3 +316,21 @@ def test_the_conformal_map_is_exact_across_the_joins_of_the_annulus(machine):
     mp = cmap.mp_from_xr(xr)
     np.testing.assert_allclose(cmap.mp_from_m(m), mp, rtol=0, atol=1e-9 * np.ptp(mp))
     np.testing.assert_allclose(cmap.m_from_mp(mp), m, rtol=0, atol=1e-9)
+
+
+def test_the_periodic_surface_runs_unbroken_from_inlet_to_outlet(grid):
+    """Over the blade it is the passage block's face against the next blade's
+    O block, so the five blocks along the bottom of the passage join into one."""
+    for i_row, surfaces in enumerate(util.cut_periodic(grid)):
+        (surface,) = surfaces
+        blocks = blocks_of_row(grid, i_row)
+        along = ("up", "Pin", "P", "Pout", "dn")
+
+        # Joined end to end, each join one shared line of nodes
+        assert surface.shape == (
+            sum(blocks[name].shape[0] for name in along) - (len(along) - 1),
+            blocks["P"].shape[1],
+        )
+        # From the row's inlet to its outlet, on the bottom of the passage
+        np.testing.assert_allclose(surface.xrt[0], blocks["up"][0, :, 0].xrt)
+        np.testing.assert_allclose(surface.xrt[-1], blocks["dn"][-1, :, 0].xrt)

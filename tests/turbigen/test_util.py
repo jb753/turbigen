@@ -664,3 +664,21 @@ def test_mach_smoothness_is_zero_for_a_cubic_and_sees_a_bump():
     assert z[-1] <= 0.97
     assert area == pytest.approx(0.0, abs=1e-8)
     assert bumpy > 1e-4
+
+
+def test_an_h_periodic_surface_stops_at_the_blade(grid):
+    """The blade takes over the same k face between its edges, so the surface
+    comes back either side of it, and over a clearance as a strip of its own."""
+    shrouded, gapped = util.cut_periodic(grid)
+    block = grid.rows[0][0]
+
+    upstream, downstream = shrouded
+    for surface in shrouded:
+        assert surface.shape[1] == block.shape[1]
+    np.testing.assert_allclose(upstream.xrt[0], block[0, :, 0].xrt)
+    np.testing.assert_allclose(downstream.xrt[-1], block[-1, :, 0].xrt)
+    assert upstream.x[-1].mean() < downstream.x[0].mean()
+
+    # Over the gap the k faces are periodic too, from the tip to the casing
+    over_tip = [surface for surface in gapped if surface.shape[1] < block.shape[1]]
+    assert len(gapped) == 3 and len(over_tip) == 1

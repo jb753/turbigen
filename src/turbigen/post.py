@@ -406,9 +406,8 @@ class MeshPlot(Post):
     For an H mesh, whose index directions are streamwise, spanwise and
     pitchwise in every block, the meridional view is the constant-`k` slice at
     mid-pitch. An OHP mesh has no such common index, so its meridional view is
-    the periodic surface instead: every face of every block that meets another
-    a pitch round, drawn once, and across the blade, where no face is periodic,
-    the side of the passage block against the O block. The blade-to-blade view
+    the periodic surface instead, :func:`turbigen.util.cut_periodic`, which
+    runs unbroken from inlet to outlet. The blade-to-blade view
     is the constant-`j` slice at mid-span of every block, unrolled to
     ``(x, r theta)``. Both are drawn to scale, every grid line, for one passage
     of each row. A mesh of any other type draws nothing.
@@ -458,7 +457,12 @@ class MeshPlot(Post):
             )
         else:
             meridional = draw(
-                "Meridional Grid, Periodic Surface", _ohp_periodic(blocks)
+                "Meridional Grid, Periodic Surface",
+                [
+                    (surf.x, surf.r)
+                    for row in turbigen.util.cut_periodic(result.grid)
+                    for surf in row
+                ],
             )
         blade_to_blade = draw(
             "Blade-to-Blade Grid, Mid-Span",
@@ -471,50 +475,6 @@ class MeshPlot(Post):
             ],
         )
         return [meridional, blade_to_blade]
-
-
-def _ohp_periodic(blocks, rtol=1e-4):
-    """Return ``(x, r)`` of the faces of OHP `blocks` on the periodic surface.
-
-    A face is on it if another face has the same ``(x, r)``, node for node or
-    reversed along the face, and lies a pitch round. Each such pair is returned
-    once. The faces are those of constant `i` or `k`, which run hub to casing,
-    as ``(n, nj)`` arrays. Over the blade no face is periodic, so the passage
-    block's face at ``k = 0``, which lies on the O block, fills the gap.
-    """
-    faces = []
-    for block in blocks:
-        xrt = np.stack([block.x, block.r, block.t])
-        for idx in (0, -1):
-            faces.append((block, xrt[:, idx].transpose(0, 2, 1)))
-            faces.append((block, xrt[..., idx]))
-
-    out = []
-    used = set()
-    for a, (block_a, fa) in enumerate(faces):
-        if a in used:
-            continue
-        pitch = 2.0 * np.pi / block_a.Nb
-        atol = rtol * np.abs(fa[:2]).max()
-        for b in range(a + 1, len(faces)):
-            face_b = faces[b][1]
-            if b in used or face_b.shape != fa.shape:
-                continue
-            for fb in (face_b, face_b[:, ::-1]):
-                if not np.allclose(fa[:2], fb[:2], atol=atol, rtol=0.0):
-                    continue
-                dt = np.abs(fa[2] - fb[2])
-                if np.allclose(dt, pitch, atol=rtol * pitch, rtol=0.0):
-                    used.update((a, b))
-                    out.append((fa[0], fa[1]))
-                    break
-            if a in used:
-                break
-
-    for block in blocks:
-        if block.label.endswith("_P"):
-            out.append((block.x[..., 0], block.r[..., 0]))
-    return out
 
 
 def _plot_reference(ax, path):
