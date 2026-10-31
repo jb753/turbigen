@@ -143,6 +143,7 @@ import logging
 from typing import ClassVar
 
 import numpy as np
+import scipy.interpolate
 
 import turbigen.util
 from turbigen.annulus import RowAnnulus
@@ -258,6 +259,13 @@ N_CAP_FINE = 401
 N_SPF_KEPT = 1024
 """Span fractions a blade keeps its sections' parameters at, before it forgets
 them all: a mesh of a few hundred spanwise planes fits."""
+
+N_SPF_TABLE = 21
+"""Span fractions the surface angles are tabulated at, for looking a point up
+across the passage."""
+
+N_M_TABLE = 201
+"""Meridional positions the surface angles are tabulated at, likewise."""
 
 
 def _TE_caps(thickness, tanchi_TE):
@@ -833,7 +841,7 @@ class Blade:
         """Return what pickles a blade: all but its fitted interpolants, which
         are functions that do not pickle and are fitted again when used."""
         state = self.__dict__.copy()
-        for name in ("_interpolators", "_dchi_at"):
+        for name in ("_interpolators", "_dchi_at", "_surface_theta"):
             state.pop(name, None)
         return state
 
@@ -850,6 +858,28 @@ class Blade:
     def _dchi_at(self):
         """The sections' recambers as a function of span fraction, fitted once."""
         return turbigen.util.interp1d_hold(self.spf, self.dchi)
+
+    @functools.cached_property
+    def _surface_theta(self):
+        """Angular coordinate of each surface, suction first, as a function of
+        row meridional coordinate and span fraction.
+
+        Tabulated once and interpolated, so that a whole grid can be looked up
+        without building a section for every node. A surface folds back on
+        itself in ``m`` round a thick leading edge, so its points are sorted
+        before being put on the table's ``m``; there the two surfaces are within
+        a leading edge radius of each other, which is all a lookup needs.
+        """
+
+        spf = np.linspace(0.0, 1.0, N_SPF_TABLE)
+        m = turbigen.util.cluster_cosine(N_M_TABLE)
+        theta = np.empty((N_SPF_TABLE, N_M_TABLE, 2))
+        for i, spf_now in enumerate(spf):
+            for side, surf in enumerate(self._evaluate_section_m(spf_now, m)):
+                m_surf = surf[3] - self.row_annulus.m_LE
+                order = np.argsort(m_surf)
+                theta[i, :, side] = np.interp(m, m_surf[order], surf[2][order])
+        return scipy.interpolate.RegularGridInterpolator((spf, m), theta)
 
     @functools.cached_property
     def _by_spf(self):
@@ -1194,3 +1224,64 @@ class Row:
     tip_gap: float
     """Tip clearance [m]. A property of how the blade sits in its annulus,
     rather than of its shape."""
+
+    @property
+    def pitch(self):
+        """Angular pitch between blades [rad]."""
+        return 2.0 * np.pi / self.n_blade
+
+    def evaluate_pitch_fraction(self, m, spf, t, snap=False):
+        """Return how far across the passage points lie.
+
+        Zero on the suction surface of one blade, one on the pressure surface
+        of its neighbour, whichever pitch the point was given in. NaN inside a
+        blade, unless `snap`, or upstream or downstream of the row, where there
+        is no passage to be across.
+
+        Parameters
+        ----------
+        m : array_like
+            Row meridional coordinate, 0 at the leading edge and 1 at the
+            trailing edge, as :meth:`RowAnnulus.evaluate_mspf` returns.
+        spf : array_like
+            Span fraction. Held at the end value beyond hub and casing, where
+            a tip gap or a mesh slightly off the annulus puts points.
+        t : array_like
+            Angular coordinate [rad].
+        snap : bool
+            Give a point inside a blade the fraction of the nearer surface, 0
+            or 1, rather than NaN. A grid node on a surface lies a rounding
+            error to either side of it, and a caller that wants a value there
+            wants the surface's.
+
+        Returns
+        -------
+        frac : ndarray
+            Pitch fraction [--], the broadcast shape of the inputs.
+
+        """
+        m, spf, t = np.broadcast_arrays(
+            *(np.asarray(v, dtype=float) for v in (m, spf, t))
+        )
+        outside = (m < 0.0) | (m > 1.0) | ~np.isfinite(m)
+        theta = self.blade._surface_theta(
+            np.stack((np.clip(spf, 0.0, 1.0), np.clip(m, 0.0, 1.0)), axis=-1)
+        )
+        upper = theta.max(axis=-1)
+        lower = theta.min(axis=-1)
+
+        # The passage runs from the upper surface of one blade to the lower
+        # surface of the next one up.
+        width = self.pitch - (upper - lower)
+        across = np.mod(t - upper, self.pitch)
+        frac = across / width
+        inside = frac > 1.0
+        if snap:
+            # Past the next blade's lower surface by less than half the
+            # blade's thickness is nearer that surface than this one's upper
+            nearer_lower = across - width < 0.5 * (upper - lower)
+            frac = np.where(inside, np.where(nearer_lower, 1.0, 0.0), frac)
+            inside = np.zeros_like(inside)
+        if not self.blade.suction_is_upper:
+            frac = 1.0 - frac
+        return np.where(outside | inside, np.nan, frac)

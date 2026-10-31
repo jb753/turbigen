@@ -1433,3 +1433,86 @@ def test_a_blade_pickles_once_evaluated_and_evaluates_alike_after():
     for a, b in zip(section, after.evaluate_section(0.3)):
         np.testing.assert_array_equal(a, b)
     np.testing.assert_array_equal(chi, after.evaluate_chi(0.3))
+
+
+def _surfaces_at(machine, spf=0.5, m=0.5):
+    """Row 0's surfaces at one chordwise position: row m, spf and theta of
+    each, suction first."""
+    row = machine.rows[0]
+    # A whole section, then the point nearest `m`: the surfaces are rescaled
+    # onto the row by their own extent, which one point does not have.
+    m_all = turbigen.util.cluster_cosine(201)
+    i = np.argmin(np.abs(m_all - m))
+    out = []
+    for surf in row.blade._evaluate_section_m(spf, m_all):
+        out.append((surf[3, i] - row.blade.row_annulus.m_LE, surf[2, i]))
+    return row, out
+
+
+def test_pitch_fraction_runs_suction_to_pressure(machine):
+    """Zero just off the suction surface, one just off the neighbouring
+    pressure surface, a half midway between them."""
+    row, ((m_s, t_s), (m_p, t_p)) = _surfaces_at(machine)
+    eps = 1e-3 * row.pitch
+
+    # Off each surface into the passage it bounds: away from the other one
+    away = np.sign(t_s - t_p)
+    near_suction = row.evaluate_pitch_fraction(m_s, 0.5, t_s + away * eps)
+    near_pressure = row.evaluate_pitch_fraction(m_p, 0.5, t_p - away * eps)
+
+    assert near_suction == pytest.approx(0.0, abs=0.02)
+    assert near_pressure == pytest.approx(1.0, abs=0.02)
+
+    # Midway across the passage, from the suction surface to the neighbour's
+    # pressure surface a pitch away
+    t_mid = 0.5 * (t_s + t_p + away * row.pitch)
+    m_mid = 0.5 * (m_s + m_p)
+    assert row.evaluate_pitch_fraction(m_mid, 0.5, t_mid) == pytest.approx(
+        0.5, abs=0.02
+    )
+
+
+def test_pitch_fraction_is_the_same_in_every_passage(machine):
+    row = machine.rows[0]
+    m = np.full(5, 0.4)
+    _, ((_, t_s), (_, t_p)) = _surfaces_at(machine, m=0.4)
+    t = 0.5 * (t_s + t_p) + 0.5 * row.pitch
+    t = t + row.pitch * np.arange(-2, 3)
+
+    frac = row.evaluate_pitch_fraction(m, 0.5, t)
+
+    assert np.isfinite(frac).all()
+    np.testing.assert_allclose(frac, frac[2], atol=1e-9)
+
+
+def test_pitch_fraction_is_nan_inside_the_blade_and_outside_the_row(machine):
+    row, ((m_s, t_s), (m_p, t_p)) = _surfaces_at(machine)
+    t_camber = 0.5 * (t_s + t_p)
+
+    assert np.isnan(row.evaluate_pitch_fraction(0.5, 0.5, t_camber))
+    assert np.isnan(row.evaluate_pitch_fraction(-0.1, 0.5, t_camber + 0.5 * row.pitch))
+    assert np.isnan(row.evaluate_pitch_fraction(1.1, 0.5, t_camber + 0.5 * row.pitch))
+
+
+def test_a_blade_with_its_surface_table_still_pickles(machine):
+    row = machine.rows[0]
+    row.evaluate_pitch_fraction(0.5, 0.5, 0.0)
+
+    again = pickle.loads(pickle.dumps(row))
+
+    assert again.evaluate_pitch_fraction(0.5, 0.5, 0.0) == pytest.approx(
+        row.evaluate_pitch_fraction(0.5, 0.5, 0.0), nan_ok=True
+    )
+
+
+def test_pitch_fraction_snaps_a_point_inside_the_blade_to_the_nearer_surface(machine):
+    row, ((m_s, t_s), (m_p, t_p)) = _surfaces_at(machine)
+    inward = 0.05 * (t_p - t_s)
+
+    just_inside_suction = row.evaluate_pitch_fraction(m_s, 0.5, t_s + inward, snap=True)
+    just_inside_pressure = row.evaluate_pitch_fraction(
+        m_p, 0.5, t_p - inward, snap=True
+    )
+
+    assert just_inside_suction == 0.0
+    assert just_inside_pressure == 1.0

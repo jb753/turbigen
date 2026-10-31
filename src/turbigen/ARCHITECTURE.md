@@ -677,37 +677,36 @@ stays right however the speed was set.
 ## Initial guess
 
 A grid leaves the mesher as geometry with reference scales and no flow in it.
-`guess.apply(grid, machine)` writes one: circumferentially uniform, taken from
-the mean line along the annulus mid-span, and applied by ember's
-`apply_guess_meridional`, which is a nearest-neighbour search in the meridional
-plane and so needs no topology matching.
+`guess.apply(grid, machine)` writes one, evaluated at each node from its
+coordinates and the design alone, so it is the same field on any topology and
+however the grid lines run. ember's `apply_guess_meridional` is no longer used:
+it aligned the flow with the `i` grid lines, which in an O block run round the
+blade and divided by zero at its edges.
+
+* Pressure, temperature and meridional speed from the mean line, linear in the
+  annulus meridional coordinate, along the line of constant span fraction
+  through the node, so parallel to hub and casing.
+* Swirl from each blade's own vortex law; through a row the relative flow angle
+  turns from inlet to exit value in the shape of the camber line, and between
+  rows angular momentum is carried across at each span fraction.
+* Near a blade surface the relative flow angle is blended to the surface's,
+  keeping the speed. Read off the blade geometry (`Row.evaluate_pitch_fraction`
+  and the surface table behind it) rather than off the wall distance search:
+  the vector to the nearest wall node is a poor normal next to a wall that the
+  grid lines meet at an angle, 20 to 50 degrees out on an H mesh.
+* Optionally (`loading=True`), the pitchwise pressure difference the turning
+  takes, from the tangential momentum equation, tapered to zero at the trailing
+  edge and carried upstream of the leading edge as decaying harmonics.
 
 It is a free function, and `prepare` calls it, so the grid a `report` draws is
-the one a solver would start from and plotting it shows what will actually be
-solved. Nothing of ours passes between the two halves --- the guess
-is an ember `Block` and the target an ember `Grid` --- so there is no guess
-class, and no family until a second strategy earns one.
+the one a solver would start from.
 
-Two things are easy to get wrong here, and both fail silently.
-
-**The guess block must carry the grid's own fluid.** `apply_guess_meridional`
-does `block.set_fluid(block_guess.fluid)` on every block it touches, so a guess
-built with the mean line's fluid replaces the scales and datum the mesher set.
-
-**And its state must be transferred datum-independently.** Conserved energy is
-measured from the datum where internal energy is zero, so copying a mean line's
-conserved variables into a block whose fluid has a different datum reinterprets
-them --- by about a hundred kelvin, for a datum moved as far as
-`referenced_fluid` moves it, while the result looks perfectly well formed.
-Pressure, temperature and velocity carry across; `conserved` does not.
-
-`to_quasi3d` is not ported. It builds a guess with a pitchwise pressure
-difference from the blade loading and a radial-equilibrium correction, and the
-physics is reasonable, but it was **commented out** in the package this
-replaces (`config.py:846-849`) and its ember counterpart
-`Grid.apply_guess_quasi3d` has never been called either. Two hundred lines that
-have never run are not a port, they are a rewrite; worth revisiting once there
-is a solver to time it against.
+**State is set as pressure, temperature and velocity, in the grid's own
+fluid.** Conserved energy is measured from the datum where internal energy is
+zero, so copying conserved variables between fluids with different datums
+reinterprets them --- by about a hundred kelvin, for a datum moved as far as
+`referenced_fluid` moves it, while the result looks perfectly well formed. And
+the fluid is never replaced, which would undo the scales the mesher set.
 
 ## Storing what a run achieved
 

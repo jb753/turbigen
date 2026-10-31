@@ -49,9 +49,17 @@ import logging
 import numpy as np
 from scipy.spatial import KDTree
 
-from turbigen import guess, mixout, restart
+from turbigen import mixout, restart
 
 logger = logging.getLogger("turbigen")
+
+REFINE_FACTOR = 50
+"""Points interpolated along the seed's correction per cut plane.
+
+It is applied by nearest-neighbour search in the meridional plane, so it needs
+to be a dense point cloud rather than the handful of planes it was measured at,
+or every cell in a row would take the value of the one plane nearest it.
+"""
 
 PERTURBED = ("s", "ho", "Vx", "Vr", "rVt")
 """The quantities a seed corrects, and the order they are reported in.
@@ -154,16 +162,13 @@ def _interpolator(machine, delta):
 
     The stations are where :func:`turbigen.mixout.mean_line` cut, which is a
     blade-chord offset into the adjacent gap and *not* the integer meridional
-    stations :func:`turbigen.guess.meridional` uses --- the perturbation has to
-    be anchored where the thing it was measured from was measured.
+    stations the mean line sits at --- the perturbation has to be anchored
+    where the thing it was measured from was measured.
 
-    Densified along arc length and searched by nearest neighbour, which is what
-    :meth:`ember.grid.Grid.apply_guess_meridional` does, so that the seed and
-    the cold guess agree on where a row begins and ends. That method cannot be
-    used directly: it overwrites where this adds, entropy and stagnation
-    enthalpy differences are not a state that a carrier block could hold, and
-    its blade-passage velocity snap would flatten exactly the turning the
-    neighbour's field was fetched for.
+    Densified along arc length and searched by nearest neighbour, rather than
+    held at the mean-line stations as the cold guess is, because these
+    differences are only known at the cut planes: entropy and stagnation
+    enthalpy differences are not a state that a carrier block could hold.
     """
     # Mid-span of each cut plane. `cut_planes` returns hub and casing, and
     # `Annulus.evaluate_xr` is linear in span fraction, so the mean of the two
@@ -175,7 +180,7 @@ def _interpolator(machine, delta):
     arc = np.concatenate(
         [[0.0], np.cumsum(np.linalg.norm(np.diff(xr, axis=0), axis=1))]
     )
-    fine = np.linspace(0.0, arc[-1], (len(xr) - 1) * guess.REFINE_FACTOR + 1)
+    fine = np.linspace(0.0, arc[-1], (len(xr) - 1) * REFINE_FACTOR + 1)
 
     xr_fine = np.stack([np.interp(fine, arc, xr[:, i]) for i in (0, 1)], axis=-1)
     delta_fine = {name: np.interp(fine, arc, value) for name, value in delta.items()}
@@ -221,7 +226,7 @@ def _apply_delta(grid, machine, delta):
         # frame whichever frame the block is solved in.
         h = ho - 0.5 * (Vx**2 + Vr**2 + Vt**2)
 
-        # State first, then velocity, as `guess.meridional` sets them: the
+        # State first, then velocity, as `guess.apply` sets them: the
         # block stores conserved variables, so a density that moves after the
         # momentum has been set would reinterpret it.
         block.set_h_s(h, s)

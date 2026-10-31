@@ -228,9 +228,11 @@ def test_the_cells_in_the_main_blocks_are_not_badly_skewed(grid):
 def test_the_guess_follows_the_mean_line_in_every_block(machine, grid):
     # Aligned with the grid lines of blocks whose `i` runs across the pitch
     # or round the blade, the guess once took its tangential velocity of
-    # either sign there, and started the rotor supersonic.
-    guess.apply(grid, machine)
-    Vt = guess.meridional(machine, grid[0].fluid).Vt
+    # either sign there, and started the rotor supersonic. Without the blend
+    # onto the blade surfaces, which turns the flow round the leading edges
+    # well outside the mean line's swirl, legitimately.
+    guess.apply(grid, machine, blend=False)
+    Vt = np.asarray(machine.mean_line.Vt)
     lo, hi = Vt.min(), Vt.max()
     slack = 0.15 * (hi - lo)
     for block in grid:
