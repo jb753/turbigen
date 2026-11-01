@@ -71,7 +71,6 @@ blades:
   tip_chord: 0.0
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
 - count:
     Co: 0.5813046524222882
     spf: 0.5
@@ -104,7 +103,9 @@ blades:
   tip_chord: 0.03132468000985682
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
+spanwise:
+  type: vortex_expon
+  n: -0.6
 mesh:
   AR_cusp: 2.0
   AR_merid: 1.0

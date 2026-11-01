@@ -62,7 +62,6 @@ blades:
   tip_chord: 0.0
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
 - count:
     Co: 0.8017010213685465
     spf: 0.5
@@ -96,7 +95,9 @@ blades:
   tip_chord: 0.02
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
+spanwise:
+  type: vortex_expon
+  n: -0.6
 fluid:
   Pr: 0.7
   cp: 1100.0

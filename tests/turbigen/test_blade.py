@@ -30,8 +30,17 @@ from turbigen import (
     Taylor,
     ThicknessDesign,
 )
-from turbigen.blade import _Alpha_rel, _interpolate, to_xrrt
+from turbigen.blade import _interpolate, to_xrrt
 
+
+
+def _free_vortex(mean_line_row, spf, n=-1.0):
+    """Relative flow angle at inlet and outlet for a power-law swirl and
+    uniform meridional velocity, written out independently of the code."""
+    ml = mean_line_row
+    r = ml.r_hub * (1.0 - spf) + ml.r_cas * spf
+    Vt = ml.Vt * (r / ml.r) ** n
+    return np.degrees(np.arctan((Vt - ml.Omega * r) / ml.Vm))
 
 def _by_theta(surfaces):
     """Return a pair of surfaces with the higher-angle one first.
@@ -341,7 +350,7 @@ def test_a_single_section_blade_still_follows_the_vortex():
 
     dchi = np.array([-8.0, 0.0])
     for spf in (0.0, 0.5, 1.0):
-        Alpha_rel = _Alpha_rel(machine.mean_line[:, 0], [spf], bld.vortex_exponent)[0]
+        Alpha_rel = _free_vortex(machine.mean_line[:, 0], spf)
         np.testing.assert_allclose(bld.evaluate_chi(spf), Alpha_rel + dchi, atol=1e-12)
 
     # A stator turns less over the span than a rotor, so the row that has to
@@ -535,7 +544,7 @@ def test_config_with_blades_round_trips():
 def test_blade_defaults_are_written_out():
     data = build().to_dict()["blades"][0]
 
-    assert data["vortex_exponent"] == -1.0
+    assert "vortex_exponent" not in data
     assert data["m_stack"] == 0.5
     assert data["tip_span"] == 0.0
     assert data["sections"][0]["camber"]["type"] == "quadratic"

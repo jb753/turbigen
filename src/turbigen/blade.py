@@ -73,10 +73,10 @@ them :meth:`~BladeDesign.design` which:
 
 #. Collects the recambers :attr:`~SectionDesign.dchi_LE` and
    :attr:`~SectionDesign.dchi_TE` of each section, together with the mean-line
-   row and the :attr:`~BladeDesign.vortex_exponent` the local flow angle they
-   are measured off is evaluated with. The two are added when a metal angle is
-   asked for rather than here, so a blade defined by one section still varies
-   over the span with the vortex distribution;
+   row and the :mod:`spanwise design <turbigen.spanwise>` the local flow angle
+   they are measured off is evaluated with. The two are added when a metal
+   angle is asked for rather than here, so a blade defined by one section still
+   varies over the span with the spanwise flow;
 #. Camber and thickness designs, the recambers, the stacking
    position and the blade rotation are collected across all sections into a
    :class:`Blade` for each row;
@@ -150,36 +150,10 @@ from turbigen.annulus import RowAnnulus
 from turbigen.camber import CamberDesign, CamberLine
 from turbigen.meanline import MeanLine
 from turbigen.node import Node
+from turbigen.spanwise import SpanwiseDesign, VortexExpon
 from turbigen.thickness import ThicknessDesign
 
 logger = logging.getLogger("turbigen")
-
-
-def _Alpha_rel(mean_line_row, spf, vortex_exponent):
-    """Relative flow angles at span fractions, for a vortex distribution.
-
-    Parameters
-    ----------
-    mean_line_row : MeanLine
-        Inlet and outlet stations of one blade row, shape (2,).
-    spf : array_like
-        Span fractions, shape (n_section,).
-    vortex_exponent : float
-        Spanwise swirl distribution, with tangential velocity varying as
-        radius to this power.
-
-    Returns
-    -------
-    Alpha_rel : ndarray, shape (n_section, 2)
-        Relative flow angle at each span fraction, at inlet and outlet [deg].
-
-    """
-    ml = mean_line_row
-    spf = np.asarray(spf, dtype=float).reshape(-1, 1)
-    r = ml.r_hub * (1.0 - spf) + ml.r_cas * spf
-    Vt = ml.Vt * (r / ml.r) ** vortex_exponent
-    Vt_rel = Vt - ml.Omega * r
-    return np.degrees(np.arctan(Vt_rel / ml.Vm))
 
 
 def _is_sequence(value):
@@ -550,10 +524,6 @@ class BladeDesign(Node):
     tip_metre: float = 0.0
     """Tip clearance as an absolute length [m]."""
 
-    vortex_exponent: float = -1.0
-    """Spanwise swirl distribution, with tangential velocity varying as radius
-    to this power. The default is a free vortex."""
-
     theta_offset: float = 0.0
     """Rotate the whole blade through this angle [rad]."""
 
@@ -596,7 +566,7 @@ class BladeDesign(Node):
                 f"A blade has one tip clearance, but {set_tips} were all given."
             )
 
-    def design(self, mean_line_row, row_annulus):
+    def design(self, mean_line_row, row_annulus, spanwise=None, i_row=0):
         """Return the blade this design describes.
 
         Parameters
@@ -605,6 +575,11 @@ class BladeDesign(Node):
             Inlet and outlet stations of this row, shape (2,).
         row_annulus : RowAnnulus
             The annulus within this row, from :meth:`Annulus.extract_row`.
+        spanwise : SpanwiseDesign, optional
+            How the flow varies over the span; a free vortex if omitted.
+        i_row : int
+            Index of this row, which says which of `spanwise`'s stations are
+            its own.
 
         """
         spf = np.array([section.spf for section in self.sections])
@@ -629,14 +604,15 @@ class BladeDesign(Node):
             spf=spf,
             dchi=dchi,
             mean_line_row=mean_line_row,
-            vortex_exponent=self.vortex_exponent,
+            spanwise=VortexExpon() if spanwise is None else spanwise,
+            i_row=i_row,
             cambers=tuple(section.camber for section in self.sections),
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
             theta_offset=self.theta_offset,
         )
 
-        # Read at the endwalls, which is where the vortex distribution is most
+        # Read at the endwalls, which is where the spanwise flow is most
         # extreme and so where an unbuildable angle appears first. A blade with
         # sections short of the endwalls has none of its own there, so this is
         # a statement about what will be meshed rather than about what was
@@ -788,8 +764,12 @@ class Blade:
     number without losing the variation between the sections and beyond them.
     """
 
-    vortex_exponent: float = dataclasses.field(repr=False)
-    """Spanwise swirl distribution the flow angle is evaluated with [--]."""
+    spanwise: SpanwiseDesign = dataclasses.field(repr=False)
+    """Spanwise flow the flow angle is evaluated with, whose knots for this row
+    are :attr:`spf`."""
+
+    i_row: int = dataclasses.field(repr=False)
+    """Index of this row in the machine, for its stations of :attr:`spanwise`."""
 
     cambers: tuple = dataclasses.field(repr=False)
     """Camber shape of each section."""
@@ -913,7 +893,7 @@ class Blade:
         """Return the metal angles at the leading and trailing edges [deg].
 
         The recamber the sections declare, applied to the flow angle *here*:
-        the vortex distribution is evaluated at `spf` rather than at the
+        the spanwise flow is evaluated at `spf` rather than at the
         sections, so a blade defined by one section still turns with the span
         it stands in.
         """
@@ -922,7 +902,8 @@ class Blade:
         else:
             dchi = self._dchi_at(spf).reshape(-1)
 
-        chi = _Alpha_rel(self.mean_line_row, [spf], self.vortex_exponent)[0] + dchi
+        flow = self.spanwise.Alpha_rel(self.mean_line_row, self.i_row, self.spf, [spf])
+        chi = flow[0] + dchi
 
         # Checked here rather than at design time, because here is where a span
         # fraction is named: the sections do not bound the angles any more, and

@@ -17,6 +17,7 @@ import turbigen.util
 from turbigen.annulus import Annulus
 from turbigen.blade import Row
 from turbigen.meanline import MeanLine
+from turbigen.spanwise import SpanwiseDesign, VortexExpon
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,6 +39,9 @@ class Machine:
     rows: tuple[Row, ...] = ()
     """Blade rows, if the config asked for any: a shape, a count and a
     clearance each."""
+
+    spanwise: SpanwiseDesign = VortexExpon()
+    """How the flow the blades were designed against varies over the span."""
 
     def Re_surf(self):
         """Return the surface Reynolds number of each blade row [--].

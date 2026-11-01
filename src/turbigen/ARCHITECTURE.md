@@ -223,6 +223,33 @@ segment, so it belongs. Those two did not. This is how the old
 `AnnulusDesigner` reached 1035 lines: each consumer added the view it wanted,
 and none of them were the annulus's business.
 
+## Spanwise flow
+
+A `SpanwiseDesign` says how the flow the blades are designed against varies
+from hub to casing: the meridional velocity and angular momentum at any span
+fraction of any mean-line station.
+
+```python
+class SpanwiseDesign(Node):
+    def Vm(self, station, k, knots, spf) -> ndarray
+    def rVt(self, station, k, knots, spf) -> ndarray
+    def Alpha_rel(self, mean_line_row, i_row, knots, spf) -> ndarray  # provided
+    def filled(self, n_sections) -> SpanwiseDesign
+```
+
+`VortexExpon` is a power-law swirl at uniform meridional velocity, the default
+free vortex. `VelocitySpline` holds a profile at every station, as values at
+the blade sections of its row: the sections are where a blade reads the flow,
+so values there are exactly what decides the blade, and there is no second set
+of span fractions to keep in step with them. `Config.__post_init__` checks a
+spline against the blades and writes its defaults out, so that every knot is a
+leaf an iterator can name.
+
+The blade, the initial guess and the spanwise iterators all read the one
+design, so the flow a blade was cut for, the flow a march starts from and the
+flow an iterator measures against cannot drift apart. It is stamped: a change
+to it re-cuts every blade.
+
 ## Blades
 
 A `BladeDesign` describes one row; designing it against a row of the mean line
@@ -235,11 +262,10 @@ class BladeDesign(Node):
     tip_span: float = 0.0
     tip_chord: float = 0.0
     tip_metre: float = 0.0
-    vortex_exponent: float = -1.0
     theta_offset: float = 0.0
     m_stack: float = 0.5
 
-    def forward(self, mean_line_row, row_annulus) -> Row
+    def forward(self, mean_line_row, row_annulus, spanwise, i_row) -> Row
 ```
 
 This is the stage where the config-as-its-own-result problem is worst. The old
@@ -275,7 +301,7 @@ gone. No YAML in the repo ever set it to anything else.
 
 ```python
 blades = tuple(
-    design.design(mean_line.row(i), annulus.extract_row(i))
+    design.design(mean_line[:, i], annulus.extract_row(i), self.spanwise, i)
     for i, design in enumerate(self.blades)
 )
 ```
@@ -287,6 +313,13 @@ is the annulus that defines what `m` means. So `Annulus.extract_row` returns a
 leading edge to 1 at the trailing edge, plus the meridional chord --- which
 `set_streamsurface` used to recompute by arc length even though
 `Annulus.evaluate_chords` already had it.
+
+The index that does come along is for the spanwise design alone, which numbers
+its stations as the mean line does. The blade never interprets it: it hands it
+back, with its own section span fractions as the knots, whenever it asks for a
+flow angle. Restricting the spanwise design to a row instead would need a
+per-row flow object for each kind of design, which is a class hierarchy to
+carry one integer.
 
 ### Blade number is paired with the blade, not merged into it
 
@@ -683,12 +716,14 @@ however the grid lines run. ember's `apply_guess_meridional` is no longer used:
 it aligned the flow with the `i` grid lines, which in an O block run round the
 blade and divided by zero at its edges.
 
-* Pressure, temperature and meridional speed from the mean line, linear in the
-  annulus meridional coordinate, along the line of constant span fraction
-  through the node, so parallel to hub and casing.
-* Swirl from each blade's own vortex law; through a row the relative flow angle
-  turns from inlet to exit value in the shape of the camber line, and between
-  rows angular momentum is carried across at each span fraction.
+* Pressure and temperature from the mean line, linear in the annulus
+  meridional coordinate; meridional speed from the spanwise design at each
+  station, linear in the same coordinate, along the line of constant span
+  fraction through the node, so parallel to hub and casing.
+* Swirl from the spanwise design the blades were designed against; through a
+  row the relative flow angle turns from inlet to exit value in the shape of
+  the camber line, and between rows angular momentum is carried across at each
+  span fraction.
 * Near a blade surface the relative flow angle is blended to the surface's,
   keeping the speed. Read off the blade geometry (`Row.evaluate_pitch_fraction`
   and the surface table behind it) rather than off the wall distance search:

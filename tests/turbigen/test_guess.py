@@ -71,8 +71,6 @@ def test_guess_reproduces_the_mean_line(machine):
 @pytest.mark.parametrize("spf", [0.1, 0.5, 0.9])
 def test_relative_flow_leaves_each_row_at_its_design_angle(machine, spf):
     """At each row's edges, the relative angle its blade was designed for."""
-    from turbigen.blade import _Alpha_rel
-
     field = guess._Field(machine)
     for i, row in enumerate(machine.rows):
         m = np.array([2.0 * i + 1.0, 2.0 * i + 2.0])
@@ -83,7 +81,9 @@ def test_relative_flow_leaves_each_row_at_its_design_angle(machine, spf):
         Alpha = np.degrees(
             np.arctan((Vxrt[:, 2] - Omega * r) / np.hypot(Vxrt[:, 0], Vxrt[:, 1]))
         )
-        design = _Alpha_rel(machine.mean_line[:, i], [spf], row.blade.vortex_exponent)
+        design = machine.spanwise.Alpha_rel(
+            machine.mean_line[:, i], i, row.blade.spf, [spf]
+        )
         np.testing.assert_allclose(Alpha, design[0], atol=1.0)
 
 

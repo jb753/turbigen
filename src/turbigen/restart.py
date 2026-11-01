@@ -62,6 +62,7 @@ STAMPED = (
     "mean_line",
     "annulus",
     "blades",
+    "spanwise",
     "mesh",
     "operating_point",
     "inlet_profile",

@@ -665,6 +665,12 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 | `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
 | `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
 | `clark_profile` | shape-space thickness coefficients and the circulation coefficient of one row | both surface Mach distributions against a Clark (2019) target, and the circulation the blade drew minus what the target encloses |
+| `spanwise_inflow` | `Vm` knots at every station and `rVt` knots at every row inlet of a `velocity_spline` design | knots minus the pitch-averaged CFD profile fitted onto them |
+| `spanwise_work` | `rVt` knots at one rotor's outlet | work coefficient along each stream surface minus a target shape, its mean held to the whole span's |
+| `spanwise_swirl` | `rVt` knots at one stator's outlet | outlet swirl minus a target shape, its mean held to the whole span's |
+
+The outlet iterators set the trailing edge, as `deviation` does for every row,
+so a config with both is refused when it is read.
 
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise

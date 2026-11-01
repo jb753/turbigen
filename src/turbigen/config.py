@@ -28,6 +28,7 @@ from turbigen.metric import Metric
 from turbigen.node import Node
 from turbigen.post import Post
 from turbigen.solver import Solver
+from turbigen.spanwise import SpanwiseDesign, VortexExpon
 
 
 class Config(Node):
@@ -44,6 +45,10 @@ class Config(Node):
 
     blades: tuple[BladeDesign, ...] = ()
     """Blade designs, one per row. Omit them to design the annulus alone."""
+
+    spanwise: SpanwiseDesign = VortexExpon()
+    """How the flow the blades are designed against varies from hub to
+    casing. A free vortex if omitted."""
 
     mesh: Mesher | None = None
     """Mesh generation. Only needed by the commands that make a grid."""
@@ -115,6 +120,15 @@ class Config(Node):
     """Where to execute, when ``--queue`` asks for it. Read by no design stage:
     a partition is a property of where you are, not of the machine."""
 
+    def __post_init__(self):
+        # Checked against the blades, and its defaults written out, as soon as
+        # it is read: the knots are the blade sections, so only here are both
+        # in hand
+        if self.blades:
+            n_sections = [len(blade.sections) for blade in self.blades]
+            object.__setattr__(self, "spanwise", self.spanwise.filled(n_sections))
+        self.iterate.validate(self)
+
     @classmethod
     def from_file(cls, path):
         """Read a config from a YAML file.
@@ -179,10 +193,17 @@ class Config(Node):
                     f"blades for {mean_line.n_row} rows."
                 )
             rows = tuple(
-                blade.design(mean_line[:, i_row], annulus.extract_row(i_row))
+                blade.design(
+                    mean_line[:, i_row],
+                    annulus.extract_row(i_row),
+                    self.spanwise,
+                    i_row,
+                )
                 for i_row, blade in enumerate(self.blades)
             )
 
-        machine = Machine(mean_line=mean_line, annulus=annulus, rows=rows)
+        machine = Machine(
+            mean_line=mean_line, annulus=annulus, rows=rows, spanwise=self.spanwise
+        )
         self.iterate.check(machine)
         return machine

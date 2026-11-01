@@ -1323,6 +1323,106 @@ def _cut_spf(cut):
     return 0.5 * (spf[:-1] + spf[1:])
 
 
+_TARGET_LABELS = {
+    "spanwise_work": r"Work Coefficient Offset, $\psi - \psi_\mathrm{ml}$",
+    "spanwise_swirl": r"Angular Momentum Offset, $\Delta(rV_\theta)/r V_m$",
+    "Vm": r"Meridional Velocity Shape, $V_m$ [knot units]",
+    "rVt": r"Angular Momentum Offset, $\Delta(rV_\theta)/r V_m$",
+}
+"""Axis labels for what each spanwise iterator measures."""
+
+
+class SpanwiseTargetPlot(Post):
+    """Target against actual for every spanwise iterator.
+
+    For spanwise_work and spanwise_swirl, one figure per iterator: what it
+    measures along its row's outlet, as an offset from the mean line, and the
+    target it drives the knots to. That target is the configured shape moved
+    by the whole span's mean, as :meth:`~turbigen.iterate._OutletIterator.measure`
+    explains, so a converged run sits on the line drawn. Faces the fit leaves
+    out are drawn faint.
+
+    For spanwise_inflow, one figure per station and profile it copies: the CFD
+    profile against the curve through the station's knots.
+
+    Measured by the iterators themselves, so the plot and the error they step
+    on cannot disagree.
+    """
+
+    type: ClassVar[str] = "spanwise_targets"
+
+    def report(self, config, result):
+        from turbigen import iterate, spanwise
+
+        kinds = (iterate._OutletIterator, iterate.SpanwiseInflow)
+        iterators = [it for it in config.iterate.correct if isinstance(it, kinds)]
+        if not iterators:
+            logger.info("No spanwise iterators, skipping their plot.")
+            return []
+
+        if result.grid is None or result.machine is None:
+            logger.info("No solved grid, skipping the spanwise target plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the spanwise target plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        s = np.linspace(0.0, 1.0, 201)
+
+        def draw(knots, profile, values, line, labels, title, xlabel):
+            spf = np.asarray(profile["spf"])
+            keep = iterate._fitted_faces(knots, spf)
+            values = np.asarray(values)
+            fig, ax = plt.subplots(layout="constrained")
+            ax.plot(values, spf, color="C0", alpha=0.3)
+            ax.plot(np.where(keep, values, np.nan), spf, color="C0", label=labels[0])
+            ax.plot(spanwise.spline(knots, line)(s), s, "k--", label=labels[1])
+            ax.plot(line, knots, "ko")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Span Fraction")
+            ax.set_ylim(0.0, 1.0)
+            ax.set_title(title)
+            ax.legend()
+            return fig
+
+        figures = []
+        for it in iterators:
+            if isinstance(it, iterate._OutletIterator):
+                m = it.measure(config, result)
+                figures.append(
+                    draw(
+                        m["knots"],
+                        m["profile"],
+                        m["values"],
+                        m["target"] + m["shift"],
+                        ("Actual", "Target"),
+                        f"Row {it.i_row} {it.type}",
+                        _TARGET_LABELS[it.type],
+                    )
+                )
+                continue
+
+            for k, field in it._owned(config):
+                profile, values = it.measure(config, result, k, field)
+                nominal = np.asarray(getattr(config.spanwise.stations[k], field))
+                figures.append(
+                    draw(
+                        iterate._knots(config, k // 2),
+                        profile,
+                        values,
+                        nominal,
+                        ("CFD", "Design"),
+                        f"Station {k} {field}",
+                        _TARGET_LABELS[field],
+                    )
+                )
+
+        return figures
+
+
 class SpanwisePlot(Post):
     """Pitch-averaged flow quantity against span fraction, at a cut plane.
 

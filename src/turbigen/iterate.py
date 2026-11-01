@@ -39,6 +39,7 @@ import numpy as np
 import turbigen.clark
 import turbigen.loading
 import turbigen.shapespace
+import turbigen.spanwise
 import turbigen.util
 from turbigen.design import DesignError
 from turbigen.node import Node
@@ -207,6 +208,14 @@ class Iterator(Node):
         :meth:`error`'s business. Does nothing by default.
         """
 
+    def validate(self, config):
+        """Raise if this iterator cannot act on `config` at all.
+
+        Called once, when the config is read, for what the config alone
+        decides: the kind of design it moves, the rows it names, how many
+        targets it was given. Does nothing by default.
+        """
+
     def tolerances(self, config):
         """Return the tolerance on each unknown, by name."""
         return {name: self.tolerance for name in self.unknowns(config)}
@@ -279,6 +288,27 @@ class Iteration(Node):
         is infeasible for `machine`."""
         for iterator in self.correct:
             iterator.check(machine)
+
+    def validate(self, config):
+        """Raise if any iterator cannot act on `config`, or two would fight."""
+        for iterator in self.correct:
+            iterator.validate(config)
+
+        # Both set a trailing edge: deviation recambers every row, and an
+        # outlet iterator moves the angular momentum its row is set to
+        outlets = [it for it in self.correct if isinstance(it, _OutletIterator)]
+        if outlets and any(isinstance(it, Deviation) for it in self.correct):
+            rows = sorted({it.i_row for it in outlets})
+            raise ValueError(
+                f"deviation recambers the trailing edge of every row, but "
+                f"{outlets[0].type} already sets that of row(s) {rows}; use one "
+                "or the other."
+            )
+        rows = [it.i_row for it in outlets]
+        if len(rows) != len(set(rows)):
+            raise ValueError(
+                f"Two spanwise outlet iterators set the same row, rows {rows}."
+            )
 
 
 #
@@ -2675,3 +2705,421 @@ class Repeat(Iterator):
     def clips(self, config):
         del config
         return self._by_column(self.clip_head, self.clip_angle)
+
+
+#
+# THE SPANWISE DESIGN
+#
+
+
+def station_profile(result, k):
+    """Return the pitch-averaged spanwise profile at station `k` of `result`.
+
+    Every face of the cut, endwalls included; :func:`_fit` chooses which of
+    them a fit uses.
+
+    Parameters
+    ----------
+    result : Result
+        A solved run.
+    k : int
+        Twice the row index for its inlet, one more for its outlet.
+
+    Returns
+    -------
+    dict
+        Each a ``(nspan,)`` array over the spanwise faces: span fraction
+        ``spf``; mass flow ``mdot`` and annulus area ``area`` through each
+        face's strip, as relative weights; cumulative mass fraction ``F`` at
+        each face centre, hub to casing; and the mass-averaged meridional
+        velocity ``Vm``, angular momentum ``rVt`` and stagnation enthalpy
+        ``ho``.
+
+    """
+    _require_grid(result, f"the spanwise profile at station {k}")
+    _, structured, spf = _station_cut(result, k)
+
+    def pitchwise(values):
+        return ember.average.mass_average(values, structured, axes=(1,))
+
+    mdot = np.abs(ember.average.flow_mass(structured, axes=(1,)))
+    x = np.asarray(structured.x)[:, 0]
+    r = np.asarray(structured.r)[:, 0]
+    area = 0.5 * (r[1:] + r[:-1]) * np.hypot(np.diff(x), np.diff(r))
+
+    return {
+        "spf": spf,
+        "mdot": mdot,
+        "area": area,
+        "F": (np.cumsum(mdot) - 0.5 * mdot) / np.sum(mdot),
+        "Vm": pitchwise(np.asarray(structured.Vm)),
+        "rVt": pitchwise(np.asarray(structured.r) * np.asarray(structured.Vt)),
+        "ho": pitchwise(np.asarray(structured.ho)),
+    }
+
+
+def _fitted_faces(knots, spf):
+    """Return which faces at span fractions `spf` a fit on `knots` uses.
+
+    Those between the outermost knots: beyond them the curve is only carried
+    on straight, and fitted there, the endwall boundary layers would pull the
+    knots. A single knot is a constant over the span, fitted to every face but
+    the :data:`WALL_TRIM` ones, where the pitch average reads the wall.
+    """
+    spf = np.asarray(spf)
+    if len(knots) == 1:
+        keep = np.zeros(spf.size, dtype=bool)
+        keep[WALL_TRIM : spf.size - WALL_TRIM] = True
+        return keep
+    return (spf >= knots[0]) & (spf <= knots[-1])
+
+
+def _fit(knots, profile, values, weights):
+    """Return knot values fitted to `values` over a profile's faces."""
+    keep = _fitted_faces(knots, profile["spf"])
+    return turbigen.spanwise.fit_knots(
+        knots,
+        np.asarray(profile["spf"])[keep],
+        np.asarray(values)[keep],
+        np.asarray(weights)[keep],
+    )
+
+
+def _knots(config, i_row):
+    """Return the span fractions of row `i_row`'s sections, its knots."""
+    return np.array([section.spf for section in config.blades[i_row].sections])
+
+
+def _station_names(k, field, n):
+    """Return the config path of each knot of `field` at station `k`."""
+    return [f"spanwise.stations[{k}].{field}[{j}]" for j in range(n)]
+
+
+def _station(mean_line, k):
+    """Return the mean-line station that spanwise station `k` is on."""
+    return mean_line[k % 2, k // 2]
+
+
+def _swirl_offset(mean_line, k, rVt):
+    """Return angular momentum `rVt` as an offset from the mean line at `k`,
+    in the units a :class:`~turbigen.spanwise.StationProfile` writes it in."""
+    ml = _station(mean_line, k)
+    return (np.asarray(rVt) - float(ml.r * ml.Vt)) / float(ml.r * ml.Vm)
+
+
+class _SpanwiseIterator(Iterator):
+    """Base for the iterators that move knots of a spline spanwise design.
+
+    Their knobs are leaves of the config, one apiece, so the two namings
+    coincide and :meth:`paths` is :meth:`unknowns` read as a set. No `type`,
+    so it is never read from a file itself.
+    """
+
+    def _owned(self, config):
+        """Return the ``(station, field)`` pairs whose knots this one moves."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement _owned(self, config)"
+        )
+
+    def _rows(self, config):
+        """Return the rows this one reads, for :meth:`validate`."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement _rows(self, config)"
+        )
+
+    def validate(self, config):
+        if not isinstance(config.spanwise, turbigen.spanwise.VelocitySpline):
+            raise ValueError(
+                f"{self.type} moves the knots of a spanwise design of type "
+                f"velocity_spline, but this config's is "
+                f"{type(config.spanwise).__name__}."
+            )
+        for i_row in self._rows(config):
+            _check_i_row(i_row, len(config.blades))
+
+    def unknowns(self, config):
+        merged = {}
+        for k, field in self._owned(config):
+            values = getattr(config.spanwise.stations[k], field)
+            merged.update(zip(_station_names(k, field, len(values)), values))
+        return {name: float(value) for name, value in merged.items()}
+
+    def with_unknowns(self, config, values):
+        stations = list(config.spanwise.stations)
+        moved = False
+        for k, field in self._owned(config):
+            current = getattr(stations[k], field)
+            names = _station_names(k, field, len(current))
+            if any(name in values for name in names):
+                new = tuple(
+                    float(values.get(name, now)) for name, now in zip(names, current)
+                )
+                stations[k] = dataclasses.replace(stations[k], **{field: new})
+                moved = True
+        if not moved:
+            return config
+        spanwise = dataclasses.replace(config.spanwise, stations=tuple(stations))
+        return dataclasses.replace(config, spanwise=spanwise)
+
+    def paths(self, config):
+        return set(self.unknowns(config))
+
+
+class SpanwiseInflow(_SpanwiseIterator):
+    """Copy the spanwise flow arriving at each row in from the CFD.
+
+    Two profiles, both states the CFD measures rather than settings of a
+    blade: the meridional velocity shape at every station of a row, and the
+    angular momentum at its inlet, which is what the row upstream actually
+    delivers. The outlet angular momentum is a setting, moved by
+    :class:`SpanwiseWork` or :class:`SpanwiseSwirl`.
+
+    The step copies the measurement into the knots, relaxed by :attr:`gain`:
+    the error is the knots less the measured profile fitted onto them.
+    """
+
+    type: ClassVar[str] = "spanwise_inflow"
+
+    rows: tuple[int, ...] = ()
+    """Rows whose stations to update. Every row if omitted."""
+
+    gain: float = 0.5
+    clip: float = 0.1
+    """Largest change in one iteration, in knot units [--]."""
+
+    tolerance: float = 0.01
+    """Permissible error, in knot units [--]."""
+
+    def _rows(self, config):
+        return self.rows or tuple(range(len(config.blades)))
+
+    def _owned(self, config):
+        owned = []
+        for i_row in self._rows(config):
+            owned += [(2 * i_row, "Vm"), (2 * i_row, "rVt"), (2 * i_row + 1, "Vm")]
+        return sorted(owned)
+
+    def measure(self, config, result, k, field):
+        """Return station `k`'s profile, and what the CFD says about `field`
+        at every face, in the units of the station's knots.
+
+        A meridional velocity shape is scaled to the knots' own level by the
+        area average of its fit, not of the raw profile: the fit leaves out the
+        endwall boundary layers, so the core it keeps sits above the raw
+        average, by a few percent behind a row. Every knot would then read low
+        by the same amount, which no step can remove, because raising the knots
+        raises their level with them.
+        """
+        profile = station_profile(result, k)
+        mean_line = result.machine.mean_line
+        if field == "rVt":
+            return profile, _swirl_offset(mean_line, k, profile["rVt"])
+
+        knots = _knots(config, k // 2)
+        station = _station(mean_line, k)
+        Vm = np.asarray(profile["Vm"])
+        fitted = _fit(knots, profile, Vm, profile["area"])
+        shape = config.spanwise.stations[k].Vm
+        level = turbigen.spanwise.area_average(knots, shape, station)
+        return profile, Vm * level / turbigen.spanwise.area_average(
+            knots, fitted, station
+        )
+
+    def error(self, config, result):
+        _require_grid(result, "the spanwise inflow")
+        merged = {}
+        for k, field in self._owned(config):
+            profile, values = self.measure(config, result, k, field)
+            weights = profile["mdot"] if field == "rVt" else profile["area"]
+            knots = _knots(config, k // 2)
+            measured = _fit(knots, profile, values, weights)
+            current = np.asarray(getattr(config.spanwise.stations[k], field))
+            names = _station_names(k, field, current.size)
+            merged.update(zip(names, map(float, current - measured)))
+        return merged
+
+
+class _OutletIterator(_SpanwiseIterator):
+    """Base for the iterators that set one row's outlet angular momentum,
+    every knot of it."""
+
+    i_row: int = 0
+    """Index of the blade row whose outlet to set."""
+
+    def _rows(self, config):
+        return (self.i_row,)
+
+    def _owned(self, config):
+        return [(2 * self.i_row + 1, "rVt")]
+
+    def validate(self, config):
+        super().validate(config)
+        name = self.targets[0]
+        n_target = len(getattr(self, name))
+        n_section = len(config.blades[self.i_row].sections)
+        if n_target != n_section:
+            raise ValueError(
+                f"{self.type} gives {n_target} {name} value(s) for row "
+                f"{self.i_row}, which has {n_section} blade section(s), one "
+                "value each."
+            )
+
+    def profile(self, result):
+        """Return the outlet's station profile, and what this one measures
+        along it as an offset from the mean line, at every face of the cut."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement profile(self, result)"
+        )
+
+    def measure(self, config, result):
+        """Return everything the error is made of, for it and for a plot.
+
+        A dict of the outlet ``profile`` and the ``values`` measured at each of
+        its faces, the ``knots``, the ``measured`` knot values fitted to those,
+        the ``target`` at each knot, and the ``shift`` that the whole span's
+        mean moves the target by.
+
+        **The shift.** The target is a shape: its mass average is the mean
+        line's to set, so it is removed. The fit covers only the faces between
+        the outermost knots, so it never sees the endwall bands outside them
+        --- the boundary layers, a hub corner, tip leakage --- which do work
+        and turn the flow as well. Matched on the fit alone, a row can meet its
+        target at every knot while doing several percent more work than the
+        mean line asks. So the mean of the knots is held to the mean measured
+        over every face but the :data:`WALL_TRIM` ones: the knots converge on
+        the target moved by the difference between the two, and the row as a
+        whole meets the mean line.
+        """
+        _require_grid(result, f"the {self.type} of row {self.i_row}")
+        mean_line = result.machine.mean_line
+        k = 2 * self.i_row + 1
+        station = _station(mean_line, k)
+        knots = _knots(config, self.i_row)
+        Vm_shape = config.spanwise.stations[k].Vm
+
+        def mean(values):
+            return turbigen.spanwise.mass_average(knots, values, Vm_shape, station)
+
+        outlet, values = self.profile(result)
+        measured = _fit(knots, outlet, values, outlet["mdot"])
+        target = np.asarray(getattr(self, self.targets[0]), dtype=float)
+        target = target - mean(target)
+
+        inner = slice(WALL_TRIM, len(values) - WALL_TRIM)
+        w = np.asarray(outlet["mdot"])[inner]
+        whole = float(np.sum(w * np.asarray(values)[inner]) / np.sum(w))
+
+        return {
+            "profile": outlet,
+            "values": np.asarray(values),
+            "knots": knots,
+            "measured": measured,
+            "target": target,
+            "shift": mean(measured) - whole,
+        }
+
+    def error(self, config, result):
+        m = self.measure(config, result)
+        error = m["measured"] - (m["target"] + m["shift"])
+        names = _station_names(2 * self.i_row + 1, "rVt", error.size)
+        return dict(zip(names, map(float, error)))
+
+
+class SpanwiseWork(_OutletIterator):
+    r"""Set a rotor's outlet swirl to do a spanwise distribution of work.
+
+    Work is measured as the stagnation enthalpy rise along each stream
+    surface, pairing inlet and outlet faces by mass fraction rather than by
+    span fraction, since a stream surface moves across the span through a row.
+
+    The knob is the outlet angular momentum the trailing edge is set to, which
+    differs from the flow leaving by the deviation, so the mean of the knots
+    carries the mean deviation and the mean work is corrected along with its
+    distribution. Replaces :class:`Deviation` on the row, so the two cannot be
+    used together.
+    """
+
+    type: ClassVar[str] = "spanwise_work"
+    targets: ClassVar[tuple[str, ...]] = ("psi",)
+
+    psi: tuple[float, ...]
+    r"""Work coefficient :math:`\Delta h_0/U^2` at each blade section, as an
+    offset from the mean line's, with :math:`U` the blade speed at the rms
+    radius of the row outlet [--]. Its mass average is the mean line's to set
+    and is removed."""
+
+    gain: float = 0.5
+    """Fraction of the step the Euler work equation predicts would null the
+    error: a relaxation factor rather than a slope, which :meth:`gains`
+    supplies."""
+
+    clip: float = 0.1
+    """Largest change in one iteration [--]."""
+
+    tolerance: float = 0.005
+    """Permissible error in work coefficient [--]."""
+
+    def check(self, machine):
+        if abs(float(machine.mean_line[1, self.i_row].Omega)) < TINY:
+            raise DesignError(
+                f"spanwise_work sets the work of row {self.i_row}, which is "
+                "stationary and does none; use spanwise_swirl for a stator."
+            )
+
+    def gains(self, config):
+        r"""Return the declared gain over the outlet flow coefficient.
+
+        By the Euler work equation, :math:`\Delta h_0 = \Omega\,\Delta(rV_\theta)`,
+        the slope of work coefficient against a knot is :math:`V_m/U = \phi` at
+        the rms radius, which carries the sign of the rotation. Assuming the
+        flow follows the trailing edge, a full step is one over that.
+        """
+        ml = config.mean_line.design(config.fluid.eos())[1, self.i_row]
+        phi = float(ml.Vm / (ml.Omega * ml.r))
+        names = list(self.unknowns(config))
+        return {name: gain / phi for name, gain in zip(names, self._gain_each(names))}
+
+    def profile(self, result):
+        mean_line = result.machine.mean_line
+        k = 2 * self.i_row + 1
+        inlet = station_profile(result, k - 1)
+        outlet = station_profile(result, k)
+
+        ml_in = _station(mean_line, k - 1)
+        ml_out = _station(mean_line, k)
+        U2 = float(ml_out.Omega * ml_out.r) ** 2
+
+        ho_in = np.interp(outlet["F"], inlet["F"], inlet["ho"])
+        psi = (np.asarray(outlet["ho"]) - ho_in) / U2
+        psi_nominal = float(ml_out.ho - ml_in.ho) / U2
+        return outlet, psi - psi_nominal
+
+
+class SpanwiseSwirl(_OutletIterator):
+    """Set a row's outlet swirl to leave a spanwise distribution of swirl.
+
+    The stator's counterpart of :class:`SpanwiseWork`, for a row that does no
+    work and so is specified by what it leaves behind --- an axial exit from
+    an outlet guide vane, say.
+    """
+
+    type: ClassVar[str] = "spanwise_swirl"
+    targets: ClassVar[tuple[str, ...]] = ("rVt",)
+
+    rVt: tuple[float, ...]
+    """Angular momentum leaving the row at each blade section, as an offset
+    from the mean line in the units of
+    :attr:`~turbigen.spanwise.StationProfile.rVt`. Its mass average is the
+    mean line's to set and is removed [--]."""
+
+    gain: float = 0.5
+    clip: float = 0.1
+    """Largest change in one iteration [--]."""
+
+    tolerance: float = 0.01
+    """Permissible error [--]."""
+
+    def profile(self, result):
+        k = 2 * self.i_row + 1
+        outlet = station_profile(result, k)
+        return outlet, _swirl_offset(result.machine.mean_line, k, outlet["rVt"])

@@ -22,7 +22,8 @@ which command.
    * - Key
      - Read by
    * - :ref:`fluid: <config-fluid>`, :ref:`mean_line: <config-mean_line>`,
-       :ref:`annulus: <config-annulus>`, :ref:`blades: <config-blades>`
+       :ref:`annulus: <config-annulus>`, :ref:`blades: <config-blades>`,
+       :ref:`spanwise: <config-spanwise>`
      - every command, listed in :ref:`usage`
    * - :ref:`mesh: <config-mesh>`, :ref:`solver: <config-solver>`,
        :ref:`operating_point: <config-operating_point>`,

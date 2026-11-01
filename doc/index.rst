@@ -44,6 +44,7 @@ User manual
    meanline
    design
    annulus
+   spanwise
    blade
 
 .. toctree::

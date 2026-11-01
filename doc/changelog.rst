@@ -4,6 +4,7 @@ Changelog
 v3.1.0
 ^^^^^^
 
+* Add a ``spanwise:`` key for the flow the blades are designed against, a power-law vortex or splines of meridional velocity and swirl through the blade sections, with ``spanwise_inflow``, ``spanwise_work`` and ``spanwise_swirl`` iterators and a ``spanwise_targets`` plot; blades lose ``vortex_exponent``, now ``spanwise: {type: vortex_expon, n: ...}``
 * Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold
 * Step every iterator on its declared gain, and drop the Broyden update, which no iterator used
 * Let ``clark_profile`` recamber the leading edge against the difference in nose loading, in place of an ``incidence`` iterator

@@ -40,7 +40,6 @@ blades:
   - count:
       type: Co
       Co: 0.6
-    vortex_exponent: -0.6
     sections:
       - spf: 0.2
         dchi_LE: -8.0
@@ -71,7 +70,6 @@ blades:
   - count:
       type: Co
       Co: 0.6
-    vortex_exponent: -0.6
     tip_span: 0.01
     sections:
       - spf: 0.2
@@ -90,6 +88,9 @@ blades:
         camber: *camber
         thickness: *thickness
 
+spanwise:
+  type: vortex_expon
+  n: -0.6
 mesh:
   type: h
   yplus: 30.0

@@ -11,11 +11,12 @@ The field is a function of position and the design alone, evaluated at each
 node from its coordinates, so it is the same field whatever the mesh topology
 and however the grid lines run:
 
-* **Thermodynamic state and meridional speed** from the mean line, linear in
-  the annulus meridional coordinate between its stations, with the velocity
-  along the line of constant span fraction through the node, so parallel to
-  hub and casing.
-* **Swirl** from the vortex distribution each blade was designed with. Through
+* **Thermodynamic state** from the mean line, linear in the annulus
+  meridional coordinate between its stations.
+* **Meridional speed** from the :mod:`spanwise design <turbigen.spanwise>`
+  at each station, linear in the same coordinate between them, along the line
+  of constant span fraction through the node, so parallel to hub and casing.
+* **Swirl** from the spanwise design each blade was designed with. Through
   a row, the relative flow angle turns from its inlet to its exit value in the
   shape of the camber line at that span; between rows, angular momentum is
   carried across unchanged at each span fraction.
@@ -111,7 +112,7 @@ class _Field:
         self.m_station = np.arange(1, flat.size + 1, dtype=float)
         self.P = np.asarray(flat.P, dtype=float)
         self.T = np.asarray(flat.T, dtype=float)
-        self.Vm = np.asarray(flat.Vm, dtype=float)
+        self.spanwise = machine.spanwise
         self.mu = float(np.mean(self.ml.mu))
         self.turning = [_turning(row.blade) for row in self.rows]
 
@@ -149,7 +150,7 @@ class _Field:
         is the edge values carried across, linearly in `m` between two rows.
         """
         r = self.annulus.evaluate_xr(m, spf)[1]
-        Vm = self._station(self.Vm, m)
+        Vm = self.Vm(m, spf)
         edges = [self._edges(i, spf) for i in range(len(self.rows))]
 
         # Gaps and the two ends first, then each row over the top of them
@@ -180,22 +181,40 @@ class _Field:
     def _edges(self, i_row, spf):
         """Design swirl at the edges of a row, at each span fraction.
 
-        The vortex distribution the blade was designed with, so that the guess
-        and the blade's metal angles come from the same flow angles.
+        The spanwise flow the blade was designed with, so that the guess and
+        the blade's metal angles come from the same flow angles.
         """
-        row = self.rows[i_row]
         ml = self.ml[:, i_row]
-        spf_col = np.asarray(spf).reshape(-1, 1)
-        r = ml.r_hub * (1.0 - spf_col) + ml.r_cas * spf_col
-        Vt = ml.Vt * (r / ml.r) ** row.blade.vortex_exponent
-        Alpha_rel = np.arctan((Vt - ml.Omega * r) / ml.Vm)
-        return {"rVt": (r * Vt).T, "Alpha_rel": Alpha_rel.T}
+        knots = self.rows[i_row].blade.spf
+        spf = np.asarray(spf, dtype=float)
+        rVt = np.stack(
+            [self.spanwise.rVt(ml[j], 2 * i_row + j, knots, spf) for j in range(2)]
+        )
+        Alpha_rel = np.radians(self.spanwise.Alpha_rel(ml, i_row, knots, spf)).T
+        return {"rVt": rVt, "Alpha_rel": Alpha_rel}
+
+    def Vm(self, m, spf):
+        """Meridional speed [m/s]: the spanwise profile at each station,
+        linear in `m` between them and held beyond the first and last."""
+        spf = np.asarray(spf, dtype=float)
+        flat = self.ml.flat
+        profiles = np.stack(
+            [
+                self.spanwise.Vm(flat[k], k, self.rows[k // 2].blade.spf, spf)
+                for k in range(flat.size)
+            ]
+        )
+        x = np.clip(m - self.m_station[0], 0.0, flat.size - 1.0)
+        i0 = np.minimum(np.floor(x).astype(int), flat.size - 2)
+        w = x - i0
+        points = np.arange(spf.size)
+        return (1.0 - w) * profiles[i0, points] + w * profiles[i0 + 1, points]
 
     def evaluate(self, m, spf, r):
         """Pressure, temperature and polar velocity at points."""
         P = self._station(self.P, m)
         T = self._station(self.T, m)
-        Vm = self._station(self.Vm, m)
+        Vm = self.Vm(m, spf)
         (dx, dr), _ = self.direction(m, spf)
         Vt = self.rVt(m, spf) / r
         return P, T, np.stack((Vm * dx, Vm * dr, Vt), axis=-1)
