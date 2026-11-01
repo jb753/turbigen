@@ -7,6 +7,8 @@ would have said, which is the only way a queued run can silently differ from a
 run you watched.
 """
 
+import sys
+
 import pytest
 
 from turbigen import cli, job
@@ -148,6 +150,9 @@ def test_slurm_states_what_it_was_given():
     assert "#SBATCH --qos=high" in script
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Slurm scripts run under a POSIX shell"
+)
 def test_slurm_runs_where_it_was_submitted(tmp_path, monkeypatch):
     """The array runs from the submitting directory, not the tasks' parent,
     so the same matplotlibrc and relative paths apply as on a local run."""

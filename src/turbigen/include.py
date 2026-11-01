@@ -99,14 +99,22 @@ def relative(data, base):
     The inverse of :func:`anchor`, so a document read, written somewhere else
     and read back names the same file. Relative even when that takes ``..``,
     because the point is that the two move together.
+
+    Written with forward slashes, as a person writes one, so a document saved
+    on Windows reads anywhere. A file on another drive has no relative path and
+    cannot move with the case, so it is written absolute.
     """
     written = dict(data)
 
     for key in PATH_KEYS:
         value = written.get(key)
         if value is not None:
-            target = Path(base) / value
-            written[key] = os.path.relpath(target.resolve(), Path(base).resolve())
+            target = (Path(base) / value).resolve()
+            try:
+                path = Path(os.path.relpath(target, Path(base).resolve()))
+            except ValueError:
+                path = target
+            written[key] = path.as_posix()
 
     return written
 
