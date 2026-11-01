@@ -290,8 +290,13 @@ class _Layout:
     pitch: float
     m_in: float
     m_Zin: float
+    """Where the block ahead of the blade ends, at mid-span; each plane's is as
+    far from its own leading edge, see :meth:`OHPassage.plane_Z`."""
     m_Zout: float
+    """Where the block behind the blade ends, likewise."""
     m_out: float
+    m_edges: tuple
+    """The blade's leading and trailing edges at mid-span, annulus `m`."""
     d_wall: float
     """Wall spacing [m]."""
     t_O: float
@@ -380,6 +385,8 @@ class OHPassage(Mesher):
 
     labels: ClassVar[tuple] = LABELS
     """Names of the blocks of a row, in the order :meth:`plane` returns them."""
+
+    meshes_sweep: ClassVar[bool] = True
 
     dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
@@ -822,8 +829,14 @@ class OHPassage(Mesher):
     # LAYOUT
     #
 
-    def layout(self, machine, i_row, spacing):
-        """Fix the coarse counts of one row, and how it is refined, at mid-span."""
+    def layout(self, machine, i_row, spacing, spf):
+        """Fix the coarse counts of one row, and how it is refined, at mid-span.
+
+        The blocks ahead of and behind the blade end as far from its edges at
+        every span fraction `spf` meshed as at mid-span, so where the edges
+        are swept they end swept alike, and the counts and clustering fixed
+        here mean the same at every span.
+        """
         row = machine.rows[i_row]
         blade = row.blade
         n_row = len(machine.rows)
@@ -831,16 +844,31 @@ class OHPassage(Mesher):
 
         L_up = 1.0 if i_row == 0 else 0.5
         L_dn = 1.0 if i_row == n_row - 1 else 0.5
-        m_LE, m_TE = 2.0 * i_row + 1.0, 2.0 * i_row + 2.0
-        m_in, m_out = m_LE - L_up, m_TE + L_dn
-        m_Zin = m_LE - self.frac_Z * L_up
-        m_Zout = m_TE + self.frac_Z * L_dn
+        m_row = 2.0 * i_row + 1.0
+        m_in, m_out = m_row - L_up, m_row + 1.0 + L_dn
+        # The edges, swept or not, at mid-span
+        m_LE, m_TE = (float(m) for m in m_row + blade.evaluate_swept_m([0.0, 1.0], 0.5))
+        m_Zin = m_LE - self.frac_Z * (m_LE - m_in)
+        m_Zout = m_TE + self.frac_Z * (m_out - m_TE)
         extrude_in, extrude_out = i_row == 0, i_row == n_row - 1
         chord = blade.evaluate_chord(0.5)
         if extrude_in:
             m_Zin = _m_at_distance(machine.annulus, m_LE, m_in, self.cut * chord)
         if extrude_out:
             m_Zout = _m_at_distance(machine.annulus, m_TE, m_out, self.cut * chord)
+
+        # Every plane's blocks must end short of its inlet and outlet
+        Z = np.array(
+            [self.plane_Z(blade, s, m_row, (m_LE, m_TE), (m_Zin, m_Zout)) for s in spf]
+        )
+        if Z[:, 0].min() <= m_in or Z[:, 1].max() >= m_out:
+            raise ValueError(
+                f"Row {i_row} has edges swept so far that the blocks ahead of and "
+                f"behind its blade, as long as at mid-span, reach m="
+                f"{Z[:, 0].min():.4g} and {Z[:, 1].max():.4g}, which leaves no "
+                f"room for the blocks between them and the ends of its domain "
+                f"at m={m_in:.4g} and {m_out:.4g}."
+            )
 
         cmap = ConformalMap(machine.annulus, 0.5, m_in, m_out)
         r_ref = float(np.mean(_by_theta(blade, 0.5)[0][1]))
@@ -928,6 +956,7 @@ class OHPassage(Mesher):
             m_in=m_in,
             m_Zin=m_Zin,
             m_Zout=m_Zout,
+            m_edges=(m_LE, m_TE),
             m_out=m_out,
             d_wall=float(spacing.surface[i_row]),
             t_O=t_O,
@@ -1013,6 +1042,16 @@ class OHPassage(Mesher):
         )
         return dataclasses.replace(layout, n_wall=tuple(n))
 
+    @staticmethod
+    def plane_Z(blade, spf, m_row, m_edges, m_Z):
+        """Return where the blocks ahead of and behind the blade end at `spf`,
+        annulus `m`: as far from its edges there as `m_Z` is from `m_edges`
+        at mid-span. Exactly `m_Z` where the blade is not swept."""
+        if not blade.swept:
+            return m_Z
+        here = m_row + blade.evaluate_swept_m([0.0, 1.0], spf)
+        return tuple(float(z + e - e_mid) for z, e, e_mid in zip(m_Z, here, m_edges))
+
     def plane(self, machine, i_row, layout, cmap, blade_wall, density, section):
         """Return the coarse algebraic mesh of the constant-span plane of
         `cmap`, its blade as :meth:`_wall` returns it and the density of
@@ -1021,8 +1060,11 @@ class OHPassage(Mesher):
         spf = cmap.spf
         pitch = layout.pitch
         pJ = pitch * _J
+        m_Zin, m_Zout = self.plane_Z(
+            blade, spf, 2.0 * i_row + 1.0, layout.m_edges, (layout.m_Zin, layout.m_Zout)
+        )
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
-            [layout.m_in, layout.m_Zin, layout.m_Zout, layout.m_out]
+            [layout.m_in, m_Zin, m_Zout, layout.m_out]
         )
         f_wall = self._coarse_wall(blade_wall, density, layout.n_wall)
         g = self._geometry(blade_wall, layout.t_O, f_wall)
@@ -1344,7 +1386,7 @@ class OHPassage(Mesher):
 
     def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
         """Return the ember blocks of one row, with a tip gap from `jtip`."""
-        lay = self.layout(machine, i_row, spacing)
+        lay = self.layout(machine, i_row, spacing, spf)
         # Each plane's blade evaluated once, for its coarse counts and nodes
         blade = machine.rows[i_row].blade
         cmaps = [ConformalMap(machine.annulus, s, lay.m_in, lay.m_out) for s in spf]

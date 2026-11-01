@@ -21,6 +21,7 @@ mesher would have to be given all of that again, and any caller can forget it.
 
 import dataclasses
 import logging
+from typing import ClassVar
 
 import ember.patch
 import numpy as np
@@ -53,6 +54,10 @@ class WallSpacing:
 
 class Mesher(Node):
     """Base for meshers."""
+
+    meshes_sweep: ClassVar[bool] = False
+    """Whether this mesher puts blade edges where a swept section has them,
+    off its row's stations; a swept blade is refused otherwise."""
 
     yplus: float = 30.0
     """Target wall distance in viscous units, which sets the near-wall cell
@@ -112,13 +117,11 @@ class Mesher(Node):
         if not machine.rows:
             raise ValueError("A machine needs blades before it can be meshed.")
 
-        # The meshers, and the initial guess laid on what they make, still put
-        # every blade edge on its row's stations
         for i_row, row in enumerate(machine.rows):
-            if row.blade.swept:
+            if row.blade.swept and not self.meshes_sweep:
                 raise NotImplementedError(
                     f"Row {i_row} has swept edges (non-zero dm_LE or dm_TE), "
-                    "which cannot be meshed yet."
+                    f"which the {type(self).__name__} mesher cannot place."
                 )
 
         spacing = self.wall_spacing(machine)

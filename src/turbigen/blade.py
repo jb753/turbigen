@@ -73,8 +73,9 @@ whatever the recambers do to it. On top of that, each section may be placed:
   that span, positive downstream. Differing values sweep the edges. Points
   between move by an amount varying linearly from one edge's offset to the
   other's, measured along the span line, and the aerofoil stretches with the
-  section; see :meth:`~turbigen.annulus.RowAnnulus.evaluate_swept_m`. Swept
-  edges cannot be meshed yet.
+  section; see :meth:`~turbigen.annulus.RowAnnulus.evaluate_swept_m`. Both
+  the H and the passage meshers place swept edges, and the initial guess and
+  the cut planes follow them.
 
 
 .. _blade-process:

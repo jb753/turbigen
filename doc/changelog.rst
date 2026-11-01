@@ -5,7 +5,7 @@ v3.1.0
 ^^^^^^
 
 * Add a ``spanwise:`` key for the flow the blades are designed against, a power-law vortex or splines of meridional velocity and swirl through the blade sections, with ``spanwise_inflow``, ``spanwise_work`` and ``spanwise_swirl`` iterators and a ``spanwise_targets`` plot; blades lose ``vortex_exponent``, now ``spanwise: {type: vortex_expon, n: ...}``
-* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades; swept edges cannot be meshed yet; blades lose ``theta_offset``, now ``dtheta`` on every section
+* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades, meshed by both the H and the passage meshers; blades lose ``theta_offset``, now ``dtheta`` on every section
 * Cut planes belong to the machine and clear the furthest a swept edge reaches; a design with no room for them between two rows fails
 * The initial guess turns the flow between a blade's swept edges at each span, and bridges the gaps from them
 * Evaluate every blade section at one fixed set of chordwise points, so a point's position no longer depends on what else was asked for; ``evaluate_section`` returns each point's annulus meridional coordinate as a fourth row and loses ``nchord`` and ``m``, and ``evaluate_camber(m=...)`` interpolates the full curve

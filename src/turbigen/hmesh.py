@@ -98,6 +98,8 @@ class H(Mesher):
 
     type: ClassVar[str] = "h"
 
+    meshes_sweep: ClassVar[bool] = True
+
     ER_stream: float = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
 
@@ -570,12 +572,38 @@ class H(Mesher):
             if tte_j is not None:
                 tte_span[j] = tte_j
 
+        # Where the blade's edges are at each span, in row `m`: on the
+        # stations, unless the blade is swept. The corner was found as a
+        # fraction of the chord between them.
+        m_edge = np.tile([0.0, 1.0], (nj, 1))
+        ends = (-grids.L[0], 1.0 + grids.L[1])
+        if blade.swept:
+            m_edge = np.array(
+                [blade.evaluate_swept_m([0.0, 1.0], s) for s in span_frac]
+            )
+            if np.any(m_edge[:, 0] <= ends[0]) or np.any(m_edge[:, 1] >= ends[1]):
+                raise ValueError(
+                    f"Row {i_row} has edges swept to m={m_edge[:, 0].min():.4g} "
+                    f"and {m_edge[:, 1].max():.4g} of the row, past the ends of "
+                    f"its mesh at {ends[0]:.4g} and {ends[1]:.4g}."
+                )
+        tte_row = m_edge[:, 0] + tte_span * (m_edge[:, 1] - m_edge[:, 0])
+
         # 1. Meridional xr on a (ni, nj) grid
         stream_frac_span = np.broadcast_to(stream_frac.reshape(-1, 1), (ni, nj)).copy()
         for j in range(nj):
             # Warp so grid breakpoints [-1, 0, tte, 1, 2] map to section
             # [-1, 0, tte_span[j], 1, 2]; with mlim = (0, 1) the only moving
-            # interior knot is the corner at grid t = tte -> tte_span[j].
+            # interior knot is the corner at grid t = tte -> tte_span[j]. A
+            # swept blade's edges move too, and the ends of the mesh, where
+            # the mixing planes are, stay put.
+            if blade.swept:
+                stream_frac_span[:, j] = np.interp(
+                    stream_frac_span[:, j],
+                    [ends[0], 0, tte, 1, ends[1]],
+                    [ends[0], *m_edge[j, :1], tte_row[j], *m_edge[j, 1:], ends[1]],
+                )
+                continue
             stream_frac_span[:, j] = np.interp(
                 stream_frac_span[:, j],
                 [-1, 0, tte, 1, 2],
@@ -611,15 +639,15 @@ class H(Mesher):
                 stream_frac_now,
                 xrt_u,
                 xrt_l,
-                (0, 1),
+                m_edge[j],
                 Theta,
                 geom.chord_mid[(0, -1),],
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
             if self.AR_cusp:
-                sf = tte_span[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
-                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, (0, 1))[:2])
+                sf = tte_row[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
+                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, m_edge[j])[:2])
                 x_sl = annulus.evaluate_xr(sf + geom.ist + 1.0, span_frac[j])[0]
                 dtdx_TE[:, j] = np.diff(theta_sl, axis=-1)[:, 0] / np.diff(x_sl)[0]
 
@@ -1320,12 +1348,12 @@ def _theta_limits(
     # last ~20% chord, found on each surface and refined to sub-sample. Pick the
     # surface with the stronger corner. Single continuous criterion, so tte
     # varies smoothly with span unless the geometry has a real spanwise step.
-    m_lo = mlim[1] - 0.2
+    m_lo = mlim[1] - 0.2 * np.ptp(mlim)
     tte_l, str_l = _te_corner_curvature(tq, theta_l, m_lo, mlim[1])
     tte_u, str_u = _te_corner_curvature(tq, theta_u, m_lo, mlim[1])
     if tte_l is None and tte_u is None:
         # Fallback: cluster grid over last 1.0% chord
-        tte = mlim[1] - 0.01
+        tte = mlim[1] - 0.01 * np.ptp(mlim)
     elif tte_u is None or (tte_l is not None and str_l >= str_u):
         tte = tte_l
     else:

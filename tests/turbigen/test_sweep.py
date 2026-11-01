@@ -22,7 +22,7 @@ Test cases:
 - test_a_linear_rotation_leans_the_stacking_line
 - test_theta_offset_is_an_unknown_key: one way to turn the blade
 - test_a_swept_blade_pickles: the fitted placement is rebuilt
-- test_a_swept_blade_cannot_be_meshed_yet
+- test_a_mesher_that_cannot_place_swept_edges_refuses_them
 - test_unswept_m_inverts_swept_m: both ways round, inside and beyond
 - test_unswept_m_is_outside_beyond_the_edges: in swept section lengths
 - test_no_offset_is_the_identity_both_ways
@@ -41,6 +41,12 @@ Test cases:
 - test_a_swept_surface_is_at_the_edge_of_its_passage
 - test_the_blend_is_confined_to_the_swept_blade
 - test_the_guess_of_a_swept_machine_is_finite
+- test_the_h_mesh_puts_the_blade_between_its_swept_edges
+- test_the_passage_mesh_puts_the_blade_between_its_swept_edges
+- test_swept_meshes_have_no_folded_cells
+- test_the_guess_lays_on_a_swept_passage_mesh
+- test_the_h_mesh_refuses_an_edge_past_its_mixing_plane
+- test_the_passage_mesh_refuses_an_edge_past_its_mixing_plane
 """
 
 import pickle
@@ -49,6 +55,10 @@ import numpy as np
 import pytest
 from test_blade import blade, build
 from test_mesh import MESH
+from test_ohpmesh import MESH as MESH_OHP
+
+from turbigen import OHPassage, guess
+from turbigen.mesh import Mesher
 
 import turbigen.blade
 import turbigen.guess
@@ -246,10 +256,14 @@ def test_a_swept_blade_pickles():
         np.testing.assert_array_equal(a, b)
 
 
-def test_a_swept_blade_cannot_be_meshed_yet():
-    config = build(blades=[blade(section=SWEEP), blade()], mesh=MESH)
+def test_a_mesher_that_cannot_place_swept_edges_refuses_them():
+    class Unswept(Mesher):
+        def forward(self, machine, spacing):
+            raise AssertionError("refused before meshing")
+
+    machine = build(blades=[blade(section=SWEEP), blade()]).design()
     with pytest.raises(NotImplementedError, match="Row 0 has swept edges"):
-        config.mesh.mesh(config.design())
+        Unswept().mesh(machine)
 
 
 #
@@ -492,3 +506,119 @@ def test_the_guess_of_a_swept_machine_is_finite(pinched):
         passage = field.passage(i, m, spf, r, t)
         turbigen.guess._blend(V, passage)
     assert np.isfinite(P).all() and np.isfinite(T).all() and np.isfinite(V).all()
+
+
+#
+# MESHING
+#
+# Each mesher, coarse, on a machine whose rows are swept opposite ways: both
+# edges of the first row moved upstream at the hub and downstream at the
+# casing by a tenth of a chord, the second row's the other way.
+
+
+def _swept_blades(thickness=None):
+    blades = []
+    for sign, dchi_LE in ((1.0, -8.0), (-1.0, 2.0)):
+        config = blade(dchi_LE=dchi_LE)
+        for section, f in zip(config["sections"], (-1.0, 0.0, 1.0)):
+            section["dm_LE"] = section["dm_TE"] = 0.1 * sign * f
+            if thickness:
+                section["thickness"] = thickness
+        blades.append(config)
+    return blades
+
+
+@pytest.fixture(scope="module")
+def swept_h():
+    machine = build(blades=_swept_blades(), mesh=MESH).design()
+    return machine, build(blades=_swept_blades(), mesh=MESH).mesh.mesh(machine)
+
+
+@pytest.fixture(scope="module")
+def swept_ohp():
+    from test_blade import ROUND
+
+    config = build(blades=_swept_blades(ROUND), mesh=MESH_OHP)
+    machine = config.design()
+    return machine, OHPassage.from_dict(MESH_OHP).mesh(machine)
+
+
+def _xyz(x, r, t):
+    return np.stack((x, r * np.cos(t), r * np.sin(t)), axis=-1)
+
+
+def _on_blade(machine, i_row, x, r, t, spf, tol=1e-3):
+    """Whether points lie on the blade at span fraction `spf`, within `tol`
+    of its chord, either pitch round, and their row `m`."""
+    from scipy.spatial import cKDTree
+
+    row = machine.rows[i_row]
+    surfaces = np.concatenate(
+        [_xyz(*s[:3]) for s in row.blade.evaluate_section(spf)], axis=0
+    )
+    tree = cKDTree(surfaces)
+    chord = row.blade.evaluate_chord(spf)
+    d = np.min(
+        [tree.query(_xyz(x, r, t + k * row.pitch))[0] for k in (-1, 0, 1)], axis=0
+    )
+    m = machine.annulus.evaluate_mspf(x, r)[0] - row.blade.row_annulus.m_LE
+    return d < tol * chord, m
+
+
+def test_the_h_mesh_puts_the_blade_between_its_swept_edges(swept_h):
+    machine, grid = swept_h
+    for i_row, (block,) in enumerate(grid.rows):
+        for j in (0, block.shape[1] // 2):
+            spf = float(machine.annulus.evaluate_mspf(block.x[0, j, 0], block.r[0, j, 0])[1])
+            on, m = _on_blade(
+                machine, i_row, *(v[:, j, 0] for v in (block.x, block.r, block.t)), spf
+            )
+            edges = machine.rows[i_row].blade.evaluate_swept_m([0.0, 1.0], spf)
+            np.testing.assert_allclose([m[on].min(), m[on].max()], edges, atol=5e-3)
+
+
+def test_the_passage_mesh_puts_the_blade_between_its_swept_edges(swept_ohp):
+    machine, grid = swept_ohp
+    for i_row, blocks in enumerate(grid.rows):
+        (O,) = [b for b in blocks if b.label.endswith("_O")]
+        for j in (0, O.shape[1] // 2):
+            spf = float(machine.annulus.evaluate_mspf(O.x[0, j, 0], O.r[0, j, 0])[1])
+            on, m = _on_blade(
+                machine, i_row, *(v[:, j, 0] for v in (O.x, O.r, O.t)), spf
+            )
+            assert on.all(), "every wall node of the O block is on the blade"
+            edges = machine.rows[i_row].blade.evaluate_swept_m([0.0, 1.0], spf)
+            np.testing.assert_allclose([m.min(), m.max()], edges, atol=5e-3)
+
+
+@pytest.mark.parametrize("mesh", ["swept_h", "swept_ohp"])
+def test_swept_meshes_have_no_folded_cells(mesh, request):
+    _, grid = request.getfixturevalue(mesh)
+    for block in grid:
+        assert (block.vol > 0.0).all(), block.label
+
+
+def test_the_guess_lays_on_a_swept_passage_mesh(swept_ohp):
+    machine, grid = swept_ohp
+    guess.apply(grid, machine)
+    for block in grid:
+        assert np.isfinite(block.Vt).all() and np.isfinite(block.P).all()
+
+
+def test_the_h_mesh_refuses_an_edge_past_its_mixing_plane():
+    """Half a gap behind the first row, which a trailing edge swept 0.3 of a
+    chord into a gap half a chord long passes."""
+    config = build(blades=[blade(section={"dm_TE": 0.3}), blade()], mesh=MESH)
+    with pytest.raises(ValueError, match="past the ends of its mesh"):
+        config.mesh.mesh(config.design())
+
+
+def test_the_passage_mesh_refuses_an_edge_past_its_mixing_plane():
+    from test_blade import ROUND
+
+    config = build(
+        blades=[blade(section={"dm_TE": 0.3, "thickness": ROUND}), blade(section={"thickness": ROUND})],
+        mesh=MESH_OHP,
+    )
+    with pytest.raises(ValueError, match="leaves no room for the blocks"):
+        config.mesh.mesh(config.design())
