@@ -1759,7 +1759,7 @@ def suction_surface(grid, machine, i_row, spf, H=None, surfaces=None):
         return None, None, None
 
     mas = isentropic_mach(cut, machine.mean_line[:, i_row].s[0])[:, 0]
-    xrt_nose = machine.rows[i_row].blade.evaluate_section(spf)[0][:, 0]
+    xrt_nose = machine.rows[i_row].blade.evaluate_section(spf)[0][:3, 0]
     zeta = normalise_surface_distance(cut, mas, xrt_nose)
 
     h = cut_field(surface, H[i_row][0], xr)

@@ -36,7 +36,7 @@ one a designer deliberately drew thin.
 """
 
 
-def _by_theta(blade, spf, **kwargs):
+def _by_theta(blade, spf):
     """Return a blade section's two surfaces, the higher-angle one first.
 
     `evaluate_section` orders its pair by which surface the flow will call
@@ -48,7 +48,7 @@ def _by_theta(blade, spf, **kwargs):
     ordering is asked for, and it is read off `theta` rather than promised by
     the blade.
     """
-    upper, lower = blade.evaluate_section(spf, **kwargs)
+    upper, lower = (surf[:3] for surf in blade.evaluate_section(spf))
     if upper[2].mean() < lower[2].mean():
         upper, lower = lower, upper
     return upper, lower
@@ -599,9 +599,8 @@ class H(Mesher):
         # rather than the grid; add_cusp extrapolates the corner-side surface
         # along it. See _DM_TE_SLOPE.
         dtdx_TE = np.zeros((2, nj))
-        m = util.cluster_cosine(20000)
         for j in range(nj):
-            xrt_u, xrt_l = _by_theta(blade, span_frac[j], m=m)
+            xrt_u, xrt_l = _by_theta(blade, span_frac[j])
             assert np.all(xrt_u[2] >= xrt_l[2])
 
             stream_frac_now = stream_frac_span[:, j]

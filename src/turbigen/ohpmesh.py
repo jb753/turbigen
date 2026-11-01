@@ -68,6 +68,7 @@ import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 from turbigen import clusterfunc, elliptic, util
+from turbigen.blade import CHORD_FRACTION
 from turbigen.hmesh import _by_theta
 from turbigen.mesh import Mesher
 
@@ -78,9 +79,6 @@ LABELS = ("O", "P", "LE", "Pin", "TE", "Pout", "up", "dn")
 
 N_MERID = 4001
 """Samples along a span line from which its conformal coordinate is integrated."""
-
-N_CHORD = 4000
-"""Chordwise samples of a blade surface, which nodes are interpolated along."""
 
 N_SMOOTH_NORMAL = 10
 """Passes of a three-point average over the blade normals the O block is
@@ -2367,7 +2365,7 @@ def _gap_fractions(W, lower, upper, i_LE):
     """
     N = W.shape[1] - 1
     sides = (W[:, i_LE::-1], W[:, i_LE:])
-    m = util.cluster_cosine(N_CHORD)
+    m = CHORD_FRACTION
     # Spaced along each side in proportion to the blade's local thickness,
     # so that the H block's ends, a fixed count of cells, span the leading
     # and trailing edges alike, whatever the main O block's spacing round
@@ -2703,7 +2701,7 @@ _J = np.array([0.0, 1.0])
 def _section(blade, spf):
     """Return the two surfaces (4, `N_CHORD`) at `spf`, higher-theta first:
     `x`, `r`, `theta`, and the annulus meridional coordinate."""
-    upper, lower = blade._evaluate_section_m(spf, util.cluster_cosine(N_CHORD))
+    upper, lower = blade.evaluate_section(spf)
     if upper[2].mean() < lower[2].mean():
         upper, lower = lower, upper
     return upper, lower
@@ -2735,7 +2733,7 @@ def _blade_pieces(blade, cmap, spf, section=None):
         return upper, lower, upper[:, -1:] + t * (lower[:, -1:] - upper[:, -1:])
     # Split each surface at its sample nearest where the arc begins; the
     # samples are those `_surfaces` evaluates at.
-    m = util.cluster_cosine(N_CHORD)
+    m = CHORD_FRACTION
     m_upper, m_lower = caps if blade.suction_is_upper else caps[::-1]
     i_u, i_l = (int(np.argmin(np.abs(m - m_cap))) for m_cap in (m_upper, m_lower))
     te = np.concatenate((upper[:, i_u:], lower[:, i_l:][:, ::-1][:, 1:]), axis=1)

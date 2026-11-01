@@ -254,7 +254,30 @@ N_SPF_TABLE = 21
 across the passage."""
 
 N_M_TABLE = 201
-"""Meridional positions the surface angles are tabulated at, likewise."""
+"""Meridional positions the surface angles are tabulated at, likewise: every
+fiftieth of the points a section is evaluated at."""
+
+N_CHORD = 10001
+"""Chordwise points every section is evaluated at, clustered at both edges.
+
+One number for every caller, so that a point's position never depends on what
+else was asked for alongside it: the aerofoil is rescaled to span its row by
+its own extent, which is found from the points evaluated. Odd, so that every
+twentieth point is :func:`~turbigen.util.cluster_cosine` of 501 points, for a
+caller that wants fewer."""
+
+CHORD_FRACTION = turbigen.util.cluster_cosine(N_CHORD)
+"""Chordwise position along the camber line of each point a section is
+evaluated at, 0 at its start and 1 at its end [--]."""
+CHORD_FRACTION.setflags(write=False)
+
+N_SWEPT_SPF_TABLE = 101
+"""Span fractions a swept blade's maps between row and section coordinates are
+tabulated at, for :meth:`Blade.interpolate_swept_m` and its inverse."""
+
+N_SWEPT_M_TABLE = 3001
+"""Meridional positions those maps are tabulated at, over the row and the
+segment either side."""
 
 
 def _TE_caps(thickness, tanchi_TE):
@@ -828,6 +851,11 @@ class Blade:
         return len(self.spf)
 
     @property
+    def swept(self):
+        """Whether any section's edges are off the row's stations."""
+        return bool(np.any(self.placement[:, :2] != 0.0))
+
+    @property
     def round_TE(self):
         """Whether the trailing edge is rounded off rather than blunt.
 
@@ -839,9 +867,10 @@ class Blade:
     def evaluate_TE_cap(self, spf):
         """Return where each surface's round trailing edge begins, suction first.
 
-        As normalised chordwise positions along the camber line, the `m` that
-        :meth:`evaluate_section` takes, so a caller can split the surfaces
-        there. None if the trailing edge is blunt.
+        As normalised chordwise positions along the camber line, on the scale
+        of :data:`CHORD_FRACTION` that :meth:`evaluate_section` is evaluated
+        at, so a caller can split the surfaces there. None if the trailing
+        edge is blunt.
         """
         caps = self._at_spf(spf)[2]
         if caps is None:
@@ -860,7 +889,13 @@ class Blade:
         """Return what pickles a blade: all but its fitted interpolants, which
         are functions that do not pickle and are fitted again when used."""
         state = self.__dict__.copy()
-        for name in ("_interpolators", "_dchi_at", "_placement_at", "_surface_theta"):
+        for name in (
+            "_interpolators",
+            "_dchi_at",
+            "_placement_at",
+            "_swept_tables",
+            "_surface_theta",
+        ):
             state.pop(name, None)
         return state
 
@@ -915,9 +950,57 @@ class Blade:
         return self.row_annulus.evaluate_unswept_m(m, spf, dm_LE, dm_TE)
 
     @functools.cached_property
+    def _swept_tables(self):
+        """Both maps between row and section coordinates, exact at a grid of
+        span fractions, as interpolants of ``(spf, m)``: section to row first,
+        then row to section. Over the row and the segment either side."""
+        spf = np.linspace(0.0, 1.0, N_SWEPT_SPF_TABLE)
+        m = np.linspace(-1.0, 2.0, N_SWEPT_M_TABLE)
+        swept = np.stack([self.evaluate_swept_m(m, s) for s in spf])
+        unswept = np.stack([self.evaluate_unswept_m(m, s) for s in spf])
+        return tuple(
+            scipy.interpolate.RegularGridInterpolator((spf, m), table)
+            for table in (swept, unswept)
+        )
+
+    def _interpolate(self, i_table, m, spf):
+        """Look `m` up at span fractions `spf` in one of :attr:`_swept_tables`,
+        broadcast together; the identity, exactly, where the blade is not
+        swept. Span fractions are held at the endwalls, and `m` where it is not
+        finite is passed through."""
+        m, spf = np.broadcast_arrays(
+            np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
+        )
+        if not self.swept:
+            return m.copy()
+        finite = np.isfinite(m)
+        points = np.stack(
+            (np.clip(spf, 0.0, 1.0), np.clip(np.where(finite, m, 0.0), -1.0, 2.0)),
+            axis=-1,
+        )
+        return np.where(finite, self._swept_tables[i_table](points), m)
+
+    def interpolate_swept_m(self, m, spf):
+        """Return :meth:`evaluate_swept_m` at many span fractions at once.
+
+        `m` and `spf` are broadcast together, and the map is interpolated
+        between exact ones at :data:`N_SWEPT_SPF_TABLE` span fractions, which
+        is what lets a grid of nodes, each at a span of its own, be placed at
+        the cost of one table. `m` itself, exactly, where the blade is not
+        swept. Within the row and the segment either side of it.
+        """
+        return self._interpolate(0, m, spf)
+
+    def interpolate_unswept_m(self, m, spf):
+        """Return :meth:`evaluate_unswept_m` at many span fractions at once,
+        as :meth:`interpolate_swept_m` does its inverse."""
+        return self._interpolate(1, m, spf)
+
+    @functools.cached_property
     def _surface_theta(self):
         """Angular coordinate of each surface, suction first, as a function of
-        row meridional coordinate and span fraction.
+        span fraction and chordwise position along the section, the
+        coordinate of :meth:`evaluate_unswept_m`.
 
         Tabulated once and interpolated, so that a whole grid can be looked up
         without building a section for every node. A surface folds back on
@@ -926,12 +1009,19 @@ class Blade:
         a leading edge radius of each other, which is all a lookup needs.
         """
 
+        # Every so many of the section's own points, which are the table's: a
+        # surface folds back round the nose, and interpolating the dense
+        # points there onto coarser ones mixes the two sides of the fold
+        stride = (N_CHORD - 1) // (N_M_TABLE - 1)
         spf = np.linspace(0.0, 1.0, N_SPF_TABLE)
-        m = turbigen.util.cluster_cosine(N_M_TABLE)
+        m = CHORD_FRACTION[::stride]
         theta = np.empty((N_SPF_TABLE, N_M_TABLE, 2))
         for i, spf_now in enumerate(spf):
-            for side, surf in enumerate(self._evaluate_section_m(spf_now, m)):
-                m_surf = surf[3] - self.row_annulus.m_LE
+            sections = (surf[:, ::stride] for surf in self.evaluate_section(spf_now))
+            for side, surf in enumerate(sections):
+                m_surf = self.evaluate_unswept_m(
+                    surf[3] - self.row_annulus.m_LE, spf_now
+                )
                 order = np.argsort(m_surf)
                 theta[i, :, side] = np.interp(m, m_surf[order], surf[2][order])
         return scipy.interpolate.RegularGridInterpolator((spf, m), theta)
@@ -1024,8 +1114,9 @@ class Blade:
             return True
         return chi_TE < chi_LE
 
-    def _section_layout(self, spf, m):
-        """Return the camber line at `spf`, and what hangs the surfaces off it.
+    def _section_layout(self, spf):
+        """Return the camber line at `spf`, and what hangs the surfaces off it,
+        at the chordwise positions :data:`CHORD_FRACTION`.
 
         The one place the camber line is built, so :meth:`evaluate_camber` and
         :meth:`evaluate_section` cannot answer with different curves, and the
@@ -1055,6 +1146,7 @@ class Blade:
 
         """
         camber, thickness, caps = self._at_spf(spf)
+        m = CHORD_FRACTION
 
         dydm = camber.dydm(m)
         chi = np.arctan(dydm)
@@ -1129,7 +1221,7 @@ class Blade:
 
         return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), chord
 
-    def evaluate_camber(self, spf, nchord=10000, m=None):
+    def evaluate_camber(self, spf, m=None):
         """Return coordinates of the camber line at `spf`.
 
         The curve the surfaces are hung off, not a curve fitted back out of
@@ -1144,55 +1236,50 @@ class Blade:
         ----------
         spf : float
             Span fraction to take the camber line at.
-        nchord : int
-            Number of chordwise points, if `m` is not given.
         m : array_like, optional
-            Normalised chordwise positions along the camber line, as
-            :meth:`evaluate_section` takes.
+            Chordwise positions along the camber line, 0 at its start and 1 at
+            its end, interpolated between :data:`CHORD_FRACTION`, at which it
+            is evaluated if not given. The line is built over all of those
+            whatever is asked for, so a point is where it is whatever else is.
 
         Returns
         -------
-        xrt : ndarray, shape (3, n)
-            Axial, radial and angular coordinates of the camber line.
+        xrt : ndarray, shape (3, ...)
+            Axial, radial and angular coordinates of the camber line, then the
+            shape of `m`.
 
         """
+        xrt = self._section_layout(spf)[0]
         if m is None:
-            m = turbigen.util.cluster_cosine(nchord)
+            return xrt
+        m = np.asarray(m, dtype=float)
+        return np.stack([np.interp(m, CHORD_FRACTION, row) for row in xrt])
 
-        return self._section_layout(spf, m)[0]
-
-    def evaluate_section(self, spf, nchord=10000, m=None):
+    def evaluate_section(self, spf):
         """Return coordinates of the two surfaces at `spf`, suction first.
+
+        Evaluated at the chordwise positions :data:`CHORD_FRACTION` along the
+        camber line the surfaces are hung off, the same for every caller.
 
         Parameters
         ----------
         spf : float
             Span fraction to take the section at.
-        nchord : int
-            Number of chordwise points, if `m` is not given.
-        m : array_like, optional
-            Normalised chordwise positions along the camber line.
 
         Returns
         -------
-        xrt_suction, xrt_pressure : ndarray, shape (3, n)
-            Axial, radial and angular coordinates of each surface. Suction
-            first, as every pair in this module is --- see the module
-            docstring, and :attr:`suction_is_upper` for how that is decided.
-            Which of them carries the higher angular coordinate is a question
-            for whoever needs it, answered by looking at the third row.
+        xrtm_suction, xrtm_pressure : ndarray, shape (4, N_CHORD)
+            Axial, radial and angular coordinates of each surface, then the
+            annulus meridional coordinate each point was placed at, which
+            locates it exactly where a search for it in `x, r` only nearly
+            would. Suction first, as every pair in this module is --- see the
+            module docstring, and :attr:`suction_is_upper` for how that is
+            decided. Which of them carries the higher angular coordinate is a
+            question for whoever needs it, answered by looking at the third
+            row.
 
         """
-        if m is None:
-            m = turbigen.util.cluster_cosine(nchord)
-        return tuple(surf[:3] for surf in self._evaluate_section_m(spf, m))
-
-    def _evaluate_section_m(self, spf, m):
-        """Return the two surfaces at `spf` as :meth:`evaluate_section` does,
-        each with a fourth row, the annulus meridional coordinate of its
-        points, which places them exactly where a search for them in `x, r`
-        only nearly would."""
-        xrt, m_LTE, Dy, chord = self._section_layout(spf, m)
+        xrt, m_LTE, Dy, chord = self._section_layout(spf)
         xr, theta = xrt[:2], xrt[2]
 
         # Meridional coordinates of both surfaces, in one evaluation
@@ -1226,7 +1313,7 @@ class Blade:
         xr = np.stack(self.evaluate_section(spf)).mean(axis=0)[:2]
         return turbigen.util.arc_length(xr)
 
-    def evaluate_arc_length(self, spf, m=None, nchord=10000):
+    def evaluate_arc_length(self, spf):
         """Return arc length along each surface, as a function of `m`, at `spf`.
 
         Zero at the leading edge, where the two surfaces meet, and suction
@@ -1242,33 +1329,25 @@ class Blade:
         ----------
         spf : float
             Span fraction to evaluate at.
-        m : array_like, optional
-            Normalised chordwise positions to evaluate at, as
-            :meth:`evaluate_section` takes. Defaults to `nchord` clustered
-            points, dense enough that inverting the curve back from a
-            measured arc length lands within microns of the true `m`.
-        nchord : int
-            Chordwise points, if `m` is not given.
 
         Returns
         -------
-        m : ndarray, shape (n,)
-            The chordwise positions evaluated at.
-        s : ndarray, shape (2, n)
+        m : ndarray, shape (N_CHORD,)
+            The chordwise positions evaluated at, :data:`CHORD_FRACTION`,
+            dense enough that inverting the curve back from a measured arc
+            length lands within microns of the true `m`.
+        s : ndarray, shape (2, N_CHORD)
             Cumulative arc length along each surface to every one of them,
             suction first [m].
 
         """
-        if m is None:
-            m = turbigen.util.cluster_cosine(nchord)
-
         s = np.stack(
             [
                 turbigen.util.cum_arc_length(to_xrrt(xrt))
-                for xrt in self.evaluate_section(spf, m=m)
+                for xrt in self.evaluate_section(spf)
             ]
         )
-        return m, s
+        return CHORD_FRACTION, s
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -1303,14 +1382,15 @@ class Row:
 
         Zero on the suction surface of one blade, one on the pressure surface
         of its neighbour, whichever pitch the point was given in. NaN inside a
-        blade, unless `snap`, or upstream or downstream of the row, where there
-        is no passage to be across.
+        blade, unless `snap`, or upstream or downstream of the blade's edges,
+        swept or not, where there is no passage to be across.
 
         Parameters
         ----------
         m : array_like
-            Row meridional coordinate, 0 at the leading edge and 1 at the
-            trailing edge, as :meth:`RowAnnulus.evaluate_mspf` returns.
+            Row meridional coordinate, 0 at the leading edge station and 1 at
+            the trailing edge station, as :meth:`RowAnnulus.evaluate_mspf`
+            returns.
         spf : array_like
             Span fraction. Held at the end value beyond hub and casing, where
             a tip gap or a mesh slightly off the annulus puts points.
@@ -1331,6 +1411,8 @@ class Row:
         m, spf, t = np.broadcast_arrays(
             *(np.asarray(v, dtype=float) for v in (m, spf, t))
         )
+        # Along the section, which is where the blade is
+        m = self.blade.interpolate_unswept_m(m, spf)
         outside = (m < 0.0) | (m > 1.0) | ~np.isfinite(m)
         theta = self.blade._surface_theta(
             np.stack((np.clip(spf, 0.0, 1.0), np.clip(m, 0.0, 1.0)), axis=-1)

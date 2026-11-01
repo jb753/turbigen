@@ -966,9 +966,7 @@ def _incidence(result, surface, i_row, spf, tolerance=0.0):
     # The thickness vanishes at m = 0, so the first point of either surface is
     # the nose. It anchors the stagnation search window, which is what makes
     # the search robust on a strongly asymmetric leading edge.
-    xrt_nose = blade.evaluate_section(spf, nchord=turbigen.loading.N_CHORD_NOSE)[0][
-        :, 0
-    ]
+    xrt_nose = blade.evaluate_section(spf)[0][:3, 0]
 
     i_stag, found = turbigen.util.get_i_stag(cut, xrt_LE=xrt_nose)
     if not found[0]:

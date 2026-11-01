@@ -62,12 +62,15 @@ class AsOldBlade:
     def __init__(self, blade):
         self.blade = blade
 
-    def evaluate_section(self, spf, nchord=10000, m=None):
+    def evaluate_section(self, spf, **sampling):
         # The old mesher wants the higher-angle surface first, which is what
         # this package's `evaluate_section` used to promise and no longer does
         # -- it orders by surface now, and `hmesh` reorders for the same
-        # reason this does.
-        upper, lower = self.blade.evaluate_section(spf, nchord=nchord, m=m)
+        # reason this does. It also asks for points of its own choosing, and
+        # is given the blade's own instead, which are what `hmesh` meshes, so
+        # the two mesh the same curves.
+        del sampling
+        upper, lower = (surf[:3] for surf in self.blade.evaluate_section(spf))
         if upper[2].mean() < lower[2].mean():
             upper, lower = lower, upper
         return upper, lower

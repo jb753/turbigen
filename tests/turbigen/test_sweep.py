@@ -31,6 +31,16 @@ Test cases:
 - test_an_exit_cut_may_cross_the_next_row: only the default must fit
 - test_rows_with_no_room_for_cuts_fail_at_design
 - test_cuts_out_of_the_annulus_fail_at_design
+- test_interpolated_maps_follow_the_exact_ones: to a tenth of a percent
+- test_interpolated_maps_are_the_identity_unswept: exactly, any shape
+- test_interpolated_maps_pass_nan_through
+- test_the_guess_holds_its_inflow_up_to_a_swept_leading_edge
+- test_the_guess_bridges_the_gap_from_a_swept_trailing_edge
+- test_the_guess_turns_between_the_swept_edges: not the stations
+- test_a_point_off_a_swept_blade_is_outside_its_passage
+- test_a_swept_surface_is_at_the_edge_of_its_passage
+- test_the_blend_is_confined_to_the_swept_blade
+- test_the_guess_of_a_swept_machine_is_finite
 """
 
 import pickle
@@ -40,6 +50,8 @@ import pytest
 from test_blade import blade, build
 from test_mesh import MESH
 
+import turbigen.blade
+import turbigen.guess
 import turbigen.util
 
 SWEEP = {"dm_LE": 0.1, "dm_TE": -0.05}
@@ -143,7 +155,7 @@ def test_bad_offsets_fail_at_design():
 def test_a_swept_blade_starts_where_its_edge_is():
     swept = build(blades=[blade(section=SWEEP), blade()]).design().rows[0].blade
     for spf in (0.0, 0.5, 1.0):
-        surfaces = swept._evaluate_section_m(spf, turbigen.util.cluster_cosine(2001))
+        surfaces = swept.evaluate_section(spf)
         m_row = np.concatenate([surf[3] for surf in surfaces])
         m_row -= swept.row_annulus.m_LE
         np.testing.assert_allclose(
@@ -342,3 +354,141 @@ def test_cuts_out_of_the_annulus_fail_at_design():
     config = build(blades=[blade(section={"dm_LE": -1.45}), blade()])
     with pytest.raises(ValueError, match="leave the annulus"):
         config.design()
+
+
+#
+# THE INITIAL GUESS
+#
+# Evaluated at points rather than on a grid, which a swept blade cannot have
+# yet. The first row's edges are swept towards each other, by the same amount
+# at every section, so its blade spans the middle of the row.
+
+PINCH = {"dm_LE": 0.3, "dm_TE": -0.3}
+
+
+@pytest.fixture
+def pinched():
+    return build(blades=[blade(section=PINCH), blade()]).design()
+
+
+@pytest.fixture
+def twisted():
+    """Edges swept differently at every section."""
+    config = blade()
+    for section, dm in zip(config["sections"], (-0.1, -0.3, 0.1)):
+        section.update(dm_LE=dm, dm_TE=-dm)
+    return build(blades=[config, blade()]).design().rows[0].blade
+
+
+def _rVt(machine, m, spf):
+    return turbigen.guess._Field(machine).rVt(m, np.full_like(m, spf))
+
+
+def test_interpolated_maps_follow_the_exact_ones(twisted):
+    rng = np.random.default_rng(1)
+    spf = rng.uniform(0.0, 1.0, 200)
+    m = rng.uniform(-0.1, 1.1, 200)
+    exact_swept = [twisted.evaluate_swept_m(*args) for args in zip(m, spf)]
+    exact_unswept = [twisted.evaluate_unswept_m(*args) for args in zip(m, spf)]
+
+    # Within the crease where a section crosses a station at a different `m`
+    # at every span, which linear interpolation across the span rounds off
+    swept = twisted.interpolate_swept_m(m, spf)
+    unswept = twisted.interpolate_unswept_m(m, spf)
+    np.testing.assert_allclose(swept, exact_swept, atol=2e-3)
+    np.testing.assert_allclose(unswept, exact_unswept, atol=2e-3)
+    np.testing.assert_allclose(twisted.interpolate_unswept_m(swept, spf), m, atol=2e-3)
+
+
+def test_interpolated_maps_are_the_identity_unswept(machine):
+    plain = machine.rows[0].blade
+    m = np.linspace(-0.5, 1.5, 12).reshape(3, 4)
+    spf = np.linspace(0.0, 1.0, 4)
+    for method in (plain.interpolate_swept_m, plain.interpolate_unswept_m):
+        np.testing.assert_array_equal(method(m, spf), m)
+        assert method(0.5, spf).shape == (4,)
+
+
+def test_interpolated_maps_pass_nan_through(twisted):
+    m = twisted.interpolate_unswept_m([np.nan, 0.5], [0.5, 0.5])
+    assert np.isnan(m[0]) and np.isfinite(m[1])
+
+
+def test_the_guess_holds_its_inflow_up_to_a_swept_leading_edge(pinched):
+    """Past the station, inside the row as it was, but still upstream of the
+    blade: the inflow, as it is further upstream."""
+    m_LE = 1.0 + pinched.rows[0].blade.evaluate_swept_m(0.0, 0.5)
+    assert m_LE > 1.2
+    m = np.array([0.5, 1.0, 1.1, m_LE - 1e-3])
+    rVt = _rVt(pinched, m, 0.5)
+    np.testing.assert_allclose(rVt, rVt[0], rtol=1e-12)
+
+
+def test_the_guess_bridges_the_gap_from_a_swept_trailing_edge(pinched):
+    """From the swept trailing edge, not the station, to the next row."""
+    field = turbigen.guess._Field(pinched)
+    a = 1.0 + pinched.rows[0].blade.evaluate_swept_m(1.0, 0.5)
+    b = 3.0
+    assert a < 1.8
+    m = np.array([a + 0.02, 0.5 * (a + b), b - 0.02])
+    spf = np.full_like(m, 0.5)
+    w = (m - a) / (b - a)
+    out, into = field._edges(0, spf)["rVt"][1], field._edges(1, spf)["rVt"][0]
+    np.testing.assert_allclose(
+        field.rVt(m, spf), (1.0 - w) * out + w * into, rtol=1e-5
+    )
+
+
+def test_the_guess_turns_between_the_swept_edges(pinched, machine):
+    """The pinched row turns over its blade, which the unswept one turns
+    over all of: half way along each blade, each is half way round."""
+    blade = pinched.rows[0].blade
+    m_mid = 1.0 + blade.evaluate_swept_m(0.5, 0.5)
+    np.testing.assert_allclose(
+        _rVt(pinched, np.array([m_mid]), 0.5),
+        _rVt(machine, np.array([1.5]), 0.5),
+        rtol=2e-3,
+    )
+
+
+def test_a_point_off_a_swept_blade_is_outside_its_passage(pinched):
+    row = pinched.rows[0]
+    frac = row.evaluate_pitch_fraction([0.1, 0.9], 0.5, 0.0)
+    assert np.isnan(frac).all()
+
+
+def test_a_swept_surface_is_at_the_edge_of_its_passage(pinched):
+    row = pinched.rows[0]
+    m = turbigen.blade.CHORD_FRACTION
+    mid = (m > 0.2) & (m < 0.8)
+    for expected, surf in zip((0.0, 1.0), row.blade.evaluate_section(0.5)):
+        m_row = surf[3][mid] - row.blade.row_annulus.m_LE
+        frac = row.evaluate_pitch_fraction(m_row, 0.5, surf[2][mid], snap=True)
+        np.testing.assert_allclose(frac, expected, atol=1e-3)
+
+
+def test_the_blend_is_confined_to_the_swept_blade(pinched):
+    field = turbigen.guess._Field(pinched)
+    m = np.linspace(0.9, 2.1, 241)
+    spf = np.full_like(m, 0.5)
+    r = pinched.annulus.evaluate_xr(m, spf)[1]
+    passage = field.passage(0, m, spf, r, np.zeros_like(m))
+
+    m_LE, m_TE = 1.0 + pinched.rows[0].blade.evaluate_swept_m([0.0, 1.0], 0.5)
+    picked = m[passage["index"]]
+    assert picked.min() >= m_LE - 1e-3 and picked.max() <= m_TE + 1e-3
+    assert np.all((passage["m_sec"] >= 0.0) & (passage["m_sec"] <= 1.0))
+
+
+def test_the_guess_of_a_swept_machine_is_finite(pinched):
+    field = turbigen.guess._Field(pinched)
+    rng = np.random.default_rng(2)
+    m = rng.uniform(0.0, pinched.annulus.m_max, 5000)
+    spf = rng.uniform(0.0, 1.0, 5000)
+    t = rng.uniform(-0.3, 0.3, 5000)
+    r = pinched.annulus.evaluate_xr(m, spf)[1]
+    P, T, V = field.evaluate(m, spf, r)
+    for i in range(2):
+        passage = field.passage(i, m, spf, r, t)
+        turbigen.guess._blend(V, passage)
+    assert np.isfinite(P).all() and np.isfinite(T).all() and np.isfinite(V).all()

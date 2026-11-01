@@ -115,7 +115,7 @@ class Mesher(Node):
         # The meshers, and the initial guess laid on what they make, still put
         # every blade edge on its row's stations
         for i_row, row in enumerate(machine.rows):
-            if np.any(row.blade.placement[:, :2] != 0.0):
+            if row.blade.swept:
                 raise NotImplementedError(
                     f"Row {i_row} has swept edges (non-zero dm_LE or dm_TE), "
                     "which cannot be meshed yet."

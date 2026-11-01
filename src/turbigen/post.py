@@ -35,6 +35,7 @@ import ember.block_util
 import ember.util
 import numpy as np
 
+import turbigen.blade
 import turbigen.util
 from turbigen.node import Node
 
@@ -48,11 +49,11 @@ _STYLE = importlib.resources.files("turbigen") / "turbigen.mplstyle"
 """Shipped plotting style, applied by :func:`styled`."""
 
 N_CHORD_PLOT = 501
-"""Chordwise points to draw a blade section with.
+"""Chordwise points to draw a curve along a blade with."""
 
-Far fewer than the ten thousand `evaluate_section` defaults to, which is a
-resolution for geometry and not for a line on a page.
-"""
+PLOT_STRIDE = (turbigen.blade.N_CHORD - 1) // (N_CHORD_PLOT - 1)
+"""Every how many of a section's points to draw it with: the section is
+evaluated at a resolution for geometry, not for a line on a page."""
 
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
@@ -194,14 +195,9 @@ def _blade_annulus_lines(blade):
     # trailing edge at 1, and the two diagonals crossing between them.
     m = np.stack((np.zeros_like(spf), spf, 1.0 - spf, np.ones_like(spf)))
 
-    # Camber-line xr is the mean of the two surfaces. evaluate_section takes a
-    # scalar span fraction, so the stations are walked one at a time.
-    xr = np.stack(
-        [
-            np.mean(blade.evaluate_section(s, m=m[:, j]), axis=0)[:2]
-            for j, s in enumerate(spf)
-        ]
-    )
+    # The camber line takes a scalar span fraction, so the stations are walked
+    # one at a time
+    xr = np.stack([blade.evaluate_camber(s, m=m[:, j])[:2] for j, s in enumerate(spf)])
     # (station, coord, line) -> (line, coord, station)
     return xr.transpose(2, 1, 0)
 
@@ -315,8 +311,9 @@ class SectionsPlot(Post):
                 # The datum curve follows the section's own span, so each one
                 # sits in its true conformal plane.
                 xr_curve = annulus.evaluate_xr(m, spf).T
-                surfaces = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)
+                surfaces = row.blade.evaluate_section(spf)
                 for i_surf, xrt in enumerate(surfaces):
+                    xrt = xrt[:3, ::PLOT_STRIDE]
                     mp = ember.util.unwrap_meridional(xr_curve, xrt[:2].T)
                     theta = xrt[2]
                     ax.plot(
@@ -943,7 +940,7 @@ class SurfacePlot(Post):
 
                 # Either surface would do for the nose: the thickness vanishes
                 # at m = 0, so the two coincide exactly there.
-                xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
+                xrt_nose = row.blade.evaluate_section(spf)[0][:3, 0]
                 zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 
                 # Folded onto the positive axis, so both surfaces run from the
@@ -1038,7 +1035,7 @@ class YplusPlot(Post):
                 # Placed on the same abscissa as the surface distribution, so
                 # the two read against each other.
                 mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
-                xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
+                xrt_nose = row.blade.evaluate_section(spf)[0][:3, 0]
                 zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 
                 yp = turbigen.util.cut_field(surface, yplus[i_row][0], xr)

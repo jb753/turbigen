@@ -17,9 +17,10 @@ and however the grid lines run:
   at each station, linear in the same coordinate between them, along the line
   of constant span fraction through the node, so parallel to hub and casing.
 * **Swirl** from the spanwise design each blade was designed with. Through
-  a row, the relative flow angle turns from its inlet to its exit value in the
-  shape of the camber line at that span; between rows, angular momentum is
-  carried across unchanged at each span fraction.
+  a row, between its edges at each span, swept or not, the relative flow
+  angle turns from its inlet to its exit value in the shape of the camber line
+  at that span; between rows, angular momentum is carried across unchanged at
+  each span fraction.
 * **Flow along the blades**: within a fifth of a pitch of a blade surface,
   the relative flow angle is blended towards the surface's own, keeping the
   speed, so the flow runs along the blade rather than into it. From the blade
@@ -144,33 +145,43 @@ class _Field:
     def rVt(self, m, spf):
         """Angular momentum per unit mass [m^2/s].
 
-        Through a row, the relative flow angle at each span fraction turns from
-        its design inlet to exit value in the shape of the camber line there.
-        Upstream of the first row, downstream of the last, and in each gap, it
-        is the edge values carried across, linearly in `m` between two rows.
+        Through a row, between its edges at each span fraction, swept or not,
+        the relative flow angle turns from its design inlet to exit value in
+        the shape of the camber line there. Upstream of the first row,
+        downstream of the last, and in each gap, it is the edge values carried
+        across, linearly in `m` between two rows' edges.
         """
         r = self.annulus.evaluate_xr(m, spf)[1]
         Vm = self.Vm(m, spf)
         edges = [self._edges(i, spf) for i in range(len(self.rows))]
 
-        # Gaps and the two ends first, then each row over the top of them
+        # Where along each row's sections the points lie, which alone says
+        # which row or gap each is in, so every point is in exactly one; the
+        # edges themselves, in annulus `m` at each point's span, only weight
+        # the gaps
         m_LE = np.array([2.0 * i + 1.0 for i in range(len(self.rows))])
+        m_sec = [
+            row.blade.interpolate_unswept_m(m - m_LE[i], spf)
+            for i, row in enumerate(self.rows)
+        ]
+
+        # Gaps and the two ends first, then each row over the top of them
         rVt = np.empty_like(m)
         first, last = edges[0], edges[-1]
-        rVt[:] = np.where(m <= m_LE[0], first["rVt"][0], last["rVt"][1])
+        rVt[:] = np.where(m_sec[0] <= 0.0, first["rVt"][0], last["rVt"][1])
         for i in range(len(self.rows) - 1):
-            a, b = m_LE[i] + 1.0, m_LE[i + 1]
-            gap = (m > a) & (m < b)
-            w = (m[gap] - a) / (b - a)
+            gap = (m_sec[i] > 1.0) & (m_sec[i + 1] < 0.0)
+            a = m_LE[i] + self.rows[i].blade.interpolate_swept_m(1.0, spf[gap])
+            b = m_LE[i + 1] + self.rows[i + 1].blade.interpolate_swept_m(0.0, spf[gap])
+            w = np.clip((m[gap] - a) / (b - a), 0.0, 1.0)
             rVt[gap] = (1.0 - w) * edges[i]["rVt"][1][gap] + w * edges[i + 1]["rVt"][0][
                 gap
             ]
 
         for i, turning in enumerate(self.turning):
-            m_row = m - m_LE[i]
-            inside = (m_row >= 0.0) & (m_row <= 1.0)
+            inside = (m_sec[i] >= 0.0) & (m_sec[i] <= 1.0)
             Alpha_in, Alpha_out = (a[inside] for a in edges[i]["Alpha_rel"])
-            f = turning(np.stack((spf[inside], m_row[inside]), axis=-1))
+            f = turning(np.stack((spf[inside], m_sec[i][inside]), axis=-1))
             Alpha = Alpha_in + (Alpha_out - Alpha_in) * f
             Omega = float(self.ml.Omega[0, i])
             r_in = r[inside]
@@ -227,18 +238,21 @@ class _Field:
         placing them in the inputs.
         """
         row = self.rows[i_row]
+        blade = row.blade
         m_LE = 2.0 * i_row + 1.0
         m_row = m - m_LE
-        near = (m_row >= 0.0) & (m_row <= 1.0)
+        # Along the section, 0 and 1 at its edges, swept or not
+        m_sec = blade.interpolate_unswept_m(m_row, spf)
+        near = (m_sec >= 0.0) & (m_sec <= 1.0)
         if not near.any():
             return None
 
         index = np.flatnonzero(near)
-        m_row, spf, r, t = (v[index] for v in (m_row, spf, r, t))
+        m_row, m_sec, spf, r, t = (v[index] for v in (m_row, m_sec, spf, r, t))
         _, dl_dm = self.direction(m_row + m_LE, spf)
-        m_clip = np.clip(m_row, 0.0, 1.0)
+        m_clip = np.clip(m_sec, 0.0, 1.0)
         spf_clip = np.clip(spf, 0.0, 1.0)
-        table = row.blade._surface_theta
+        table = blade._surface_theta
 
         def theta_at(m_now):
             return table(np.stack((spf_clip, np.clip(m_now, 0.0, 1.0)), axis=-1))
@@ -246,13 +260,19 @@ class _Field:
         theta = theta_at(m_clip)
         lo, hi = m_clip - DM_DERIVATIVE, m_clip + DM_DERIVATIVE
         lo, hi = np.clip(lo, 0.0, 1.0), np.clip(hi, 0.0, 1.0)
+        # Distance along the line per step along the section, which a swept
+        # section stretches or shrinks
+        if blade.swept:
+            dm_row = blade.interpolate_swept_m(np.stack((lo, hi)), spf)
+            dl_dm = dl_dm * (dm_row[1] - dm_row[0]) / (hi - lo)
         dtheta_dl = (theta_at(hi) - theta_at(lo)) / (hi - lo)[:, None] / dl_dm[:, None]
 
-        frac = row.evaluate_pitch_fraction(m_clip, spf, t, snap=True)
+        frac = row.evaluate_pitch_fraction(m_row, spf, t, snap=True)
 
         return {
             "index": index,
             "m_row": m_row,
+            "m_sec": m_sec,
             "spf": spf,
             "r": r,
             "frac": frac,
@@ -293,15 +313,15 @@ def _blend(W, passage):
     neither adds nor removes energy from it. Relative, because a rotor's
     blades move with it.
     """
-    m_row = passage["m_row"]
+    m_sec = passage["m_sec"]
     inside = np.isfinite(passage["frac"])
     if not inside.any():
         return
     index = passage["index"][inside]
     frac = passage["frac"][inside]
     across = passage["width"][inside] / passage["row"].pitch
-    edge = np.clip(m_row[inside] / M_EDGE, 0.0, 1.0) * np.clip(
-        (1.0 - m_row[inside]) / M_EDGE, 0.0, 1.0
+    edge = np.clip(m_sec[inside] / M_EDGE, 0.0, 1.0) * np.clip(
+        (1.0 - m_sec[inside]) / M_EDGE, 0.0, 1.0
     )
     # Suction surface at a fraction of zero, pressure surface at one
     w = (

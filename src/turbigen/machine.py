@@ -66,7 +66,7 @@ class Machine:
         limits = []
         for row in self.rows:
             blade = row.blade
-            if not np.any(blade.placement[:, :2]):
+            if not blade.swept:
                 limits.append((0.0, 1.0))
                 continue
             spf = np.union1d(np.linspace(0.0, 1.0, N_EDGE_SPF), blade.spf)

@@ -299,9 +299,9 @@ def test_sections_are_stacked_at_the_stacking_point():
     """Every section passes through theta=0 at m_stack, by definition."""
     machine = build(blades=[blade(m_stack=0.25), blade()]).design()
 
-    m = np.linspace(0.0, 1.0, 101)
+    m = turbigen.blade.CHORD_FRACTION
     for spf in (0.0, 0.5, 1.0):
-        xrtu, xrtl = machine.rows[0].blade.evaluate_section(spf, m=m)
+        xrtu, xrtl = machine.rows[0].blade.evaluate_section(spf)
         theta_camber = 0.5 * (xrtu[2] + xrtl[2])
         assert abs(np.interp(0.25, m, theta_camber)) < 1e-3
 
@@ -586,10 +586,11 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
 
     for spf in SPF:
         for surface_new, surface_old in zip(
-            _by_theta(new.evaluate_section(spf)), old.evaluate_section(spf)
+            _by_theta(new.evaluate_section(spf)),
+            old.evaluate_section(spf, nchord=turbigen.blade.N_CHORD),
         ):
             np.testing.assert_allclose(
-                surface_new,
+                surface_new[:3],
                 surface_old,
                 rtol=1e-12,
                 atol=1e-12,
@@ -597,12 +598,15 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
             )
 
         np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-12)
+        # Arc lengths the old package sums over its own ten thousand points,
+        # one fewer than these, which is a difference in discretisation of a
+        # few parts in ten thousand million
         np.testing.assert_allclose(
             new.evaluate_surface_length(spf).max(),
             old.surface_length(spf),
-            rtol=1e-12,
+            rtol=1e-9,
         )
-        np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-12)
+        np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-9)
 
 
 #
@@ -623,10 +627,10 @@ def _xrrt(xrt):
 def test_camber_line_lies_between_the_surfaces(machine):
     """Strictly inside the aerofoil, everywhere the aerofoil has thickness."""
     blade = machine.rows[0].blade
-    m = np.linspace(0.0, 1.0, 501)
+    m = turbigen.blade.CHORD_FRACTION
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        xrtu, xrtl = _by_theta(blade.evaluate_section(spf, m=m))
+        xrtu, xrtl = _by_theta(blade.evaluate_section(spf))
 
         # The ends are excluded: the thickness vanishes at the nose, so there
         # the three curves meet rather than nest.
@@ -648,10 +652,10 @@ def test_camber_line_is_offset_by_the_thickness(machine_perpendicular):
     the thickness goes, not about this distance.
     """
     blade = machine_perpendicular.rows[0].blade
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        surfaces = blade.evaluate_section(spf, m=m)
+        surfaces = blade.evaluate_section(spf)
 
         _, thickness = blade._get_cam_thick(spf)
         chord = turbigen.util.arc_length(xrt[:2])
@@ -670,10 +674,10 @@ def test_camber_line_is_equidistant_from_a_symmetric_section(machine_perpendicul
     for the reason `test_camber_line_is_offset_by_the_thickness` gives.
     """
     blade = machine_perpendicular.rows[0].blade
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        xrtu, xrtl = blade.evaluate_section(spf, m=m)
+        xrtu, xrtl = blade.evaluate_section(spf)
         chord = turbigen.util.arc_length(xrt[:2])
 
         upper = turbigen.util.vecnorm(_xrrt(xrtu) - _xrrt(xrt))
@@ -706,7 +710,7 @@ def test_camber_line_leaves_at_the_metal_angles(machine):
     """
     blade = machine.rows[0].blade
     for spf in SPF:
-        xrt = blade.evaluate_camber(spf, nchord=2001)
+        xrt = blade.evaluate_camber(spf)
         s = turbigen.util.cum_arc_length(xrt[:2])
         rt = xrt[1] * xrt[2]
         chi = np.degrees(np.arctan(np.gradient(rt, s)))
@@ -729,24 +733,31 @@ def test_camber_line_is_near_the_mean_of_the_surfaces(machine):
     `evaluate_camber` for it rather than take a mean.
     """
     blade = machine.rows[0].blade
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        mean = np.mean(blade.evaluate_section(spf, m=m), axis=0)
+        mean = np.mean(blade.evaluate_section(spf), axis=0)
         chord = turbigen.util.arc_length(xrt[:2])
 
         assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) < 5e-2 * chord
 
 
-def test_camber_line_defaults_to_a_clustered_m(machine):
-    """With no `m` given, the points are `evaluate_section`'s own default."""
+def test_camber_line_is_where_it_is_whatever_is_asked(machine):
+    """At the section's own chordwise points with no `m`; at any `m` the same
+    curve, exactly at those points and interpolated between them, however few
+    are asked for at once."""
     blade = machine.rows[0].blade
-    xrt = blade.evaluate_camber(0.5, nchord=51)
-    assert xrt.shape == (3, 51)
+    xrt = blade.evaluate_camber(0.5)
+    assert xrt.shape == (3, turbigen.blade.N_CHORD)
 
-    np.testing.assert_allclose(
-        xrt, blade.evaluate_camber(0.5, m=turbigen.util.cluster_cosine(51)), atol=1e-12
-    )
+    m = turbigen.blade.CHORD_FRACTION
+    own = [0, 2500, -1]
+    np.testing.assert_array_equal(blade.evaluate_camber(0.5, m=m[own]), xrt[:, own])
+    one = blade.evaluate_camber(0.5, m=[0.37])[:, 0]
+    three = blade.evaluate_camber(0.5, m=[0.0, 0.37, 1.0])
+    np.testing.assert_array_equal(one, three[:, 1])
+    np.testing.assert_allclose(one, [np.interp(0.37, m, row) for row in xrt])
+    assert blade.evaluate_camber(0.5, m=np.linspace(0.0, 1.0, 101)).shape == (3, 101)
 
 
 def test_camber_line_is_stacked_at_the_stacking_point():
@@ -841,11 +852,11 @@ def test_each_surface_is_offset_by_its_own_thickness(machine):
     """
     blade = _lopsided(machine)
     thickness = LopsidedThickness()
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
 
     for spf in SPF:
         xrt = blade.evaluate_camber(spf, m=m)
-        surfaces = blade.evaluate_section(spf, m=m)
+        surfaces = blade.evaluate_section(spf)
         chord = turbigen.util.arc_length(xrt[:2])
 
         for surface, t in zip(surfaces, thickness.thick_both(m)):
@@ -860,10 +871,10 @@ def test_the_thicker_side_stands_further_off(machine):
     sides happened to be measured symmetrically; this cannot pass that way.
     """
     blade = _lopsided(machine)
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
 
     xrt = blade.evaluate_camber(0.5, m=m)
-    xrtu, xrtl = blade.evaluate_section(0.5, m=m)
+    xrtu, xrtl = blade.evaluate_section(0.5)
 
     upper = turbigen.util.vecnorm(_xrrt(xrtu) - _xrrt(xrt)).max()
     lower = turbigen.util.vecnorm(_xrrt(xrtl) - _xrrt(xrt)).max()
@@ -878,10 +889,10 @@ def test_a_lopsided_section_is_not_the_mean_of_its_surfaces(machine):
     off by about half the difference between the two thicknesses.
     """
     blade = _lopsided(machine)
-    m = turbigen.util.cluster_cosine(2001)
+    m = turbigen.blade.CHORD_FRACTION
 
     xrt = blade.evaluate_camber(0.5, m=m)
-    mean = np.mean(blade.evaluate_section(0.5, m=m), axis=0)
+    mean = np.mean(blade.evaluate_section(0.5), axis=0)
     chord = turbigen.util.arc_length(xrt[:2])
 
     assert np.max(turbigen.util.vecnorm(_xrrt(mean) - _xrrt(xrt))) > 0.01 * chord
@@ -905,9 +916,9 @@ def _curvature(c):
     return (d1[0] * d2[1] - d1[1] * d2[0]) / (d1[0] ** 2 + d1[1] ** 2) ** 1.5
 
 
-def _plane(blade, spf=0.5, n=8001):
+def _plane(blade, spf=0.5):
     """Both surfaces of a section in the (x, r theta) plane, normalised by chord."""
-    surfaces = [np.stack((s[0], s[1] * s[2])) for s in blade.evaluate_section(spf, n)]
+    surfaces = [np.stack((s[0], s[1] * s[2])) for s in blade.evaluate_section(spf)]
     chord = max(s[0].max() for s in surfaces) - min(s[0].min() for s in surfaces)
     return [s / chord for s in surfaces]
 
@@ -1053,13 +1064,13 @@ def test_the_blend_keeps_the_nose_radius(monkeypatch):
 def test_no_blend_is_the_perpendicular_offset(machine_perpendicular):
     """With the blend off, the surfaces are exactly where the plain offset puts them."""
     blade = machine_perpendicular.rows[0].blade
-    m = turbigen.util.cluster_cosine(501)
+    m = turbigen.blade.CHORD_FRACTION
 
     camber = blade.evaluate_camber(0.5, m=m)
     chord = turbigen.util.arc_length(camber[:2])
     thickness = _interpolate(blade.thicknesses, blade.spf, 0.5)
 
-    for surface, t in zip(blade.evaluate_section(0.5, m=m), thickness.thick_both(m)):
+    for surface, t in zip(blade.evaluate_section(0.5), thickness.thick_both(m)):
         offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(camber))
         np.testing.assert_allclose(offset, t * chord, atol=2e-3 * chord)
 
@@ -1145,19 +1156,11 @@ def test_a_flat_blade_keeps_a_stable_surface_order(machine):
     assert flat.suction_is_upper
 
 
-def test_arc_length_defaults_to_a_clustered_m(machine):
-    """With no `m` given, the curve is `evaluate_section`'s own default."""
-    m, s = machine.rows[0].blade.evaluate_arc_length(0.5, nchord=51)
-    np.testing.assert_allclose(m, turbigen.util.cluster_cosine(51))
-    assert s.shape == (2, 51)
-
-
-def test_arc_length_reports_the_m_it_was_given(machine):
-    """A custom `m` comes back unchanged, so the two arrays stay index-paired."""
-    m_in = np.linspace(0.0, 1.0, 17)
-    m_out, s = machine.rows[0].blade.evaluate_arc_length(0.5, m=m_in)
-    np.testing.assert_array_equal(m_out, m_in)
-    assert s.shape == (2, len(m_in))
+def test_arc_length_is_at_the_sections_own_points(machine):
+    """Index-paired with the chordwise positions every section is taken at."""
+    m, s = machine.rows[0].blade.evaluate_arc_length(0.5)
+    np.testing.assert_array_equal(m, turbigen.blade.CHORD_FRACTION)
+    assert s.shape == (2, turbigen.blade.N_CHORD)
 
 
 def test_arc_length_places_a_point_measured_off_the_surface(machine):
@@ -1165,15 +1168,19 @@ def test_arc_length_places_a_point_measured_off_the_surface(machine):
 
     The whole reason this exists -- a loading iterator measures a point on the
     flow, not on `m`, and has to place it back onto the camber line it came
-    from. Inverting the curve this returns is how, and it has to work at
-    whatever resolution a caller asks the curve at, not only the one it was
-    built with: a fine curve stands in for "the true answer" and a coarse one
-    for what an iterator would actually use.
+    from. Inverting the curve this returns is how, and it has to stand up to
+    a curve coarser than the one it was built at: the section's own points
+    stand in for "the true answer", and every fifth of them, a cosine
+    clustering of 2001, for one five times coarser.
     """
     blade = machine.rows[0].blade
     spf = 0.5
-    m_fine, s_fine = blade.evaluate_arc_length(spf, nchord=50001)
-    m_coarse, s_coarse = blade.evaluate_arc_length(spf, nchord=2001)
+    m_fine, s_fine = blade.evaluate_arc_length(spf)
+    m_coarse = m_fine[::5]
+    s_coarse = [
+        turbigen.util.cum_arc_length(turbigen.blade.to_xrrt(surface[:, ::5]))
+        for surface in blade.evaluate_section(spf)
+    ]
 
     m_true = 0.37
     for fine, coarse in zip(s_fine, s_coarse):
@@ -1374,9 +1381,9 @@ def test_a_round_trailing_edge_closes_the_section(round_machine, spf):
 
 def test_a_round_trailing_edge_is_a_circle_of_half_its_thickness(round_machine):
     b = round_machine.rows[0].blade
-    m = turbigen.util.cluster_cosine(20001)
+    m = turbigen.blade.CHORD_FRACTION
     chord = b.evaluate_chord(0.5)
-    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5, m=m)), b.evaluate_TE_cap(0.5)):
+    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5)), b.evaluate_TE_cap(0.5)):
         # Radius of curvature over the middle of the arc, clear of its ends.
         on = (m > m_t + 0.2 * (1.0 - m_t)) & (m < 1.0 - 0.2 * (1.0 - m_t))
         d1 = np.gradient(surf, axis=1)
@@ -1391,8 +1398,8 @@ def test_a_round_trailing_edge_is_a_circle_of_half_its_thickness(round_machine):
 
 def test_a_round_trailing_edge_meets_the_surface_without_a_kink(round_machine):
     b = round_machine.rows[0].blade
-    m = turbigen.util.cluster_cosine(20001)
-    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5, m=m)), b.evaluate_TE_cap(0.5)):
+    m = turbigen.blade.CHORD_FRACTION
+    for surf, m_t in zip(_rtheta(b.evaluate_section(0.5)), b.evaluate_TE_cap(0.5)):
         d = np.diff(surf, axis=1)
         turn = np.abs(np.diff(np.unwrap(np.arctan2(d[1], d[0]))))
         i = int(np.searchsorted(m, m_t))
@@ -1440,12 +1447,10 @@ def _surfaces_at(machine, spf=0.5, m=0.5):
     """Row 0's surfaces at one chordwise position: row m, spf and theta of
     each, suction first."""
     row = machine.rows[0]
-    # A whole section, then the point nearest `m`: the surfaces are rescaled
-    # onto the row by their own extent, which one point does not have.
-    m_all = turbigen.util.cluster_cosine(201)
-    i = np.argmin(np.abs(m_all - m))
+    # The section's point nearest `m`
+    i = np.argmin(np.abs(turbigen.blade.CHORD_FRACTION - m))
     out = []
-    for surf in row.blade._evaluate_section_m(spf, m_all):
+    for surf in row.blade.evaluate_section(spf):
         out.append((surf[3, i] - row.blade.row_annulus.m_LE, surf[2, i]))
     return row, out
 
