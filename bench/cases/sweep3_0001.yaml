@@ -58,7 +58,6 @@ blades:
       tanwedge: 0.2613635146752281
       type: clark
       round_TE: true
-  theta_offset: 0.0
   tip_chord: 0.0
   tip_metre: 0.0
   tip_span: 0.0
@@ -91,7 +90,6 @@ blades:
       tanwedge: 0.21948571365291855
       type: clark
       round_TE: true
-  theta_offset: 0.0
   tip_chord: 0.02
   tip_metre: 0.0
   tip_span: 0.0

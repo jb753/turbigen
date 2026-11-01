@@ -306,19 +306,6 @@ def test_sections_are_stacked_at_the_stacking_point():
         assert abs(np.interp(0.25, m, theta_camber)) < 1e-3
 
 
-def test_theta_offset_rotates_the_whole_blade():
-    offset = 0.1
-    plain = build().design().rows[0].blade
-    rotated = build(blades=[blade(theta_offset=offset), blade()]).design().rows[0].blade
-
-    for spf in (0.0, 1.0):
-        for turned, still in zip(
-            rotated.evaluate_section(spf), plain.evaluate_section(spf)
-        ):
-            np.testing.assert_allclose(turned[:2], still[:2], atol=1e-12)
-            np.testing.assert_allclose(turned[2] - still[2], offset, atol=1e-9)
-
-
 def test_a_single_section_blade_still_follows_the_vortex():
     """One section is one recamber, not one metal angle.
 
@@ -772,11 +759,16 @@ def test_camber_line_is_stacked_at_the_stacking_point():
         assert abs(np.interp(0.25, m, xrt[2])) < 1e-3
 
 
-def test_camber_line_is_rotated_by_theta_offset():
+def test_camber_line_is_rotated_by_dtheta():
     """The whole blade turns, camber line included."""
     offset = 0.1
     plain = build().design().rows[0].blade
-    rotated = build(blades=[blade(theta_offset=offset), blade()]).design().rows[0].blade
+    rotated = (
+        build(blades=[blade(section={"dtheta": offset}), blade()])
+        .design()
+        .rows[0]
+        .blade
+    )
 
     for spf in (0.0, 1.0):
         turned = rotated.evaluate_camber(spf)

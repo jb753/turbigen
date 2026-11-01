@@ -112,6 +112,10 @@ Clear of the row includes the H-mesh trailing edge cusp, which runs on
 less than a pitch of fluid.
 """
 
+N_SWEPT_PTS = 3001
+"""Points along a constant-span line when placing a section with swept edges,
+over the row and the segment either side."""
+
 N_SEED_M = 32
 """Samples per segment along `m` of the grid that seeds the inverse map."""
 
@@ -260,6 +264,68 @@ class RowAnnulus:
 
         """
         return self.evaluate_xr_annulus(self.m_LE + np.asarray(m, dtype=float), spf)
+
+    def evaluate_swept_m(self, m, spf, dm_LE, dm_TE):
+        """Return where points of a section with swept edges lie in the row.
+
+        An unswept section spans the row's stations, so its own chordwise
+        coordinate is the row's ``m``. A swept one is moved along its
+        constant-`spf` line: the leading edge by `dm_LE` meridional chords,
+        the trailing edge by `dm_TE`, and each point between by an amount
+        varying linearly from one to the other along the section. The moves are
+        distances along the line, not steps in ``m``, whose scale jumps at each
+        station, so a section that crosses one has no kink there; and they are
+        in the unswept chord at this span, so an offset means the same thing
+        whatever the segments either side.
+
+        Parameters
+        ----------
+        m : array_like
+            Chordwise coordinate along the section, 0 at its leading edge and 1
+            at its trailing edge, being where it lies in the row unswept.
+        spf : float
+            Span fraction of the section.
+        dm_LE, dm_TE : float
+            Offset of the leading and trailing edge from the row's stations, as
+            fractions of the meridional chord at `spf`, positive downstream.
+
+        Returns
+        -------
+        ndarray
+            Row meridional coordinate of each point, the shape of `m`. `m`
+            itself, exactly, if neither edge is offset.
+
+        """
+        m = np.asarray(m, dtype=float)
+        if dm_LE == 0.0 and dm_TE == 0.0:
+            return m
+
+        # Arc length along the line, over the row and the segment either side,
+        # which is as far as an edge can go
+        m_line = np.linspace(-1.0, 2.0, N_SWEPT_PTS)
+        s_line = turbigen.util.cum_arc_length(self.evaluate_xr(m_line, spf))
+        s_LE, s_TE = np.interp([0.0, 1.0], m_line, s_line)
+        chord = s_TE - s_LE
+
+        def arc(m):
+            return (
+                np.interp(m, m_line, s_line) + ((1.0 - m) * dm_LE + m * dm_TE) * chord
+            )
+
+        # The section must stay inside the line, and run downstream all along it
+        s_check = arc(np.linspace(0.0, 1.0, N_SWEPT_PTS // 3))
+        if s_check[0] < s_line[0] or s_check[-1] > s_line[-1]:
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} reach "
+                "beyond the segments either side of the row."
+            )
+        if np.any(np.diff(s_check) <= 0.0):
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} put "
+                "the leading edge downstream of the trailing edge."
+            )
+
+        return np.interp(arc(m), s_line, m_line)
 
     def evaluate_mspf(self, x, r, tol=1e-6):
         """Return row annulus coordinates of meridional points.

@@ -19,8 +19,8 @@ Built-in shapes
 
 A :class:`SectionDesign` names a span fraction, a recamber at each end, and a
 camber and a thickness design. A :class:`BladeDesign` holds one or more sections
-in increasing span fraction, together with a blade count, a tip clearance, a swirl
-distribution and a stacking position. Each of these is again a design paired
+in increasing span fraction, together with a blade count, a tip clearance and a
+stacking position. Each of these is again a design paired
 with a result, the same split the rest of :program:`turbigen` makes at machine
 level:
 
@@ -61,6 +61,21 @@ A blade has one tip clearance, stated as a fraction of span
 (:attr:`~BladeDesign.tip_chord`) or an absolute length
 (:attr:`~BladeDesign.tip_metre`); giving more than one is an error.
 
+Every section is stacked so that its camber line passes through the same
+angular position at the fraction :attr:`~BladeDesign.m_stack` of its chord,
+whatever the recambers do to it. On top of that, each section may be placed:
+
+* :attr:`~SectionDesign.dtheta` turns the section about the machine axis.
+  Differing values lean the blade circumferentially, and the same value on
+  every section turns the whole blade.
+* :attr:`~SectionDesign.dm_LE` and :attr:`~SectionDesign.dm_TE` move its
+  leading and trailing edges off the row's stations, in meridional chords at
+  that span, positive downstream. Differing values sweep the edges. Points
+  between move by an amount varying linearly from one edge's offset to the
+  other's, measured along the span line, and the aerofoil stretches with the
+  section; see :meth:`~turbigen.annulus.RowAnnulus.evaluate_swept_m`. Swept
+  edges cannot be meshed yet.
+
 
 .. _blade-process:
 
@@ -78,7 +93,7 @@ them :meth:`~BladeDesign.design` which:
    angle is asked for rather than here, so a blade defined by one section still
    varies over the span with the spanwise flow;
 #. Camber and thickness designs, the recambers, the stacking
-   position and the blade rotation are collected across all sections into a
+   position and each section's placement are collected across all sections into a
    :class:`Blade` for each row;
 #. The :class:`BladeCount` rule reads the finished :class:`Blade` to fix the
    number of blades.
@@ -487,6 +502,21 @@ class SectionDesign(Node):
     thickness: ThicknessDesign
     """Thickness distribution, normalised by meridional chord."""
 
+    dm_LE: float = 0.0
+    """Offset of the leading edge from the row's leading edge station, as a
+    fraction of the row's meridional chord at this span fraction, positive
+    downstream [--]. Differing values sweep the edge. See
+    :meth:`~turbigen.annulus.RowAnnulus.evaluate_swept_m`."""
+
+    dm_TE: float = 0.0
+    """Offset of the trailing edge from the row's trailing edge station, in the
+    same terms as :attr:`dm_LE` [--]."""
+
+    dtheta: float = 0.0
+    """Rotation of this section about the machine axis, after stacking [rad].
+    Differing values lean the blade circumferentially; the same value on every
+    section turns the whole blade."""
+
 
 class BladeCount(Node):
     """Base for rules setting the number of blades in a row.
@@ -523,9 +553,6 @@ class BladeDesign(Node):
 
     tip_metre: float = 0.0
     """Tip clearance as an absolute length [m]."""
-
-    theta_offset: float = 0.0
-    """Rotate the whole blade through this angle [rad]."""
 
     m_stack: float = 0.5
     """Normalised meridional position the sections are stacked at [--]."""
@@ -609,8 +636,19 @@ class BladeDesign(Node):
             cambers=tuple(section.camber for section in self.sections),
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
-            theta_offset=self.theta_offset,
+            placement=np.array(
+                [
+                    (section.dm_LE, section.dm_TE, section.dtheta)
+                    for section in self.sections
+                ]
+            ),
         )
+
+        # Where the edges go is checked once here, at every section and both
+        # endwalls, so an offset that puts an edge out of reach fails at design
+        # rather than when the blade is first meshed
+        for spf_check in (0.0, *spf, 1.0):
+            blade.evaluate_swept_m([0.0, 1.0], spf_check)
 
         # Read at the endwalls, which is where the spanwise flow is most
         # extreme and so where an unbuildable angle appears first. A blade with
@@ -780,8 +818,9 @@ class Blade:
     m_stack: float
     """Normalised meridional position the sections are stacked at [--]."""
 
-    theta_offset: float
-    """Angle the whole blade is rotated through [rad]."""
+    placement: np.ndarray = dataclasses.field(repr=False)
+    """Edge offsets and rotation of each section, ``(dm_LE, dm_TE, dtheta)``,
+    shape (n_section, 3); see :class:`SectionDesign`."""
 
     @property
     def n_section(self):
@@ -821,7 +860,7 @@ class Blade:
         """Return what pickles a blade: all but its fitted interpolants, which
         are functions that do not pickle and are fitted again when used."""
         state = self.__dict__.copy()
-        for name in ("_interpolators", "_dchi_at", "_surface_theta"):
+        for name in ("_interpolators", "_dchi_at", "_placement_at", "_surface_theta"):
             state.pop(name, None)
         return state
 
@@ -838,6 +877,30 @@ class Blade:
     def _dchi_at(self):
         """The sections' recambers as a function of span fraction, fitted once."""
         return turbigen.util.interp1d_hold(self.spf, self.dchi)
+
+    @functools.cached_property
+    def _placement_at(self):
+        """The sections' edge offsets and rotation as a function of span
+        fraction, fitted once, held at the end sections' values beyond them."""
+        if self.n_section == 1:
+            return lambda spf: self.placement[0]
+        return turbigen.util.interp1d_hold(self.spf, self.placement)
+
+    def _placement(self, spf):
+        """Return the edge offsets and rotation at `spf`, ``(dm_LE, dm_TE,
+        dtheta)``, interpolated between the sections like the recambers."""
+        dm_LE, dm_TE, dtheta = np.asarray(self._placement_at(spf), float).reshape(-1)
+        return float(dm_LE), float(dm_TE), float(dtheta)
+
+    def evaluate_swept_m(self, m, spf):
+        """Return the row meridional coordinate of chordwise positions `m` on
+        the section at `spf`, 0 at its leading edge and 1 at its trailing edge.
+
+        `m` itself where the section is not swept; see
+        :meth:`~turbigen.annulus.RowAnnulus.evaluate_swept_m`.
+        """
+        dm_LE, dm_TE, _ = self._placement(spf)
+        return self.row_annulus.evaluate_swept_m(m, spf, dm_LE, dm_TE)
 
     @functools.cached_property
     def _surface_theta(self):
@@ -967,8 +1030,9 @@ class Blade:
         xrt : ndarray, shape (3, n)
             Axial, radial and angular coordinates of the camber line.
         m_LTE : ndarray, shape (2, n)
-            Normalised meridional position of each surface, on the
-            leading-to-trailing edge scale of the aerofoil. Suction first.
+            Row meridional coordinate of each surface, which is on the
+            leading-to-trailing edge scale of the aerofoil unless the section
+            is swept. Suction first.
         Dy : ndarray, shape (2, n)
             Thickness offset of each surface from the camber line,
             normalised by meridional chord. Suction first, and normal to the
@@ -1026,19 +1090,30 @@ class Blade:
         mcam_ptp = mcam_TE - mcam_LE
         m_LTE = np.stack(((ms - mcam_LE) / mcam_ptp, (mp - mcam_LE) / mcam_ptp))
         mcam = (m - mcam_LE) / mcam_ptp
-        # Meridional coordinates of the camber line at mid-span, for the chord,
-        # and here, in one evaluation of the annulus at `mcam`
-        xr_mid, xr = np.moveaxis(
-            self.row_annulus.evaluate_xr(mcam, np.array([[0.5], [spf]])), 1, 0
-        )
-        chord = turbigen.util.arc_length(xr_mid)
+        # Meridional coordinates of the camber line at mid-span, unswept, for
+        # the chord; and here, where a swept section is moved along the row
+        dm_LE, dm_TE, dtheta = self._placement(spf)
+        if dm_LE == 0.0 and dm_TE == 0.0:
+            # One evaluation of the annulus at `mcam` for both
+            xr_mid, xr = np.moveaxis(
+                self.row_annulus.evaluate_xr(mcam, np.array([[0.5], [spf]])), 1, 0
+            )
+        else:
+            xr_mid = self.row_annulus.evaluate_xr(mcam, 0.5)
+            xr = self.row_annulus.evaluate_xr(self.evaluate_swept_m(mcam, spf), spf)
+            m_LTE = self.evaluate_swept_m(m_LTE, spf)
+
+        # A swept section is longer or shorter than the row by the difference in
+        # its edge offsets, and its aerofoil, normalised by chord, stretches
+        # with it
+        chord = turbigen.util.arc_length(xr_mid) * (1.0 + dm_TE - dm_LE)
 
         # Project the camber angle onto the annulus
         theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
 
-        # Stack the sections, then rotate the whole blade
+        # Stack the sections, then turn each about the axis
         theta -= np.interp(self.m_stack, mcam, theta)
-        theta += self.theta_offset
+        theta += dtheta
 
         return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), chord
 

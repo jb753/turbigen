@@ -262,7 +262,6 @@ class BladeDesign(Node):
     tip_span: float = 0.0
     tip_chord: float = 0.0
     tip_metre: float = 0.0
-    theta_offset: float = 0.0
     m_stack: float = 0.5
 
     def forward(self, mean_line_row, row_annulus, spanwise, i_row) -> Row
@@ -367,8 +366,9 @@ is four classes to choose a divisor.
 
 ### What a Blade exposes
 
-`evaluate_section`, `chi`, `surface_length`, `chord`, and the `m_stack` and
-`theta_offset` fixed at design time. `n_blade` and `tip_gap` are on the `Row`,
+`evaluate_section`, `chi`, `surface_length`, `chord`, `evaluate_swept_m`, and
+the `m_stack` and per-section placement (edge offsets `dm_LE`, `dm_TE` and
+rotation `dtheta`) fixed at design time. `n_blade` and `tip_gap` are on the `Row`,
 not here, for the reason above. By the test the annulus set, three things stay
 with their consumers: `get_coords` is an
 AutoGrid-format reshape and belongs with the mesher, `get_nose` and
