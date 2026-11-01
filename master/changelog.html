@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Changelog &#8212; turbigen 3.0.1.dev167+g40ecbb9f8 documentation</title>
+    <title>Changelog &#8212; turbigen 3.0.1.dev207+g5313f63b3 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=ecc8c5e0"></script>
+    <script src="_static/documentation_options.js?v=f8cd1ce8"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev167+g40ecbb9f8</p>
+<p class="blurb">Version 3.0.1.dev207+g5313f63b3</p>
 
 
 
@@ -62,6 +62,7 @@
 <li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
 <li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
 <li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1"><a class="reference internal" href="spanwise.html">Spanwise flow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul class="current">
@@ -177,6 +178,11 @@
 <section id="v3-1-0">
 <h2>v3.1.0<a class="headerlink" href="#v3-1-0" title="Link to this heading">¶</a></h2>
 <ul class="simple">
+<li><p>Add a <code class="docutils literal notranslate"><span class="pre">spanwise:</span></code> key for the flow the blades are designed against, a power-law vortex or splines of meridional velocity and swirl through the blade sections, with <code class="docutils literal notranslate"><span class="pre">spanwise_inflow</span></code>, <code class="docutils literal notranslate"><span class="pre">spanwise_work</span></code> and <code class="docutils literal notranslate"><span class="pre">spanwise_swirl</span></code> iterators and a <code class="docutils literal notranslate"><span class="pre">spanwise_targets</span></code> plot; blades lose <code class="docutils literal notranslate"><span class="pre">vortex_exponent</span></code>, now <code class="docutils literal notranslate"><span class="pre">spanwise:</span> <span class="pre">{type:</span> <span class="pre">vortex_expon,</span> <span class="pre">n:</span> <span class="pre">...}</span></code></p></li>
+<li><p>Add per-section <code class="docutils literal notranslate"><span class="pre">dm_LE</span></code>, <code class="docutils literal notranslate"><span class="pre">dm_TE</span></code> and <code class="docutils literal notranslate"><span class="pre">dtheta</span></code> to sweep and lean blades, meshed by both the H and the passage meshers; blades lose <code class="docutils literal notranslate"><span class="pre">theta_offset</span></code>, now <code class="docutils literal notranslate"><span class="pre">dtheta</span></code> on every section</p></li>
+<li><p>Cut planes belong to the machine and clear the furthest a swept edge reaches; a design with no room for them between two rows fails</p></li>
+<li><p>The initial guess turns the flow between a blade’s swept edges at each span, and bridges the gaps from them</p></li>
+<li><p>Evaluate every blade section at one fixed set of chordwise points, so a point’s position no longer depends on what else was asked for; <code class="docutils literal notranslate"><span class="pre">evaluate_section</span></code> returns each point’s annulus meridional coordinate as a fourth row and loses <code class="docutils literal notranslate"><span class="pre">nchord</span></code> and <code class="docutils literal notranslate"><span class="pre">m</span></code>, and <code class="docutils literal notranslate"><span class="pre">evaluate_camber(m=...)</span></code> interpolates the full curve</p></li>
 <li><p>Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold</p></li>
 <li><p>Step every iterator on its declared gain, and drop the Broyden update, which no iterator used</p></li>
 <li><p>Let <code class="docutils literal notranslate"><span class="pre">clark_profile</span></code> recamber the leading edge against the difference in nose loading, in place of an <code class="docutils literal notranslate"><span class="pre">incidence</span></code> iterator</p></li>
@@ -522,7 +528,7 @@ wheels to PyPI – allows pip install</p></li>
       &#169;2026, James Brind.
       
       |
-      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.1</a>
       &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |

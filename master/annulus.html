@@ -5,17 +5,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Annulus lines &#8212; turbigen 3.0.1.dev167+g40ecbb9f8 documentation</title>
+    <title>Annulus lines &#8212; turbigen 3.0.1.dev207+g5313f63b3 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=ecc8c5e0"></script>
+    <script src="_static/documentation_options.js?v=f8cd1ce8"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Blade shapes" href="blade.html" />
+    <link rel="next" title="Spanwise flow" href="spanwise.html" />
     <link rel="prev" title="Mean-line designers" href="design.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -33,7 +33,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev167+g40ecbb9f8</p>
+<p class="blurb">Version 3.0.1.dev207+g5313f63b3</p>
 
 
 
@@ -65,12 +65,21 @@
 <li class="toctree-l2"><a class="reference internal" href="#built-in-annulus-shapes">Built-in annulus shapes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#design-process">Design process</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#annulus-coordinate-system">Annulus coordinate system</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.CUT_OFFSET"><code class="docutils literal notranslate"><span class="pre">CUT_OFFSET</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.N_SWEPT_PTS"><code class="docutils literal notranslate"><span class="pre">N_SWEPT_PTS</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.N_SEED_M"><code class="docutils literal notranslate"><span class="pre">N_SEED_M</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.N_SEED_SPF"><code class="docutils literal notranslate"><span class="pre">N_SEED_SPF</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.N_NEWTON"><code class="docutils literal notranslate"><span class="pre">N_NEWTON</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.TOL_ENDS"><code class="docutils literal notranslate"><span class="pre">TOL_ENDS</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.ULP_ENDS"><code class="docutils literal notranslate"><span class="pre">ULP_ENDS</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.RowAnnulus"><code class="docutils literal notranslate"><span class="pre">RowAnnulus</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_xr_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.m_LE"><code class="docutils literal notranslate"><span class="pre">m_LE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.chord"><code class="docutils literal notranslate"><span class="pre">chord</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_mspf_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_mspf_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_swept_m"><code class="docutils literal notranslate"><span class="pre">evaluate_swept_m()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_unswept_m"><code class="docutils literal notranslate"><span class="pre">evaluate_unswept_m()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_mspf"><code class="docutils literal notranslate"><span class="pre">evaluate_mspf()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.Annulus"><code class="docutils literal notranslate"><span class="pre">Annulus</span></code></a><ul>
@@ -79,22 +88,24 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.curves_merged"><code class="docutils literal notranslate"><span class="pre">curves_merged</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.m_inviscid"><code class="docutils literal notranslate"><span class="pre">m_inviscid</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.n_segment"><code class="docutils literal notranslate"><span class="pre">n_segment</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.m_max"><code class="docutils literal notranslate"><span class="pre">m_max</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_mspf"><code class="docutils literal notranslate"><span class="pre">evaluate_mspf()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_hub"><code class="docutils literal notranslate"><span class="pre">r_hub</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_tip"><code class="docutils literal notranslate"><span class="pre">r_tip</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_mid"><code class="docutils literal notranslate"><span class="pre">r_mid</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.r_rms"><code class="docutils literal notranslate"><span class="pre">r_rms</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.htr"><code class="docutils literal notranslate"><span class="pre">htr</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_span"><code class="docutils literal notranslate"><span class="pre">evaluate_span()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.cut_planes"><code class="docutils literal notranslate"><span class="pre">cut_planes()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_chords"><code class="docutils literal notranslate"><span class="pre">evaluate_chords()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.extract_row"><code class="docutils literal notranslate"><span class="pre">extract_row()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.Annulus.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.annulus.AnnulusDesign"><code class="docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AnnulusDesign.m_inviscid"><code class="docutils literal notranslate"><span class="pre">m_inviscid</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.annulus.AnnulusDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
 </ul>
 </li>
@@ -121,6 +132,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="spanwise.html">Spanwise flow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
 </ul>
 <ul>
@@ -180,7 +192,7 @@
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="design.html" title="previous chapter">Mean-line designers</a></li>
-      <li>Next: <a href="blade.html" title="next chapter">Blade shapes</a></li>
+      <li>Next: <a href="spanwise.html" title="next chapter">Spanwise flow</a></li>
   </ul></li>
 </ul>
 </div>
@@ -268,7 +280,7 @@ and a span fraction <code class="docutils literal notranslate"><span class="pre"
 leading edge, 2 at its trailing edge, and so on up to
 <a class="reference internal" href="#turbigen.annulus.Annulus.m_max" title="turbigen.annulus.Annulus.m_max"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_max</span></code></a>. Span fraction <code class="docutils literal notranslate"><span class="pre">spf</span></code> runs from 0 at the hub to 1 at the casing.
 <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_xr()</span></code></a> maps a pair of them to axial and radial
-coordinates.</p>
+coordinates, and <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_mspf" title="turbigen.annulus.Annulus.evaluate_mspf"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_mspf()</span></code></a> maps back.</p>
 <figure class="align-default" id="id1">
 <a class="reference internal image-reference" href="_images/annulus_coordinate.svg"><img alt="_images/annulus_coordinate.svg" src="_images/annulus_coordinate.svg" style="width: 100%;" />
 </a>
@@ -278,19 +290,50 @@ coordinates.</p>
 </figure>
 </section>
 <dl class="py data">
-<dt class="sig sig-object py" id="turbigen.annulus.CUT_OFFSET">
-<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">CUT_OFFSET</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.05</span></span><a class="headerlink" href="#turbigen.annulus.CUT_OFFSET" title="Link to this definition">¶</a></dt>
-<dd><p>Cut planes sit this fraction of blade chord into the gap, clear of the row.</p>
-<p>Cutting exactly at a leading or trailing edge would put the plane inside the
-blade, where there is no single annulus-spanning surface to integrate over.
-Clear of the row includes the H-mesh trailing edge cusp, which runs on
-<code class="docutils literal notranslate"><span class="pre">AR_cusp</span></code> trailing edge thicknesses past the blade: a plane through it cuts
-less than a pitch of fluid.</p>
+<dt class="sig sig-object py" id="turbigen.annulus.N_SWEPT_PTS">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">N_SWEPT_PTS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">3001</span></span><a class="headerlink" href="#turbigen.annulus.N_SWEPT_PTS" title="Link to this definition">¶</a></dt>
+<dd><p>Points along a constant-span line when placing a section with swept edges,
+over the row and the segment either side.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.N_SEED_M">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">N_SEED_M</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">32</span></span><a class="headerlink" href="#turbigen.annulus.N_SEED_M" title="Link to this definition">¶</a></dt>
+<dd><p>Samples per segment along <cite>m</cite> of the grid that seeds the inverse map.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.N_SEED_SPF">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">N_SEED_SPF</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">9</span></span><a class="headerlink" href="#turbigen.annulus.N_SEED_SPF" title="Link to this definition">¶</a></dt>
+<dd><p>Samples across the span of the grid that seeds the inverse map.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.N_NEWTON">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">N_NEWTON</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">20</span></span><a class="headerlink" href="#turbigen.annulus.N_NEWTON" title="Link to this definition">¶</a></dt>
+<dd><p>Most Newton steps the inverse map takes to place a point.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.TOL_ENDS">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">TOL_ENDS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1e-12</span></span><a class="headerlink" href="#turbigen.annulus.TOL_ENDS" title="Link to this definition">¶</a></dt>
+<dd><p>How far, as a fraction of the whole arc-length range, the inverse map may
+place a point beyond the inlet or outlet and still count it inside, on top of
+<cite>ULP_ENDS</cite> of the rounding of its coordinates.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.annulus.ULP_ENDS">
+<span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">ULP_ENDS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">8.0</span></span><a class="headerlink" href="#turbigen.annulus.ULP_ENDS" title="Link to this definition">¶</a></dt>
+<dd><p>Units in the last place of the coordinates passed to the inverse map, at
+their largest, that a point may lie beyond the inlet or outlet and still count
+inside: a node on the outlet plane stored in single precision rounds to either
+side of it.</p>
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">RowAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">evaluate_xr_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">chord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">RowAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">evaluate_xr_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">chord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">evaluate_mspf_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>The annulus restricted to one blade row.</p>
 <p>The full hub-to-casing annulus with the meridional coordinate clamped to
@@ -315,6 +358,12 @@ thing that defines it.</p>
 <dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.chord">
 <span class="sig-name descname"><span class="pre">chord</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.chord" title="Link to this definition">¶</a></dt>
 <dd><p>Meridional chord of the row at mid-span [m].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_mspf_annulus">
+<span class="sig-name descname"><span class="pre">evaluate_mspf_annulus</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_mspf_annulus" title="Link to this definition">¶</a></dt>
+<dd><p>The inverse of <a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr_annulus" title="turbigen.annulus.RowAnnulus.evaluate_xr_annulus"><code class="xref py py-attr docutils literal notranslate"><span class="pre">evaluate_xr_annulus</span></code></a>.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -343,11 +392,87 @@ trailing edge. Broadcast against <cite>spf</cite>.</p></li>
 </dl>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_swept_m">
+<span class="sig-name descname"><span class="pre">evaluate_swept_m</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dm_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dm_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_swept_m" title="Link to this definition">¶</a></dt>
+<dd><p>Return where points of a section with swept edges lie in the row.</p>
+<p>An unswept section spans the row’s stations, so its own chordwise
+coordinate is the row’s <code class="docutils literal notranslate"><span class="pre">m</span></code>. A swept one is moved along its
+constant-<cite>spf</cite> line: the leading edge by <cite>dm_LE</cite> meridional chords,
+the trailing edge by <cite>dm_TE</cite>, and each point between by an amount
+varying linearly from one to the other along the section. The moves are
+distances along the line, not steps in <code class="docutils literal notranslate"><span class="pre">m</span></code>, whose scale jumps at each
+station, so a section that crosses one has no kink there; and they are
+in the unswept chord at this span, so an offset means the same thing
+whatever the segments either side.</p>
+<p>Beyond the section, <code class="docutils literal notranslate"><span class="pre">m</span></code> below 0 or above 1 continues straight on in
+arc length, a whole <code class="docutils literal notranslate"><span class="pre">m</span></code> per swept section length, so that
+<a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_unswept_m" title="turbigen.annulus.RowAnnulus.evaluate_unswept_m"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_unswept_m()</span></code></a> is its inverse everywhere on the line.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m</strong> (<em>array_like</em>) – Chordwise coordinate along the section, 0 at its leading edge and 1
+at its trailing edge, being where it lies in the row unswept.</p></li>
+<li><p><strong>spf</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Span fraction of the section.</p></li>
+<li><p><strong>dm_LE</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Offset of the leading and trailing edge from the row’s stations, as
+fractions of the meridional chord at <cite>spf</cite>, positive downstream.</p></li>
+<li><p><strong>dm_TE</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Offset of the leading and trailing edge from the row’s stations, as
+fractions of the meridional chord at <cite>spf</cite>, positive downstream.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Row meridional coordinate of each point, the shape of <cite>m</cite>. <cite>m</cite>
+itself, exactly, if neither edge is offset.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_unswept_m">
+<span class="sig-name descname"><span class="pre">evaluate_unswept_m</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dm_LE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dm_TE</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_unswept_m" title="Link to this definition">¶</a></dt>
+<dd><p>Return where row coordinates <cite>m</cite> lie along a swept section.</p>
+<p>The inverse of <a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_swept_m" title="turbigen.annulus.RowAnnulus.evaluate_swept_m"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_swept_m()</span></code></a>: 0 at the section’s leading
+edge and 1 at its trailing edge, below 0 upstream of it and above 1
+downstream, in swept section lengths. <cite>m</cite> itself, exactly, if neither
+edge is offset. Arguments as there.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.RowAnnulus.evaluate_mspf">
+<span class="sig-name descname"><span class="pre">evaluate_mspf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.RowAnnulus.evaluate_mspf" title="Link to this definition">¶</a></dt>
+<dd><p>Return row annulus coordinates of meridional points.</p>
+<p>The row-local counterpart of <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_mspf" title="turbigen.annulus.Annulus.evaluate_mspf"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Annulus.evaluate_mspf()</span></code></a>, and the
+inverse of <a class="reference internal" href="#turbigen.annulus.RowAnnulus.evaluate_xr" title="turbigen.annulus.RowAnnulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a>: <code class="docutils literal notranslate"><span class="pre">m</span></code> runs 0 at the leading edge to 1
+at the trailing edge, and beyond either outside the row, so is NaN
+only outside the whole annulus.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>array_like</em>) – Axial and radial coordinates, broadcast against each other.</p></li>
+<li><p><strong>r</strong> (<em>array_like</em>) – Axial and radial coordinates, broadcast against each other.</p></li>
+<li><p><strong>tol</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Newton step, as a fraction of the whole arc-length range, below
+which a point is placed. The steps converge quadratically, so the
+point is then good to about <cite>tol</cite> squared.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mspf</strong> – Row meridional coordinate and span fraction, stacked on the first
+axis.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (2, …)</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.Annulus">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">Annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves_merged</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">Annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves_merged</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><span class="pre">object</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_inviscid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Hub and casing lines of a designed annulus.</p>
 <p>Coordinates are addressed by a normalised meridional coordinate <code class="docutils literal notranslate"><span class="pre">m</span></code>,
@@ -388,6 +513,13 @@ over the same ones.</p>
 <dd><p>Number of blade rows.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.m_inviscid">
+<span class="sig-name descname"><span class="pre">m_inviscid</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.m_inviscid" title="Link to this definition">¶</a></dt>
+<dd><p>Where the inviscid stretches of the endwalls end, as the design that made
+this annulus asks: see <a class="reference internal" href="#turbigen.annulus.AnnulusDesign.m_inviscid" title="turbigen.annulus.AnnulusDesign.m_inviscid"><code class="xref py py-attr docutils literal notranslate"><span class="pre">AnnulusDesign.m_inviscid</span></code></a>.</p>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="turbigen.annulus.Annulus.n_segment">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">n_segment</span></span><a class="headerlink" href="#turbigen.annulus.Annulus.n_segment" title="Link to this definition">¶</a></dt>
@@ -413,6 +545,41 @@ over the same ones.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p><strong>xr</strong> – Axial and radial coordinates, stacked on the first axis.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (2, …)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.annulus.Annulus.evaluate_mspf">
+<span class="sig-name descname"><span class="pre">evaluate_mspf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.evaluate_mspf" title="Link to this definition">¶</a></dt>
+<dd><p>Return annulus coordinates of meridional points.</p>
+<p>The inverse of <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a>, so that
+<code class="docutils literal notranslate"><span class="pre">evaluate_mspf(*evaluate_xr(m,</span> <span class="pre">spf))</span></code> gives back <code class="docutils literal notranslate"><span class="pre">(m,</span> <span class="pre">spf)</span></code>.</p>
+<p>At fixed <cite>m</cite> a point is a linear blend of the hub and casing, so <cite>m</cite> is
+where the point lies on the straight line between them, found by
+Newton’s method in the curves’ arc-length parameter from the nearest
+point of a seed grid; and <cite>spf</cite> is then where along that line it lies.
+Span fractions beyond 0 and 1 extrapolate across the hub or casing.
+The seed is found in single precision and the Newton steps taken in
+double, the splines evaluating in nothing else.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>array_like</em>) – Axial and radial coordinates, broadcast against each other.</p></li>
+<li><p><strong>r</strong> (<em>array_like</em>) – Axial and radial coordinates, broadcast against each other.</p></li>
+<li><p><strong>tol</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Newton step, as a fraction of the whole arc-length range, below
+which a point is placed. The steps converge quadratically, so the
+point is then good to about <cite>tol</cite> squared.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mspf</strong> – Normalised meridional coordinate and span fraction, stacked on the
+first axis, in single precision if <cite>x</cite> and <cite>r</cite> both are, else in
+double; NaN for a point upstream of the inlet or downstream of the
+outlet, which <a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a> cannot reach.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>ndarray, <a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape">shape</a> (2, …)</p>
@@ -468,31 +635,6 @@ over the same ones.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="turbigen.annulus.Annulus.cut_planes">
-<span class="sig-name descname"><span class="pre">cut_planes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.cut_planes" title="Link to this definition">¶</a></dt>
-<dd><p>Return the meridional cut curve at each design station.</p>
-<p>A cut plane is the straight hub-to-casing line at one meridional
-position, so it is two points and needs nothing beyond
-<a class="reference internal" href="#turbigen.annulus.Annulus.evaluate_xr" title="turbigen.annulus.Annulus.evaluate_xr"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a> — which is why it lives here rather than with any
-one of the things that cut with it. The mean line is reduced between
-these planes, so a quantity integrated over the same bounds is directly
-comparable with the loss the mean line reports.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>offset</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Distance into the adjacent gap, as a fraction of blade chord.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>One <code class="docutils literal notranslate"><span class="pre">(2,</span> <span class="pre">2)</span></code> array per station, in streamwise order, each holding
-two <code class="docutils literal notranslate"><span class="pre">(x,</span> <span class="pre">r)</span></code> points, hub then casing. This is the shape
-<a class="reference external" href="https://ember-cfd.org/0.4.5/api/cut.html#ember.cut.unstructured" title="(in ember v0.4.5)"><code class="xref py py-func docutils literal notranslate"><span class="pre">ember.cut.unstructured()</span></code></a> takes.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.15)">list</a> of ndarray</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
 <dt class="sig sig-object py" id="turbigen.annulus.Annulus.evaluate_chords">
 <span class="sig-name descname"><span class="pre">evaluate_chords</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.Annulus.evaluate_chords" title="Link to this definition">¶</a></dt>
 <dd><p>Return the meridional chord of every segment at span fraction <cite>spf</cite>.</p>
@@ -519,11 +661,22 @@ it does.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.AnnulusDesign">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AnnulusDesign</span></span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AnnulusDesign</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_inviscid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
 <p>Specify the shape of an annulus around a given mean line.</p>
 <p>The <a class="reference internal" href="#"><span class="doc">Annulus lines</span></a> page covers the shapes that ship with
 <strong class="program">turbigen</strong> and how a design is run.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.annulus.AnnulusDesign.m_inviscid">
+<span class="sig-name descname"><span class="pre">m_inviscid</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign.m_inviscid" title="Link to this definition">¶</a></dt>
+<dd><p>Where the endwalls stop being inviscid, slip walls, in normalised
+meridional coordinate <cite>m</cite>: on the hub and the casing from the inlet, then
+on the hub and the casing to the outlet. Inviscid from the inlet to the
+first two, and from the last two to the outlet, so that the duct ahead
+of and behind the machine grows no boundary layer; 0 for none on that
+wall. Both meshers put each at its nearest grid line.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="turbigen.annulus.AnnulusDesign.design">
 <span class="sig-name descname"><span class="pre">design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean_line</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#turbigen.annulus.Annulus" title="turbigen.annulus.Annulus"><span class="pre">Annulus</span></a></span></span><a class="headerlink" href="#turbigen.annulus.AnnulusDesign.design" title="Link to this definition">¶</a></dt>
@@ -534,7 +687,7 @@ it does.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.PchipAnnulus">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">PchipAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">PchipAnnulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_inviscid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.PchipAnnulus" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.AnnulusDesign" title="turbigen.annulus.AnnulusDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a></p>
 <p>Hub and casing lines fitted as PCHIP curves in arc-length space.</p>
 <p>Everything about the fit is here: the control points placed from the mean
@@ -595,7 +748,7 @@ ratios never needs it at all.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.FixedAxialChord">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">FixedAxialChord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">FixedAxialChord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_inviscid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cx_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.FixedAxialChord" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.PchipAnnulus" title="turbigen.annulus.PchipAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a></p>
 <p>Annulus with a prescribed axial chord for each row and gap.</p>
 <p>Note that an axial chord cannot describe a segment at 90 degrees pitch
@@ -648,7 +801,7 @@ ratios never needs it at all.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.annulus.AspectRatio">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AspectRatio</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.AspectRatio" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.annulus.</span></span><span class="sig-name descname"><span class="pre">AspectRatio</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_inviscid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0,</span> <span class="pre">0.0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nozzle_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">AR_gap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.annulus.AspectRatio" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.annulus.PchipAnnulus" title="turbigen.annulus.PchipAnnulus"><code class="xref py py-class docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a></p>
 <p>Annulus with a prescribed span-to-chord ratio for each row and gap.</p>
 <p>The chord is meridional, and the span it is measured against is the mean
@@ -712,7 +865,7 @@ ratios never needs it at all.</p>
       &#169;2026, James Brind.
       
       |
-      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.1</a>
       &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |

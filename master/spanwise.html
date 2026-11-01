@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Spanwise flow &#8212; turbigen 3.0.1.dev207+g5313f63b3 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
+    <script src="_static/documentation_options.js?v=f8cd1ce8"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Blade shapes" href="blade.html" />
+    <link rel="prev" title="Annulus lines" href="annulus.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  <div class="document">
+    
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">turbigen</a></h1>
+
+
+
+<p class="blurb">Version 3.0.1.dev207+g5313f63b3</p>
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Input file format</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Command-line interface</a></li>
+</ul>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="fluid.html">Working fluids</a></li>
+<li class="toctree-l1"><a class="reference internal" href="meanline.html">Mean-line flow field</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Mean-line designers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="annulus.html">Annulus lines</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Spanwise flow</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.N_QUAD"><code class="docutils literal notranslate"><span class="pre">N_QUAD</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.spline"><code class="docutils literal notranslate"><span class="pre">spline()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.fit_knots"><code class="docutils literal notranslate"><span class="pre">fit_knots()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.station_radius"><code class="docutils literal notranslate"><span class="pre">station_radius()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.area_average"><code class="docutils literal notranslate"><span class="pre">area_average()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.mass_average"><code class="docutils literal notranslate"><span class="pre">mass_average()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign"><code class="docutils literal notranslate"><span class="pre">SpanwiseDesign</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign.Vm"><code class="docutils literal notranslate"><span class="pre">Vm()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign.rVt"><code class="docutils literal notranslate"><span class="pre">rVt()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign.filled"><code class="docutils literal notranslate"><span class="pre">filled()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign.Alpha_rel"><code class="docutils literal notranslate"><span class="pre">Alpha_rel()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.VortexExpon"><code class="docutils literal notranslate"><span class="pre">VortexExpon</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VortexExpon.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VortexExpon.n"><code class="docutils literal notranslate"><span class="pre">n</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VortexExpon.filled"><code class="docutils literal notranslate"><span class="pre">filled()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VortexExpon.Vm"><code class="docutils literal notranslate"><span class="pre">Vm()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VortexExpon.rVt"><code class="docutils literal notranslate"><span class="pre">rVt()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.StationProfile"><code class="docutils literal notranslate"><span class="pre">StationProfile</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.StationProfile.Vm"><code class="docutils literal notranslate"><span class="pre">Vm</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.StationProfile.rVt"><code class="docutils literal notranslate"><span class="pre">rVt</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline"><code class="docutils literal notranslate"><span class="pre">VelocitySpline</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline.stations"><code class="docutils literal notranslate"><span class="pre">stations</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline.filled"><code class="docutils literal notranslate"><span class="pre">filled()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline.Vm"><code class="docutils literal notranslate"><span class="pre">Vm()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.spanwise.VelocitySpline.rVt"><code class="docutils literal notranslate"><span class="pre">rVt()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#iterating-a-spanwise-design">Iterating a spanwise design</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="blade.html">Blade shapes</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/jb753/turbigen">Source code repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">Bibliography</a></li>
+</ul>
+
+
+<div id="turbigen-versions" hidden>
+    <h3>Versions</h3>
+    <select id="turbigen-version-select" aria-label="Documentation version"></select>
+</div>
+<script>
+(function () {
+    // pathto('', 1) is the relative path to this version's root, so one more
+    // level up is the site root holding versions.json and the version dirs.
+    var root = "./" + "../";
+    var current = "master";
+    var page = "spanwise.html";
+    var box = document.getElementById("turbigen-versions");
+    var select = document.getElementById("turbigen-version-select");
+
+    function go() {
+        var base = root + select.value;
+        // Prefer the same page in the target version, but fall back to its
+        // index: pages come and go between releases.
+        fetch(base + page, {method: "HEAD"}).then(function (response) {
+            window.location.href = response.ok ? base + page : base;
+        }).catch(function () {
+            window.location.href = base;
+        });
+    }
+
+    fetch(root + "versions.json").then(function (response) {
+        if (!response.ok) {
+            throw new Error("versions.json: " + response.status);
+        }
+        return response.json();
+    }).then(function (data) {
+        data.versions.forEach(function (version) {
+            var option = document.createElement("option");
+            option.value = version.url;
+            option.textContent = version.name;
+            option.selected = version.name === current;
+            select.appendChild(option);
+        });
+        select.addEventListener("change", go);
+        box.hidden = false;
+    }).catch(function () {
+        // Single-version or local build; leave the picker hidden.
+    });
+})();
+</script><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="annulus.html" title="previous chapter">Annulus lines</a></li>
+      <li>Next: <a href="blade.html" title="next chapter">Blade shapes</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-turbigen.spanwise">
+<span id="spanwise-flow"></span><span id="spanwise"></span><h1>Spanwise flow<a class="headerlink" href="#module-turbigen.spanwise" title="Link to this heading">¶</a></h1>
+<p>Spanwise distribution of the flow the blades are designed against.</p>
+<p>The mean line holds one value of each flow variable per station, at the
+root-mean-square radius. A blade needs a flow angle at every span fraction,
+because its metal angle is a recamber measured off the local flow, so something
+has to say how the flow varies from hub to casing. That is this stage, read
+from the <code class="docutils literal notranslate"><span class="pre">spanwise:</span></code> key of a config.</p>
+<p>There are two alternatives.</p>
+<p><a class="reference internal" href="#turbigen.spanwise.VortexExpon" title="turbigen.spanwise.VortexExpon"><code class="xref py py-class docutils literal notranslate"><span class="pre">VortexExpon</span></code></a> is a power-law swirl distribution, <span class="math notranslate nohighlight">\(V_\theta
+\propto r^n\)</span>, with the meridional velocity uniform over the span. It is the
+default, with <span class="math notranslate nohighlight">\(n=-1\)</span>, a free vortex.</p>
+<p><a class="reference internal" href="#turbigen.spanwise.VelocitySpline" title="turbigen.spanwise.VelocitySpline"><code class="xref py py-class docutils literal notranslate"><span class="pre">VelocitySpline</span></code></a> holds a spanwise profile of meridional velocity and of
+angular momentum at <em>every</em> station, the inlet and outlet of each row, as
+values at that row’s blade sections:</p>
+<ul>
+<li><p>The meridional velocity is a <em>shape</em>, rescaled to an area average of one at
+each station so that the mean line keeps the mass flow,</p>
+<div class="math notranslate nohighlight">
+\[V_m(s) = V_{m,\mathrm{rms}}\,
+\frac{f(s)}{\int_0^1 f\,r\,\mathrm{d}s \big/ \int_0^1 r\,\mathrm{d}s} \,.\]</div>
+</li>
+<li><p>The angular momentum is an additive offset <span class="math notranslate nohighlight">\(\Delta\)</span> from the mean
+line’s own, in units that do not vanish when the mean line has no swirl,</p>
+<div class="math notranslate nohighlight">
+\[r V_\theta(s) = r_\mathrm{rms} V_{\theta,\mathrm{rms}}
++ \Delta(s)\, r_\mathrm{rms} V_{m,\mathrm{rms}} \,,\]</div>
+<p>so <span class="math notranslate nohighlight">\(\Delta=0\)</span> everywhere is a free vortex at the mean-line swirl,
+and an axial exit when that swirl is zero.</p>
+</li>
+</ul>
+<p><strong>The knots are the blade sections.</strong> A blade reads the flow at its sections
+to set their metal angles, so a value at each section is exactly what decides
+the blade; the spline between them, linear beyond the outermost, serves the
+spans in between, the initial guess and the fits to a solution.</p>
+<p>The two kinds of station mean different things. A row <em>inlet</em> holds the flow
+arriving there, which is a state the CFD measures; the
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SpanwiseInflow</span></code> iterator copies it in. A row
+<em>outlet</em> holds a setting of the blade: with the trailing-edge recamber held at
+zero, the outlet <span class="math notranslate nohighlight">\(\Delta\)</span> <em>is</em> the trailing-edge metal angle, and differs
+from the flow that leaves by the deviation. It is moved by
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SpanwiseWork</span></code> on a rotor and
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SpanwiseSwirl</span></code> on a stator until the CFD meets their
+targets.</p>
+<p>Span fractions are mapped to radius linearly between the mean-line hub and
+casing radii of each station.</p>
+<dl class="py data">
+<dt class="sig sig-object py" id="turbigen.spanwise.N_QUAD">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">N_QUAD</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1001</span></span><a class="headerlink" href="#turbigen.spanwise.N_QUAD" title="Link to this definition">¶</a></dt>
+<dd><p>Points in the spanwise quadrature that normalises a shape.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.spanwise.spline">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">spline</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.spline" title="Link to this definition">¶</a></dt>
+<dd><p>Return the spanwise curve through knot <cite>values</cite> at span fractions <cite>knots</cite>.</p>
+<p>A natural cubic inside the knots and straight beyond them; a constant for
+one knot, a line for two. Linear in the knot values, which is what lets
+<a class="reference internal" href="#turbigen.spanwise.fit_knots" title="turbigen.spanwise.fit_knots"><code class="xref py py-func docutils literal notranslate"><span class="pre">fit_knots()</span></code></a> fit a measured profile onto exactly the representation
+the design evaluates.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.spanwise.fit_knots">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">fit_knots</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf_meas</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_meas</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.fit_knots" title="Link to this definition">¶</a></dt>
+<dd><p>Return the knot values whose curve best fits a measured profile.</p>
+<p>Weighted linear least squares, with the curve through each unit knot
+vector as a basis function. A profile sampled from a curve on the same
+knots is recovered exactly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>knots</strong> (<em>array_like</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><em>n_knot</em><em>,</em><em>)</em>) – Knot span fractions.</p></li>
+<li><p><strong>spf_meas</strong> (<em>array_like</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><em>n_meas</em><em>,</em><em>)</em>) – Where the profile was measured, and its values there.</p></li>
+<li><p><strong>y_meas</strong> (<em>array_like</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><em>n_meas</em><em>,</em><em>)</em>) – Where the profile was measured, and its values there.</p></li>
+<li><p><strong>weights</strong> (<em>array_like</em><em>, </em><a class="reference internal" href="blade.html#turbigen.camber.CamberLine.shape" title="turbigen.camber.CamberLine.shape"><em>shape</em></a><em> (</em><em>n_meas</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Relative weight of each measurement, uniform by default.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.spanwise.station_radius">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">station_radius</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.station_radius" title="Link to this definition">¶</a></dt>
+<dd><p>Return radius at span fractions on one mean-line station [m].</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.spanwise.area_average">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">area_average</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">station</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.area_average" title="Link to this definition">¶</a></dt>
+<dd><p>Return the area average of the curve through knot <cite>values</cite> over the
+span of <cite>station</cite>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="turbigen.spanwise.mass_average">
+<span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">mass_average</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Vm_shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">station</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.mass_average" title="Link to this definition">¶</a></dt>
+<dd><p>Return the mass average of the curve through knot <cite>values</cite> over the
+span of <cite>station</cite>.</p>
+<p>Weighted by the meridional velocity shape times radius, the mass flux of
+an annulus whose density is uniform, which is what a design assumes.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.spanwise.SpanwiseDesign">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">SpanwiseDesign</span></span><a class="headerlink" href="#turbigen.spanwise.SpanwiseDesign" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
+<p>How the flow varies from hub to casing.</p>
+<p>A member gives the meridional velocity and angular momentum at any span
+fraction of any station; the relative flow angle a blade is designed
+against follows from those here. Stations are numbered as the mean line’s
+are, <code class="docutils literal notranslate"><span class="pre">k</span> <span class="pre">=</span> <span class="pre">2</span> <span class="pre">i_row</span></code> at a row inlet and one more at its outlet, and
+<cite>knots</cite> is the span fraction of each blade section of that row.</p>
+<p>See <a class="reference internal" href="#module-turbigen.spanwise" title="turbigen.spanwise"><code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.spanwise</span></code></a> for the alternatives.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.SpanwiseDesign.Vm">
+<span class="sig-name descname"><span class="pre">Vm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.SpanwiseDesign.Vm" title="Link to this definition">¶</a></dt>
+<dd><p>Return meridional velocity at span fractions <cite>spf</cite> [m/s].</p>
+<p><cite>station</cite> is the mean-line station <cite>k</cite> the profile is on.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.SpanwiseDesign.rVt">
+<span class="sig-name descname"><span class="pre">rVt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.SpanwiseDesign.rVt" title="Link to this definition">¶</a></dt>
+<dd><p>Return angular momentum at span fractions <cite>spf</cite> [m^2/s].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.SpanwiseDesign.filled">
+<span class="sig-name descname"><span class="pre">filled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_sections</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.SpanwiseDesign.filled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this design checked against blades with <cite>n_sections</cite> per
+row, and with whatever it defaults written out. Itself by default.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.SpanwiseDesign.Alpha_rel">
+<span class="sig-name descname"><span class="pre">Alpha_rel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mean_line_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">i_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.SpanwiseDesign.Alpha_rel" title="Link to this definition">¶</a></dt>
+<dd><p>Return relative flow angle at inlet and outlet of row <cite>i_row</cite>, shape
+(n, 2) [deg].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mean_line_row</strong> (<a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><em>MeanLine</em></a>) – Inlet and outlet stations of the row, shape (2,).</p></li>
+<li><p><strong>i_row</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>) – Index of the row.</p></li>
+<li><p><strong>knots</strong> (<em>array_like</em>) – Span fraction of each of its sections.</p></li>
+<li><p><strong>spf</strong> (<em>array_like</em>) – Where to evaluate.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">VortexExpon</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-1.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VortexExpon" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign" title="turbigen.spanwise.SpanwiseDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpanwiseDesign</span></code></a></p>
+<p>Swirl varying as a power of radius, with uniform meridional velocity.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.15)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'vortex_expon'</span></span><a class="headerlink" href="#turbigen.spanwise.VortexExpon.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon.n">
+<span class="sig-name descname"><span class="pre">n</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">-1.0</span></span><a class="headerlink" href="#turbigen.spanwise.VortexExpon.n" title="Link to this definition">¶</a></dt>
+<dd><p>Exponent of radius that tangential velocity varies with, one for every
+row or one per row [–]. The default is a free vortex.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon.filled">
+<span class="sig-name descname"><span class="pre">filled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_sections</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VortexExpon.filled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this design checked against blades with <cite>n_sections</cite> per
+row, and with whatever it defaults written out. Itself by default.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon.Vm">
+<span class="sig-name descname"><span class="pre">Vm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VortexExpon.Vm" title="Link to this definition">¶</a></dt>
+<dd><p>Return meridional velocity at span fractions <cite>spf</cite> [m/s].</p>
+<p><cite>station</cite> is the mean-line station <cite>k</cite> the profile is on.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VortexExpon.rVt">
+<span class="sig-name descname"><span class="pre">rVt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VortexExpon.rVt" title="Link to this definition">¶</a></dt>
+<dd><p>Return angular momentum at span fractions <cite>spf</cite> [m^2/s].</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.spanwise.StationProfile">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">StationProfile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">Vm</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rVt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">()</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.StationProfile" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
+<p>Spanwise meridional velocity and angular momentum at one station, one
+value per blade section of its row.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.StationProfile.Vm">
+<span class="sig-name descname"><span class="pre">Vm</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">()</span></span><a class="headerlink" href="#turbigen.spanwise.StationProfile.Vm" title="Link to this definition">¶</a></dt>
+<dd><p>Shape of the meridional velocity at each section, rescaled to an area
+average of one [–]. Uniform if omitted.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.StationProfile.rVt">
+<span class="sig-name descname"><span class="pre">rVt</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">()</span></span><a class="headerlink" href="#turbigen.spanwise.StationProfile.rVt" title="Link to this definition">¶</a></dt>
+<dd><p>Offset of angular momentum from the mean line at each section, in units
+of mean-line rms radius times meridional velocity [–]. Zero, a free vortex,
+if omitted.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.spanwise.</span></span><span class="sig-name descname"><span class="pre">VelocitySpline</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">stations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#turbigen.spanwise.StationProfile" title="turbigen.spanwise.StationProfile"><span class="pre">StationProfile</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">()</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.spanwise.SpanwiseDesign" title="turbigen.spanwise.SpanwiseDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpanwiseDesign</span></code></a></p>
+<p>Meridional velocity and angular momentum at every station, given at the
+blade sections.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.15)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'velocity_spline'</span></span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline.stations">
+<span class="sig-name descname"><span class="pre">stations</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#turbigen.spanwise.StationProfile" title="turbigen.spanwise.StationProfile"><span class="pre">StationProfile</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">()</span></span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline.stations" title="Link to this definition">¶</a></dt>
+<dd><p>first row inlet, first
+row outlet, second row inlet, and so on. Every station a free vortex at
+uniform meridional velocity if omitted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Profile at every station, in streamwise order</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline.filled">
+<span class="sig-name descname"><span class="pre">filled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_sections</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline.filled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this design with every station’s defaults written out, so
+every knot is a leaf of the config that an iterator can name and a
+batch can set.</p>
+<p>Raises unless there is a profile per station, each with a value per
+section of its row.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline.Vm">
+<span class="sig-name descname"><span class="pre">Vm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline.Vm" title="Link to this definition">¶</a></dt>
+<dd><p>Return meridional velocity at span fractions <cite>spf</cite> [m/s].</p>
+<p><cite>station</cite> is the mean-line station <cite>k</cite> the profile is on.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.spanwise.VelocitySpline.rVt">
+<span class="sig-name descname"><span class="pre">rVt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">station</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">knots</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.spanwise.VelocitySpline.rVt" title="Link to this definition">¶</a></dt>
+<dd><p>Return angular momentum at span fractions <cite>spf</cite> [m^2/s].</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>A spline design gives a profile at all four stations of a two-row machine,
+here a fan rotor and outlet guide vane whose blades each have sections at span
+fractions 0.2, 0.5 and 0.8. Each station takes one value per section of its
+row, a free vortex at uniform meridional velocity where nothing is written:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">spanwise</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">velocity_spline</span>
+<span class="w">  </span><span class="nt">stations</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">                         </span><span class="c1"># rotor inlet</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">Vm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.95</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.05</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.98</span><span class="p p-Indicator">]}</span><span class="w">   </span><span class="c1"># rotor outlet</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">Vm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.95</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.05</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.98</span><span class="p p-Indicator">]}</span><span class="w">   </span><span class="c1"># vane inlet</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">                         </span><span class="c1"># vane outlet</span>
+</pre></div>
+</div>
+<p>Every knot is a leaf of the config, so <code class="docutils literal notranslate"><span class="pre">spanwise.stations[1].rVt[2]</span></code> can be
+swept by a batch or set from the command line like any other. Adding a section
+to a blade adds a knot to both its stations, so their lists must grow with it.</p>
+<section id="iterating-a-spanwise-design">
+<h2>Iterating a spanwise design<a class="headerlink" href="#iterating-a-spanwise-design" title="Link to this heading">¶</a></h2>
+<p>Three iterators under <a class="reference internal" href="config.html#config-iterate"><span class="std std-ref">iterate:</span></a> move the knots of a
+<code class="docutils literal notranslate"><span class="pre">velocity_spline</span></code> design:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 20.0%" />
+<col style="width: 30.0%" />
+<col style="width: 50.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">type:</span></code></p></th>
+<th class="head"><p>Knots it moves</p></th>
+<th class="head"><p>Until</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spanwise_inflow</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Vm</span></code> at every station and <code class="docutils literal notranslate"><span class="pre">rVt</span></code> at every row inlet, of the
+<code class="docutils literal notranslate"><span class="pre">rows</span></code> it names or all of them</p></td>
+<td><p>the profiles match the pitch-averaged CFD</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">spanwise_work</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">rVt</span></code> at one rotor’s outlet</p></td>
+<td><p>the stagnation enthalpy rise along each stream surface matches a work
+coefficient distribution <code class="docutils literal notranslate"><span class="pre">psi</span></code>, one value per section</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spanwise_swirl</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">rVt</span></code> at one stator’s outlet</p></td>
+<td><p>the swirl leaving matches a distribution <code class="docutils literal notranslate"><span class="pre">rVt</span></code>, one value per section</p></td>
+</tr>
+</tbody>
+</table>
+<p>The first copies a measured state in. The other two set the trailing edge, so
+neither can be used with <code class="docutils literal notranslate"><span class="pre">deviation</span></code>, which recambers every row’s: the outlet
+knots carry the mean deviation, and the mean work or swirl is corrected along
+with its distribution. Only the shape of a <code class="docutils literal notranslate"><span class="pre">psi</span></code> or <code class="docutils literal notranslate"><span class="pre">rVt</span></code> target is used
+— its mass average is removed — since the mean is the mean line’s to set.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">iterate</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">correct</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spanwise_inflow</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spanwise_work</span>
+<span class="w">      </span><span class="nt">i_row</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">      </span><span class="nt">psi</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.03</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">-0.03</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spanwise_swirl</span>
+<span class="w">      </span><span class="nt">i_row</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">rVt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.0</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p>Each is measured on the cut planes the mean line is mixed out on, a little
+into the gap beside each blade edge, pitch-averaged by mass and fitted onto the
+section knots by least squares, over the span between the outermost sections.
+The endwall bands outside them still count towards the mean: an outlet
+iterator holds the mean of its knots to the mean measured over the whole span,
+so the row as a whole meets the mean line. The <code class="docutils literal notranslate"><span class="pre">spanwise_targets</span></code>
+post-processor draws each measured profile against the target it is driven to.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+    <div class="clearer"></div>
+  </div>
+    <div class="footer">
+      &#169;2026, James Brind.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.1</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/spanwise.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
