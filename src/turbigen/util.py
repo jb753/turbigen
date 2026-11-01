@@ -59,11 +59,27 @@ def sind(x):
 
 def cumsum0(x, axis=None):
     """Return the cumulative sum of `x`, starting from an explicit zero."""
-    return np.insert(np.cumsum(x, axis=axis), 0, 0.0, axis=axis)
+    x = np.asarray(x)
+    if axis is None:
+        x, axis = x.ravel(), 0
+    c = np.cumsum(x, axis=axis)
+    # Into a preallocated array, which `np.insert` takes several times as long
+    shape = list(c.shape)
+    shape[axis] += 1
+    out = np.empty(shape, dtype=c.dtype)
+    out[(slice(None),) * (axis % c.ndim) + (slice(0, 1),)] = 0
+    out[(slice(None),) * (axis % c.ndim) + (slice(1, None),)] = c
+    return out
 
 
 def cumtrapz0(x, *args, axis=-1):
     """Return the cumulative integral of `x`, starting from an explicit zero."""
+    x = np.asarray(x)
+    if x.ndim == 1 and len(args) == 1 and np.ndim(args[0]) == 1:
+        # Along one curve, summed as `cumulative_trapezoid` sums it, without
+        # its checks, which on a mesher's thousands of calls cost the most.
+        d = np.diff(args[0])
+        return cumsum0(d * (x[1:] + x[:-1]) / 2.0)
     return np.insert(cumulative_trapezoid(x, *args, axis=axis), 0, 0.0, axis=axis)
 
 
@@ -888,37 +904,14 @@ def cut_blade_surfs(grid, offset=0):
 
     for row_block in grid.rows:
         surfs.append([])
-
-        # Full span is whatever most blocks in the row have; the others are
-        # the tip gap and its neighbours.
-        nj_values, nj_counts = np.unique(
-            [block.shape[1] for block in row_block], return_counts=True
-        )
-        nj = nj_values[np.argmax(nj_counts)]
-
-        for block in row_block:
-            wraps = np.allclose(block[0, :, 0].xrt, block[-1, :, 0].xrt)
-            if wraps and block.shape[1] == nj:
-                # Over a gridded clearance the face is the outline the gap's
-                # blocks meet it on, and a patch there says so: trimmed off,
-                # as it is from an H passage's sides.
-                jen = nj
-                for patch in block.patches.permeable:
-                    lim = patch.ijk_lim_abs
-                    if (
-                        patch.const_dim == 2
-                        and lim[2, 0] == 0
-                        and lim[1, 1] == nj - 1
-                        and lim[1, 0] > 0
-                    ):
-                        jen = lim[1, 0] + 1
-                # Copied, not sliced: a view shares its block's angular
-                # velocity, so setting the wall speed on one would re-time the
-                # grid itself.
-                surf = block[:, :jen, offset].copy(keep_patches=False)
-                surf.patches.clear()
-                surf.set_Omega(_wall_Omega(block, 2, offset != 0))
-                surfs[-1].append(surf)
+        for block, jen in _o_blade_blocks(row_block):
+            # Copied, not sliced: a view shares its block's angular
+            # velocity, so setting the wall speed on one would re-time the
+            # grid itself.
+            surf = block[:, :jen, offset].copy(keep_patches=False)
+            surf.patches.clear()
+            surf.set_Omega(_wall_Omega(block, 2, offset != 0))
+            surfs[-1].append(surf)
 
     return surfs
 
@@ -1022,6 +1015,118 @@ def cut_blade_tips(grid, offset=0):
             tips[-1].append(tip)
 
     return tips
+
+
+def cut_periodic(grid):
+    """Return the pitchwise-periodic surface of each row, joined where it runs on.
+
+    Read off the periodic patches rather than found by geometry: of each pair
+    a pitch apart, the side whose partner lies a pitch above, which is the
+    lower bound of the passage. Pairs that join blocks in place, with no pitch
+    between them, are interfaces and not this surface, so the joins of an O-H
+    mesh's blocks and its tip gap are passed over without asking which they
+    are. Pieces that meet end to end are joined into one surface, so an O-H
+    mesh's runs from inlet to outlet unbroken, over the blade as the passage
+    block's face against the next blade's O block. An H mesh's stops at the
+    leading and trailing edges, where the blade takes over the same face, and
+    comes back as the two pieces either side.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A meshed grid.
+
+    Returns
+    -------
+    list
+        One list per row of 2D ``(n, nj)`` cuts, streamwise along the first
+        axis and hub to casing along the second, upstream first.
+
+    """
+    pairs = grid.connectivity.periodic.pair()
+    blocks = list(grid)
+
+    surfs = []
+    for row in grid.rows:
+        in_row = {id(block) for block in row}
+        faces = []
+        for (i_block, i_patch), ((i_mate, i_mate_patch), _) in pairs.items():
+            block, mate = blocks[i_block], blocks[i_mate]
+            if id(block) not in in_row:
+                continue
+            patch = block.patches[i_patch]
+            mate_patch = mate.patches[i_mate_patch]
+            if _pitches_apart(block, patch, mate, mate_patch) == 1:
+                faces.append(_patch_face(block, patch))
+        surfs.append(_join_faces(faces))
+
+    return surfs
+
+
+def _pitches_apart(block, patch, mate, mate_patch):
+    """Return how many pitches above the nodes of `patch` those of `mate_patch`
+    lie, to the nearest whole pitch."""
+    t = np.mean(block.t[_patch_slices(patch)])
+    t_mate = np.mean(mate.t[_patch_slices(mate_patch)])
+    return round((t_mate - t) * block.Nb / (2.0 * np.pi))
+
+
+def _patch_slices(patch):
+    """Return the index of the nodes of `patch` in its block."""
+    lim = patch.ijk_lim_abs
+    return tuple(
+        int(start) if dim == patch.const_dim else slice(start, end + 1)
+        for dim, (start, end) in enumerate(lim)
+    )
+
+
+def _patch_face(block, patch):
+    """Return the nodes of `patch` as a 2D cut, hub to casing along axis 1.
+
+    Copied, not sliced, so the cut owns its data and carries no patches, and
+    given its block's frame, so a relative quantity read off it is in the
+    frame of the flow it was cut from.
+    """
+    face = block[_patch_slices(patch)].copy(keep_patches=False)
+    face.patches.clear()
+    face.set_Omega(block.Omega)
+    # Every block runs hub to casing in `j`, so a face of constant `i` has it
+    # first and is turned round.
+    if patch.const_dim == 0:
+        face = face.transpose((1, 0))
+    return face
+
+
+def _join_faces(faces):
+    """Return `faces` joined end to end where they share a line of nodes.
+
+    Each runs downstream first, by its mean axial coordinate, and the pieces
+    are taken in streamwise order, each joined to the surface whose last line
+    is its first.
+    """
+    downstream = [
+        face if np.mean(face.x[0]) <= np.mean(face.x[-1]) else face.flip(axis=0)
+        for face in faces
+    ]
+    downstream.sort(key=lambda face: np.mean(face.x[0]))
+
+    joined = []
+    for face in downstream:
+        for i, surf in enumerate(joined):
+            if surf.shape[1] == face.shape[1] and _same_line(surf, -1, face, 0):
+                joined[i] = ember.block_util.concatenate(surf, face[1:], axis=0)
+                break
+        else:
+            joined.append(face)
+
+    return joined
+
+
+def _same_line(a, ia, b, ib):
+    """Return whether line `ia` of `a` and line `ib` of `b` are the same nodes."""
+    xrt_a, xrt_b = a.xrt[ia], b.xrt[ib]
+    scale = np.max(np.abs(xrt_a[..., :2]))
+    return np.allclose(xrt_a, xrt_b, rtol=0.0, atol=1e-6 * scale)
 
 
 #
@@ -1263,3 +1368,475 @@ def normalise_surface_distance(cut, mas, xrt_nose):
     upper = zeta.max()
     lower = np.abs(zeta.min())
     return zeta / np.where(zeta > 0.0, upper or 1.0, lower or 1.0)
+
+
+def _blade_side_limits(passage):
+    """Return where the blade lies on the k faces of an H passage.
+
+    The blade is the stretch of the two k faces between the leading and
+    trailing edges, found by where the upstream and downstream periodic
+    patches stop, less any clearance gap off the span.
+
+    Returns
+    -------
+    tuple or None
+        Node indices ``(ile, ite, jst, jen)``: the blade runs over
+        ``ile:ite + 1`` and ``jst:jen``. None if the edges were not found.
+
+    """
+    ile = None
+    ite = None
+    j_gap = None
+
+    for patch in passage.patches.periodic:
+        # A pitchwise periodic spans the span and sits on one k face,
+        # and the pair of them stop at the two edges of the blade.
+        lim = patch.ijk_lim_abs
+        spans_j = np.allclose(lim[1], [0, passage.shape[1] - 1])
+        spans_i = np.allclose(lim[0], [0, passage.shape[0] - 1])
+        at_k_boundary = (lim[2, 0] == lim[2, 1]) and (
+            lim[2, 0] == 0 or lim[2, 0] == passage.shape[2] - 1
+        )
+
+        if spans_j and at_k_boundary and not spans_i:
+            if lim[0, 0] == 0:
+                ile = lim[0, 1]
+            elif lim[0, 1] == passage.shape[0] - 1:
+                ite = lim[0, 0]
+
+        # The one k-face periodic that does not span the span is the
+        # clearance gap: it runs along the blade rather than upstream
+        # or downstream of it. Both sides carry one with the same
+        # limits, so finding it twice is finding the same gap.
+        if at_k_boundary and not spans_j and not spans_i:
+            j_gap = lim[1]
+
+    # A cusp or an inviscid patch on a k face marks the trailing edge
+    # where the periodics do not.
+    for patch in passage.patches:
+        if (
+            isinstance(patch, (ember.patch.CuspPatch, ember.patch.InviscidPatch))
+            and patch.const_dim == 2
+        ):
+            ite = patch.ijk_lim_abs[0, 0]
+
+    if not ile or not ite:
+        return None
+
+    # Where the gap sits comes from its own patch rather than being assumed
+    # to be at the casing, so a hub clearance would trim the other end.
+    nj = passage.shape[1]
+    if j_gap is None:
+        jst, jen = 0, nj
+    elif j_gap[1] == nj - 1:
+        jst, jen = 0, j_gap[0] + 1
+    else:
+        jst, jen = j_gap[1], nj
+
+    return ile, ite, jst, jen
+
+
+def _o_blade_blocks(row):
+    """Return the O blocks wrapping the blade in one row, and how far up each.
+
+    Returns
+    -------
+    list
+        ``(block, jen)`` pairs: the blade is the ``k = 0`` face of `block`
+        over ``j < jen``, trimmed off where a gridded clearance meets it.
+
+    """
+    # Full span is whatever most blocks in the row have; the others are
+    # the tip gap and its neighbours.
+    nj_values, nj_counts = np.unique(
+        [block.shape[1] for block in row], return_counts=True
+    )
+    nj = nj_values[np.argmax(nj_counts)]
+
+    found = []
+    for block in row:
+        wraps = np.allclose(block[0, :, 0].xrt, block[-1, :, 0].xrt)
+        if wraps and block.shape[1] == nj:
+            # Over a gridded clearance the face is the outline the gap's
+            # blocks meet it on, and a patch there says so: trimmed off,
+            # as it is from an H passage's sides.
+            jen = nj
+            for patch in block.patches.permeable:
+                lim = patch.ijk_lim_abs
+                if (
+                    patch.const_dim == 2
+                    and lim[2, 0] == 0
+                    and lim[1, 1] == nj - 1
+                    and lim[1, 0] > 0
+                ):
+                    jen = lim[1, 0] + 1
+            found.append((block, jen))
+
+    return found
+
+
+def _faces_to_nodes(faces, wrap=False):
+    """Return a field over the faces of a surface averaged onto its nodes.
+
+    Each node takes the mean of the up to four faces round it; along an edge
+    that is the faces on the one side there are, and with `wrap` the first and
+    last `i` faces are neighbours, as round an O block.
+    """
+    mode_i = "wrap" if wrap else "edge"
+    padded = np.pad(faces, ((1, 1), (0, 0)), mode=mode_i)
+    padded = np.pad(padded, ((0, 0), (1, 1)), mode="edge")
+    return 0.25 * (
+        padded[:-1, :-1] + padded[1:, :-1] + padded[:-1, 1:] + padded[1:, 1:]
+    )
+
+
+def blade_yplus(grid, wall_law="fit"):
+    """Return y+ on the blade surface of each row, at its nodes.
+
+    Evaluated by :func:`ember.block_util.wall_yplus` on whole blocks, then read
+    off the same faces `cut_blade_surfs` cuts at no offset, so each array lines
+    up node for node with the surface it belongs to and can be cut alongside it
+    by `cut_field`. The wall function samples the first node off the wall, so
+    this is y+ there, not at the centroid of the wall cell.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+    wall_law : {"fit", "reichardt"}
+        Wall law the solution was marched with.
+
+    Returns
+    -------
+    list
+        Shaped as `cut_blade_surfs` returns: one list of ``(ni, nj)`` arrays
+        per row, or None for a row with no blade surface found.
+
+    """
+    out = []
+
+    if _is_h_mesh(grid):
+        for i_row in range(len(grid.rows)):
+            passage, _ = row_blocks(grid, i_row)
+            limits = _blade_side_limits(passage)
+            if limits is None:
+                out.append(None)
+                continue
+            ile, ite, jst, jen = limits
+            yplus = ember.block_util.wall_yplus(passage, wall_law)
+            sides = [
+                _faces_to_nodes(yplus[key][ile:ite, jst : jen - 1])
+                for key in ("yplus_k1", "yplus_nk")
+            ]
+            # Joined as `cut_blade_surfs` joins the sides.
+            out.append([np.concatenate((sides[0][::-1], sides[1][1:]), axis=0)])
+        return out
+
+    for row in grid.rows:
+        out.append([])
+        for block, jen in _o_blade_blocks(row):
+            yplus = ember.block_util.wall_yplus(block, wall_law)["yplus_k1"]
+            out[-1].append(_faces_to_nodes(yplus[:, : jen - 1], wrap=True))
+
+    return out
+
+
+EDGE_RATIO = 0.99
+"""Fraction of the isentropic velocity that marks a boundary layer's edge."""
+
+
+OVERSHOOT = 1.01
+"""Most the velocity may exceed the isentropic inside a boundary layer before
+its free stream reference is taken to have failed."""
+
+
+def blade_shape_factor(grid):
+    r"""Return the kinematic shape factor of the blade boundary layer of each row.
+
+    Integrated along each line of an O block off the blade, in distance
+    normal to the wall, against the isentropic velocity at each point, from
+    its static pressure and the free stream's entropy and rothalpy,
+
+    .. math::
+        V_I = \sqrt{2\left(I_e + \tfrac{1}{2}U^2 - h(p, s_e)\right)},
+
+    so that the integrands vanish outside the layer however the velocity
+    varies across the passage:
+
+    .. math::
+        \delta^* = \int_0^\delta \left(1 - \frac{V}{V_I}\right) dn,
+        \quad
+        \theta = \int_0^\delta \frac{V}{V_I} \left(1 - \frac{V}{V_I}\right) dn,
+        \quad H = \delta^* / \theta.
+
+    The free stream is taken at the edge `delta`, the first point out from
+    the wall where `V / V_I` reaches `EDGE_RATIO`, found against the block's
+    outer face and then against that first edge, so a shock leaning through
+    the block sets only the first guess. A line whose reference still fails,
+    `V / V_I` above `OVERSHOOT` inside its edge or `theta` not positive, is
+    NaN: a shock reaching into the layer.
+
+    Kinematic, the density taken constant across the layer, as the
+    correlations and the familiar values (about 1.4 turbulent, 2.6 laminar)
+    are: the compressible one rises with Mach number for the same profile
+    (Drela & Giles 1986, eq. 15). The relative velocity's magnitude, so
+    crossflow counts as streamwise. On an H mesh each side of the blade is
+    integrated out to mid-pitch, along the pitchwise grid lines.
+
+    Parameters
+    ----------
+    grid : ember.grid.Grid
+        A solved grid.
+
+    Returns
+    -------
+    list
+        Shaped as `cut_blade_surfs` returns: one list of ``(ni, nj)`` arrays
+        per row, at the nodes of its blade surface, or None for a row whose
+        blade edges were not found.
+
+    """
+    return _blade_layer(grid, 0)
+
+
+def _blade_layer(grid, which):
+    """Return one of the integrals of :func:`_layer_integrals` on every blade."""
+    if _is_h_mesh(grid):
+        return _h_blade_layer(grid, which)
+
+    out = []
+    for row in grid.rows:
+        out.append([])
+        for block, jen in _o_blade_blocks(row):
+            B = block[:, :jen, :].copy(keep_patches=False)
+            out[-1].append(_layer_integrals(B, wrap=True)[which])
+
+    return out
+
+
+def _h_blade_layer(grid, which):
+    """The H-mesh half of :func:`_blade_layer`.
+
+    The blade is the two k faces between the edges, with pitchwise lines
+    running off each into the passage, so each side is integrated over its own
+    half of the pitch and the two are joined as :func:`cut_blade_surfs` joins
+    the surfaces: trailing edge, round the nose, and back.
+    """
+    out = []
+    for i in range(len(grid.rows)):
+        passage, _ = row_blocks(grid, i)
+        limits = _blade_side_limits(passage)
+        if limits is None:
+            out.append(None)
+            continue
+        ile, ite, jst, jen = limits
+        kmid = passage.shape[2] // 2
+
+        # Each side with its wall at k = 0 and the passage middle outermost
+        near = passage[ile : (ite + 1), jst:jen, : kmid + 1].copy(keep_patches=False)
+        far = passage[ile : (ite + 1), jst:jen, kmid:].copy(keep_patches=False)
+        sides = [
+            _layer_integrals(B, wrap=False)[which] for B in (near, far.flip(axis=2))
+        ]
+        out.append([np.concatenate((sides[0][::-1], sides[1][1:]), axis=0)])
+
+    return out
+
+
+def _layer_integrals(B, wrap):
+    """Return the shape factor and displacement thickness of the layer on the
+    ``k = 0`` face of `B`.
+
+    `B` is a block whose ``k`` lines run out from a wall at ``k = 0`` far enough
+    to leave the layer, and whose ``i`` runs along the wall: round it and back
+    to the same node if `wrap`, as an O block's does, or from end to end.
+    See :func:`blade_shape_factor` for the integrals. Each shaped ``(ni, nj)``,
+    and NaN together.
+    """
+    x, r, t = (np.asarray(v, dtype=float) for v in (B.x, B.r, B.t))
+    X = np.stack((x, r * np.cos(t), r * np.sin(t)))
+
+    # The wall's normal from its tangents, round the O block's seam (its first
+    # and last `i` the same node) if it wraps, turned into the flow
+    wall = X[..., 0]
+    if wrap:
+        ring = wall[:, :-1]
+        t_i = np.roll(ring, -1, axis=1) - np.roll(ring, 1, axis=1)
+        t_i = np.concatenate((t_i, t_i[:, :1]), axis=1)
+    else:
+        t_i = np.gradient(wall, axis=1)
+    t_j = np.gradient(wall, axis=2)
+    n = np.cross(t_i, t_j, axis=0)
+    n /= np.linalg.norm(n, axis=0)
+    n *= np.sign(np.sum(n * (X[..., 1] - wall), axis=0))
+    dist = np.sum((X - wall[..., None]) * n[..., None], axis=0)
+
+    # The velocity against the isentropic velocity at each point, from the free
+    # stream at the edge: the outer face, then twice where the profile reaches it
+    s, I = np.asarray(B.s), np.asarray(B.I)
+    U2, V = 0.5 * np.asarray(B.U) ** 2, np.asarray(B.V_rel)
+    isen = B.copy(keep_patches=False)
+    nk = B.shape[2]
+    edge = np.full(B.shape[:2], nk - 1)
+    for _ in range(3):
+        at = edge[..., None]
+        s_e = np.take_along_axis(s, at, axis=-1)
+        I_e = np.take_along_axis(I, at, axis=-1)
+        isen.set_P_s(B.P, np.broadcast_to(s_e, B.shape).copy())
+        V_I = np.sqrt(np.maximum(2.0 * (I_e + U2 - isen.h), 0.0))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = V / V_I
+        reached = ratio >= EDGE_RATIO
+        edge = np.where(reached.any(axis=-1), np.argmax(reached, axis=-1), nk - 1)
+
+    inside = np.arange(nk) <= edge[..., None]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d_star = np.trapezoid(np.where(inside, 1.0 - ratio, 0.0), dist, axis=-1)
+        theta = np.trapezoid(
+            np.where(inside, ratio * (1.0 - ratio), 0.0), dist, axis=-1
+        )
+        H = d_star / theta
+    bad = np.any(inside & (ratio > OVERSHOOT), axis=-1) | ~(theta > 0.0)
+    return np.where(bad, np.nan, H), np.where(bad, np.nan, d_star)
+
+
+def cut_field(surface, field, xr):
+    """Return a nodal field on `surface` along the cut `cut_section` made.
+
+    `structured_meridional` interpolates only what a block holds, so a field
+    computed beside one, y+ say, is cut here by the same rule: linearly, at the
+    first crossing of each streamwise line with the curve `xr`.
+
+    Parameters
+    ----------
+    surface : ember.block.Block
+        The 2D ``(ni, nj)`` surface that was cut.
+    field : ndarray
+        ``(ni, nj)`` values at the nodes of `surface`.
+    xr : ndarray
+        The ``(2, n)`` curve `cut_section` returned.
+
+    Returns
+    -------
+    ndarray
+        ``(ni,)`` values on the cut, NaN where a line does not cross it.
+
+    """
+    xr_nodes = surface.xrt_nd[..., :2] * surface.L_ref
+    dist = ember.cut.signed_distance(xr.T, xr_nodes)
+    return ember.cut._first_j_crossing(field[:, :, None, None], dist[:, :, None])[
+        :, 0, 0
+    ]
+
+
+def suction_surface(grid, machine, i_row, spf, H=None, surfaces=None):
+    """Return surface distance, isentropic Mach number and shape factor along a
+    row's suction side.
+
+    At span fraction `spf`, from the stagnation point to the trailing edge,
+    ordered by normalised surface distance in [0, 1]. The suction side is the
+    surface with the higher mean isentropic Mach number, where the layer grows
+    and separates. The shape factor is the kinematic ``delta* / theta``. `H`
+    and `surfaces`, from :func:`blade_shape_factor` and
+    :func:`cut_blade_surfs`, may be passed in to share them between rows.
+
+    Returns
+    -------
+    zeta, mas, h : ndarray or None
+        None, None, None when the row or that span has no blade surface to cut.
+
+    """
+    if H is None:
+        H = blade_shape_factor(grid)
+    if surfaces is None:
+        surfaces = cut_blade_surfs(grid)
+    if surfaces[i_row] is None or H[i_row] is None:
+        return None, None, None
+
+    surface = surfaces[i_row][0]
+    cut, xr = cut_section(surface, machine.annulus, i_row, spf)
+    if cut is None:
+        return None, None, None
+
+    mas = isentropic_mach(cut, machine.mean_line[:, i_row].s[0])[:, 0]
+    xrt_nose = machine.rows[i_row].blade.evaluate_section(spf)[0][:3, 0]
+    zeta = normalise_surface_distance(cut, mas, xrt_nose)
+
+    h = cut_field(surface, H[i_row][0], xr)
+    side = np.sign(zeta)
+    ss = 1.0 if np.nanmean(mas[side > 0]) > np.nanmean(mas[side < 0]) else -1.0
+    on = side == ss
+    order = np.argsort(np.abs(zeta[on]))
+    return np.abs(zeta[on])[order], mas[on][order], h[on][order]
+
+
+def shape_factor_line(zeta, mas, h, zeta_TE=0.97):
+    """Return the ends of a linear shape factor target along the suction side.
+
+    A straight line in shape factor against surface distance, from where the
+    flow behind the shock has recovered to the trailing edge: it starts at the
+    least shape factor behind the shock, searched from where the suction
+    surface Mach number first falls back below one after its peak, or at the
+    least shape factor anywhere if the surface never goes supersonic, and ends
+    at `zeta_TE`, short of the trailing edge where the layer is not a layer. A
+    boundary layer growing linearly between the two diffuses evenly, with no
+    part of the surface working harder than the rest.
+
+    Behind the spike the shock raises, not at the sonic point: from the sonic
+    point, the line would run over the layer relaxing from the shock, which no
+    camber removes.
+
+    Returns
+    -------
+    (zeta_0, h_0), (zeta_1, h_1) : tuple of float
+        The two ends of the line.
+
+    """
+    ok = np.isfinite(h) & np.isfinite(mas)
+    zeta, mas, h = zeta[ok], mas[ok], h[ok]
+    i_peak = int(np.argmax(mas))
+    behind = np.flatnonzero((mas < 1.0) & (np.arange(len(mas)) > i_peak))
+    if mas[i_peak] >= 1.0 and len(behind):
+        search = (zeta >= zeta[behind[0]]) & (zeta < zeta_TE)
+    else:
+        search = zeta < zeta_TE
+    zeta_0 = float(zeta[search][np.argmin(h[search])])
+    h_0 = float(np.interp(zeta_0, zeta, h))
+    h_1 = float(np.interp(zeta_TE, zeta, h))
+    return (zeta_0, h_0), (float(zeta_TE), h_1)
+
+
+def mach_smoothness(zeta, mas, zeta_TE=0.97):
+    """Return the subsonic smoothness area of a suction surface Mach number.
+
+    The area between the suction surface isentropic Mach number and a cubic
+    fitted to it by least squares, from where the flow behind the shock is
+    first subsonic, or from the peak if the surface never goes supersonic, to
+    `zeta_TE`. Zero for a distribution with no bumps; it says how bumpy, not
+    which way to move, so it is a monitor rather than something to step on.
+
+    From the subsonic point rather than the peak, because no cubic follows a
+    shock and the area would then measure the shock rather than the diffusion
+    behind it.
+
+    Returns
+    -------
+    area : float
+        Unsigned area between the two curves [--], NaN when there are too few
+        points behind the peak to fit.
+    zeta, fit : ndarray
+        Surface distance over the fit, and the cubic there, for drawing.
+
+    """
+    ok = np.isfinite(mas)
+    zeta, mas = zeta[ok], mas[ok]
+    i_peak = int(np.argmax(mas))
+    behind = np.flatnonzero((mas < 1.0) & (np.arange(len(mas)) > i_peak))
+    zeta_0 = zeta[behind[0]] if mas[i_peak] >= 1.0 and len(behind) else zeta[i_peak]
+    on = (zeta >= zeta_0) & (zeta <= zeta_TE)
+    if on.sum() < 4:
+        # Peak at the trailing edge: nothing behind it to fit a cubic to
+        return np.nan, zeta[on], mas[on]
+    fit = np.polyval(np.polyfit(zeta[on], mas[on], 3), zeta[on])
+    area = float(np.trapezoid(np.abs(mas[on] - fit), zeta[on]))
+    return area, zeta[on], fit

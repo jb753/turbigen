@@ -42,7 +42,7 @@ import numpy as np
 logger = logging.getLogger("turbigen")
 
 RESTART_NAME = "restart.npz"
-"""What a run calls the flow field it leaves behind, and `--restart` looks for."""
+"""What a run calls the flow field it leaves behind, for a `restart:` to name."""
 
 STATE = ember.block_util.STATE
 """What is stored per block: ember's own transfer variables, all dimensional.
@@ -62,6 +62,7 @@ STAMPED = (
     "mean_line",
     "annulus",
     "blades",
+    "spanwise",
     "mesh",
     "operating_point",
     "inlet_profile",
@@ -75,6 +76,12 @@ step count must not invalidate a field --- and so are the sections that drive
 the surrounding search (`iterate`, `chic`, `batch`, `database`) or only look at
 the answer afterwards (`post_process`, `job`).
 """
+
+
+UNSTAMPED_OPERATING_POINT = ("throttle_Kp", "throttle_Ki", "throttle_tol")
+"""Operating point settings that decide how the field was reached, or whether
+its pressure is recorded, not what it is, and so are left out of the stamp as
+`solver` is: the throttle's gains and its tolerance."""
 
 
 def design_stamp(config):
@@ -93,6 +100,15 @@ def design_stamp(config):
     """
     data = config.to_dict()
     subset = {key: data[key] for key in STAMPED if key in data}
+
+    # How a throttle reaches its mass flow, not where it ends up, so out for
+    # the reason `solver` is
+    if isinstance(subset.get("operating_point"), dict):
+        subset["operating_point"] = {
+            key: value
+            for key, value in subset["operating_point"].items()
+            if key not in UNSTAMPED_OPERATING_POINT
+        }
 
     # Sorted and canonically separated so the digest depends on the values and
     # not on field order or on how the dict happened to be built. `default`

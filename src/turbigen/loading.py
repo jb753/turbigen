@@ -23,9 +23,6 @@ import turbigen.util
 
 logger = logging.getLogger("turbigen")
 
-N_CHORD_NOSE = 501
-"""Chordwise points used to place the geometric nose of a section."""
-
 
 @dataclasses.dataclass(frozen=True)
 class ClarkMeasurement:
@@ -75,7 +72,7 @@ class ClarkMeasurement:
     """
 
 
-def locate_arc_length(blade, spf, xrt, nchord=10000):
+def locate_arc_length(blade, spf, xrt):
     """Return a measured point's arc length on the suction surface's scale.
 
     A point measured on the flow --- a stagnation point, say --- is not
@@ -88,10 +85,8 @@ def locate_arc_length(blade, spf, xrt, nchord=10000):
 
     Here rather than on :class:`~turbigen.blade.Blade` because a blade answers
     from its design alone and this takes a measurement --- the line this module
-    already draws in its own docstring. Being a free function is also what
-    makes the sampling honest: it passes one `m` to both blade calls, where two
-    methods each defaulting to their own `cluster_cosine(10000)` agreed only by
-    coincidence, and their results are subtracted from one another.
+    already draws in its own docstring. The surfaces and their arc lengths come
+    at the same chordwise points, which a blade evaluates every section at.
 
     **Both surfaces are searched, and the answer is signed.** At any positive
     incidence the stagnation point sits on the pressure side of the nose, and a
@@ -112,8 +107,6 @@ def locate_arc_length(blade, spf, xrt, nchord=10000):
         Span fraction to evaluate at.
     xrt : array_like, shape (3,)
         A point close to the blade, as `(x, r, r * theta)`.
-    nchord : int
-        Chordwise points the surfaces are searched at.
 
     Returns
     -------
@@ -123,9 +116,8 @@ def locate_arc_length(blade, spf, xrt, nchord=10000):
         where that point is on the pressure surface [m].
 
     """
-    m = turbigen.util.cluster_cosine(nchord)
-    surfaces = blade.evaluate_section(spf, m=m)
-    _, s = blade.evaluate_arc_length(spf, m=m)
+    surfaces = blade.evaluate_section(spf)
+    _, s = blade.evaluate_arc_length(spf)
 
     # Nearest point on each surface, then whichever of the two is nearer. The
     # sign is the surface it landed on, suction first as everything is.
@@ -291,7 +283,7 @@ def surfaces(result, i_row, spf):
     # edge round to the other, so it crosses the nose exactly once and finding
     # that crossing is one nearest-node search rather than a match of every
     # node against both surfaces.
-    xrt_nose = blade.evaluate_section(spf, nchord=N_CHORD_NOSE)[0][:, 0]
+    xrt_nose = blade.evaluate_section(spf)[0][:3, 0]
     i_nose = int(
         np.argmin(
             turbigen.util.vecnorm(xrrt - turbigen.blade.to_xrrt(xrt_nose)[:, None])

@@ -52,7 +52,6 @@ blades:
       t_TE: 0.025
       tanwedge: 0.14469594138730743
       type: clark
-  vortex_exponent: -0.6
 - count:
     Co: 0.6263112503945939
     type: Co
@@ -74,7 +73,9 @@ blades:
       tanwedge: 0.17665319612349722
       type: clark
   tip_chord: 0.02
-  vortex_exponent: -0.6
+spanwise:
+  type: vortex_expon
+  n: -0.6
 database:
   path: ../../batch_*/[0-9]*/output.yaml
   power: 2.0
@@ -171,10 +172,8 @@ solver:
   dampin: 25.0
   n_step_soft: 500
   n_step_retry: 500
-  delta_filt: 0.1
   expon_mgrid: 2
   fac_mgrid: 0.2
-  gain_filt: 1
   n_levels: 3
   n_stage: 4
   n_step: 800

@@ -338,16 +338,16 @@ def test_each_coefficient_acts_where_it_is_sampled(i_surface):
     of surface length here against under a thousandth with the blend off.
     """
     order = design().order
-    m = np.linspace(0.0, 1.0, 4001)
+    m = turbigen.blade.CHORD_FRACTION
 
     def surface(coeff):
         thickness = {**CLARK, "coeff": coeff}
         blade = build(blades=blades([thickness] * len(SPF))).design().rows[0].blade
-        xrt = blade.evaluate_section(0.5, m=m)[i_surface]
+        xrt = blade.evaluate_section(0.5)[i_surface]
         return blade, np.stack((xrt[0], xrt[1] * xrt[2]))
 
     blade, plain = surface(CLARK["coeff"])
-    _, s = blade.evaluate_arc_length(0.5, m=m)
+    _, s = blade.evaluate_arc_length(0.5)
     z = s[i_surface] / s[i_surface][-1]
 
     tangent = np.gradient(plain, axis=1)

@@ -12,10 +12,21 @@ import dataclasses
 import logging
 from pathlib import Path
 
+import ember.average
 import ember.convergence_history
 import numpy as np
 
-from turbigen import bconds, case, guess, iterate, metric, mixout, post, restart
+from turbigen import (
+    bconds,
+    case,
+    guess,
+    iterate,
+    metric,
+    mixout,
+    nozzle,
+    post,
+    restart,
+)
 from turbigen.result import Result
 
 logger = logging.getLogger("turbigen")
@@ -63,6 +74,11 @@ not. `Grid.read_emb` brings it back.
 """
 
 
+SOLVER_DIR = "solve"
+"""Where in a run's directory the solver keeps any files of its own: the
+input, output and log of a solver that runs outside the process, such as
+Turbostream. One that runs in memory writes nothing there."""
+
 HISTORY_NAME = "conv.cnv"
 """What a run calls its convergence history, written beside the flow field.
 
@@ -108,6 +124,11 @@ def prepare(config, restart_path=None, warm=None):
 
     grid = config.mesh.mesh(machine)
     run_log.info(grid_string(grid))
+
+    # An exit nozzle is part of the operating point, not the design, so it is
+    # morphed into the grid the design meshed, and a report of a nozzle point
+    # draws the grid that was solved.
+    nozzle.morph(grid, machine, config.operating_point)
 
     bconds.apply(grid, machine, config.operating_point, config.inlet_profile)
     guess.apply(grid, machine)
@@ -291,7 +312,7 @@ def _reattach_patches(grid):
         logger.debug(f"Could not re-attach the grid's patches: {err}")
 
 
-def soft_start(solver, grid, n_step=None):
+def soft_start(solver, grid, n_step=None, workdir=None):
     """March `grid` with a detuned copy of `solver`, and return what it did.
 
     Nothing of it is kept. The grid is marched in place, so the production
@@ -302,6 +323,7 @@ def soft_start(solver, grid, n_step=None):
     to spend on a robust start depends on the case and the guess it is starting
     from, which the solver has no way to know. `n_step` defaults to
     `solver.n_step_soft`; a retry passes `solver.n_step_retry` instead.
+    `workdir` is where the solver keeps its files, as for the march itself.
     """
     if n_step is None:
         n_step = solver.n_step_soft
@@ -309,14 +331,15 @@ def soft_start(solver, grid, n_step=None):
     soft = dataclasses.replace(solver.soft(), n_step=n_step)
 
     run_log.info(f"Soft start: {n_step} steps")
-    history = soft.solve(grid)
+    history = soft.solve(grid, workdir)
     run_log.info(convergence_string(solver.converged(history)))
 
     return history
 
 
-def _march(config, restart_path, warm, soft, retry):
-    """Prepare `config` and march it, soft starting or retrying as asked.
+def _march(config, restart_path, warm, soft, retry, workdir):
+    """Prepare `config` and march it, soft starting or retrying as asked, the
+    solver keeping any files it writes in `workdir`.
 
     Returns ``(config, machine, grid, history)``. All four, because a retry
     rebuilds the start and so replaces everything `prepare` made the first time.
@@ -330,7 +353,7 @@ def _march(config, restart_path, warm, soft, retry):
     history = None
     soft_ran = bool(soft and config.solver.n_step_soft)
     if soft_ran:
-        history = soft_start(config.solver, grid)
+        history = soft_start(config.solver, grid, workdir=workdir)
 
         # A soft pass that blew up leaves a field of NaNs, and marching the
         # production settings from those is CFD paid for and certain to reach
@@ -340,8 +363,15 @@ def _march(config, restart_path, warm, soft, retry):
         if config.solver.converged(history):
             history = None
 
+    # The solver's start-up ramp is for an initial guess. A restart field is a
+    # solution, and a soft pass has already done the starting, so either way the
+    # ramp would only kick the field the production march begins from.
+    production = config.solver
+    if restart_path is not None or soft_ran:
+        production = production.restart()
+
     if history is None:
-        history = config.solver.solve(grid)
+        history = production.solve(grid, workdir)
 
         # A hard start that diverged gets one more go. Only one that had no
         # soft start: a soft pass that ran and still led here is not helped by
@@ -363,9 +393,11 @@ def _march(config, restart_path, warm, soft, retry):
             del grid
             config, machine, grid = prepare(config, restart_path, warm=warm)
 
-            history = soft_start(config.solver, grid, config.solver.n_step_retry)
+            history = soft_start(
+                config.solver, grid, config.solver.n_step_retry, workdir
+            )
             if config.solver.converged(history):
-                history = config.solver.solve(grid)
+                history = config.solver.restart().solve(grid, workdir)
 
     return config, machine, grid, history
 
@@ -402,6 +434,23 @@ def _save_field(out_dir, config, grid, history):
         save_grid(out_dir / GRID_NAME, grid)
 
 
+def _log_outlet_mach(grid):
+    """Log the area-averaged meridional Mach number on each outlet patch.
+
+    How close the exit is to choking, read off the boundary itself; never
+    allowed to cost the run, a diverged field having no Mach number to give.
+    """
+    for patch in grid.patches.outlet:
+        try:
+            face = patch.block_view.squeeze()
+            Mam = float(ember.average.area_average(face.Mam, face))
+        except Exception as err:
+            logger.warning(f"Could not average the Mach number on the outlet: {err}")
+            continue
+        name = f" {patch.label}" if patch.label else ""
+        run_log.info(f"Outlet{name}: area-averaged Ma_m={Mam:.4f}")
+
+
 def _measure(config, machine, grid, history, out_dir):
     """Reduce a marched grid to a `Result`, while the grid is still in memory.
 
@@ -420,6 +469,7 @@ def _measure(config, machine, grid, history, out_dir):
     once, whichever measurement raises, and the error goes on to be raised.
     """
     converged = config.solver.converged(history)
+    _log_outlet_mach(grid)
 
     # Reduce the solution to a mean line. A diverged grid has nothing to mix
     # out, and even a converged one can refuse, so this must not cost the run
@@ -526,7 +576,17 @@ def solve(
     and this solve had no soft start of its own. The caller decides because a
     `chic` point that diverges is an answer rather than a failure.
     """
-    config, machine, grid, history = _march(config, restart_path, warm, soft, retry)
+    # A run's own directory for the solver's files, for a solver that writes
+    # them; given per run, as the one config's solver serves every run
+    config, machine, grid, history = _march(
+        config, restart_path, warm, soft, retry, out_dir / SOLVER_DIR
+    )
+
+    # What `output.yaml` records is the field this run started from, whatever
+    # the config it was handed said, so the record is of what happened.
+    start = str(Path(restart_path).resolve()) if restart_path is not None else None
+    config = dataclasses.replace(config, restart=start)
+
     _save_field(out_dir, config, grid, history)
     config, result = _measure(config, machine, grid, history, out_dir)
     _log_answer(config, result)

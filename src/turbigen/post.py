@@ -35,6 +35,7 @@ import ember.block_util
 import ember.util
 import numpy as np
 
+import turbigen.blade
 import turbigen.util
 from turbigen.node import Node
 
@@ -48,11 +49,11 @@ _STYLE = importlib.resources.files("turbigen") / "turbigen.mplstyle"
 """Shipped plotting style, applied by :func:`styled`."""
 
 N_CHORD_PLOT = 501
-"""Chordwise points to draw a blade section with.
+"""Chordwise points to draw a curve along a blade with."""
 
-Far fewer than the ten thousand `evaluate_section` defaults to, which is a
-resolution for geometry and not for a line on a page.
-"""
+PLOT_STRIDE = (turbigen.blade.N_CHORD - 1) // (N_CHORD_PLOT - 1)
+"""Every how many of a section's points to draw it with: the section is
+evaluated at a resolution for geometry, not for a line on a page."""
 
 N_SEGMENT_CUT = 50
 """Meridional points per annulus segment when cutting the whole machine."""
@@ -100,6 +101,8 @@ _SPANWISE_LABELS = {
     "Vt": r"Circumferential Velocity, $V_\theta/{sym}$",
     "Alpha": r"Yaw Angle, $\alpha$/deg",
     "Alpha_rel": r"Relative Yaw Angle, $\alpha^\mathrm{rel}$/deg",
+    "Ma": r"Mach Number, $\mathit{Ma}$",
+    "Ma_rel": r"Relative Mach Number, $\mathit{Ma}^\mathrm{rel}$",
 }
 """Axis labels for the quantities `SpanwisePlot` will average, by name.
 
@@ -192,14 +195,9 @@ def _blade_annulus_lines(blade):
     # trailing edge at 1, and the two diagonals crossing between them.
     m = np.stack((np.zeros_like(spf), spf, 1.0 - spf, np.ones_like(spf)))
 
-    # Camber-line xr is the mean of the two surfaces. evaluate_section takes a
-    # scalar span fraction, so the stations are walked one at a time.
-    xr = np.stack(
-        [
-            np.mean(blade.evaluate_section(s, m=m[:, j]), axis=0)[:2]
-            for j, s in enumerate(spf)
-        ]
-    )
+    # The camber line takes a scalar span fraction, so the stations are walked
+    # one at a time
+    xr = np.stack([blade.evaluate_camber(s, m=m[:, j])[:2] for j, s in enumerate(spf)])
     # (station, coord, line) -> (line, coord, station)
     return xr.transpose(2, 1, 0)
 
@@ -313,8 +311,9 @@ class SectionsPlot(Post):
                 # The datum curve follows the section's own span, so each one
                 # sits in its true conformal plane.
                 xr_curve = annulus.evaluate_xr(m, spf).T
-                surfaces = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)
+                surfaces = row.blade.evaluate_section(spf)
                 for i_surf, xrt in enumerate(surfaces):
+                    xrt = xrt[:3, ::PLOT_STRIDE]
                     mp = ember.util.unwrap_meridional(xr_curve, xrt[:2].T)
                     theta = xrt[2]
                     ax.plot(
@@ -398,6 +397,100 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
     ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
 
 
+class MeshPlot(Post):
+    """Grid lines of an H or OHP mesh, meridional and blade-to-blade.
+
+    For an H mesh, whose index directions are streamwise, spanwise and
+    pitchwise in every block, the meridional view is the constant-`k` slice at
+    mid-pitch. An OHP mesh has no such common index, so its meridional view is
+    the periodic surface instead, :func:`turbigen.util.cut_periodic`, which
+    runs unbroken from inlet to outlet. The blade-to-blade view
+    is the constant-`j` slice at mid-span of every block, unrolled to
+    ``(x, r theta)``. Both are drawn to scale, every grid line, for one passage
+    of each row. A mesh of any other type draws nothing.
+    """
+
+    type: ClassVar[str] = "mesh"
+
+    linewidth: float = 0.05
+    """Width of the grid lines [pt]."""
+
+    def report(self, config, result):
+        if result.grid is None:
+            logger.info("No grid, skipping the mesh plot.")
+            return []
+        if config.mesh is None or config.mesh.type not in ("h", "ohp"):
+            logger.info("Not an H or OHP mesh, skipping the mesh plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        # The passage blocks only: a gridded tip block spans only a sliver of
+        # span, so has no mid-span slice and adds nothing seen meridionally.
+        blocks = [block for block in result.grid if "_tip" not in block.label]
+
+        def draw(title, slices):
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_aspect("equal")
+            ax.axis("off")
+            ax.set_title(title)
+            style = {"color": "k", "linewidth": self.linewidth}
+            for x, y in slices:
+                # Columns are lines, so this draws both families
+                ax.plot(x, y, **style)
+                ax.plot(x.T, y.T, **style)
+            return fig
+
+        if config.mesh.type == "h":
+            meridional = draw(
+                "Meridional Grid, Mid-Pitch",
+                [
+                    (
+                        block.x[:, :, block.shape[2] // 2],
+                        block.r[:, :, block.shape[2] // 2],
+                    )
+                    for block in blocks
+                ],
+            )
+        else:
+            meridional = draw(
+                "Meridional Grid, Periodic Surface",
+                [
+                    (surf.x, surf.r)
+                    for row in turbigen.util.cut_periodic(result.grid)
+                    for surf in row
+                ],
+            )
+        blade_to_blade = draw(
+            "Blade-to-Blade Grid, Mid-Span",
+            [
+                (
+                    block.x[:, block.shape[1] // 2, :],
+                    block.rt[:, block.shape[1] // 2, :],
+                )
+                for block in blocks
+            ],
+        )
+        return [meridional, blade_to_blade]
+
+
+def _plot_reference(ax, path):
+    """Draw the two columns of the CSV at `path` on `ax`, as a reference.
+
+    Relative to the working directory, not the config: a run copies its config
+    into a fresh directory, so the config's own location says nothing about
+    where its data is. A file that is not there is warned about and skipped,
+    since a missing overlay is no reason to lose the rest of a report.
+    """
+    if not path:
+        return
+    if not Path(path).is_file():
+        logger.warning(f"No reference data at {path}, so none is drawn.")
+        return
+    data = np.loadtxt(path, delimiter=",", comments="#", ndmin=2)
+    ax.plot(data[:, 0], data[:, 1], "k--", label="Reference")
+
+
 class CamberPlot(Post):
     """Metal angle along the camber line of each row.
 
@@ -419,6 +512,14 @@ class CamberPlot(Post):
     spf: tuple[float, ...] = ()
     """Span fractions to draw. Empty for the designed sections."""
 
+    normalised: bool = False
+    """Draw the angle normalised between the end angles,
+    ``(chi - chi_LE) / (chi_TE - chi_LE)``, rather than in degrees."""
+
+    reference_csv: str = ""
+    """CSV of meridional fraction and the quantity drawn, to overlay for
+    comparison, relative to the working directory. Empty for none."""
+
     def report(self, config, result):
         rows = result.machine.rows if result.machine else ()
         if not rows:
@@ -433,14 +534,78 @@ class CamberPlot(Post):
         for i_row, row in enumerate(rows):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_title(f"Row {i_row} Camber")
-            ax.set_ylabel(r"Metal Angle, $\chi$ / deg")
+            if self.normalised:
+                ax.set_ylabel(r"Normalised Camber, $\hat{\chi}$")
+            else:
+                ax.set_ylabel(r"Metal Angle, $\chi$ / deg")
             ax.set_xlabel(r"Meridional Distance, $m/c_m$")
             ax.set_xlim((0.0, 1.0))
 
             for spf in _span_fractions(self.spf, row.blade):
                 camber, _ = row.blade._get_cam_thick(spf)
-                ax.plot(m, camber.chi(m), label=f"spf={spf:.2f}")
+                chi = camber.chi(m)
+                if self.normalised:
+                    chi = (chi - chi[0]) / (chi[-1] - chi[0])
+                ax.plot(m, chi, label=f"spf={spf:.2f}")
 
+            _plot_reference(ax, self.reference_csv)
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
+class ThicknessPlot(Post):
+    """Thickness distribution along the camber line of each row.
+
+    The companion to :class:`CamberPlot`, drawing the other half of a section.
+    Total thickness, both surfaces summed, which is what the blade is built
+    with: a :class:`~turbigen.thickness.Taylor` hangs its `t_max` off each
+    side of the camber line, so it peaks here at twice that, while its `t_TE`
+    is already the total. A distribution that differs between the surfaces
+    draws each one's half as well, doubled to the same scale. Taken from the distribution
+    itself, so a round trailing edge, which the blade puts on afterwards,
+    does not appear.
+    """
+
+    type: ClassVar[str] = "thickness"
+
+    spf: tuple[float, ...] = ()
+    """Span fractions to draw. Empty for the designed sections."""
+
+    reference_csv: str = ""
+    """CSV of meridional fraction and total thickness over meridional chord,
+    to overlay for comparison, relative to the working directory. Empty for
+    none."""
+
+    def report(self, config, result):
+        rows = result.machine.rows if result.machine else ()
+        if not rows:
+            logger.info("No blades were designed, skipping the thickness plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        m = np.linspace(0.0, 1.0, N_CHORD_PLOT)
+
+        figures = []
+        for i_row, row in enumerate(rows):
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_title(f"Row {i_row} Thickness")
+            ax.set_ylabel(r"Thickness, $t/c_m$")
+            ax.set_xlabel(r"Meridional Distance, $m/c_m$")
+            ax.set_xlim((0.0, 1.0))
+
+            for i_spf, spf in enumerate(_span_fractions(self.spf, row.blade)):
+                _, thickness = row.blade._get_cam_thick(spf)
+                t_s, t_p = thickness.thick_both(m)
+                ax.plot(m, t_s + t_p, color=f"C{i_spf}", label=f"spf={spf:.2f}")
+                if not np.allclose(t_s, t_p):
+                    ax.plot(m, 2.0 * t_s, color=f"C{i_spf}", ls="--")
+                    ax.plot(m, 2.0 * t_p, color=f"C{i_spf}", ls=":")
+
+            _plot_reference(ax, self.reference_csv)
+            ax.set_ylim(bottom=0.0)
             ax.legend()
             figures.append(fig)
 
@@ -775,7 +940,7 @@ class SurfacePlot(Post):
 
                 # Either surface would do for the nose: the thickness vanishes
                 # at m = 0, so the two coincide exactly there.
-                xrt_nose = row.blade.evaluate_section(spf, nchord=N_CHORD_PLOT)[0][:, 0]
+                xrt_nose = row.blade.evaluate_section(spf)[0][:3, 0]
                 zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
 
                 # Folded onto the positive axis, so both surfaces run from the
@@ -803,6 +968,170 @@ class SurfacePlot(Post):
             if np.isfinite(top) and top > 0.0:
                 ax.set_ylim(0.0, np.ceil(top / MAS_STEP) * MAS_STEP)
 
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
+class YplusPlot(Post):
+    """y+ around the blade surfaces, as the wall function saw it."""
+
+    type: ClassVar[str] = "yplus"
+
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions to plot at; empty to draw none, which is how a config
+    turns the standard plot off."""
+
+    def report(self, config, result):
+        if not self.spf:
+            return []
+
+        rows = result.machine.rows if result.machine else ()
+        annulus = result.machine.annulus if result.machine else None
+        if result.grid is None or not rows or annulus is None:
+            logger.info("No solved grid, skipping the y+ plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the y+ plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        # Under the law the solution was marched with, which only ember has; a
+        # solver without one is read under ember's default.
+        wall_law = getattr(config.solver, "wall_law", "fit")
+        yplus = turbigen.util.blade_yplus(result.grid, wall_law)
+        surfaces = turbigen.util.cut_blade_surfs(result.grid)
+
+        figures = []
+        for i_row, row in enumerate(rows):
+            if surfaces[i_row] is None:
+                logger.info(
+                    f"Could not cut the blade surface of row {i_row}, "
+                    "skipping its y+ plot."
+                )
+                continue
+
+            surface = surfaces[i_row][0]
+            s_ref = result.machine.mean_line[:, i_row].s[0]
+
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_xlabel(r"Normalised Surface Distance, $|\zeta|$")
+            ax.set_ylabel(r"Wall Distance, $y^+$")
+            ax.set_title(f"Row {i_row} Wall $y^+$")
+            ax.set_xlim(0.0, 1.0)
+
+            for spf in self.spf:
+                cut, xr = turbigen.util.cut_section(surface, annulus, i_row, spf)
+                if cut is None:
+                    logger.info(
+                        f"Row {i_row} has no blade surface at spf={spf:.2f}, "
+                        "skipping that section."
+                    )
+                    continue
+
+                # Placed on the same abscissa as the surface distribution, so
+                # the two read against each other.
+                mas = turbigen.util.isentropic_mach(cut, s_ref)[:, 0]
+                xrt_nose = row.blade.evaluate_section(spf)[0][:3, 0]
+                zeta = turbigen.util.normalise_surface_distance(cut, mas, xrt_nose)
+
+                yp = turbigen.util.cut_field(surface, yplus[i_row][0], xr)
+                ax.plot(np.abs(zeta), yp, label=f"spf={spf:.2f}")
+
+            if not ax.lines:
+                plt.close(fig)
+                continue
+
+            ax.set_ylim(bottom=0.0)
+            ax.legend()
+            figures.append(fig)
+
+        return figures
+
+
+class ShapeFactorPlot(Post):
+    """Kinematic boundary layer shape factor along the suction surfaces."""
+
+    type: ClassVar[str] = "shape_factor"
+
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions to plot at; empty for each row's own control sections,
+    the spans its blade is defined at."""
+
+    line: bool = False
+    """Draw the linear target from behind the shock to the trailing edge,
+    :func:`~turbigen.util.shape_factor_line`, with the points at a third and
+    two thirds of the way along it, and give the subsonic Mach smoothness area,
+    :func:`~turbigen.util.mach_smoothness`, in the legend."""
+
+    def report(self, config, result):
+        rows = result.machine.rows if result.machine else ()
+        annulus = result.machine.annulus if result.machine else None
+        if result.grid is None or not rows or annulus is None:
+            logger.info("No solved grid, skipping the shape factor plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the shape factor plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        H = turbigen.util.blade_shape_factor(result.grid)
+        surfaces = turbigen.util.cut_blade_surfs(result.grid)
+
+        figures = []
+        for i_row in range(len(rows)):
+            if surfaces[i_row] is None or H[i_row] is None:
+                logger.info(
+                    f"Could not find the blade surface of row {i_row}, "
+                    "skipping its shape factor plot."
+                )
+                continue
+
+            fig, ax = plt.subplots(layout="constrained")
+            ax.set_xlabel(r"Normalised Surface Distance, $|\zeta|$")
+            ax.set_ylabel(r"Kinematic Shape Factor, $H = \delta^*/\theta$")
+            ax.set_title(f"Row {i_row} Suction Side Boundary Layer Shape Factor")
+            ax.set_xlim(0.0, 1.0)
+
+            spfs = self.spf or [
+                float(section.spf) for section in config.blades[i_row].sections
+            ]
+            for spf in spfs:
+                zeta, mas, h = turbigen.util.suction_surface(
+                    result.grid, result.machine, i_row, spf, H=H, surfaces=surfaces
+                )
+                if zeta is None:
+                    logger.info(
+                        f"Row {i_row} has no blade surface at spf={spf:.2f}, "
+                        "skipping that section."
+                    )
+                    continue
+                label = f"spf={spf:.2f}"
+                if self.line:
+                    area, _, _ = turbigen.util.mach_smoothness(zeta, mas)
+                    label += rf", $\Delta A_{{sb}}={area:.2g}$"
+                (curve,) = ax.plot(zeta, h, label=label)
+                if self.line:
+                    (z0, h0), (z1, h1) = turbigen.util.shape_factor_line(zeta, mas, h)
+                    color = curve.get_color()
+                    ax.plot([z0, z1], [h0, h1], "--", color=color)
+                    frac = np.array([1.0, 2.0]) / 3.0
+                    ax.plot(
+                        z0 + frac * (z1 - z0), h0 + frac * (h1 - h0), "o", color=color
+                    )
+
+            if not ax.lines:
+                plt.close(fig)
+                continue
+
+            # Reference trailing edge shape factor, H_TE = 2.2
+            ax.axhline(2.2, color="0.5", lw=0.5, zorder=0)
+            ax.set_ylim(1.0, 3.0)
             ax.legend()
             figures.append(fig)
 
@@ -991,6 +1320,106 @@ def _cut_spf(cut):
     return 0.5 * (spf[:-1] + spf[1:])
 
 
+_TARGET_LABELS = {
+    "spanwise_work": r"Work Coefficient Offset, $\psi - \psi_\mathrm{ml}$",
+    "spanwise_swirl": r"Angular Momentum Offset, $\Delta(rV_\theta)/r V_m$",
+    "Vm": r"Meridional Velocity Shape, $V_m$ [knot units]",
+    "rVt": r"Angular Momentum Offset, $\Delta(rV_\theta)/r V_m$",
+}
+"""Axis labels for what each spanwise iterator measures."""
+
+
+class SpanwiseTargetPlot(Post):
+    """Target against actual for every spanwise iterator.
+
+    For spanwise_work and spanwise_swirl, one figure per iterator: what it
+    measures along its row's outlet, as an offset from the mean line, and the
+    target it drives the knots to. That target is the configured shape moved
+    by the whole span's mean, as :meth:`~turbigen.iterate._OutletIterator.measure`
+    explains, so a converged run sits on the line drawn. Faces the fit leaves
+    out are drawn faint.
+
+    For spanwise_inflow, one figure per station and profile it copies: the CFD
+    profile against the curve through the station's knots.
+
+    Measured by the iterators themselves, so the plot and the error they step
+    on cannot disagree.
+    """
+
+    type: ClassVar[str] = "spanwise_targets"
+
+    def report(self, config, result):
+        from turbigen import iterate, spanwise
+
+        kinds = (iterate._OutletIterator, iterate.SpanwiseInflow)
+        iterators = [it for it in config.iterate.correct if isinstance(it, kinds)]
+        if not iterators:
+            logger.info("No spanwise iterators, skipping their plot.")
+            return []
+
+        if result.grid is None or result.machine is None:
+            logger.info("No solved grid, skipping the spanwise target plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the spanwise target plot.")
+            return []
+
+        import matplotlib.pyplot as plt
+
+        s = np.linspace(0.0, 1.0, 201)
+
+        def draw(knots, profile, values, line, labels, title, xlabel):
+            spf = np.asarray(profile["spf"])
+            keep = iterate._fitted_faces(knots, spf)
+            values = np.asarray(values)
+            fig, ax = plt.subplots(layout="constrained")
+            ax.plot(values, spf, color="C0", alpha=0.3)
+            ax.plot(np.where(keep, values, np.nan), spf, color="C0", label=labels[0])
+            ax.plot(spanwise.spline(knots, line)(s), s, "k--", label=labels[1])
+            ax.plot(line, knots, "ko")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Span Fraction")
+            ax.set_ylim(0.0, 1.0)
+            ax.set_title(title)
+            ax.legend()
+            return fig
+
+        figures = []
+        for it in iterators:
+            if isinstance(it, iterate._OutletIterator):
+                m = it.measure(config, result)
+                figures.append(
+                    draw(
+                        m["knots"],
+                        m["profile"],
+                        m["values"],
+                        m["target"] + m["shift"],
+                        ("Actual", "Target"),
+                        f"Row {it.i_row} {it.type}",
+                        _TARGET_LABELS[it.type],
+                    )
+                )
+                continue
+
+            for k, field in it._owned(config):
+                profile, values = it.measure(config, result, k, field)
+                nominal = np.asarray(getattr(config.spanwise.stations[k], field))
+                figures.append(
+                    draw(
+                        iterate._knots(config, k // 2),
+                        profile,
+                        values,
+                        nominal,
+                        ("CFD", "Design"),
+                        f"Station {k} {field}",
+                        _TARGET_LABELS[field],
+                    )
+                )
+
+        return figures
+
+
 class SpanwisePlot(Post):
     """Pitch-averaged flow quantity against span fraction, at a cut plane.
 
@@ -1010,7 +1439,7 @@ class SpanwisePlot(Post):
 
     variable: str = "Ys"
     """Quantity to plot: ``Ys``, ``CP``, ``CPo``, ``Cho``, ``Vm``, ``Vt``,
-    ``Alpha`` or ``Alpha_rel``."""
+    ``Alpha``, ``Alpha_rel``, ``Ma`` or ``Ma_rel``."""
 
     def report(self, config, result):
         machine = result.machine
@@ -1114,6 +1543,10 @@ class SpanwisePlot(Post):
             # cut carries, which is the frame of the blocks it was cut from --
             # so a rotor profile is the angle its own blades see.
             values = mass_avg(getattr(cut, self.variable))
+        elif self.variable in ("Ma", "Ma_rel"):
+            # Dimensionless already, and in the frame the cut carries for the
+            # same reason as the angles above.
+            values = mass_avg(getattr(cut, self.variable))
         else:
             raise ValueError(f"Unhandled spanwise variable {self.variable!r}.")
 
@@ -1127,6 +1560,185 @@ class SpanwisePlot(Post):
         ax.set_ylim((0.0, 1.0))
         ax.set_title(f"{self.variable} at m={m:.3g}, row {i_row}")
         return fig
+
+
+class StationContourPlot(Post):
+    """Contours of a flow variable over a cut plane at a design station.
+
+    Looking along the machine axis at the plane the mean line is reduced
+    across, so where a row's loss sits --- a tip leakage vortex, a hub corner,
+    a wake --- is seen over the whole passage at once, rather than as the
+    pitch average :class:`SpanwisePlot` draws or one span at a time as in
+    :class:`ContourPlot`. The cut is the one the spanwise iterators take,
+    :meth:`~turbigen.machine.Machine.cut_planes`, so the picture is of the
+    same flow they measure.
+    """
+
+    type: ClassVar[str] = "station_contour"
+
+    station: tuple[int, ...] = (1,)
+    """Stations to cut at, indexing :meth:`~turbigen.machine.Machine.cut_planes`:
+    twice the row index for its inlet, one more for its outlet. The default is
+    the first row's outlet."""
+
+    offset: float | None = None
+    """Distance of the cut into the adjacent gap, in blade chords; the
+    default :data:`~turbigen.machine.CUT_OFFSET` if None."""
+
+    variable: str = "Ys"
+    """``Ys``, the entropy rise over the row's inlet in units of its
+    characteristic relative dynamic head as :class:`SpanwisePlot` takes it, or
+    any block property, e.g. ``Ma_rel``, ``Po``."""
+
+    n_passage: int = 2
+    """Passages to draw, repeated pitchwise."""
+
+    n_level: int = 21
+    """Upper bound on the number of filled bands, as for :class:`ContourPlot`."""
+
+    clip_percentile: float = 1.0
+    """Percentile trimmed from each end of the field before the level range is
+    rounded, as for :class:`ContourPlot`."""
+
+    cmap: str = "cubehelix_r"
+    """Colour map to fill with; reversed cubehelix by default, so that no loss
+    is light and the most is dark."""
+
+    cmap_start: float = 0.06
+    """Fraction of the colour map skipped at its low end, so the lowest band is
+    a light grey rather than white, and reads as part of the passage rather
+    than as a hole in it."""
+
+    _levels = ContourPlot._levels
+
+    def report(self, config, result):
+        machine = result.machine
+        annulus = machine.annulus if machine else None
+        if result.grid is None or annulus is None:
+            logger.info("No grid to cut, skipping the station contour plot.")
+            return []
+
+        if result.history is not None and result.history.diverged:
+            logger.info("The march diverged, skipping the station contour plot.")
+            return []
+
+        if self.variable == "Ys" and result.actual is None:
+            logger.info(
+                "No mixed-out mean line to refer Ys to, skipping the station "
+                "contour plot."
+            )
+            return []
+
+        import matplotlib.colors
+        import matplotlib.pyplot as plt
+
+        # Imported here, iterate being the heavier module and the one that owns
+        # how a station is cut.
+        import turbigen.iterate
+
+        figures = []
+        for k in self.station:
+            try:
+                _, cut, _ = turbigen.iterate._station_cut(result, k, self.offset)
+            except ValueError as err:
+                logger.info(f"Could not cut station {k}: {err}")
+                continue
+
+            i_row = min(k // 2, annulus.n_row - 1)
+            values = self._values(cut, result.actual, i_row)
+            r = np.asarray(cut.r)
+            t = np.asarray(cut.t)
+            # The row's pitch in theta, 2 pi / Nb: each pitchwise line of the
+            # cut spans one pitch less any solid it meets, so no line's own
+            # extent is the period to repeat by.
+            pitch = float(cut.pitch)
+
+            # Loss is a rise over the inlet, so the scale stops at zero: the
+            # slightly negative values in the free stream are the round-off of
+            # referring to a mixed-out inlet, not flow worth a colour.
+            if self.variable == "Ys":
+                values = np.maximum(values, 0.0)
+            levels, extend = self._levels([values])
+
+            # Where every pitchwise line spans the whole pitch, the passages
+            # are joined into one field and filled once: filled separately,
+            # the antialiased edges of the two fills leave a hairline seam
+            # between them. Each line's last node is the next passage's first,
+            # so it is dropped from all but the last. A line that meets a solid
+            # spans less, and joining would fill the solid, so those passages
+            # are filled one at a time instead.
+            n = self.n_passage
+            if np.allclose(np.ptp(t, axis=1), pitch, rtol=1e-6):
+                tj = np.concatenate(
+                    [t[:, :-1] + i * pitch for i in range(n)]
+                    + [t[:, -1:] + (n - 1) * pitch],
+                    axis=1,
+                )
+                vj = np.concatenate([values[:, :-1]] * n + [values[:, -1:]], axis=1)
+                # Constant along a pitchwise line, so one column serves all
+                tiles = [(np.broadcast_to(r[:, :1], tj.shape), tj, vj)]
+            else:
+                tiles = [(r, t + i * pitch, values) for i in range(n)]
+
+            cmap = matplotlib.colors.ListedColormap(
+                plt.get_cmap(self.cmap)(np.linspace(self.cmap_start, 1.0, 256))
+            )
+
+            # Looking along the machine axis in Cartesian y and z, so the
+            # passages are the sectors of the annulus they are, turned so the
+            # middle of those drawn is upright.
+            t_mid = 0.5 * (
+                min(ti.min() for _, ti, _ in tiles)
+                + max(ti.max() for _, ti, _ in tiles)
+            )
+
+            fig, ax = plt.subplots(layout="constrained")
+            for ri, ti, vi in tiles:
+                filled = ax.contourf(
+                    ri * np.sin(ti - t_mid),
+                    ri * np.cos(ti - t_mid),
+                    vi,
+                    levels=levels,
+                    cmap=cmap,
+                    extend=extend,
+                )
+                filled.set_edgecolor("face")
+                filled.set_linewidth(0.05)
+
+            # Equal aspect so the passage keeps its shape
+            ax.set_aspect("equal")
+            ax.axis("off")
+            end = "outlet" if k % 2 else "inlet"
+            ax.set_title(f"Row {i_row} {end}, station {k}")
+            label = LABELS.get(self.variable) or _SPANWISE_LABELS.get(
+                self.variable, self.variable
+            )
+            # Inset beside the axes rather than given a slot of its own, which
+            # with an equal aspect pushes the passage to one side of the page:
+            # this way the passage is centred, and the bar hangs off it.
+            cax = ax.inset_axes([1.04, 0.1, 0.04, 0.8])
+            fig.colorbar(filled, cax=cax, label=label)
+            figures.append(fig)
+
+        return figures
+
+    def _values(self, cut, mean_line, i_row):
+        """Return the variable to contour, nodal over `cut`."""
+        if self.variable == "Ys":
+            row = mean_line[:, i_row]
+            ref = mean_line.get_characteristic_station(i_row)
+            return (
+                float(row.T[1])
+                * (np.asarray(cut.s) - float(row.s[0]))
+                / float(ref.halfVsq_rel)
+            )
+        try:
+            return np.asarray(getattr(cut, self.variable))
+        except AttributeError:
+            raise ValueError(
+                f"An ember block has no property {self.variable!r} to contour; "
+                f"try one of {sorted(LABELS)}."
+            ) from None
 
 
 class PostChain:
@@ -1307,8 +1919,11 @@ STANDARD = (
     VelocityTrianglePlot(),
     AnnulusPlot(),
     SectionsPlot(),
+    ThicknessPlot(),
+    MeshPlot(),
     ConvergencePlot(),
     SurfacePlot(),
+    YplusPlot(),
     ContourPlot(),
 )
 """Post-processors that run whether or not a config asks for them.

@@ -118,20 +118,34 @@ class PlaneTopology:
         pitch apart in `y`. Connected components of that relation are the
         nodes, and the shift of each instance is counted from the first
         instance of its node.
+
+        Only instances on a block face are candidates: blocks meet at their
+        faces, and a node inside a block is that block's alone. A plane
+        folded before the sweeps unfold it can bring two interior nodes within
+        `tol` of each other, and merged they would be one node with the wrong
+        cells round it, which the sweeps then crumple about rather than undo.
         """
         n = len(points)
         tol = max(
             MERGE_RTOL * np.ptp(points, axis=0).max(),
             MERGE_ULP * np.finfo(points.dtype).eps * np.abs(points).max(),
         )
-        tree = cKDTree(points)
+        face = np.zeros(n, dtype=bool)
+        for b, (ni, nk) in enumerate(self.shapes):
+            on = np.zeros((ni, nk), dtype=bool)
+            on[[0, -1], :] = on[:, [0, -1]] = True
+            face[self._offsets[b] : self._offsets[b + 1]] = on.ravel()
+        i_face = np.flatnonzero(face)
+        tree = cKDTree(points[i_face])
 
         pairs = [tree.query_pairs(tol, output_type="ndarray")]
         if self.pitch:
-            dist, j = tree.query(points + [0.0, self.pitch], distance_upper_bound=tol)
+            dist, j = tree.query(
+                points[i_face] + [0.0, self.pitch], distance_upper_bound=tol
+            )
             hit = np.isfinite(dist)
             pairs.append(np.stack((np.flatnonzero(hit), j[hit]), axis=1))
-        pairs = np.concatenate(pairs)
+        pairs = i_face[np.concatenate(pairs)]
 
         graph = scipy.sparse.coo_matrix(
             (np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(n, n)

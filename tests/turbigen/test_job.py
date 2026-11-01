@@ -7,6 +7,8 @@ would have said, which is the only way a queued run can silently differ from a
 run you watched.
 """
 
+import sys
+
 import pytest
 
 from turbigen import cli, job
@@ -146,6 +148,21 @@ def test_slurm_states_what_it_was_given():
     assert "#SBATCH --gres=gpu:1" in script
     assert "#SBATCH --cpus-per-task=4" in script
     assert "#SBATCH --qos=high" in script
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Slurm scripts run under a POSIX shell"
+)
+def test_slurm_runs_where_it_was_submitted(tmp_path, monkeypatch):
+    """The array runs from the submitting directory, not the tasks' parent,
+    so the same matplotlibrc and relative paths apply as on a local run."""
+    monkeypatch.chdir(tmp_path)
+    tasks = tmp_path / "runs" / job.TASKS_NAME
+
+    script = job.Slurm().script("b", "run", (), tasks)
+
+    assert f"cd {tmp_path}" in script
+    assert f'sed -n "${{SLURM_ARRAY_TASK_ID}}p" {tasks}' in script
 
 
 @pytest.mark.parametrize(
@@ -367,18 +384,64 @@ def test_a_submitted_invocation_carries_force(batch):
     assert "--force" in options
     assert "-o" not in options and "--out-dir" not in options
 
+    # But the job must still know its config is the copy, and so turbigen's
+    # to replace with a settled design's.
+    assert "--copied" in options
+
+
+def test_a_submitted_restart_names_the_same_field(batch, tmp_path, monkeypatch):
+    """`-s restart=` is relative to where it was typed, and a queued job runs
+    somewhere else, so it goes to the queue absolute."""
+    monkeypatch.chdir(tmp_path)
+    parser = cli._make_parser()
+    args = parser.parse_args(
+        ["run", str(batch[0]), "-s", "restart=a/restart.npz", "-s", "x=y/z", "-Q"]
+    )
+
+    assert cli.task_options(args) == [
+        "-s",
+        f"restart={(tmp_path / 'a' / 'restart.npz').resolve()}",
+        "-s",
+        "x=y/z",
+    ]
+
+
+def test_a_submitted_copy_still_knows_it_is_one(batch):
+    """`-o` is not passed on, but what it implies about the config is.
+
+    The job runs the copy in the workdir, and a settled iterate or chic
+    promotes its design's config over the copy only when the config is
+    turbigen's own. Without this, every queued one left its starting design
+    at the root beside its settled field.
+    """
+    parser = cli._make_parser()
+    copied = parser.parse_args(
+        ["iterate", str(batch[0]), "-o", str(batch[0].parent), "-Q"]
+    )
+    plain = parser.parse_args(["iterate", str(batch[0]), "-Q"])
+
+    assert "--copied" in cli.task_options(copied)
+    assert "--copied" not in cli.task_options(plain)
+
+    # And the job, reading the options back, sees a copy
+    job = parser.parse_args(["iterate", str(batch[0]), *cli.task_options(copied)])
+    assert cli.is_copy(job)
+
 
 #
 # BATCH
 #
 
 
-BATCH_CASE = CASE + """
+BATCH_CASE = (
+    CASE
+    + """
 batch:
   seed: 0
   bounds:
     mean_line.psi: [1.4, 1.8]
 """
+)
 
 
 @pytest.fixture

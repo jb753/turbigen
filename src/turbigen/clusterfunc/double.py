@@ -10,6 +10,12 @@ import turbigen.clusterfunc.single
 import turbigen.clusterfunc.util
 from turbigen.clusterfunc.exceptions import ClusteringException
 
+N_NEWTON_MANY = 200
+"""Most Newton steps :func:`smooth_many` takes; it needs a handful."""
+
+STEP_MANY = 8.0
+"""Most one Newton step of :func:`smooth_many` changes the curvature by."""
+
 
 def fixed(dx0, dx1, N, x0=0.0, x1=1.0):
     """Double-sided clustering with fixed number of points.
@@ -139,6 +145,56 @@ def fixed_many(dx0, dx1, N):
             break
         dx_in[idx[~done]] /= fac[~done]
     return out
+
+
+def smooth_many(dx0, dx1, N):
+    """Double-sided clustering of many unit intervals, the expansion ratio
+    varying linearly along each.
+
+    The log of the spacing a quadratic in index, through the boundary
+    spacings at either end, its curvature set so the spacings sum to the
+    interval. The ends are as asked exactly, and the ratio between adjacent
+    spacings changes by the same factor at every point, where Vinokur
+    stretching holds it nearly steady and then changes it all at one end.
+
+    Parameters
+    ----------
+    dx0, dx1: array
+        Boundary spacings at the start and end of each unit interval, shape
+        (m,), summing to less than one.
+    N: int
+        Number of points in each grid vector.
+
+    Returns
+    -------
+    x: array
+        Grid vectors on the unit interval, shape (m, N).
+
+    """
+    dx = np.stack(np.broadcast_arrays(dx0, dx1), axis=1).astype(float)
+    t = np.linspace(0.0, 1.0, N - 1)[None, :]
+    line = np.log(dx[:, :1]) + np.log(dx[:, 1:] / dx[:, :1]) * t
+    bump = t * (1.0 - t)
+
+    # The log of the total is convex and rising in the curvature, a log of a
+    # sum of exponentials of lines in it, so Newton's method from zero needs
+    # no bracket: from above the root it falls on it without passing it, and
+    # from below passes it once. Each step limited, so that one from where
+    # the total is flat cannot overflow.
+    c = np.zeros(len(dx))
+    for _ in range(N_NEWTON_MANY):
+        e = np.exp(line + c[:, None] * bump)
+        T = e.sum(axis=1)
+        g = np.log(T)
+        if np.all(np.abs(g) < 1e-14):
+            break
+        step = -g * T / np.maximum((e * bump).sum(axis=1), 1e-300)
+        c += np.clip(step, -STEP_MANY, STEP_MANY)
+    else:
+        raise ClusteringException("Double-sided clustering did not converge.")
+    ds = np.exp(line + c[:, None] * bump)
+    x = np.concatenate((np.zeros((len(dx), 1)), np.cumsum(ds, axis=1)), axis=1)
+    return x / x[:, -1:]
 
 
 def _vinokur_many(ds, N):

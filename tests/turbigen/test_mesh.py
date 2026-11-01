@@ -7,6 +7,7 @@ wall distance on the way out. The package this replaces leaves all of that to
 the caller, so these check the framework as well as the mesh.
 """
 
+import dataclasses
 import itertools
 import sys
 from pathlib import Path
@@ -61,12 +62,15 @@ class AsOldBlade:
     def __init__(self, blade):
         self.blade = blade
 
-    def evaluate_section(self, spf, nchord=10000, m=None):
+    def evaluate_section(self, spf, **sampling):
         # The old mesher wants the higher-angle surface first, which is what
         # this package's `evaluate_section` used to promise and no longer does
         # -- it orders by surface now, and `hmesh` reorders for the same
-        # reason this does.
-        upper, lower = self.blade.evaluate_section(spf, nchord=nchord, m=m)
+        # reason this does. It also asks for points of its own choosing, and
+        # is given the blade's own instead, which are what `hmesh` meshes, so
+        # the two mesh the same curves.
+        del sampling
+        upper, lower = (surf[:3] for surf in self.blade.evaluate_section(spf))
         if upper[2].mean() < lower[2].mean():
             upper, lower = lower, upper
         return upper, lower
@@ -672,3 +676,85 @@ def test_a_round_trailing_edge_is_refused():
     config = build(blades=[blade(section={"thickness": ROUND})] * 2, mesh=MESH)
     with pytest.raises(ValueError, match="round trailing edge"):
         config.mesh.mesh(config.design())
+
+
+#
+# OUTLET RELAXATION
+#
+
+
+@pytest.mark.parametrize("dm", [0.2, 0.8])
+def test_outlet_relaxation_evens_the_span_at_the_outlet_only(machine, grid, dm):
+    """Nodes upstream of `m_relax_out` stay exactly put; at the outlet the
+    span is evenly spaced."""
+    annulus = machine.annulus
+    m_relax = annulus.m_max - 1.0 + dm
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    relaxed = H.from_dict(mesh).mesh(machine)
+
+    for before, after in zip(grid, relaxed):
+        m, _ = annulus.evaluate_mspf(before.x, before.r)
+        up = m < m_relax
+        np.testing.assert_array_equal(after.x[up], before.x[up])
+        np.testing.assert_array_equal(after.r[up], before.r[up])
+
+    last = relaxed[f"row{len(machine.rows) - 1}"]
+    _, spf = annulus.evaluate_mspf(last.x[-1], last.r[-1])
+    np.testing.assert_allclose(
+        np.diff(spf, axis=0), 1.0 / (last.shape[1] - 1), atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("dm", [-0.5, 1.1])
+def test_outlet_relaxation_outside_the_last_gap_is_refused(machine, dm):
+    m_relax = machine.annulus.m_max - 1.0 + dm
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    with pytest.raises(ValueError, match="m_relax_out"):
+        H.from_dict(mesh).mesh(machine)
+
+
+def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
+    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet to
+    their nearest grid lines, and from theirs to the outlet, and the casing
+    over the rotor with a clearance turns only where the casing is not slip."""
+    config = build(blades=TIP, mesh=MESH)
+    m_inviscid = (0.5, 0.6, 4.4, 4.5)
+    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
+    machine = dataclasses.replace(config, annulus=annulus).design()
+    grid = H.from_dict(MESH).mesh(machine)
+
+    def patches(block, kind):
+        return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+    up, dn = grid["row0"], grid["row1"]
+    inlet, outlet = patches(up, "InviscidPatch"), patches(dn, "InviscidPatch")
+    assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
+    assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
+    for block, patch, m, j in (
+        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
+        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
+        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
+        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+    ):
+        i = patch.ien if patch.ist == 0 else patch.ist
+        m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
+        m_all, _ = machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])
+        assert abs(np.median(m_line) - m) < np.ptp(m_all) / (block.shape[0] - 1)
+    (casing,) = patches(dn, "RotatingPatch").values()
+    assert casing.ist == 0
+    assert casing.ien == outlet["inviscid_casing_out"].ist
+    assert not patches(up, "RotatingPatch")
+
+
+@pytest.mark.parametrize(
+    "m_inviscid, mesh",
+    [((1.5, 0.0, 0.0, 0.0), {}), ((0.5, 0.0, 0.0, 0.0), {"inviscid_endwalls": True})],
+)
+def test_inviscid_ducts_past_a_blade_or_under_inviscid_endwalls_are_refused(
+    m_inviscid, mesh
+):
+    config = build(mesh=MESH)
+    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
+    machine = dataclasses.replace(config, annulus=annulus).design()
+    with pytest.raises(ValueError, match="m_inviscid"):
+        H.from_dict({**MESH, **mesh}).mesh(machine)

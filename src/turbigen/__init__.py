@@ -67,14 +67,25 @@ from turbigen.post import (
     CamberPlot,
     ContourPlot,
     ConvergencePlot,
+    MeshPlot,
     Post,
     SectionsPlot,
     SpanwisePlot,
+    SpanwiseTargetPlot,
+    StationContourPlot,
     SurfacePlot,
+    ThicknessPlot,
     VelocityTrianglePlot,
+    YplusPlot,
 )
 from turbigen.result import Result
 from turbigen.solver import Ember, Solver
+from turbigen.spanwise import (
+    SpanwiseDesign,
+    StationProfile,
+    VelocitySpline,
+    VortexExpon,
+)
 from turbigen.thickness import ClarkThickness, Taylor, ThicknessDesign
 
 # _version.py is generated at build time by setuptools-scm (see pyproject.toml);
@@ -127,6 +138,7 @@ __all__ = [
     "Machine",
     "MeanLine",
     "MeanLineDesign",
+    "MeshPlot",
     "Mesher",
     "Metric",
     "Modal",
@@ -147,15 +159,23 @@ __all__ = [
     "SectionsPlot",
     "Slurm",
     "Solver",
+    "SpanwiseDesign",
     "SpanwisePlot",
+    "SpanwiseTargetPlot",
+    "StationContourPlot",
+    "StationProfile",
     "SurfaceDissipation",
     "SurfacePlot",
     "Task",
     "Taylor",
     "ThicknessDesign",
+    "ThicknessPlot",
     "Tsp",
+    "VelocitySpline",
     "VelocityTrianglePlot",
+    "VortexExpon",
     "WallSpacing",
+    "YplusPlot",
     "bconds",
     "case",
     "guess",

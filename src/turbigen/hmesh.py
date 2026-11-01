@@ -36,7 +36,7 @@ one a designer deliberately drew thin.
 """
 
 
-def _by_theta(blade, spf, **kwargs):
+def _by_theta(blade, spf):
     """Return a blade section's two surfaces, the higher-angle one first.
 
     `evaluate_section` orders its pair by which surface the flow will call
@@ -48,7 +48,7 @@ def _by_theta(blade, spf, **kwargs):
     ordering is asked for, and it is read off `theta` rather than promised by
     the blade.
     """
-    upper, lower = blade.evaluate_section(spf, **kwargs)
+    upper, lower = (surf[:3] for surf in blade.evaluate_section(spf))
     if upper[2].mean() < lower[2].mean():
         upper, lower = lower, upper
     return upper, lower
@@ -97,6 +97,8 @@ class H(Mesher):
     """Generate a mesh using H topology for each row."""
 
     type: ClassVar[str] = "h"
+
+    meshes_sweep: ClassVar[bool] = True
 
     ER_stream: float = 1.2
     """Expansion ratio of streamwise grid from first LE to inlet boundary."""
@@ -272,6 +274,11 @@ class H(Mesher):
                 f"nk_tip={self.nk_tip} is not a count a multigrid level can "
                 f"halve; give it nine or more, one above a multiple of eight."
             )
+        if self.inviscid_endwalls and self.half_span:
+            raise ValueError(
+                "half_span clusters at a viscous hub, but inviscid_endwalls "
+                "makes it a slip wall; set one or the other."
+            )
 
     def forward(self, machine, spacing):
         """Generate a Grid for a designed machine."""
@@ -284,6 +291,7 @@ class H(Mesher):
                 )
         if self.AR_cusp:
             self._check_trailing_edges(machine)
+        self._check_inviscid_ducts(machine.annulus)
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
 
         blocks = []
@@ -301,6 +309,8 @@ class H(Mesher):
                 blocks.append(self._tip_block(machine, i_row, geom, grids, coords))
             del coords
 
+        # The last row's spanwise grid, which reaches the outlet
+        self._relax_outlet(blocks, machine.annulus, grids.span_frac)
         grid = ember.grid.Grid(blocks)
         # The passage blocks alone, in row order: a mixing plane is between two
         # rows, and a tip block is inside one. With a gridded clearance the
@@ -562,12 +572,38 @@ class H(Mesher):
             if tte_j is not None:
                 tte_span[j] = tte_j
 
+        # Where the blade's edges are at each span, in row `m`: on the
+        # stations, unless the blade is swept. The corner was found as a
+        # fraction of the chord between them.
+        m_edge = np.tile([0.0, 1.0], (nj, 1))
+        ends = (-grids.L[0], 1.0 + grids.L[1])
+        if blade.swept:
+            m_edge = np.array(
+                [blade.evaluate_swept_m([0.0, 1.0], s) for s in span_frac]
+            )
+            if np.any(m_edge[:, 0] <= ends[0]) or np.any(m_edge[:, 1] >= ends[1]):
+                raise ValueError(
+                    f"Row {i_row} has edges swept to m={m_edge[:, 0].min():.4g} "
+                    f"and {m_edge[:, 1].max():.4g} of the row, past the ends of "
+                    f"its mesh at {ends[0]:.4g} and {ends[1]:.4g}."
+                )
+        tte_row = m_edge[:, 0] + tte_span * (m_edge[:, 1] - m_edge[:, 0])
+
         # 1. Meridional xr on a (ni, nj) grid
         stream_frac_span = np.broadcast_to(stream_frac.reshape(-1, 1), (ni, nj)).copy()
         for j in range(nj):
             # Warp so grid breakpoints [-1, 0, tte, 1, 2] map to section
             # [-1, 0, tte_span[j], 1, 2]; with mlim = (0, 1) the only moving
-            # interior knot is the corner at grid t = tte -> tte_span[j].
+            # interior knot is the corner at grid t = tte -> tte_span[j]. A
+            # swept blade's edges move too, and the ends of the mesh, where
+            # the mixing planes are, stay put.
+            if blade.swept:
+                stream_frac_span[:, j] = np.interp(
+                    stream_frac_span[:, j],
+                    [ends[0], 0, tte, 1, ends[1]],
+                    [ends[0], *m_edge[j, :1], tte_row[j], *m_edge[j, 1:], ends[1]],
+                )
+                continue
             stream_frac_span[:, j] = np.interp(
                 stream_frac_span[:, j],
                 [-1, 0, tte, 1, 2],
@@ -591,9 +627,8 @@ class H(Mesher):
         # rather than the grid; add_cusp extrapolates the corner-side surface
         # along it. See _DM_TE_SLOPE.
         dtdx_TE = np.zeros((2, nj))
-        m = util.cluster_cosine(20000)
         for j in range(nj):
-            xrt_u, xrt_l = _by_theta(blade, span_frac[j], m=m)
+            xrt_u, xrt_l = _by_theta(blade, span_frac[j])
             assert np.all(xrt_u[2] >= xrt_l[2])
 
             stream_frac_now = stream_frac_span[:, j]
@@ -604,15 +639,15 @@ class H(Mesher):
                 stream_frac_now,
                 xrt_u,
                 xrt_l,
-                (0, 1),
+                m_edge[j],
                 Theta,
                 geom.chord_mid[(0, -1),],
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
             if self.AR_cusp:
-                sf = tte_span[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
-                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, (0, 1))[:2])
+                sf = tte_row[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
+                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, m_edge[j])[:2])
                 x_sl = annulus.evaluate_xr(sf + geom.ist + 1.0, span_frac[j])[0]
                 dtdx_TE[:, j] = np.diff(theta_sl, axis=-1)[:, 0] / np.diff(x_sl)[0]
 
@@ -753,11 +788,8 @@ class H(Mesher):
                 ]
             )
 
-            # Walls turn with their block unless a `RotatingPatch` overrides
-            # them, so a casing over a tip gap needs one. The mesher only places
-            # it, at `j=-1` by this mesher's convention; `bconds` sets its speed,
-            # so changing speed needs no re-mesh. On a stator it has no effect.
-            patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
+        # Slip walls along the whole row, hub and casing
+        patches.extend(self._endwall_patches())
 
         block = ember.block.Block(shape=(ni, nj, nk))
         block.set_label(f"row{i_row}")
@@ -766,6 +798,20 @@ class H(Mesher):
         block.set_r(xrt_now[1])
         block.set_t(xrt_now[2])
         block.patches.extend(patches)
+
+        # Slip walls in the ducts ahead of the leading edge and behind the
+        # trailing edge, from the annulus
+        casing = self._inviscid_ducts(machine, i_row, block, block, ile, ite)
+        if njtip:
+            # Walls turn with their block unless a `RotatingPatch` overrides
+            # them, so a casing over a tip gap needs one. The mesher only places
+            # it, at `j=-1` by this mesher's convention; `bconds` sets its speed,
+            # so changing speed needs no re-mesh. On a stator it has no effect.
+            # Not over an inviscid stretch of the casing, which it would overlap.
+            i_rot = casing.get(id(block), (0, -1))
+            block.patches.append(
+                ember.patch.RotatingPatch(i=i_rot, j=-1, label="casing")
+            )
 
         nic, njc, nkc = block.shape
         assert not (nic - 1) % 8, f"nic-1={nic - 1} not divisible by 8"
@@ -909,8 +955,11 @@ class H(Mesher):
     def spanwise_grid(self, dspf_hub, dspf_casing, tip):
         """Evaluate a spanwise grid vector given hub and casing spacings.
 
-        ``dspf_casing`` is ignored when :attr:`half_span` is set.
+        ``dspf_casing`` is ignored when :attr:`half_span` is set, and both
+        with :attr:`inviscid_endwalls`, which spaces the span evenly.
         """
+        if self.inviscid_endwalls:
+            return self._uniform_span(self.dspf_mid / self.resolution_factor, tip)
         if tip and self.half_span:
             raise ValueError(
                 "half_span clusters at the hub only, but a tip gap needs "
@@ -1299,12 +1348,12 @@ def _theta_limits(
     # last ~20% chord, found on each surface and refined to sub-sample. Pick the
     # surface with the stronger corner. Single continuous criterion, so tte
     # varies smoothly with span unless the geometry has a real spanwise step.
-    m_lo = mlim[1] - 0.2
+    m_lo = mlim[1] - 0.2 * np.ptp(mlim)
     tte_l, str_l = _te_corner_curvature(tq, theta_l, m_lo, mlim[1])
     tte_u, str_u = _te_corner_curvature(tq, theta_u, m_lo, mlim[1])
     if tte_l is None and tte_u is None:
         # Fallback: cluster grid over last 1.0% chord
-        tte = mlim[1] - 0.01
+        tte = mlim[1] - 0.01 * np.ptp(mlim)
     elif tte_u is None or (tte_l is not None and str_l >= str_u):
         tte = tte_l
     else:

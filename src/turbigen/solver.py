@@ -29,6 +29,11 @@ import ember.solver
 
 from turbigen.node import Node
 
+try:
+    import ember.plugins.ts as ember_ts
+except ImportError:  # the Turbostream plugin is optional
+    ember_ts = None
+
 logger = logging.getLogger("turbigen")
 
 
@@ -97,11 +102,15 @@ class Solver(Node):
         if (post_init := getattr(super(), "__post_init__", None)) is not None:
             post_init()
 
-    def solve(self, grid):
-        """March `grid` in place and return its convergence history."""
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement solve(self, grid)"
-        )
+    def solve(self, grid, workdir=None):
+        """March `grid` in place and return its convergence history.
+
+        `workdir` is the directory this run keeps its files in, for a solver
+        that runs outside the process; one that runs in memory ignores it.
+        Every member is an ember solver underneath, whose ``run`` takes both,
+        so this is the whole of the call.
+        """
+        return self.run(grid, workdir)
 
     def converged(self, history):
         """Return whether a run that produced `history` converged.
@@ -143,5 +152,19 @@ class Ember(Solver, ember.solver.Solver):
     fac_mgrid: float = 0.0
     sf_resid: float = 0.0
 
-    def solve(self, grid):
-        return self.run(grid)
+
+if ember_ts is not None:
+
+    class TS3(Solver, ember_ts.TS3Solver):
+        """Turbostream 3, run through the ember-cfd-ts plugin.
+
+        As :class:`Ember`, every field, ``run``, ``soft`` and ``restart`` come
+        from the plugin's :class:`~ember.plugins.ts.TS3Solver`, so the settings
+        this accepts are whatever it accepts. It writes its input, output and
+        log in the run's directory, and needs the GPU node its
+        `environment_script` sets Turbostream up on. Defined only when the
+        plugin is installed, so without it a config naming ``ts3`` is refused
+        as an unknown type.
+        """
+
+        type: ClassVar[str] = "ts3"

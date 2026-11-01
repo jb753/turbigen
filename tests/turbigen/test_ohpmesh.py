@@ -12,18 +12,20 @@ main blocks, and a guessed flow turned the wrong way in the blocks whose `i`
 does not run downstream.
 """
 
+import dataclasses
+
 import numpy as np
 import pytest
 from test_blade import ROUND, blade, build
 
 from turbigen import OHPassage, guess, util
-from turbigen.ohpmesh import _cell_angles
+from turbigen.ohpmesh import ConformalMap, _cell_angles
 
 MESH = {
     "type": "ohp",
     "dspf_mid": 0.1,
     "resolution_factor": 0.5,
-    "n_span_smooth": 3,
+    "n_span_smooth": 4,
 }
 """A deliberately coarse mesh, swept on few planes."""
 
@@ -226,13 +228,115 @@ def test_the_cells_in_the_main_blocks_are_not_badly_skewed(grid):
 def test_the_guess_follows_the_mean_line_in_every_block(machine, grid):
     # Aligned with the grid lines of blocks whose `i` runs across the pitch
     # or round the blade, the guess once took its tangential velocity of
-    # either sign there, and started the rotor supersonic.
+    # either sign there, and started the rotor supersonic. The swirl is
+    # checked before the blend onto the blade surfaces, which turns the flow
+    # round the leading edges well outside the mean line's swirl,
+    # legitimately; the speed after it, which the blend keeps.
     guess.apply(grid, machine)
-    Vt = guess.meridional(machine, grid[0].fluid).Vt
+    field = guess._Field(machine)
+    Vt = np.asarray(machine.mean_line.Vt)
     lo, hi = Vt.min(), Vt.max()
     slack = 0.15 * (hi - lo)
     for block in grid:
-        assert lo - slack < block.Vt.min(), block.label
-        assert block.Vt.max() < hi + slack, block.label
+        m, spf = field.mspf(block.x.reshape(-1), block.r.reshape(-1))
+        _, _, Vxrt = field.evaluate(m, spf, block.r.reshape(-1).astype(float))
+        assert lo - slack < Vxrt[:, 2].min(), block.label
+        assert Vxrt[:, 2].max() < hi + slack, block.label
         W = np.sqrt(block.Vx**2 + block.Vr**2 + (block.Vt - block.U) ** 2)
         assert (W / block.a).max() < 1.05, block.label
+
+
+def test_outlet_relaxation_moves_every_block_past_it_alike(machine, grid):
+    """Relaxed from just past the trailing edge, through the blocks round it
+    and the outlet block: interfaces still match, cells stay positive, nodes
+    upstream stay exactly put, and the outlet is evenly spaced in span."""
+    annulus = machine.annulus
+    m_relax = annulus.m_max - 0.95
+    mesh = {**MESH, "m_relax_out": m_relax, "frac_relax_out": 1.0}
+    relaxed = OHPassage.from_dict(mesh).mesh(machine)
+
+    for before, after in zip(grid, relaxed):
+        m, _ = annulus.evaluate_mspf(before.x, before.r)
+        up = m < m_relax
+        np.testing.assert_array_equal(after.x[up], before.x[up])
+        np.testing.assert_array_equal(after.r[up], before.r[up])
+        assert (after.vol_nd > 0.0).all()
+    pairs = relaxed.connectivity.periodic.pair()
+    assert len(pairs) == sum(len(block.patches.periodic) for block in relaxed)
+
+    dn = blocks_of_row(relaxed, len(machine.rows) - 1)["dn"]
+    _, spf = annulus.evaluate_mspf(dn.x[-1], dn.r[-1])
+    np.testing.assert_allclose(np.diff(spf, axis=0), 1.0 / (dn.shape[1] - 1), atol=1e-5)
+
+
+def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
+    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet and
+    to the outlet, each to its nearest grid line, and the casing over the
+    rotor with a clearance turns only where the casing is not slip."""
+    config = build(
+        blades=[
+            blade(section={"thickness": ROUND}),
+            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip_span=TIP),
+        ],
+        mesh=MESH,
+    )
+    m_inviscid = (0.5, 0.6, 4.4, 4.5)
+    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
+    machine = dataclasses.replace(config, annulus=annulus).design()
+    grid = OHPassage.from_dict(MESH).mesh(machine)
+
+    def patches(block, kind):
+        return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+    up, dn = grid["row0_up"], grid["row1_dn"]
+    inlet, outlet = patches(up, "InviscidPatch"), patches(dn, "InviscidPatch")
+    assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
+    assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
+    for block, patch, m, j in (
+        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
+        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
+        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
+        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+    ):
+        i = patch.ien if patch.ist == 0 else patch.ist
+        m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
+        spacing = np.ptp(machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])[0])
+        assert abs(np.median(m_line) - m) < spacing / (block.shape[0] - 1)
+    (casing,) = patches(dn, "RotatingPatch").values()
+    assert casing.ien == outlet["inviscid_casing_out"].ist
+    assert not patches(up, "RotatingPatch")
+
+    with pytest.raises(ValueError, match="m_inviscid"):
+        OHPassage.from_dict({**MESH, "inviscid_endwalls": True}).mesh(machine)
+
+
+def test_the_conformal_map_is_exact_across_the_joins_of_the_annulus(machine):
+    # The annulus's m runs on at a different rate either side of each join
+    # between its segments, so m' found from m and from x, r agree there only
+    # if the map samples the joins themselves.
+    # A range whose evenly spaced samples miss the joins, and points close
+    # either side of each.
+    cmap = ConformalMap(machine.annulus, 0.3, 0.2, 2.8)
+    m = (np.array([1.0, 2.0])[:, None] + np.linspace(-3e-4, 3e-4, 61)).ravel()
+    xr = machine.annulus.evaluate_xr(m, 0.3)
+    mp = cmap.mp_from_xr(xr)
+    np.testing.assert_allclose(cmap.mp_from_m(m), mp, rtol=0, atol=1e-9 * np.ptp(mp))
+    np.testing.assert_allclose(cmap.m_from_mp(mp), m, rtol=0, atol=1e-9)
+
+
+def test_the_periodic_surface_runs_unbroken_from_inlet_to_outlet(grid):
+    """Over the blade it is the passage block's face against the next blade's
+    O block, so the five blocks along the bottom of the passage join into one."""
+    for i_row, surfaces in enumerate(util.cut_periodic(grid)):
+        (surface,) = surfaces
+        blocks = blocks_of_row(grid, i_row)
+        along = ("up", "Pin", "P", "Pout", "dn")
+
+        # Joined end to end, each join one shared line of nodes
+        assert surface.shape == (
+            sum(blocks[name].shape[0] for name in along) - (len(along) - 1),
+            blocks["P"].shape[1],
+        )
+        # From the row's inlet to its outlet, on the bottom of the passage
+        np.testing.assert_allclose(surface.xrt[0], blocks["up"][0, :, 0].xrt)
+        np.testing.assert_allclose(surface.xrt[-1], blocks["dn"][-1, :, 0].xrt)

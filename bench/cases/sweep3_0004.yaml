@@ -58,11 +58,9 @@ blades:
       tanwedge: 0.2388016349651483
       type: clark
       round_TE: true
-  theta_offset: 0.0
   tip_chord: 0.0
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
 - count:
     Co: 0.7732041715365252
     spf: 0.5
@@ -92,11 +90,12 @@ blades:
       tanwedge: 0.2158015283211689
       type: clark
       round_TE: true
-  theta_offset: 0.0
   tip_chord: 0.02
   tip_metre: 0.0
   tip_span: 0.0
-  vortex_exponent: -0.6
+spanwise:
+  type: vortex_expon
+  n: -0.6
 fluid:
   Pr: 0.7
   cp: 1100.0

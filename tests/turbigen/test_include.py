@@ -365,3 +365,45 @@ def test_an_empty_file_is_an_empty_mapping(tmp_path):
     )
 
     assert include.read(tmp_path / "top") == {"mesh": {"type": "h"}}
+
+
+def test_a_restart_resolves_against_the_file_that_names_it(tmp_path):
+    """As an include does, so a fragment's field is the fragment's."""
+    (tmp_path / "frag").mkdir()
+    write(
+        tmp_path,
+        top="include: [frag/solver.yaml]\n",
+        **{"frag/solver.yaml": "restart: ../fields/restart.npz\n"},
+    )
+
+    data = include.read(tmp_path / "top")
+
+    assert data["restart"] == str((tmp_path / "fields" / "restart.npz").resolve())
+
+
+def test_the_including_file_names_its_own_restart(tmp_path):
+    write(
+        tmp_path,
+        top="include: [frag.yaml]\nrestart: here.npz\n",
+        **{"frag.yaml": "restart: there.npz\n"},
+    )
+
+    data = include.read(tmp_path / "top")
+
+    assert data["restart"] == str((tmp_path / "here.npz").resolve())
+
+
+def test_a_restart_written_elsewhere_names_the_same_field(tmp_path):
+    """`relative` undoes `anchor` from wherever the document is written."""
+    field = tmp_path / "a" / "restart.npz"
+    data = include.anchor({"restart": "a/restart.npz"}, tmp_path)
+
+    written = include.relative(data, tmp_path / "b" / "c")
+
+    assert written["restart"] == "../../a/restart.npz"
+    assert include.anchor(written, tmp_path / "b" / "c")["restart"] == str(field)
+
+
+def test_a_null_restart_stays_null(tmp_path):
+    assert include.anchor({"restart": None}, tmp_path) == {"restart": None}
+    assert include.relative({"restart": None}, tmp_path) == {"restart": None}

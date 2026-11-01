@@ -80,7 +80,9 @@ def write(path, config, result=None):
     """Write `config`, and `result` if there is one, to a single file."""
     path = Path(path)
 
-    data = config.to_dict()
+    # A field it names is written relative to where the file lands, as an
+    # include would be, so the case and its field move together.
+    data = include.relative(config.to_dict(), path.parent)
     if result is not None:
         data[RESULT_KEY] = result.to_dict()
 

@@ -284,6 +284,20 @@ def test_the_stamp_follows_the_design(solved):
     assert restart.design_stamp(marched) == restart.design_stamp(config)
 
 
+def test_the_stamp_leaves_out_how_a_throttle_gets_there(solved):
+    """The gains decide the march to a mass flow, not the field at it, and a
+    stamp that took them in would disown every field stored before them."""
+    config, *_ = solved
+    point = {"mdot_adjust": 0.0}
+    throttled = Config.from_dict({**CASCADE, "operating_point": point})
+    tuned = Config.from_dict(
+        {**CASCADE, "operating_point": {**point, "throttle_Kp": 25.0}}
+    )
+
+    assert restart.design_stamp(tuned) == restart.design_stamp(throttled)
+    assert "throttle_Kp" in throttled.to_dict()["operating_point"]
+
+
 def test_an_unstamped_field_reads_back_no_stamp(solved):
     """The fixture saves without a config, as every field written before this."""
     *_, path = solved

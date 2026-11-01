@@ -263,7 +263,6 @@ answers:
                             config files are given
 -Q, --queue                 submit to the queue the job: section names,
                             instead of running here
---restart [NPZ]             start the solve from a stored field
 ```
 
 Everything else that could be a flag is a *value*, and values live in the
@@ -410,7 +409,7 @@ command, no flags, whatever depth of case you point it at:
 
 Each standard processor draws nothing when what it needs is absent, so there is
 no mode to select. **Re-plotting a finished run is the same command as plotting
-a fresh one** — no `--restart`, because a report of a run that has a field
+a fresh one** — and it ignores `restart:`, because a report of a run that has a field
 always wants it and there is nothing else it could mean.
 
 The grid itself is **not** written. How a mesh is serialised is a property of
@@ -455,9 +454,25 @@ drifting apart is precisely what happened to `turbigen.main`.
 
 Everything lands beside the config, so there is nothing to name -- or beside
 the copy `-o` makes, which is how a variant is run without replacing the answer
-already there. A bare `--restart` still means the field beside the config *you
-named*, not the workdir being created, so continuing from what you have while
-writing somewhere new is the two flags together and nothing more.
+already there.
+
+Which field a run starts from is a value, not a flag, so it lives in the config
+as `restart:`, where a sweep cannot forget it and an archived case records it.
+It resolves as an `include:` does, relative to the file that names it, and
+turbigen writes it relative to wherever it writes the config next --- the copy
+`-o` makes, an iteration's `input.yaml` --- so a case and its field move
+together. `-s restart=PATH` sets it relative to where you typed it, and
+`-s restart=null` clears it. A field that is named but not there is an error,
+raised before `-o` claims a number, never a quiet fall back to the meridional
+guess.
+
+In a config you write, `restart:` is the field to start *from*. In an
+`input.yaml` or `output.yaml` turbigen wrote, it is the field that run *started*
+from, or null for the guess, so re-solving any one iteration or chic point
+alone starts where it did. An `output.yaml`'s is a record: once a settled
+design is pruned it names a field that is gone, and only a config's is ever
+read. A settled iteration's `input.yaml` that names a pruned field has the key
+cleared, so re-solving it alone starts from the guess rather than refusing.
 
 Several config files run one after another, which is the bash loop this saves
 you writing, or become one submission with `--queue`.
@@ -520,9 +535,17 @@ hiload/iter_0001/      input.yaml
 
 The last iteration's artefacts are **moved** to the root, so `output.yaml`
 means "what this run achieved" whichever verb produced it and a database glob,
-a script reading a result and a `--restart` need not know whether a design took
+a script reading a result and a `restart:` need not know whether a design took
 one solve or six. Its own directory is left holding the config that produced
 it, that answer having become the run's.
+
+Under `-o`, and in a job queued from one, the root config is turbigen's own
+copy, so the settled iteration's config is written over it too, with
+`restart: restart.npz`: the config beside the field is then the design that
+field solves, `report` on it reaches the answer, and re-running it continues
+from its own solution. The starting design is still in `iter_0000/input.yaml`.
+A config handed over in place is somebody's own file and is left alone, with a
+note in the log naming where the settled design's config is.
 
 The iterations before it keep their config, their answer and their march --- a
 few kilobytes each, and the only record of how the design moved --- and lose
@@ -642,6 +665,12 @@ an archive of design-and-mismatch pairs accumulate before anything reads it.
 | `incidence` | mean `dchi_LE` of each row | flow angle ahead of the leading edge minus metal angle, at one span fraction |
 | `mean_line` | named mean-line design variables | design value minus what `backward()` recovers from the solution |
 | `clark_profile` | shape-space thickness coefficients and the circulation coefficient of one row | both surface Mach distributions against a Clark (2019) target, and the circulation the blade drew minus what the target encloses |
+| `spanwise_inflow` | `Vm` knots at every station and `rVt` knots at every row inlet of a `velocity_spline` design | knots minus the pitch-averaged CFD profile fitted onto them |
+| `spanwise_work` | `rVt` knots at one rotor's outlet | work coefficient along each stream surface minus a target shape, its mean held to the whole span's |
+| `spanwise_swirl` | `rVt` knots at one stator's outlet | outlet swirl minus a target shape, its mean held to the whole span's |
+
+The outlet iterators set the trailing edge, as `deviation` does for every row,
+so a config with both is refused when it is read.
 
 `DiffusionFactor` and `Repeat` are not ported: the first steps relatively and
 moves blade count, which changes the mesh; the second's knob is a spanwise
@@ -758,15 +787,37 @@ turbigen chic case/input.yaml
 ```
 
 Converge the design, then hold its geometry fixed and step the back pressure
-until a point will not converge — halving the step and coming back at it from
-the last good field, until the limit is pinned to `chic.step_min`.
+by `step_coarse` until a point will not converge, then come back to the last
+good field and march on from it by `step_fine` until one fails again. Every
+point is a point on the characteristic, and they are finest near the limit.
 
 ```yaml
 chic:
-  step: 0.05        # DP_adjust per point
-  step_min: 0.01    # the resolution of the answer
+  step_coarse: 0.05   # DP_adjust per point, until one fails
+  step_fine: 0.01     # then from the last good one; the resolution
   max_points: 20
 ```
+
+Three more things it can do, each off by default:
+
+- **`nozzle: true`** throttles with a choked exit nozzle instead of a back
+  pressure. The exit duct of the mesh is morphed into a converging-diverging
+  nozzle (`turbigen/nozzle.py`), its throat sized one-dimensionally to pass
+  the design point's flow and solved once, and the sweep closes the throat by
+  fractions of that area. A choked throat fixes `mdot sqrt(To) / Po`, which
+  crosses the characteristic once even near its peak, where one back pressure
+  admits a range of flows.
+- **`choke: true`** adds a leg from the datum the other way, lowering the back
+  pressure by `step_choke` (else `step_coarse`) and then `step_choke_fine`,
+  until a point does not converge or raises the mass flow by less than
+  `choke_mdot` over a coarse step. With a nozzle, which cannot be opened far
+  enough to choke the machine, the open duct is first throttled to the flow the
+  datum throat passed. `stall: false` runs the choke leg alone.
+- **`speeds: [0.8, 1.0, 1.05]`** sweeps a speedline at each fraction of the
+  design shaft speed, the blades keeping their design shape. Each departs from
+  the throat sized at the design speed, so this needs a nozzle; a new speed's
+  datum is soft started from the nearest speed already run, and its points go
+  under `speed_S.SSS/`.
 
 **Whether it iterates first is inferred, never asked for.** A case whose stored
 `result:` says the design has converged *and* its iterators are inside their
@@ -775,21 +826,33 @@ That is the same two-part test `database` uses to decide whether a finished run
 counts as a sample, so "this design is finished" means one thing package-wide.
 Both branches are logged with their reason.
 
-`--restart` keeps meaning only *here is the field*. Overloading it to also
-truncate the pipeline would make one flag mean two things depending on the verb,
-where `run --restart` truncates nothing.
+The answer it looks for is the config's own `result:`, or the `output.yaml`
+beside it when the field there is stamped as this design's solution --- which
+is what a settled `-o` copy leaves, and what an override moving the design
+fails. A sweep that starts straight away leaves that `output.yaml` alone, so it
+needs no `-f` for it; what it would replace is an earlier sweep's `chic_*`
+points, and those it refuses to replace without one.
+
+`restart:` keeps meaning only *here is the field*. Overloading it to also
+truncate the pipeline would make one key mean two things depending on the verb,
+where `run` with a `restart:` truncates nothing.
 
 ### Sweeping a design converged earlier
 
 ```
 mkdir chic && cp case/output.yaml chic/input.yaml
-turbigen chic chic/input.yaml --restart case/restart.npz
+turbigen chic chic/input.yaml -s restart=case/restart.npz
 ```
 
 A directory of its own because one directory is one run. The copied config
 carries the converged `result:`, so the design phase is skipped. Both files
 being at the root of `case` is what a settled design leaves; if they are not
 there, it did not settle, and there is no converged design to sweep.
+
+The `restart:` the copy carries is the converged run's record of where *it*
+started, relative to `case`, so it is wrong in `chic` and names a pruned field
+anyway: hence the `-s`, which overrides it. Forgetting it is an error naming
+the missing field, not a sweep from the guess.
 
 Note the copy is renamed on the way in. `output.yaml` is not a name turbigen
 will read back, so adopting one as an input is a thing you do deliberately.
@@ -816,9 +879,10 @@ stall is unsteady. The report says so rather than leaving it to be assumed.
 
 Near the peak of a characteristic `dPR/dmdot` tends to zero, so a pressure
 bracket of a given width spans a wide range of mass flow — the limiting
-*pressure* is resolved to `step_min` and the limiting *mass flow* it implies
+*pressure* is resolved to `step_fine` and the limiting *mass flow* it implies
 rather less, which is unfortunate given the mass flow is the number of
-interest.
+interest. The `nozzle` is the way round that: a throat closed by a fraction of
+its area moves the flow by about that fraction.
 
 The stable side of the characteristic needs no feedback and is already a batch:
 

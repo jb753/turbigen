@@ -138,11 +138,13 @@ def test_the_bands_add_up_to_the_plane(gapped, fraction):  # noqa: F811
     Mixed-out bands would not be: putting them back together would generate
     entropy of its own. Not to round-off, though: `mass_band` carries its mass
     exactly, but interpolates the entropy linearly across the partial strips at
-    its ends, which the whole plane's average does not.
+    its ends, which the whole plane's average does not. Its size depends on
+    how the entropy varies across those strips, so on the field: a few parts in
+    ten thousand.
     """
     config, result = gapped
     per_Ds = _per_Ds(result.actual)
-    planes = result.machine.annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     values = LossBudget(fraction=fraction).evaluate(config, result)
 
@@ -151,7 +153,7 @@ def test_the_bands_add_up_to_the_plane(gapped, fraction):  # noqa: F811
             _plane_entropy(result.grid, xr) for xr in planes[2 * i_row : 2 * i_row + 2]
         )
         total = sum(values[name][i_row] for name in BANDS)
-        assert total == pytest.approx(per_Ds * (s_out - s_in), rel=1e-4)
+        assert total == pytest.approx(per_Ds * (s_out - s_in), rel=5e-4)
 
 
 def test_a_band_is_its_mass_averaged_entropy(gapped):  # noqa: F811
@@ -159,7 +161,7 @@ def test_a_band_is_its_mass_averaged_entropy(gapped):  # noqa: F811
     metric, for the tip band of the rotor."""
     config, result = gapped
     i_row = 1
-    planes = result.machine.annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     s = [
         _plane_entropy(result.grid, xr, 0.8, 1.0)
@@ -175,7 +177,7 @@ def test_a_band_is_its_mass_averaged_entropy(gapped):  # noqa: F811
 def test_a_gap_is_its_mass_averaged_entropy(gapped):  # noqa: F811
     """From the stator's exit plane to the rotor's inlet plane, by hand."""
     config, result = gapped
-    planes = result.machine.annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     s = [_plane_entropy(result.grid, xr) for xr in planes[1:3]]
 

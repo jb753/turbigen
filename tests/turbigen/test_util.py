@@ -35,7 +35,7 @@ def grid(machine):
     been through both.
     """
     grid = H(**{k: v for k, v in MESH.items() if k != "type"}).mesh(machine)
-    bconds.apply_rotation(grid, machine)
+    bconds.apply_rotation(grid, machine.mean_line.Omega[0])
     guess.apply(grid, machine)
     return grid
 
@@ -291,10 +291,12 @@ def test_a_stationary_casing_is_measured_in_the_absolute_frame(grid):
     _, casing = util.cut_endwalls(grid)[1]
 
     assert float(casing.Omega) == 0.0
-    # ho_rel and ho are separate float32 reductions of what is analytically the
-    # same sum for a stationary cut, so they agree to a rounding step, not to
-    # assert_allclose's 1e-7 default.
-    np.testing.assert_allclose(casing.ho_rel, casing.ho, rtol=1e-6)
+    # ho_rel and ho are separate float32 sums of h and a half velocity squared,
+    # so they agree to a rounding step of those terms. ho itself crosses zero
+    # with the datum, so the tolerance is absolute, sized by the terms.
+    terms = max(np.abs(casing.h).max(), 0.5 * (casing.V**2).max())
+    atol = 4.0 * np.spacing(np.float32(terms))
+    np.testing.assert_allclose(casing.ho_rel, casing.ho, rtol=0.0, atol=atol)
 
 
 def test_setting_a_cut_speed_does_not_re_time_the_grid(grid):
@@ -614,3 +616,71 @@ def test_interp1d_hold_holds_the_end_values_beyond_the_data():
     np.testing.assert_allclose(held(inside), free(inside))
     np.testing.assert_allclose(held(np.array([0.0, -1.0])), [y[0], y[0]])
     np.testing.assert_allclose(held(np.array([1.0, 2.0])), [y[-1], y[-1]])
+
+
+def test_shape_factor_line_starts_where_the_flow_falls_subsonic():
+    """Behind the peak, at the first point back below one, to zeta_TE."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.where(zeta < 0.4, 0.8 + zeta, 1.2 - 2.0 * (zeta - 0.4))
+    h = 1.5 + zeta
+
+    (z0, h0), (z1, h1) = util.shape_factor_line(zeta, mas, h)
+
+    assert z0 == pytest.approx(0.5, abs=2e-3)
+    assert h0 == pytest.approx(1.5 + z0)
+    assert (z1, h1) == pytest.approx((0.97, 2.47))
+
+
+def test_shape_factor_line_starts_behind_the_spike_the_shock_raises():
+    """At the least shape factor behind the sonic point, not at it."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.where(zeta < 0.4, 0.8 + zeta, 1.2 - 2.0 * (zeta - 0.4))
+    h = 1.6 + 0.5 * np.exp(-(((zeta - 0.45) / 0.05) ** 2)) + (zeta - 0.65) ** 2
+
+    (z0, h0), _ = util.shape_factor_line(zeta, mas, h)
+
+    assert z0 == pytest.approx(0.65, abs=0.01)
+
+
+def test_shape_factor_line_without_a_shock_starts_at_least_shape_factor():
+    zeta = np.linspace(0.0, 1.0, 1001)
+    mas = np.full_like(zeta, 0.7)
+    h = 1.6 + (zeta - 0.3) ** 2
+
+    (z0, h0), _ = util.shape_factor_line(zeta, mas, h)
+
+    assert (z0, h0) == pytest.approx((0.3, 1.6), abs=2e-3)
+
+
+def test_mach_smoothness_is_zero_for_a_cubic_and_sees_a_bump():
+    """Fitted from the first subsonic point behind the peak to zeta_TE."""
+    zeta = np.linspace(0.0, 1.0, 1001)
+    behind = 0.99 - 0.3 * (zeta - 0.5) + 0.2 * (zeta - 0.5) ** 3
+    mas = np.where(zeta < 0.4, 0.8 + zeta, np.where(zeta < 0.5, 1.2, behind))
+    bump = 0.01 * np.exp(-(((zeta - 0.75) / 0.03) ** 2))
+
+    area, z, _ = util.mach_smoothness(zeta, mas)
+    bumpy, _, _ = util.mach_smoothness(zeta, mas + bump)
+
+    assert z[0] == pytest.approx(0.5, abs=2e-3)
+    assert z[-1] <= 0.97
+    assert area == pytest.approx(0.0, abs=1e-8)
+    assert bumpy > 1e-4
+
+
+def test_an_h_periodic_surface_stops_at_the_blade(grid):
+    """The blade takes over the same k face between its edges, so the surface
+    comes back either side of it, and over a clearance as a strip of its own."""
+    shrouded, gapped = util.cut_periodic(grid)
+    block = grid.rows[0][0]
+
+    upstream, downstream = shrouded
+    for surface in shrouded:
+        assert surface.shape[1] == block.shape[1]
+    np.testing.assert_allclose(upstream.xrt[0], block[0, :, 0].xrt)
+    np.testing.assert_allclose(downstream.xrt[-1], block[-1, :, 0].xrt)
+    assert upstream.x[-1].mean() < downstream.x[0].mean()
+
+    # Over the gap the k faces are periodic too, from the tip to the casing
+    over_tip = [surface for surface in gapped if surface.shape[1] < block.shape[1]]
+    assert len(gapped) == 3 and len(over_tip) == 1

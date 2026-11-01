@@ -141,7 +141,7 @@ class SurfaceDissipation(Metric):
         if result.history is not None and getattr(result.history, "diverged", False):
             return {}
 
-        planes = machine.annulus.cut_planes()
+        planes = machine.cut_planes()
         endwalls = turbigen.util.cut_endwalls(grid)
         blades = turbigen.util.cut_blade_surfs(grid)
         tips = turbigen.util.cut_blade_tips(grid)
@@ -399,7 +399,7 @@ class LossBreakdown(Metric):
         if result.history is not None and getattr(result.history, "diverged", False):
             return {}
 
-        planes = machine.annulus.cut_planes()
+        planes = machine.cut_planes()
         lo, hi = 0.5 - 0.5 * self.band, 0.5 + 0.5 * self.band
 
         n_row = len(grid.rows)
@@ -543,7 +543,7 @@ class LossBudget(Metric):
 
         # Mass-averaged entropy of each band, and of the whole plane, at every
         # plane in streamwise order: row i's inlet is 2 i, its exit 2 i + 1.
-        planes = machine.annulus.cut_planes()
+        planes = machine.cut_planes()
         s_bar = []
         for i_plane, xr in enumerate(planes):
             try:

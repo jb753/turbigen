@@ -51,6 +51,7 @@ leading edge to the trailing edge. See :meth:`OHPassage._tip_gap`.
 """
 
 import dataclasses
+import functools
 import itertools
 import logging
 from typing import ClassVar
@@ -67,6 +68,7 @@ import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 from turbigen import clusterfunc, elliptic, util
+from turbigen.blade import CHORD_FRACTION
 from turbigen.hmesh import _by_theta
 from turbigen.mesh import Mesher
 
@@ -78,16 +80,25 @@ LABELS = ("O", "P", "LE", "Pin", "TE", "Pout", "up", "dn")
 N_MERID = 4001
 """Samples along a span line from which its conformal coordinate is integrated."""
 
-N_CHORD = 4000
-"""Chordwise samples of a blade surface, which nodes are interpolated along."""
-
 N_SMOOTH_NORMAL = 10
 """Passes of a three-point average over the blade normals the O block is
 extruded along, so they fan round corners rather than cross."""
 
 SLOPE_MAX = 1.0
-"""Largest `dtheta/dm'` the initial periodic line is extended at beyond the
+"""Largest `dtheta/dm'` the initial periodic line is extended at behind the
 blade, being the tangent of 45 degrees. Only a starting guess: the line floats."""
+
+SLOPE_MAX_LE = 0.5
+"""Largest `dtheta/dm'` the initial periodic line is extended at ahead of the
+blade, about 27 degrees: at a steeper inlet metal angle, it skews the blocks
+there more than the sweeps undo."""
+
+END_FIT = 0.05
+"""Fraction of chord at each end of the camber line its end slope is fitted
+over, to average out an uneven parameterisation of the annulus."""
+
+N_END_FIT = 101
+"""Samples, evenly spaced in chord, over which each end slope is fitted."""
 
 POLISH_POWER = 4.0
 """Power the polish raises each cell corner's shape measure to, so that the
@@ -100,12 +111,18 @@ N_MATCH_REAR = 4
 """Corrections of the blade's spacing at the corners behind it, to match
 the cells across the passage there."""
 
-N_WALL = 20001
+N_WALL = 5001
 """Samples along the blade, which nodes on it are placed on."""
 
 CORNER_COS, CORNER_SIN = np.cos(np.pi / 3.0), np.sin(np.pi / 3.0)
 """Direction of an edge out of a corner of the O block, against the O block's
 face and its outward normal there."""
+
+POLISH_COARSE_RINGS = 2
+"""How many cells out from each poor cell of a swept plane are polished."""
+
+HOLD_COARSE = 1
+"""Layers of cells off the blade the polish of a swept plane leaves be."""
 
 POLISH_FINE_RINGS = 3
 """How many cells out from each poor cell of the refined plane are polished."""
@@ -113,30 +130,66 @@ POLISH_FINE_RINGS = 3
 HOLD_FINE = 3
 """Layers of cells off the blade the polish of the refined plane leaves be."""
 
+POLISH_FINE_BELOW = 30.0
+"""Worst cell corner, degrees, under which a refined control plane is
+polished again: the polish of the swept plane leaves most above it, and
+polishing the few just under costs more time than the corner gains."""
+
 DTYPE = np.float32
 """Precision the planes are held, swept, refined and polished in: the
 finished grid is stored in single precision, and the sweeps run faster in
 it. Only their geometry is worked out in double before."""
 
-N_SMOOTH_LINES = 10
-"""Passes of a three-point average of the O block's cell sizes from one of
-its lines to the next round the blade."""
-
-N_RESETTLE = 100
-"""Sweeps of a control plane, its blade nodes held, once they are moved to
-where mid-span's lie along each piece of the blade."""
-
-N_MINIMAX = 30
-
 EXTRUDE_GAP = 0.3
 """Most a line of an extruded inlet or outlet block departs from the turn of
 the pitch-mean line, as a fraction of the gap to its nearer neighbour."""
 
-S_MAX = 20.0
-"""Logarithm of the largest step between cells the O block's lines are
-searched to."""
-"""Bisections for each line's least worst step, and for the blend that fills
-it, in spacing the O block's lines off the blade."""
+N_ENDS_MIN = 8
+"""Least coarse cells along the blocks ahead of and behind the blade."""
+
+COARSE_FACTOR = 2.0
+"""How many times finer than `ds_free` the coarse mesh is everywhere, which
+leaves the refined mesh's cell sizes as they are."""
+
+ER_COARSE = 1.3
+"""Expansion ratio along the blade of the coarse mesh, away from where
+`turn_max` clusters it round the edges."""
+
+COARSE_ENDS_FACTOR = 1.5
+"""How many times more coarse cells than the rest of the coarse mesh the
+blocks ahead of and behind the blade have along them, at least `N_ENDS_MIN`."""
+
+ORTH = 1.0
+"""How far, as a fraction of the way, each sweep draws the coarse nodes one
+cell off the blade towards the blade's normal at their blade node, at the
+distance they lie. Sliding the blade nodes squares the grid there only where
+the nodes off the blade lie over distinct points of it; round an edge much
+smaller than a coarse cell, this squares it. See
+:func:`ember.elliptic.winslow_sweeps`."""
+
+SLIDE_MID = 1.0
+"""How far each sweep slides the blade nodes midway between the leading and
+trailing edges towards the foot of the perpendicular from the node outside
+them, as a fraction of the way; none at the edges, so their clustering stays
+put. See :meth:`OHPassage._slide_factors`."""
+
+TURN_FINE = 10.0
+"""Most the blade turns across one refined cell along it, degrees: an edge
+whose radius is small against `ds_LE` or `ds_TE` is clustered further, to
+resolve it."""
+
+ENDS_FACTOR = 2
+"""How many times more refined cells than `ds` and `ER_stream` give the
+blocks ahead of and behind the blade have along them, each split evenly."""
+
+N_SMOOTH_TURN = 5
+"""Samples of the blade, of `N_WALL`, its turning is averaged over to set
+the coarse spacing round its edges: few, so the curvature of an edge much
+smaller than a cell is not averaged away."""
+
+N_SPLINE_O = 16
+"""Samples per coarse cell of the spline along each line of the O block that
+its refined nodes are respaced along."""
 
 GAP_PAIR_MIX = 0.1
 """Share of the fraction of each side's length mixed into the chordwise
@@ -175,12 +228,19 @@ class ConformalMap:
     def __init__(self, annulus, spf, m_lo, m_hi):
         self.annulus = annulus
         self.spf = spf
-        self.m = np.linspace(m_lo, m_hi, N_MERID)
+        # With the joins between the annulus's segments among the samples:
+        # `m` runs on at a different rate either side of one, so `m'`, linear
+        # in `m` between samples, would cut the corner there.
+        # Less any sample a rounding error from one, which would leave a
+        # segment of no length.
+        joins = np.arange(np.ceil(m_lo), np.floor(m_hi) + 1.0)
+        m = np.linspace(m_lo, m_hi, N_MERID)
+        near = np.isclose(m[:, None], joins[None, :], rtol=0.0, atol=1e-9).any(axis=1)
+        self.m = np.union1d(m[~near], joins)
         self.xr = annulus.evaluate_xr(self.m, spf)
         ds = np.linalg.norm(np.diff(self.xr, axis=1), axis=0)
         r_mid = 0.5 * (self.xr[1, 1:] + self.xr[1, :-1])
         self.mp = np.concatenate(([0.0], np.cumsum(ds / r_mid)))
-        self._tree = cKDTree(self.xr.T)
 
     def m_from_mp(self, mp):
         """Return annulus meridional coordinate at conformal coordinate `mp`."""
@@ -206,6 +266,11 @@ class ConformalMap:
         mp = np.clip(mp, self.mp[0], self.mp[-1])
         return self.annulus.evaluate_xr(self.m_from_mp(mp), self.spf)
 
+    @functools.cached_property
+    def _tree(self):
+        """A search tree of the samples, built only if asked for."""
+        return cKDTree(self.xr.T)
+
     def mp_from_xr(self, xr):
         """Return the conformal coordinate of points (2, n) on the surface.
 
@@ -225,8 +290,13 @@ class _Layout:
     pitch: float
     m_in: float
     m_Zin: float
+    """Where the block ahead of the blade ends, at mid-span; each plane's is as
+    far from its own leading edge, see :meth:`OHPassage.plane_Z`."""
     m_Zout: float
+    """Where the block behind the blade ends, likewise."""
     m_out: float
+    m_edges: tuple
+    """The blade's leading and trailing edges at mid-span, annulus `m`."""
     d_wall: float
     """Wall spacing [m]."""
     t_O: float
@@ -264,11 +334,21 @@ class _Layout:
     """Refined cells per unit length round the blade, as fractions of its
     length from the middle of the trailing edge, and the density there,
     for the O block's nodes on the blade."""
+    sigma_LE: float
+    """Where the leading edge lies in `wall_density`, as a fraction of the
+    way round the blade, at mid-span. On another plane the density is moved
+    round the blade to put this on its own leading edge."""
+    chord_frac: float
+    """Meridional chord as a fraction of the way round the blade, both in
+    conformal units, at mid-span. On another plane the cells along the blade
+    are scaled by its own over this, so they are the same fractions of its
+    own chord."""
     nf_wall: tuple
     """Refined cells along each piece of the blade, in the order of
     `n_wall`: the rear of the lower side from the cut, the lower side
     between corners, the leading edge, the upper side between corners, and
-    the rear of the upper side to the cut."""
+    the rear of the upper side to the cut. Counted again once mid-span is
+    swept, by :meth:`OHPassage._recount_wall`."""
     u: dict
     """Where each refined node lies, in fractional coarse indices from the
     start of its stretch: across the passage, `P`; and along the blocks
@@ -279,6 +359,8 @@ class _Layout:
     `side_up`; and round the leading edge, `front`."""
     H: float = 0.0
     """Free stream cell size, in conformal units."""
+    H_coarse: float = 0.0
+    """Cell size of the coarse mesh in the free stream, in conformal units."""
     extrude_in: bool = False
     extrude_out: bool = False
     """Whether the inlet block ahead of the first row, and the outlet block
@@ -303,6 +385,8 @@ class OHPassage(Mesher):
 
     labels: ClassVar[tuple] = LABELS
     """Names of the blocks of a row, in the order :meth:`plane` returns them."""
+
+    meshes_sweep: ClassVar[bool] = True
 
     dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
@@ -332,8 +416,8 @@ class OHPassage(Mesher):
     sharply off it."""
 
     ds_free: float = 0.05
-    """Cell size in the free stream, and of the coarse mesh that is smoothed,
-    as a fraction of meridional chord."""
+    """Cell size in the free stream, as a fraction of meridional chord; the
+    coarse mesh that is smoothed is `COARSE_FACTOR` times finer."""
 
     turn_max: float = 15.0
     """Most the blade turns across one cell of the coarse mesh, degrees."""
@@ -374,6 +458,11 @@ class OHPassage(Mesher):
     relax from the spacing across the pitch at the cut to even in theta, in
     meridional chords."""
 
+    spf_corners: float = 0.5
+    """Span fraction at which the corners of the O block are found, by the
+    rules of :meth:`_wall`, and kept at every span as the same fractions of
+    the way round the blade."""
+
     stagger_max: float = 30.0
     """Most the bounding box that places the corners is turned, degrees."""
 
@@ -385,9 +474,10 @@ class OHPassage(Mesher):
     """Nodes along each side of the patch drawn in towards a corner."""
 
     polish_below: float = 32.0
-    """Once refined, the nodes near any cell whose worst corner angle, folded
-    onto 0 to 90 degrees, is under this are polished: within three cells of
-    it, short of the O block's first layers. None if zero."""
+    """Once swept, the nodes of each control plane near any cell whose worst
+    corner angle, folded onto 0 to 90 degrees, is under this are polished:
+    within a few cells of it, short of the O block's first layers; and again
+    once refined, where one is under `POLISH_FINE_BELOW`. None if zero."""
 
     njtip_min: int = 9
     """Least number of spanwise nodes across a tip gap, one more than a
@@ -425,6 +515,8 @@ class OHPassage(Mesher):
             )
         if not 0.0 < self.frac_Z < 1.0:
             raise ValueError(f"frac_Z={self.frac_Z} must be between zero and one.")
+        if not 0.0 <= self.spf_corners <= 1.0:
+            raise ValueError(f"spf_corners={self.spf_corners} must be from 0 to 1.")
         if not 0.0 <= self.polish_below < 90.0:
             raise ValueError(
                 f"polish_below={self.polish_below} must be from zero to 90 degrees."
@@ -460,6 +552,7 @@ class OHPassage(Mesher):
                 )
 
         tip = self._tip_fraction(machine)
+        self._check_inviscid_ducts(machine.annulus)
         span_ref = machine.annulus.evaluate_span(1)
         spf = self.spanwise_grid(spacing.hub / span_ref, spacing.casing / span_ref, tip)
         logger.debug(f"{type(self).__name__} spanwise points: {len(spf)}")
@@ -478,6 +571,7 @@ class OHPassage(Mesher):
             blocks.append(self.mesh_row(machine, i_row, spacing, spf, j))
 
         _stitch_mixing_planes([row[: len(self.labels)] for row in blocks], self.labels)
+        self._relax_outlet([b for row in blocks for b in row], machine.annulus, spf)
         grid = ember.grid.Grid([b for row in blocks for b in row])
         grid.connectivity.periodic.pair()
         return grid
@@ -517,8 +611,11 @@ class OHPassage(Mesher):
         With a tip gap, a fraction `tip` of span, two pieces joined at a node
         at the top of the blade: the main span, and at least
         :attr:`njtip_min` nodes across the gap, spaced at the casing spacing
-        or finer, the main span ending as finely as the gap begins.
+        or finer, the main span ending as finely as the gap begins. Evenly
+        spaced, the spacings ignored, with :attr:`inviscid_endwalls`.
         """
+        if self.inviscid_endwalls:
+            return self._uniform_span(self.dspf_mid / self.resolution_factor, tip)
         if not tip:
             return util.resample(
                 clusterfunc.double.free(
@@ -563,22 +660,22 @@ class OHPassage(Mesher):
     def control_planes(self, spf):
         """Return the indices of the spanwise planes that are smoothed.
 
-        Evenly spaced in index, so following the spanwise clustering, and
-        always including the hub and the casing. Every plane if
-        :attr:`n_span_smooth` is zero.
+        The planes nearest even steps in span fraction, rather than even
+        steps in index, which would follow the spanwise clustering and crowd
+        them at the endwalls; always including the hub and the casing. Every
+        plane if :attr:`n_span_smooth` is zero.
         """
         nj = len(spf)
         if not self.n_span_smooth or self.n_span_smooth >= nj:
             return np.arange(nj)
-        return np.unique(
-            np.round(np.linspace(0, nj - 1, self.n_span_smooth)).astype(int)
-        )
+        target = np.linspace(spf[0], spf[-1], self.n_span_smooth)
+        return np.unique(np.argmin(np.abs(spf[:, None] - target), axis=0))
 
     #
     # GEOMETRY
     #
 
-    def _wall(self, blade, cmap, t_O, corners=None, pitch=None):
+    def _wall(self, blade, cmap, t_O, corners=None, pitch=None, section=None):
         """Return the blade and where the corners of the O block sit on it.
 
         The blade as one closed line (2, N_WALL), evenly spaced in arc length,
@@ -589,9 +686,12 @@ class OHPassage(Mesher):
         fractions of the way round, if given; else C3 and C1 from the bounding
         box, C2 at the throat, the point of the upper side's outline nearest
         C3 on the next blade `pitch` above, and C4 where the normal out of C1
-        on the blade below lands on the lower side's.
+        on the blade below lands on the lower side's; or, where theta rises
+        along the chord, mirrored: C2 and C4 from the box, C3 at the point of
+        the lower side's outline nearest C2 on the blade below, and C1 where
+        the normal out of C4 on the blade above lands on the upper side's.
         """
-        upper, lower, te = _blade_pieces(blade, cmap, cmap.spf)
+        upper, lower, te = _blade_pieces(blade, cmap, cmap.spf, section)
         s_te = util.cum_arc_length(te)
         half = 0.5 * s_te[-1]
         wall = np.concatenate(
@@ -643,44 +743,61 @@ class OHPassage(Mesher):
             k: s[int(np.argmin(np.hypot(rot[0] - b[0], rot[1] - b[1])))]
             for k, b in box.items()
         }
-        # Clear of the trailing edge, and in order round the blade.
         gap = 0.02 * S
-        s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_up - 3 * gap)
-        s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
-        # The passage block's rear edge, from C2 across to C3 on the next
-        # blade, leaves the O block square: on a staggered blade the box's
-        # corner can sit far up the upper side, its edge to C3 running along
-        # the blade, and the blocks round C2 starting as slivers.
-        upper = (s > s_up + 3 * gap) & (s < s_hi - gap)
-        i_C3 = int(np.argmin(np.abs(s - s_C["C3"])))
-        to_C3 = outline - (outline[:, i_C3] + pitch * _J)[:, None]
-        s_C["C2"] = s[upper][np.argmin(np.hypot(*to_C3[:, upper]))]
-        s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
-        # Likewise its front edge, from C1 on the blade below across to C4:
-        # C4 where the normal out of C1 lands on the lower side's outline, if
-        # it does, so the edge leaves C1 square too. The nearest point to C1
-        # instead can lie far back along a staggered blade's pressure side.
-        lower = (s > s_C["C3"] + gap) & (s < s_up - gap)
-        i_C1 = int(np.argmin(np.abs(s - s_C["C1"])))
-        A = outline[:, i_C1] - pitch * _J
-        n = _outward_normals(wall)[:, i_C1]
-        rel = outline[:, lower] - A[:, None]
-        ahead = rel[0] * n[0] + rel[1] * n[1] > 0.0
-        off = np.abs(rel[0] * n[1] - rel[1] * n[0])
-        if ahead.any():
-            s_C["C4"] = s[lower][ahead][np.argmin(off[ahead])]
+        normals = _outward_normals(wall)
+
+        def nearest(name, side, other, shift):
+            """Corner `name` at the point of the outline in `side` nearest
+            corner `other` on the blade `shift` pitches above."""
+            i = int(np.argmin(np.abs(s - s_C[other])))
+            to = outline - (outline[:, i] + shift * pitch * _J)[:, None]
+            s_C[name] = s[side][np.argmin(np.hypot(*to[:, side]))]
+
+        def normal_lands(name, side, other, shift):
+            """Corner `name` where the normal out of corner `other` on the
+            blade `shift` pitches above lands on the outline in `side`, if it
+            does."""
+            i = int(np.argmin(np.abs(s - s_C[other])))
+            A = outline[:, i] + shift * pitch * _J
+            n = normals[:, i]
+            rel = outline[:, side] - A[:, None]
+            ahead = rel[0] * n[0] + rel[1] * n[1] > 0.0
+            off = np.abs(rel[0] * n[1] - rel[1] * n[0])
+            if ahead.any():
+                s_C[name] = s[side][ahead][np.argmin(off[ahead])]
+
+        # The passage block's edges, corner to corner across the passage,
+        # leave the O block square, where a box corner far along a staggered
+        # blade would start the blocks round it as slivers: at the rear, one
+        # side's corner nearest the other's on the next blade; at the front,
+        # one side's where the normal out of the other's on the next blade
+        # lands. With theta falling along the chord, or unstaggered, these
+        # place the upper rear and lower front corners; rising, mirrored.
+        if np.arctan2(chord[1], chord[0]) <= 0.0:
+            # Clear of the trailing edge, and in order round the blade.
+            s_C["C3"] = np.clip(s_C["C3"], s_lo + gap, s_up - 3 * gap)
+            s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
+            nearest("C2", (s > s_up + 3 * gap) & (s < s_hi - gap), "C3", 1)
+            s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
+            normal_lands("C4", (s > s_C["C3"] + gap) & (s < s_up - gap), "C1", -1)
+        else:
+            s_C["C2"] = np.clip(s_C["C2"], s_up + 3 * gap, s_hi - gap)
+            s_C["C1"] = np.clip(s_C["C1"], s_up + gap, s_C["C2"] - gap)
+            nearest("C3", (s > s_lo + gap) & (s < s_up - 3 * gap), "C2", -1)
+            s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
+            normal_lands("C1", (s > s_up + gap) & (s < s_C["C2"] - gap), "C4", 1)
 
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4), s_LE
 
-    def _geometry(self, blade, cmap, t_O, corners, f_wall):
+    def _geometry(self, blade_wall, t_O, f_wall):
         """Return the blade, its coarse nodes, and the O block outline.
 
-        The corners of the O block at `corners`, fractions of the way round
-        the blade, and the nodes at fractions `f_wall` of each piece of it
-        between them, the same at every span.
+        The blade and its corners as :meth:`_wall` returns them, and the
+        nodes at fractions `f_wall` of each piece of it between them, the
+        same at every span.
         """
-        wall, marks, i_C, _ = self._wall(blade, cmap, t_O, corners)
+        wall, marks, i_C, s_LE = blade_wall
         s = np.linspace(0.0, marks[-1], N_WALL)
         n_wall = [len(f) - 1 for f in f_wall]
         s_loop = np.concatenate(
@@ -699,6 +816,7 @@ class OHPassage(Mesher):
             "marks": marks,
             "i_C": i_C,
             "s_loop": s_loop / marks[-1],
+            "sigma_LE": s_LE / marks[-1],
             "loop": loop,
             "outer": outer,
             "C1": outer[:, i1],
@@ -711,8 +829,14 @@ class OHPassage(Mesher):
     # LAYOUT
     #
 
-    def layout(self, machine, i_row, spacing):
-        """Fix the coarse counts of one row, and how it is refined, at mid-span."""
+    def layout(self, machine, i_row, spacing, spf):
+        """Fix the coarse counts of one row, and how it is refined, at mid-span.
+
+        The blocks ahead of and behind the blade end as far from its edges at
+        every span fraction `spf` meshed as at mid-span, so where the edges
+        are swept they end swept alike, and the counts and clustering fixed
+        here mean the same at every span.
+        """
         row = machine.rows[i_row]
         blade = row.blade
         n_row = len(machine.rows)
@@ -720,10 +844,12 @@ class OHPassage(Mesher):
 
         L_up = 1.0 if i_row == 0 else 0.5
         L_dn = 1.0 if i_row == n_row - 1 else 0.5
-        m_LE, m_TE = 2.0 * i_row + 1.0, 2.0 * i_row + 2.0
-        m_in, m_out = m_LE - L_up, m_TE + L_dn
-        m_Zin = m_LE - self.frac_Z * L_up
-        m_Zout = m_TE + self.frac_Z * L_dn
+        m_row = 2.0 * i_row + 1.0
+        m_in, m_out = m_row - L_up, m_row + 1.0 + L_dn
+        # The edges, swept or not, at mid-span
+        m_LE, m_TE = (float(m) for m in m_row + blade.evaluate_swept_m([0.0, 1.0], 0.5))
+        m_Zin = m_LE - self.frac_Z * (m_LE - m_in)
+        m_Zout = m_TE + self.frac_Z * (m_out - m_TE)
         extrude_in, extrude_out = i_row == 0, i_row == n_row - 1
         chord = blade.evaluate_chord(0.5)
         if extrude_in:
@@ -731,35 +857,52 @@ class OHPassage(Mesher):
         if extrude_out:
             m_Zout = _m_at_distance(machine.annulus, m_TE, m_out, self.cut * chord)
 
+        # Every plane's blocks must end short of its inlet and outlet
+        Z = np.array(
+            [self.plane_Z(blade, s, m_row, (m_LE, m_TE), (m_Zin, m_Zout)) for s in spf]
+        )
+        if Z[:, 0].min() <= m_in or Z[:, 1].max() >= m_out:
+            raise ValueError(
+                f"Row {i_row} has edges swept so far that the blocks ahead of and "
+                f"behind its blade, as long as at mid-span, reach m="
+                f"{Z[:, 0].min():.4g} and {Z[:, 1].max():.4g}, which leaves no "
+                f"room for the blocks between them and the ends of its domain "
+                f"at m={m_in:.4g} and {m_out:.4g}."
+            )
+
         cmap = ConformalMap(machine.annulus, 0.5, m_in, m_out)
         r_ref = float(np.mean(_by_theta(blade, 0.5)[0][1]))
-        to_c = blade.evaluate_chord(0.5) / r_ref / self.resolution_factor
+        to_c = _chord(blade, 0.5) / self.resolution_factor
         h, h_LE, H = self.ds * to_c, self.ds_LE * to_c, self.ds_free * to_c
         h_TE = self.ds_TE * to_c
         t_O = self.t_O * pitch
 
         # Coarse along the blade: the free stream size, or less where it
         # turns sharply; the two sides of the passage block alike.
-        # The corners found at mid-span, and kept as fractions of the way
+        # The corners found at spf_corners, and kept as fractions of the way
         # round at every span: found at each, the nearest point to a corner of
         # the box can jump from one part of the blade to another between
         # spans, and the planes either side no longer fit together.
-        wall, marks, i_C, s_LE = self._wall(blade, cmap, t_O, pitch=pitch)
+        cmap_C = ConformalMap(machine.annulus, self.spf_corners, m_in, m_out)
+        _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
+        corners = tuple(float(x) for x in marks_C[1:5] / marks_C[-1])
+        blade_wall = self._wall(blade, cmap, t_O, corners)
+        wall, marks, i_C, s_LE = blade_wall
         S = marks[-1]
-        corners = tuple(float(x) for x in marks[1:5] / S)
         s = np.linspace(0.0, S, N_WALL)
-        density = _coarse_density(wall, H, np.radians(self.turn_max))
-        i3, i4, i1, _ = i_C
+        # The coarse mesh, uniformly finer than the free stream.
+        Hc = H / COARSE_FACTOR
+        density = _coarse_density(wall, Hc, np.radians(self.turn_max), ER_COARSE)
+        i3, _, i1, _ = i_C
         n = [max(1, round(_integral(s, density, a, b))) for a, b in _pairs(marks)]
         n[i3] = n[i1] = max(n[i3], n[i1])
         # Where the coarse nodes lie along each piece, by the curvature at
-        # mid-span, kept at every span so a correction carried between spans
-        # moves the same nodes.
+        # mid-span; each plane places its own, see `_coarse_wall`.
         f_wall = tuple(
             (_by_density(s, density, a, b, k) - a) / (b - a)
             for (a, b), k in zip(_pairs(marks), n)
         )
-        geo = self._geometry(blade, cmap, t_O, corners, f_wall)
+        geo = self._geometry(blade_wall, t_O, f_wall)
 
         # Refined along the blade: down to h_LE at the leading edge and h_TE
         # at the middle of the trailing edge, growing at ER_surf to h between.
@@ -773,16 +916,9 @@ class OHPassage(Mesher):
                 h_TE + grow * np.minimum(s, S - s),
             ]
         )
-        nf = [round(_integral(s, 1.0 / fine, a, b)) for a, b in _pairs(marks)]
-        nf_side = _up8(max(nf[i3], nf[i1]))
-        nf_front = _up8(nf[i4])
-        nf_rl = max(nf[0], 2)
-        nf_ru = max(nf[4], 2)
-        nf_ru += -(nf_rl + nf_ru) % 8
-        # The H block of a tip gap takes half the cells round the blade along
-        # each side, and its counts must halve under multigrid too.
-        if row.tip_gap:
-            nf_ru += -(nf_rl + nf_ru + 2 * nf_side + nf_front) % 16
+        nf_wall = _wall_counts(
+            [_integral(s, 1.0 / fine, a, b) for a, b in _pairs(marks)], row.tip_gap
+        )
 
         # Refined across the passage and along the blocks ahead of and behind
         # the blade: h at the O block, growing at ER_stream to the free stream.
@@ -797,10 +933,20 @@ class OHPassage(Mesher):
         )
         L_in = (min(C1[0], C4[0]) - mp_Zin) * stretch_in
         L_out = (mp_Zout - max(C2[0], C3[0])) * stretch_out
-        n_P, n_in, n_out = (max(2, round(L / H)) for L in (L_P, L_in, L_out))
+        n_P, n_in, n_out = (max(2, round(L / Hc)) for L in (L_P, L_in, L_out))
+        # The blocks ahead of and behind the blade finer along them still,
+        # so the corners of the O block there have room to open out.
+        n_in, n_out = (
+            max(N_ENDS_MIN, round(COARSE_ENDS_FACTOR * n)) for n in (n_in, n_out)
+        )
         f_P = _mult(_double(h / L_P, h / L_P, H / L_P, self.ER_stream), 8)
-        f_in = 1.0 - np.flip(_mult(_single(h / L_in, H / L_in, self.ER_stream), 8))
+        # Ahead of and behind the blade, ENDS_FACTOR times the cells each
+        # way, the clustering kept.
+        k = ENDS_FACTOR
+        f_in = _mult(_single(h / L_in, H / L_in, self.ER_stream), 8)
         f_out = _mult(_single(h / L_out, H / L_out, self.ER_stream), 8)
+        f_in = 1.0 - np.flip(util.resample_to(f_in, k * (len(f_in) - 1) + 1))
+        f_out = util.resample_to(f_out, k * (len(f_out) - 1) + 1)
 
         dw = float(spacing.surface[i_row]) / r_ref
         f_O = clusterfunc.single.free(dw / t_O, max(h, dw) / t_O, self.ER_O)
@@ -810,6 +956,7 @@ class OHPassage(Mesher):
             m_in=m_in,
             m_Zin=m_Zin,
             m_Zout=m_Zout,
+            m_edges=(m_LE, m_TE),
             m_out=m_out,
             d_wall=float(spacing.surface[i_row]),
             t_O=t_O,
@@ -818,20 +965,23 @@ class OHPassage(Mesher):
             f_wall=f_wall,
             corners=corners,
             i_wall=i_C,
-            n_O=max(2, round(2.0 * t_O / H)),
+            n_O=max(2, round(2.0 * t_O / Hc)),
             n_P=n_P,
             n_in=n_in,
             n_out=n_out,
-            n_up=1 if extrude_in else _up8(round((mp_Zin - mp_in) * stretch_in / H)),
+            n_up=1 if extrude_in else _up8(round((mp_Zin - mp_in) * stretch_in / Hc)),
             n_dn=1
             if extrude_out
-            else _up8(round((mp_out - mp_Zout) * stretch_out / H)),
+            else _up8(round((mp_out - mp_Zout) * stretch_out / Hc)),
             nk_O=len(_mult(f_O, 8)),
             H=H,
+            H_coarse=Hc,
             extrude_in=extrude_in,
             extrude_out=extrude_out,
             wall_density=(s / S, S / fine),
-            nf_wall=(nf_rl, nf_side, nf_front, nf_side, nf_ru),
+            sigma_LE=s_LE / S,
+            chord_frac=_chord(blade, 0.5) / S,
+            nf_wall=nf_wall,
             u={
                 "P": f_P * n_P,
                 "in": f_in * n_in,
@@ -851,16 +1001,73 @@ class OHPassage(Mesher):
     # ONE PLANE
     #
 
-    def plane(self, machine, i_row, layout, spf):
-        """Return the coarse algebraic mesh of one constant-span plane."""
+    def _wall_coarse_density(self, blade_wall, layout):
+        """Return the density of coarse cells along the blade on one plane, as
+        :meth:`_wall` returns it, at its `N_WALL` samples.
+
+        By :attr:`turn_max` round the blade's own edges on this plane, which
+        sharpen and move round it along the span. See :func:`_coarse_density`.
+        """
+        return _coarse_density(
+            blade_wall[0], layout.H_coarse, np.radians(self.turn_max), ER_COARSE
+        )
+
+    def _coarse_wall(self, blade_wall, density, counts=None):
+        """Return coarse cells along each piece of the blade on one plane, as
+        :meth:`_wall` returns it, as many as `density` asks for, or with
+        `counts`, where they lie along each piece as fractions of its length.
+        """
+        _, marks, _, _ = blade_wall
+        s = np.linspace(0.0, marks[-1], N_WALL)
+        if counts is None:
+            return [_integral(s, density, a, b) for a, b in _pairs(marks)]
+        return tuple(
+            (_by_density(s, density, a, b, k) - a) / (b - a)
+            for (a, b), k in zip(_pairs(marks), counts)
+        )
+
+    def _coarse_counts(self, i_row, layout, blade_walls, densities):
+        """Return `layout` with the coarse cells along each piece of the blade
+        the most any plane of `blade_walls`, at `densities`, asks for; the two
+        sides of the passage block alike."""
+        need = np.zeros(len(layout.n_wall))
+        for blade_wall, density in zip(blade_walls, densities):
+            need = np.maximum(need, self._coarse_wall(blade_wall, density))
+        n = [max(1, round(x)) for x in need]
+        i3, _, i1, _ = layout.i_wall
+        n[i3] = n[i1] = max(n[i3], n[i1])
+        logger.debug(
+            f"Row {i_row} coarse cells along the blade: {layout.n_wall} at "
+            f"mid-span, {tuple(n)} the most any plane asks for"
+        )
+        return dataclasses.replace(layout, n_wall=tuple(n))
+
+    @staticmethod
+    def plane_Z(blade, spf, m_row, m_edges, m_Z):
+        """Return where the blocks ahead of and behind the blade end at `spf`,
+        annulus `m`: as far from its edges there as `m_Z` is from `m_edges`
+        at mid-span. Exactly `m_Z` where the blade is not swept."""
+        if not blade.swept:
+            return m_Z
+        here = m_row + blade.evaluate_swept_m([0.0, 1.0], spf)
+        return tuple(float(z + e - e_mid) for z, e, e_mid in zip(m_Z, here, m_edges))
+
+    def plane(self, machine, i_row, layout, cmap, blade_wall, density, section):
+        """Return the coarse algebraic mesh of the constant-span plane of
+        `cmap`, its blade as :meth:`_wall` returns it and the density of
+        coarse cells along it."""
         blade = machine.rows[i_row].blade
+        spf = cmap.spf
         pitch = layout.pitch
         pJ = pitch * _J
-        cmap = ConformalMap(machine.annulus, spf, layout.m_in, layout.m_out)
-        mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
-            [layout.m_in, layout.m_Zin, layout.m_Zout, layout.m_out]
+        m_Zin, m_Zout = self.plane_Z(
+            blade, spf, 2.0 * i_row + 1.0, layout.m_edges, (layout.m_Zin, layout.m_Zout)
         )
-        g = self._geometry(blade, cmap, layout.t_O, layout.corners, layout.f_wall)
+        mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m(
+            [layout.m_in, m_Zin, m_Zout, layout.m_out]
+        )
+        f_wall = self._coarse_wall(blade_wall, density, layout.n_wall)
+        g = self._geometry(blade_wall, layout.t_O, f_wall)
         loop, outer = g["loop"], g["outer"]
         C1, C2, C3, C4 = (g[k] for k in ("C1", "C2", "C3", "C4"))
         i3, i4, i1, i2 = layout.i_corners_coarse()
@@ -950,11 +1157,12 @@ class OHPassage(Mesher):
             _line(R_top - pJ, R_mid, f_P),
         )
         # An inlet or outlet block extruded after the sweeps is one free
-        # stream cell long through them, its outer face sliding as theirs do.
+        # stream cell of the coarse mesh long through them, its outer face
+        # sliding as theirs do.
         if layout.extrude_in:
-            mp_in = mp_Zin - layout.H
+            mp_in = mp_Zin - layout.H_coarse
         if layout.extrude_out:
-            mp_out = mp_Zout + layout.H
+            mp_out = mp_Zout + layout.H_coarse
         Z_in = np.concatenate((Pin[:, 0, :], LE[:, 0, 1:]), axis=1)
         T_in = np.array([mp_in, Q_top[1]])
         f_up = uniform(layout.n_up)
@@ -983,6 +1191,8 @@ class OHPassage(Mesher):
             "cmap": cmap,
             "wall": g["wall"],
             "s_loop": g["s_loop"],
+            "sigma_LE": g["sigma_LE"],
+            "chord_frac": _chord(blade, spf, section) / util.arc_length(g["wall"]),
         }
 
     #
@@ -1076,14 +1286,15 @@ class OHPassage(Mesher):
                             out["f"].append(fc[a, b])
         return {k: np.array(v) for k, v in out.items()}
 
-    def _sweeps(self, topo, X, n_sweep, plane, slide=True):
+    def _sweeps(self, topo, X, n_sweep, plane):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
         singular nodes from their stencils, the inlet and outlet level with
-        the nodes inside, the nodes near the corners drawn in, and the blade
-        nodes of `plane` slid along the blade to the foot of the perpendicular
-        from the node outside them, unless not to `slide`, when they stay.
+        the nodes inside, the nodes near the corners drawn in, the blade
+        nodes of `plane` slid along the blade towards the foot of the
+        perpendicular from the node outside them, by :meth:`_slide_factors`,
+        and the nodes outside them drawn square to the blade by `ORTH`.
         """
         pitch = topo.pitch
         W_irr, c_irr = topo.sweep_irr
@@ -1099,14 +1310,6 @@ class OHPassage(Mesher):
             (cp["node"], cp["corner"], cp["shift"] * pitch, cp["f"]),
         )
         gid, shift = topo.gid[0], topo.shift[0] * pitch
-        if not slide:
-            none = np.zeros(0, dtype=np.int32)
-            empty = np.zeros(0, dtype=DTYPE)
-            wall = (none, none, empty, empty, np.zeros((2, 2), dtype=DTYPE))
-            wall += (np.zeros(2, dtype=DTYPE), empty, none, none)
-            X, _, _ = ember.elliptic.winslow_sweeps(*args, wall, n_sweep)
-            return X
-
         # The blade as a closed line, and where on it each blade node and the
         # node outside it start.
         line = plane["wall"].T
@@ -1140,8 +1343,27 @@ class OHPassage(Mesher):
                 tree.query(w1)[1],
             ),
             n_sweep,
+            ORTH,
+            self._slide_factors(plane, line, s_line, tree, w0),
         )
         return X
+
+    def _slide_factors(self, plane, line, s_line, tree, w0):
+        """Return how far each blade node at `w0` slides each sweep.
+
+        The nodes off the blade are drawn square to it, by `ORTH`, and sliding
+        the blade nodes under them round the leading and trailing edges only
+        drags the clustering there onto the surfaces as the sweeps even the
+        first layer. So none there, rising as the square of a sine along each
+        side to `SLIDE_MID` midway between them, where the nodes are free to
+        find their places along the blade.
+        """
+        S = s_line[-1]
+        sigma = _project(line.T, s_line, tree, np.asarray(w0, dtype=float)) / S
+        a = plane["sigma_LE"]
+        # From the middle of the trailing edge (0) to the leading edge (1).
+        t = np.where(sigma <= a, sigma / a, (1.0 - sigma) / (1.0 - a))
+        return SLIDE_MID * np.sin(np.pi * np.clip(t, 0.0, 1.0)) ** 2
 
     def _match_blade(self, topo, X, plane, lay, frac):
         """Return the fractions of each piece of the blade the coarse blade
@@ -1150,7 +1372,7 @@ class OHPassage(Mesher):
         xy = topo.scatter(np.asarray(X))
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0].astype(float))
+        s_c = _wall_arc(plane, xy[0][:, :, 0].astype(float))
         ends = (0, *lay.i_corners_coarse(), len(s_c) - 1)
         own = []
         for a, b in itertools.pairwise(ends):
@@ -1164,32 +1386,48 @@ class OHPassage(Mesher):
 
     def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
         """Return the ember blocks of one row, with a tip gap from `jtip`."""
-        lay = self.layout(machine, i_row, spacing)
-        planes = [self.plane(machine, i_row, lay, s) for s in spf]
+        lay = self.layout(machine, i_row, spacing, spf)
+        # Each plane's blade evaluated once, for its coarse counts and nodes
+        blade = machine.rows[i_row].blade
+        cmaps = [ConformalMap(machine.annulus, s, lay.m_in, lay.m_out) for s in spf]
+        sections = [_section(blade, s) for s in spf]
+        walls = [
+            self._wall(blade, c, lay.t_O, lay.corners, section=sec)
+            for c, sec in zip(cmaps, sections)
+        ]
+        dens = [self._wall_coarse_density(w, lay) for w in walls]
+        lay = self._coarse_counts(i_row, lay, walls, dens)
+        planes = [
+            self.plane(machine, i_row, lay, *cwds)
+            for cwds in zip(cmaps, walls, dens, sections)
+        ]
         j_mid = int(np.argmin(np.abs(spf - 0.5)))
 
         topo = self._sweep_operators(_plane_topology(planes[j_mid]["xy"], lay.pitch))
+        hold = topo.gid[0][:, : HOLD_COARSE + 1].ravel()
         X_alg = [topo.gather(p["xy"]) for p in planes]
 
         # Swept on the control planes, and the correction that made carried
         # to the planes between.
         j_ctrl = np.union1d(self.control_planes(spf), [j_mid])
         correction = [None] * len(spf)
-        # Mid-span first, whose blade nodes the others are spaced as.
-        frac = None
-        for j in sorted(j_ctrl, key=lambda j: j != j_mid):
+        # Each slides its blade nodes along the blade, to the foot of the
+        # perpendicular from the node outside them, which squares the O block
+        # there; where they come to rest is kept, as fractions of each piece.
+        fracs = [None] * len(spf)
+        for j in j_ctrl:
             # Started from the algebraic plane as it is: the sweeps unfold
             # what folds in it without untangling first.
             X = self._sweeps(topo, X_alg[j], self.n_sweep, planes[j])
-            # The blade nodes at the fractions of each piece of the blade they
-            # lie at mid-span, then the plane swept again round them, still:
-            # the spacing along the blade is fitted at mid-span and carried
-            # to every plane as fractional indices of these nodes, which the
-            # sweeps otherwise slide unlike mid-span's on another plane, and
-            # it steps where the trailing edge meets the surfaces.
-            frac, X = self._match_blade(topo, X, planes[j], lay, frac)
-            if j != j_mid:
-                X = self._sweeps(topo, X, N_RESETTLE, planes[j], slide=False)
+            # Polished before it is refined too: what the refined plane's
+            # polish is then left to do steps the spacing less across the O
+            # block's outer face.
+            if self.polish_below:
+                X += self._polish_shift(
+                    topo, hold, topo.scatter(X), POLISH_COARSE_RINGS
+                )
+            own, _ = self._match_blade(topo, X, planes[j], lay, None)
+            fracs[j] = np.concatenate(own)
             correction[j] = X - X_alg[j]
             logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
 
@@ -1206,14 +1444,43 @@ class OHPassage(Mesher):
 
         correction = between(correction)
         X_smooth = [X_alg[j] + correction[j] for j in range(len(spf))]
+        # A correction carried between planes leaves their blade nodes off
+        # the blade, and round a thin edge out of order along it: put back
+        # on it at fractions of each piece between those of the control
+        # planes either side.
+        fracs = between(fracs)
+        cuts = np.cumsum([n + 1 for n in lay.n_wall])[:-1]
+        X_smooth = [
+            X
+            if j in j_ctrl
+            else self._match_blade(topo, X, planes[j], lay, np.split(fracs[j], cuts))[1]
+            for j, X in enumerate(X_smooth)
+        ]
+        # The O block of each plane between rebuilt from its lines' offsets
+        # along and normal to the blade from their blade nodes, interpolated
+        # between the control planes: displacements interpolated in the
+        # plane would skew lines that leave each control plane's blade square
+        # where the blade between turns, as it does where its stagger changes.
+        offsets = [None] * len(spf)
+        for j in j_ctrl:
+            offsets[j] = _O_offsets(topo, X_alg[j] + correction[j], planes[j])
+        offsets = between(offsets)
+        X_smooth = [
+            X if j in j_ctrl else _O_from_offsets(topo, X, planes[j], offsets[j])
+            for j, X in enumerate(X_smooth)
+        ]
 
-        # The refinement along the blade taken from where the sweeps left the
-        # coarse nodes at mid-span.
-        lay = self._wall_u(lay, planes[j_mid], topo.scatter(X_smooth[j_mid]))
-        refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+        # The refined cells along each piece of the blade counted again
+        # between the corners as the sweeps left them, and the refinement
+        # along the blade taken from where the coarse nodes lie at mid-span.
         xy_mid = topo.scatter(X_smooth[j_mid])
+        lay = self._recount_wall(
+            lay, planes, [topo.scatter(X) for X in X_smooth], machine.rows[i_row]
+        )
+        lay = self._wall_u(lay, planes[j_mid], xy_mid)
+        refine = self._refine_matrices(lay, planes[j_mid]["xy"])
         mid = self._refined(xy_mid, planes[j_mid], lay, refine)
-        lay = self._O_count(lay, planes[j_mid], xy_mid, _beyond_O(mid, lay))
+        lay = self._O_count(lay, planes[j_mid], mid[0], _beyond_O(mid, lay))
         per_plane = [
             self._refined(topo.scatter(X), plane, lay, refine)
             for X, plane in zip(X_smooth, planes)
@@ -1221,12 +1488,25 @@ class OHPassage(Mesher):
 
         # The control planes are polished once refined, and how far that
         # moves each node carried to the planes between, as the smoothing is.
+        # Only those with a cell well under `polish_below`, see
+        # `POLISH_FINE_BELOW`; the rest still gathered and scattered, which
+        # makes the nodes the blocks share agree to the last bit.
+        poor = [
+            j
+            for j in j_ctrl
+            if min(_cell_angles(B).min() for B in per_plane[j]) < POLISH_FINE_BELOW
+        ]
         if self.polish_below:
             fine = _plane_topology(per_plane[j_mid], lay.pitch, stencils=False)
             hold = fine.gid[0][:, : HOLD_FINE + 1].ravel()
             shift = [None] * len(spf)
             for j in j_ctrl:
-                shift[j] = self._polish_shift(fine, hold, per_plane[j])
+                if j in poor:
+                    shift[j] = self._polish_shift(
+                        fine, hold, per_plane[j], POLISH_FINE_RINGS
+                    )
+                else:
+                    shift[j] = np.zeros_like(fine.gather(per_plane[j]))
             for j, d in enumerate(between(shift)):
                 per_plane[j] = fine.scatter(fine.gather(per_plane[j]) + d)
 
@@ -1320,6 +1600,66 @@ class OHPassage(Mesher):
         else:
             xy[7] = B
 
+    def _recount_wall(self, lay, planes, xys, row):
+        """Return `lay` with the refined cells along each piece of the blade
+        counted between the corners where the sweeps left them, on every
+        plane, `xys` the coarse blocks of each of `planes`.
+
+        The layout counts them between the corners as built at mid-span,
+        which the sweeps slide along the blade, and on a blade whose edges
+        sharpen along the span the curvature asks for more on some planes
+        than mid-span: each piece takes the most any plane asks for, so none
+        is coarsened by :meth:`_wall_u` to fit. See :func:`_wall_counts`.
+        """
+        need = np.zeros(len(lay.n_wall))
+        for plane, xy in zip(planes, xys):
+            S = util.arc_length(plane["wall"])
+            s_c = _wall_arc(plane, xy[0][:, :, 0])
+            c = s_c[np.cumsum((0, *lay.n_wall))] / S
+            sigma, dens = self._plane_density(lay, plane)
+            sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
+            dens = np.concatenate((dens[:-1], dens[:-1], dens))
+            here = [_integral(sigma, dens, a, b) for a, b in itertools.pairwise(c)]
+            need = np.maximum(need, here)
+        nf_wall = _wall_counts(need, row.tip_gap)
+        logger.debug(
+            f"Refined cells along the blade: {np.round(need, 1)} asked for, "
+            f"{lay.nf_wall} as laid out, {nf_wall} once swept"
+        )
+        return dataclasses.replace(lay, nf_wall=nf_wall)
+
+    def _plane_density(self, lay, plane):
+        """Return the density of refined cells round the blade on `plane`, as
+        `_Layout.wall_density`, moved to its own leading edge and raised where
+        the blade turns sharply.
+
+        Mid-span's, its fractions of the way round from the middle of the
+        trailing edge stretched piecewise linearly either side of the leading
+        edge, so the clustering there lands on this plane's, wherever twist
+        has moved it, and the trailing edge's stays put. Then at least enough
+        that the blade turns by no more than `TURN_FINE` across a cell, the
+        cells growing from there at no more than :attr:`ER_surf`.
+        """
+        sigma, dens = lay.wall_density
+        a, b = lay.sigma_LE, plane["sigma_LE"]
+        moved = np.where(
+            sigma < a, sigma * b / a, b + (sigma - a) * (1.0 - b) / (1.0 - a)
+        )
+        wall = plane["wall"]
+        sw = _norm_arc(wall)
+        # As fractions of this plane's own chord, which the blade's length
+        # round it is not in proportion to along the span.
+        h = plane["chord_frac"] / lay.chord_frac / np.interp(sw, moved, dens)
+        # Cell lengths, as fractions of the way round, to turn by TURN_FINE.
+        d = np.gradient(wall, axis=1)
+        phi = np.unwrap(np.arctan2(d[1], d[0]))
+        turn = np.abs(np.gradient(phi, sw))
+        turn = scipy.ndimage.uniform_filter1d(turn, N_SMOOTH_TURN, mode="wrap")
+        h = np.minimum(h, np.radians(TURN_FINE) / np.maximum(turn, 1e-300))
+        # Growing away from each fine cell at ER_surf at most.
+        h = _grow_limited(h, sw, self.ER_surf - 1.0)
+        return sw, 1.0 / h
+
     def _wall_u(self, lay, plane, xy):
         """Return `lay` refined along the blade to its density on plane `xy`.
 
@@ -1341,14 +1681,14 @@ class OHPassage(Mesher):
         """
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0])
+        s_c = _wall_arc(plane, xy[0][:, :, 0])
         e = np.cumsum((0, *lay.n_wall))
         m = dict(zip(("rl", "side_lo", "front", "side_up", "ru"), lay.nf_wall))
         counts = np.array(lay.nf_wall)
 
         # The density round the whole blade, from the first corner to where
         # it closes on itself.
-        sigma, dens = lay.wall_density
+        sigma, dens = self._plane_density(lay, plane)
         sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
         dens = np.concatenate((dens[:-1], dens[:-1], dens))
         c = s_c[e] / S
@@ -1380,6 +1720,9 @@ class OHPassage(Mesher):
             scale = np.empty(len(t))
             for j, (inside, w) in enumerate(pieces):
                 lin = g[j] * (1.0 - w) + g[j + 1] * w
+                # On the scale, not over the cells' length: weighted to the
+                # long cells, the bow of a short piece whose density changes
+                # sharply lands at its coarse end and steps the spacing there.
                 bow = w * (1.0 - w)
                 q = (
                     counts[j] - np.trapezoid(d[inside] * lin, t[inside])
@@ -1391,9 +1734,7 @@ class OHPassage(Mesher):
             a, b = e[j], e[j + 1]
             s_f = S * _by_density(t, d_eff, c[j], c[j + 1], m)
             q = np.linspace(0.0, b - a, 64 * (b - a) + 1)
-            s_q = scipy.interpolate.PchipInterpolator(
-                np.arange(b - a + 1), s_c[a : b + 1]
-            )(q)
+            s_q = _pchip_unit(s_c[a : b + 1], q)
             u = np.interp(s_f, s_q, q)
             u[0], u[-1] = 0.0, b - a
             return u
@@ -1441,24 +1782,32 @@ class OHPassage(Mesher):
 
     def _O_count(self, lay, plane, xy, beyond):
         """Return `lay` with the nodes across the O block counted for its
-        thickness on swept plane `xy`, not its nominal one.
+        lines as swept and refined round the blade on `plane`, not its
+        nominal thickness.
 
-        As the layout counts them, to grow from the wall spacing at `ER_O`,
-        rounded up to a count a multigrid level can halve, but over the
-        median line of the O block as the sweeps leave it, which may be well
-        thicker or thinner than it started, and to the median of the first
-        cells `beyond` it once refined, which the passage block squeezed
-        between O blocks makes well short of `h`.
+        Enough that each line, from the wall spacing at the blade to the
+        first cell `beyond` it, can grow steadily the whole way: a line
+        growing geometrically from one to the other fills its length `L`
+        with `ln(h / d) / ln(r)` cells, `r = (L - d) / (L - h)`, and with
+        fewer the double-sided stretching must grow past `h` and shrink back.
+        As many as all but the longest tenth of lines need, and no fewer than
+        grow at `ER_O`, rounded up to a count a multigrid level can halve.
+        `xy` is the O block (2, ni, nk) refined round the blade.
         """
-        O = np.asarray(xy[0], dtype=float)
-        L = float(np.median(np.linalg.norm(np.diff(O, axis=2), axis=0).sum(axis=1)))
-        dw = float(np.median(lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]))
-        h = float(np.median(beyond))
-        nk = len(_mult(_single(dw / L, max(h, dw) / L, self.ER_O), 8))
+        O = np.asarray(xy, dtype=float)
+        L = np.linalg.norm(np.diff(O, axis=2), axis=0).sum(axis=1)
+        d = lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]
+        h = np.maximum(np.asarray(beyond, dtype=float), d * (1.0 + 1e-6))
+        r = (L - d) / np.maximum(L - h, 1e-30)
+        steady = np.where(
+            L > h, np.log(h / d) / np.log(np.maximum(r, 1.0 + 1e-9)), L / d
+        )
+        n_ER = np.log(h / d) / np.log(self.ER_O)
+        n = max(float(np.percentile(steady, 90)), float(np.median(n_ER)), 1.0)
+        nk = _up8(int(np.ceil(n))) + 1
         logger.debug(
-            f"O block nodes across: {lay.nk_O} for nominal thickness "
-            f"{lay.t_O / lay.h:.1f} h, {nk} for median swept line {L / lay.h:.1f} h "
-            f"to cells beyond of {h / lay.h:.2f} h"
+            f"O block nodes across: {lay.nk_O} as laid out, {nk} to grow "
+            f"steadily from wall to the cells beyond"
         )
         return dataclasses.replace(lay, nk_O=nk)
 
@@ -1527,20 +1876,19 @@ class OHPassage(Mesher):
         Each block refined along each of its directions on cubic splines
         through the coarse nodes, one between each pair of block junctions,
         by the matrices `refine`; the O block's blade nodes put back on the
-        blade, and each line off it respaced along itself from the wall
-        spacing at the blade to the first cell of the block beyond it, with
-        the least worst step between. See :func:`_monotone_many`.
+        blade; each line off it respaced along a cubic spline through its
+        coarse nodes, leaving the blade along its normal, from the wall
+        spacing at the blade to the first cell of the block beyond it, by
+        double-sided stretching whose expansion ratio varies linearly.
         """
         # The O block's blade nodes refined through where they lie along the
         # blade, monotonically, so they stay on it and in order round it.
         wall = plane["wall"]
         S = util.arc_length(wall)
-        s_c = _wall_arc(wall, xy[0][:, :, 0])
+        s_c = _wall_arc(plane, xy[0][:, :, 0])
         s_f = np.concatenate(
             [
-                scipy.interpolate.PchipInterpolator(
-                    np.arange(a, b + 1), s_c[a : b + 1]
-                )(a + v)[(0 if j == 0 else 1) :]
+                _pchip_unit(s_c[a : b + 1], v)[(0 if j == 0 else 1) :]
                 for j, (a, b, v) in enumerate(self._wall_pieces(lay))
             ]
         )
@@ -1564,31 +1912,55 @@ class OHPassage(Mesher):
         # long as the first ones beyond them.
         O = out[0]
         O[:, :, 0] = _at_arc(wall, np.mod(s_f, S))
+        dtype = O.dtype
+        # Each line a cubic spline through its coarse nodes, leaving the
+        # blade along its normal, sampled finely, so the nodes respaced along
+        # it leave the blade square and do not cut the corners where the
+        # lines between coarse nodes bend.
+        O = O.astype(float)
+        speed = np.linalg.norm(O[:, :, 1] - O[:, :, 0], axis=0)
+        start = _wall_normals(wall, s_f) * speed
+        O = np.concatenate((O, start[:, :, None]), axis=2) @ _spline_O(O.shape[2]).T
         nk = lay.nk_O
         d_wall = lay.d_wall / plane["cmap"].xr_from_mp(O[0, :, 0])[1]
-        seg = np.linalg.norm(np.diff(O, axis=2), axis=0)
-        s = np.concatenate((np.zeros((len(seg), 1)), np.cumsum(seg, axis=1)), axis=1)
+        d = np.diff(O, axis=2)
+        d *= d
+        s = np.zeros(O.shape[1:])
+        np.cumsum(np.sqrt(d[0] + d[1]), axis=1, out=s[:, 1:])
         L = s[:, -1]
-        T = _smooth_across_lines(_monotone_many(d_wall, _beyond_O(out, lay), L, nk))
-        # Every line at once: which coarse segment each new node falls in,
-        # and how far along it.
-        q = np.clip((T[:, :, None] >= s[:, None, 1:-1]).sum(axis=2), 0, len(s[0]) - 2)
+        # Double-sided stretching along each line, from the wall spacing, no
+        # coarser than even, to the first cell of the block beyond, its
+        # expansion ratio varying linearly between them.
+        even = 1.0 / (nk - 1)
+        f0 = np.clip(d_wall / L, 1e-12, even)
+        # The outer end at the first cell beyond, coarser than even spacing
+        # if it is, so the line meets it rather than growing past it and
+        # shrinking back; only a line too short to hold both ends is held to
+        # half its length there.
+        f1 = np.clip(_beyond_O(out, lay) / L, 1e-12, 0.5)
+        T = L[:, None] * clusterfunc.double.smooth_many(f0, f1, nk)
+        # Every line at once: which segment each new node falls in, and how
+        # far along it, searched in one sorted run with each line lifted
+        # clear of the one before.
+        inner = s[:, 1:-1]
+        lift = (2.0 * float(s[:, -1].max()) + 1.0) * np.arange(len(s))[:, None]
+        q = np.searchsorted((inner + lift).ravel(), T + lift, side="right")
+        q = np.clip(q - inner.shape[1] * np.arange(len(s))[:, None], 0, len(s[0]) - 2)
         s_lo = np.take_along_axis(s, q, axis=1)
         s_hi = np.take_along_axis(s, q + 1, axis=1)
-        w = ((T - s_lo) / np.maximum(s_hi - s_lo, 1e-30)).astype(O.dtype)
+        w = (T - s_lo) / np.maximum(s_hi - s_lo, 1e-30)
         lo = np.take_along_axis(O, q[None], axis=2)
         hi = np.take_along_axis(O, q[None] + 1, axis=2)
-        out[0] = lo + w[None] * (hi - lo)
+        out[0] = (lo + w[None] * (hi - lo)).astype(dtype)
         return out
 
-    def _polish_shift(self, topo, hold, xy):
-        """Return how far polishing moves each node of refined blocks `xy`.
+    def _polish_shift(self, topo, hold, xy, rings):
+        """Return how far polishing moves each node of blocks `xy`.
 
-        The nodes within `POLISH_FINE_RINGS` cells of every cell whose worst
-        corner is under :attr:`polish_below`, against cells the size they
-        are; the nodes `hold`, the O block's first `HOLD_FINE` layers of
-        cells off the blade, held so its spacing and squareness there stay as
-        clustered.
+        The nodes within `rings` cells of every cell whose worst corner is
+        under :attr:`polish_below`, against cells the size they are; the
+        nodes `hold`, the O block's first layers of cells off the blade, held
+        so its spacing and squareness there stay as clustered.
         """
         poor = []
         for B, g in zip(xy, topo.gid):
@@ -1603,7 +1975,7 @@ class OHPassage(Mesher):
             topo,
             X,
             poor,
-            rings=POLISH_FINE_RINGS,
+            rings=rings,
             power=POLISH_POWER,
             hold=hold,
         )
@@ -1823,6 +2195,9 @@ class OHPassage(Mesher):
                 Per(k=-1),
             ]
         )
+        for blk in blocks:
+            blk.patches.extend(self._endwall_patches())
+        casing = self._inviscid_ducts(machine, i_row, up, dn)
         if jtip is None:
             return blocks
 
@@ -1861,9 +2236,12 @@ class OHPassage(Mesher):
         # sets its speed. The j = 0 faces of the gap's blocks are the tip of
         # the blade, a wall turning with the row, which is what an unpatched
         # face already means.
+        # Not over an inviscid stretch of the casing, which a rotating patch
+        # would overlap.
         blocks += [tO, tH]
         for blk in blocks:
-            blk.patches.append(ember.patch.RotatingPatch(j=-1, label="casing"))
+            i_rot = casing.get(id(blk), (0, -1))
+            blk.patches.append(ember.patch.RotatingPatch(i=i_rot, j=-1, label="casing"))
         return blocks
 
 
@@ -1903,12 +2281,17 @@ def _project(wall, s_wall, tree, pts):
     return best_s
 
 
-def _wall_arc(wall, nodes):
-    """Return where `nodes` (2, n) lie along closed line `wall` (2, N),
-    unwrapped to increase from the first, which the last closes on."""
-    s_wall = util.cum_arc_length(wall)
+def _wall_arc(plane, nodes):
+    """Return where `nodes` (2, n) lie along the closed line of `plane`'s
+    blade, unwrapped to increase from the first, which the last closes on."""
+    wall = plane["wall"]
+    # Kept with the plane, which asks for them several times
+    if "wall_tree" not in plane:
+        plane["wall_s"] = util.cum_arc_length(wall)
+        plane["wall_tree"] = cKDTree(wall.T)
+    s_wall = plane["wall_s"]
     S = s_wall[-1]
-    s_c = _unwrap(_project(wall, s_wall, cKDTree(wall.T), nodes.T), S)
+    s_c = _unwrap(_project(wall, s_wall, plane["wall_tree"], nodes.T), S)
     s_c[-1] = s_c[0] + S
     return s_c
 
@@ -1944,6 +2327,29 @@ def _bend(A, dA, B, dB, n):
 def _pairs(marks):
     """Return the stretches between consecutive `marks`."""
     return list(itertools.pairwise(marks))
+
+
+def _wall_counts(need, tip_gap):
+    """Return refined cells along each piece of the blade, in the order of
+    `_Layout.n_wall`, for the cells `need` the density along each asks for.
+
+    Each count rounded up, never down, so no piece is coarser than asked.
+    The two sides between corners are the opposite edges of the passage
+    block, so they share the larger count; it and the leading edge's are
+    multiples of eight, and so is the sum of the two rear pieces, the edge
+    of the trailing edge block, the remainder going on the rear upper side.
+    """
+    n = [int(np.ceil(x - 1e-6)) for x in need]
+    nf_side = _up8(max(n[1], n[3]))
+    nf_front = _up8(n[2])
+    nf_rl = max(n[0], 2)
+    nf_ru = max(n[4], 2)
+    nf_ru += -(nf_rl + nf_ru) % 8
+    # The H block of a tip gap takes half the cells round the blade along
+    # each side, and its counts must halve under multigrid too.
+    if tip_gap:
+        nf_ru += -(nf_rl + nf_ru + 2 * nf_side + nf_front) % 16
+    return (nf_rl, nf_side, nf_front, nf_side, nf_ru)
 
 
 def _up8(n):
@@ -2001,7 +2407,7 @@ def _gap_fractions(W, lower, upper, i_LE):
     """
     N = W.shape[1] - 1
     sides = (W[:, i_LE::-1], W[:, i_LE:])
-    m = util.cluster_cosine(N_CHORD)
+    m = CHORD_FRACTION
     # Spaced along each side in proportion to the blade's local thickness,
     # so that the H block's ends, a fixed count of cells, span the leading
     # and trailing edges alike, whatever the main O block's spacing round
@@ -2166,132 +2572,6 @@ def _beyond_O(out, lay):
     return total / count
 
 
-def _smooth_across_lines(T):
-    """Return node positions `T` (m, n) along the O block's lines, smoothed
-    from line to line round the block.
-
-    Each line is spaced on its own, and the rule that spaces it changes
-    sharply with the line's length and the cells beyond it, at the corners
-    of the blocks beyond and where a line becomes too short to keep both
-    end spacings; neighbouring lines then space their layers differently
-    and crumple the cells between them. The logarithm of each layer's cell
-    sizes is smoothed round the block by `N_SMOOTH_LINES` passes of a
-    three-point average, the first and last lines being one, and each line
-    rescaled to its length. Cells rising along every line still rise along
-    each, and the wall and end cells move by their neighbours' differences.
-    """
-    L = T[:, -1]
-    c = np.log(np.maximum(np.diff(T[:-1], axis=1), 1e-300))
-    for _ in range(N_SMOOTH_LINES):
-        c = 0.5 * c + 0.25 * (np.roll(c, 1, axis=0) + np.roll(c, -1, axis=0))
-    cells = np.exp(np.concatenate((c, c[:1])))
-    cells *= (L / cells.sum(axis=1))[:, None]
-    return np.concatenate((np.zeros((len(L), 1)), np.cumsum(cells, axis=1)), axis=1)
-
-
-def _m_at_distance(annulus, m0, m1, dist):
-    """Return the annulus meridional coordinate `dist` along mid-span from
-    `m0` towards `m1`."""
-    m = np.linspace(m0, m1, 2001)
-    s = util.cum_arc_length(annulus.evaluate_xr(m, 0.5))
-    if dist >= s[-1]:
-        raise ValueError(
-            f"The cut, {dist:.3g} m from the blade, lies beyond the inlet or "
-            f"outlet, {s[-1]:.3g} m from it; make the cut smaller."
-        )
-    return float(np.interp(dist, s, m))
-
-
-def _runs(s, n):
-    """Return the sum of `n` cells growing at ratio exp(`s`) from one, `n`
-    where `s` is zero."""
-    small = np.abs(s) < 1e-12
-    safe = np.where(small, 1.0, s)
-    return np.where(small, n, np.expm1(n * safe) / np.expm1(safe))
-
-
-def _geometric_ratio(first, L, N):
-    """Return the logarithm of the ratio of `N` cells from `first` that
-    fill `L`, negative if they must shrink."""
-    lo = np.full(np.shape(L), -S_MAX)
-    hi = np.full(np.shape(L), S_MAX)
-    for _ in range(3 * N_MINIMAX):
-        mid = 0.5 * (lo + hi)
-        under = first * _runs(mid, N) < L
-        lo = np.where(under, mid, lo)
-        hi = np.where(under, hi, mid)
-    return 0.5 * (lo + hi)
-
-
-def _monotone_many(d, h, L, n):
-    """Return `n` nodes (m, n) along lines of length `L` (m,), their cells
-    growing steadily from `d` (m,) at the wall to `h` (m,) beyond, with the
-    least worst step between cells.
-
-    In the logarithm of cell length, a line rising from `log d` to `log h`
-    whose slope never exceeds `s`, the logarithm of the worst step, and
-    never falls: the least `s` for which the line rising at once at slope
-    `s` and then level holds at least `L`, and the one level and then
-    rising at the end holds no more; then the cells a blend of the two in
-    the logarithm, which rises no faster and never falls, weighted to fill
-    `L`. Only lines from `(N - 1) d + h` to `d + (N - 1) h` long, for `N`
-    cells, fit both ends so. A longer line grows steadily from `d` to fill
-    it, ending larger than `h`, and a shorter one likewise, ending smaller;
-    one shorter than `N d` is spaced uniformly, finer at the wall than
-    asked. Where `h` is less than `d`, the line ends at `d`, level.
-    """
-    N = n - 1
-    k = np.arange(N)[None]
-    d = np.asarray(d, dtype=float)
-    h = np.maximum(np.broadcast_to(np.asarray(h, dtype=float), d.shape), d)
-    L = np.asarray(L, dtype=float)
-    l0, le = np.log(d), np.log(h)
-    rise = le - l0
-
-    def bounds(s):
-        # Cells rising at slope s for r of them, the rest level.
-        safe = np.maximum(s, 1e-300)
-        r = np.minimum(N, np.floor(rise / safe) + 1)
-        r = np.where(rise > 0.0, r, 0)
-        early = d * _runs(s, r) + (N - r) * h
-        late = h * _runs(-s, r) + (N - r) * d
-        return late, early
-
-    long_ = L > d + (N - 1) * h
-    short = L < (N - 1) * d + h
-
-    lo = rise / max(N - 1, 1)
-    hi = np.full_like(lo, S_MAX)
-    for _ in range(N_MINIMAX):
-        mid = 0.5 * (lo + hi)
-        late, early = bounds(mid)
-        good = (late <= L) & (early >= L)
-        hi = np.where(good, mid, hi)
-        lo = np.where(good, lo, mid)
-    s = hi[:, None]
-    safe = np.maximum(s, 1e-300)
-    E = np.minimum(l0[:, None] + k * s, le[:, None])
-    Lt = np.maximum(l0[:, None], le[:, None] - (N - 1 - k) * safe)
-    a, b = np.zeros(len(L)), np.ones(len(L))
-    for _ in range(N_MINIMAX):
-        mid = 0.5 * (a + b)
-        under = np.exp(Lt + mid[:, None] * (E - Lt)).sum(axis=1) < L
-        a = np.where(under, mid, a)
-        b = np.where(under, b, mid)
-    cells = np.exp(Lt + a[:, None] * (E - Lt))
-
-    # Lines too long grow steadily from d; too short, steadily to h.
-    q = _geometric_ratio(d, L, N)[:, None]
-    cells = np.where(long_[:, None], d[:, None] * np.exp(k * q), cells)
-    # Too short, steadily from d as far as it reaches, or uniform if even
-    # that is too long, finer at the wall than asked.
-    q = _geometric_ratio(d, L, N)[:, None]
-    grown = np.where(q > 0.0, d[:, None] * np.exp(k * np.maximum(q, 0.0)), 1.0)
-    cells = np.where(short[:, None], grown, cells)
-    cells *= (L / cells.sum(axis=1))[:, None]
-    return np.concatenate((np.zeros((len(L), 1)), np.cumsum(cells, axis=1)), axis=1)
-
-
 def _respace_gap_O(O, d_wall):
     """Return the O block (2, ni, nk) of a tip gap, each line respaced.
 
@@ -2338,17 +2618,79 @@ def _by_density(s, density, a, b, n):
     return out
 
 
-def _coarse_density(wall, h_free, turn):
+def _coarse_density(wall, h_free, turn, ER):
     """Return nodes per unit length along a closed line (2, n), evenly spaced,
     for cells of `h_free` or less, across which it turns by no more than
-    `turn` radians."""
+    `turn` radians, growing from one to the next by `ER` at most."""
     d = np.gradient(wall, axis=1)
     phi = np.unwrap(np.arctan2(d[1], d[0]))
     ds = util.arc_length(wall) / (wall.shape[1] - 1)
     kappa = np.abs(np.gradient(phi)) / ds
-    window = max(1, int(0.25 * h_free / ds))
-    kappa = scipy.ndimage.uniform_filter1d(kappa, window, mode="wrap")
-    return np.maximum(kappa / turn, 1.0 / h_free)
+    kappa = scipy.ndimage.uniform_filter1d(kappa, N_SMOOTH_TURN, mode="wrap")
+    h = 1.0 / np.maximum(kappa / turn, 1.0 / h_free)
+    return 1.0 / _grow_limited(h, util.cum_arc_length(wall), ER - 1.0)
+
+
+def _grow_limited(h, s, g):
+    """Return cell lengths `h` at `s` round a closed line, its last point its
+    first, growing away from each short cell at `g` per unit length at most:
+    the least over every point of its length plus the rise from it, as running
+    minima forwards and back over three turns. A cell growing so is `1 + g`
+    times the one before."""
+    P = s[-1] - s[0]
+    x = np.concatenate((s[:-1] - P, s[:-1], s + P))
+    H = np.concatenate((h[:-1], h[:-1], h))
+    fwd = g * x + np.minimum.accumulate(H - g * x)
+    back = -g * x + np.minimum.accumulate((H + g * x)[::-1])[::-1]
+    n = len(s) - 1
+    return np.minimum(fwd, back)[n : 2 * n + 1]
+
+
+def _pchip_unit(y, t):
+    """Return the PCHIP through `y` at knots 0, 1, ..., n - 1 at `t`.
+
+    As :class:`scipy.interpolate.PchipInterpolator` makes it, to rounding,
+    without the cost of building one, which on a few knots is most of it.
+    """
+    m = np.diff(y)
+    if len(y) == 2:
+        d = np.array([m[0], m[0]])
+    else:
+        # Interior slopes the harmonic mean of the chords either side, or
+        # flat at a turn; each end's a one-sided estimate kept in shape.
+        d = np.zeros_like(y)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            whmean = (3.0 / m[:-1] + 3.0 / m[1:]) / 6.0
+        ok = (np.sign(m[1:]) == np.sign(m[:-1])) & (m[1:] != 0) & (m[:-1] != 0)
+        d[1:-1][ok] = 1.0 / whmean[ok]
+        for i, m0, m1 in ((0, m[0], m[1]), (-1, m[-1], m[-2])):
+            e = (3.0 * m0 - m1) / 2.0
+            if np.sign(e) != np.sign(m0):
+                e = 0.0
+            elif np.sign(m0) != np.sign(m1) and abs(e) > 3.0 * abs(m0):
+                e = 3.0 * m0
+            d[i] = e
+    k = np.clip(np.floor(t).astype(int), 0, len(y) - 2)
+    x = t - k
+    c2 = 3.0 * m[k] - 2.0 * d[k] - d[k + 1]
+    c3 = d[k] + d[k + 1] - 2.0 * m[k]
+    return ((c3 * x + c2) * x + d[k]) * x + y[k]
+
+
+@functools.cache
+def _spline_O(nc):
+    """Return the samples (n, nc + 1), `N_SPLINE_O` per coarse cell, of the
+    cubic spline through `nc` evenly spaced values with a given slope at the
+    first and not-a-knot at the last, per unit of each value and the slope.
+
+    The same at every plane, so each O block's lines are splined by one
+    product with their coarse nodes and the slopes off the blade.
+    """
+    u = np.linspace(0.0, nc - 1.0, N_SPLINE_O * (nc - 1) + 1)
+    e = np.eye(nc + 1)
+    start = ((1, e[nc]), "not-a-knot")
+    spline = scipy.interpolate.CubicSpline(np.arange(nc), e[:nc], bc_type=start)
+    return np.ascontiguousarray(spline(u))
 
 
 def _refine_matrix(n, pieces, dtype):
@@ -2398,16 +2740,27 @@ _J = np.array([0.0, 1.0])
 """Unit vector in the direction of increasing `theta` in the conformal plane."""
 
 
-def _surfaces(blade, cmap, spf):
+def _section(blade, spf):
+    """Return the two surfaces (4, `N_CHORD`) at `spf`, higher-theta first:
+    `x`, `r`, `theta`, and the annulus meridional coordinate."""
+    upper, lower = blade.evaluate_section(spf)
+    if upper[2].mean() < lower[2].mean():
+        upper, lower = lower, upper
+    return upper, lower
+
+
+def _surfaces(blade, cmap, spf, section=None):
     """Return the two surfaces in conformal coordinates, higher-theta first.
 
-    Each (2, n), from the leading edge to its trailing edge corner.
+    Each (2, n), from the leading edge to its trailing edge corner; of
+    `section`, as :func:`_section` returns it, if given. Mapped from where
+    the blade put each point along the annulus, not searched for.
     """
-    upper, lower = _by_theta(blade, spf, m=util.cluster_cosine(N_CHORD))
-    return tuple(np.stack((cmap.mp_from_xr(s[:2]), s[2])) for s in (upper, lower))
+    upper, lower = _section(blade, spf) if section is None else section
+    return tuple(np.stack((cmap.mp_from_m(s[3]), s[2])) for s in (upper, lower))
 
 
-def _blade_pieces(blade, cmap, spf):
+def _blade_pieces(blade, cmap, spf, section=None):
     """Return the two surfaces and the trailing edge in conformal coordinates.
 
     Each surface (2, n) from the leading edge to its trailing edge corner,
@@ -2415,14 +2768,14 @@ def _blade_pieces(blade, cmap, spf):
     the lower. On a round trailing edge, the corners are where each surface's
     arc begins, and the trailing edge is the arc.
     """
-    upper, lower = _surfaces(blade, cmap, spf)
+    upper, lower = _surfaces(blade, cmap, spf, section)
     caps = blade.evaluate_TE_cap(spf)
     if caps is None:
         t = np.linspace(0.0, 1.0, 101)[None]
         return upper, lower, upper[:, -1:] + t * (lower[:, -1:] - upper[:, -1:])
     # Split each surface at its sample nearest where the arc begins; the
     # samples are those `_surfaces` evaluates at.
-    m = util.cluster_cosine(N_CHORD)
+    m = CHORD_FRACTION
     m_upper, m_lower = caps if blade.suction_is_upper else caps[::-1]
     i_u, i_l = (int(np.argmin(np.abs(m - m_cap))) for m_cap in (m_upper, m_lower))
     te = np.concatenate((upper[:, i_u:], lower[:, i_l:][:, ::-1][:, 1:]), axis=1)
@@ -2435,10 +2788,90 @@ def _at_arc(curve, s):
     return np.stack([np.interp(s, s_curve, c) for c in curve])
 
 
+def _m_at_distance(annulus, m0, m1, dist):
+    """Return the annulus meridional coordinate `dist` along mid-span from
+    `m0` towards `m1`."""
+    m = np.linspace(m0, m1, 2001)
+    s = util.cum_arc_length(annulus.evaluate_xr(m, 0.5))
+    if dist >= s[-1]:
+        raise ValueError(
+            f"The cut, {dist:.3g} m from the blade, lies beyond the inlet or "
+            f"outlet, {s[-1]:.3g} m from it; make the cut smaller."
+        )
+    return float(np.interp(dist, s, m))
+
+
+def _O_frame(plane, O):
+    """Return the blade node, and the blade's unit tangent and outward normal
+    there, (2, ni) each, at the blade end of each line of O block `O`."""
+    wall = plane["wall"]
+    n = _wall_normals(wall, _wall_arc(plane, O[:, :, 0]))
+    return O[:, :, 0], np.stack((n[1], -n[0])), n
+
+
+def _O_offsets(topo, X, plane):
+    """Return the offsets (2, ni, nk) of the O block's nodes in plane `X`
+    along and normal to the blade from their lines' blade nodes."""
+    O = np.asarray(topo.scatter(X)[0], dtype=float)
+    b, t, n = _O_frame(plane, O)
+    d = O - b[:, :, None]
+    return np.stack(
+        (np.sum(d * t[:, :, None], axis=0), np.sum(d * n[:, :, None], axis=0))
+    )
+
+
+def _O_from_offsets(topo, X, plane, offsets):
+    """Return plane `X` with the O block's nodes between its blade and outer
+    faces put at `offsets` (2, ni, nk) along and normal to its own blade from
+    their lines' blade nodes."""
+    O = np.asarray(topo.scatter(X)[0], dtype=float)
+    b, t, n = _O_frame(plane, O)
+    new = (
+        b[:, :, None]
+        + offsets[0][None] * t[:, :, None]
+        + offsets[1][None] * n[:, :, None]
+    )
+    g = topo.gid[0][:, 1:-1]
+    pts = new[:, :, 1:-1]
+    if topo.pitch:
+        pts = pts - np.stack(
+            (np.zeros_like(pts[0]), topo.shift[0][:, 1:-1] * topo.pitch)
+        )
+    X = np.array(X)
+    X[g.ravel()] = np.moveaxis(pts, 0, -1).reshape(-1, 2).astype(X.dtype)
+    return X
+
+
+def _wall_normals(wall, s):
+    """Return the outward unit normals (2, n) of the blade, closed line
+    `wall`, at arc lengths `s` along it, as :func:`_outward_normals` makes
+    them."""
+    S = util.arc_length(wall)
+    eps = S / N_WALL
+    t = _at_arc(wall, np.mod(s + eps, S)) - _at_arc(wall, np.mod(s - eps, S))
+    t /= np.linalg.norm(t, axis=0)
+    return np.stack((-t[1], t[0]))
+
+
+def _chord(blade, spf, section=None):
+    """Return the meridional chord of the section at `spf`, in conformal
+    units, over the mean radius of the section; of `section`, as
+    :func:`_section` returns it, if given."""
+    # One section for both, as `Blade.evaluate_chord` measures it
+    upper, lower = _by_theta(blade, spf) if section is None else section
+    r_ref = float(np.mean(upper[1]))
+    chord = util.arc_length(np.stack((upper, lower)).mean(axis=0)[:2])
+    return chord / r_ref
+
+
 def _norm_arc(curve):
     """Return normalised arc length along a polyline (2, n)."""
-    s = util.cum_arc_length(curve)
-    return s / s[-1]
+    d = np.diff(curve, axis=1)
+    s = np.empty(curve.shape[1])
+    s[0] = 0.0
+    np.cumsum(np.sqrt(d[0] * d[0] + d[1] * d[1]), out=s[1:])
+    s /= s[-1]
+    return s
 
 
 def _outward_normals(loop):
@@ -2457,18 +2890,25 @@ def _periodic_line(blade, cmap, pitch):
     """Return `theta(m')` of the initial periodic line above the blade.
 
     Half a pitch above the camber line, extended straight beyond it at the
-    end slopes of the camber line, limited to 45 degrees.
+    end slopes of the camber line, limited to `SLOPE_MAX_LE` ahead and
+    `SLOPE_MAX` behind.
     """
-    cam = blade.evaluate_camber(cmap.spf, m=util.cluster_cosine(400))
-    mp = cmap.mp_from_xr(cam[:2])
-    theta = cam[2] + 0.5 * pitch
-    slope = np.clip(
-        [
-            (theta[1] - theta[0]) / (mp[1] - mp[0]),
-            (theta[-1] - theta[-2]) / (mp[-1] - mp[-2]),
-        ],
-        -SLOPE_MAX,
-        SLOPE_MAX,
+    # The camber line along the chord and over each end evaluated together:
+    # evaluated alone, an end would be stretched over the whole chord.
+    m_line = util.cluster_cosine(400)
+    m_ends = (
+        np.linspace(0.0, END_FIT, N_END_FIT),
+        np.linspace(1.0 - END_FIT, 1.0, N_END_FIT),
+    )
+    m_all, inverse = np.unique(np.concatenate((m_line, *m_ends)), return_inverse=True)
+    cam = blade.evaluate_camber(cmap.spf, m=m_all)
+    mp_all = cmap.mp_from_xr(cam[:2])
+    i_line, i_LE, i_TE = np.split(inverse, np.cumsum([len(m_line), N_END_FIT]))
+    mp, theta = mp_all[i_line], cam[2][i_line] + 0.5 * pitch
+    i_TE = i_TE[::-1]
+    slope = (
+        np.clip(_end_slope(mp_all[i_LE], cam[2][i_LE]), -SLOPE_MAX_LE, SLOPE_MAX_LE),
+        np.clip(_end_slope(mp_all[i_TE], cam[2][i_TE]), -SLOPE_MAX, SLOPE_MAX),
     )
 
     def periodic(mq):
@@ -2479,6 +2919,20 @@ def _periodic_line(blade, cmap, pitch):
         return out
 
     return periodic
+
+
+def _end_slope(mp, theta):
+    """Return `dtheta/dm'` of the camber line at the end its samples `mp`,
+    `theta` over the last part of chord start from.
+
+    From a quadratic fitted over them, not differenced between the
+    end's first two samples: an annulus whose `m` runs on unevenly over a
+    small fraction of chord puts those a few percent out of true in `m'`, by
+    an amount that jumps from span to span. Extended a chord beyond the blade,
+    that shears the periodic surface by a degree where the planes crowd the
+    endwalls.
+    """
+    return np.polyfit(mp - mp[0], theta, 2)[1]
 
 
 def _line(a, b, f):
@@ -2495,27 +2949,33 @@ def _tfi(bottom, top, left, right):
     corners must agree. Blended on normalised arc length rather than index, so
     a clustered edge pulls the interior with it.
     """
+    c00, c10, c01, c11 = bottom[:, 0], bottom[:, -1], top[:, 0], top[:, -1]
     for a, b in (
-        (bottom[:, 0], left[:, 0]),
-        (bottom[:, -1], right[:, 0]),
-        (top[:, 0], left[:, -1]),
-        (top[:, -1], right[:, -1]),
+        (c00, left[:, 0]),
+        (c10, right[:, 0]),
+        (c01, left[:, -1]),
+        (c11, right[:, -1]),
     ):
-        assert np.allclose(a, b, rtol=0.0, atol=1e-12), f"TFI corners disagree {a} {b}"
+        assert np.abs(a - b).max() <= 1e-12, f"TFI corners disagree {a} {b}"
 
     sb = _norm_arc(bottom)[:, None]
     st = _norm_arc(top)[:, None]
     tl = _norm_arc(left)[None, :]
     tr = _norm_arc(right)[None, :]
-    u = (sb + (st - sb) * tl) / (1.0 - (st - sb) * (tr - tl))
-    v = tl + (tr - tl) * u
+    dst = st - sb
+    u = (sb + dst * tl) / (1.0 - dst * (tr - tl))
+    v = (tr - tl) * u
+    v += tl
 
-    B, T = bottom[:, :, None], top[:, :, None]
-    L, R = left[:, None, :], right[:, None, :]
-    c00, c10 = bottom[:, 0, None, None], bottom[:, -1, None, None]
-    c01, c11 = top[:, 0, None, None], top[:, -1, None, None]
-    xy = (1 - v) * B + v * T + (1 - u) * L + u * R
-    xy -= (1 - u) * (1 - v) * c00 + u * (1 - v) * c10 + (1 - u) * v * c01 + u * v * c11
+    # The blend of the four edges less the bilinear one of the corners,
+    # gathered by what each multiplies: `v` varies along `k`, `u` along `i`.
+    Q = (top - bottom - (c01 - c00)[:, None])[:, :, None]
+    R = (right - left - (c10 - c00)[:, None])[:, None, :]
+    K = (c11 - c10 - c01 + c00)[:, None, None]
+    xy = v * Q
+    xy += (bottom - c00[:, None])[:, :, None]
+    xy += left[:, None, :]
+    xy += u * (R - v * K)
 
     # Edges exactly as given, so shared edges are bit-identical between blocks.
     xy[:, :, 0], xy[:, :, -1] = bottom, top

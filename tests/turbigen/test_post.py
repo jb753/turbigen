@@ -5,6 +5,8 @@ which is what makes these tests possible at all: each one can be run alone and
 asserted on without a PdfPages or a filesystem.
 """
 
+import types
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -24,19 +26,23 @@ from turbigen import (
     Config,
     ContourPlot,
     ConvergencePlot,
+    MeshPlot,
     Post,
     Result,
     SectionsPlot,
     SpanwisePlot,
+    StationContourPlot,
     SurfacePlot,
+    ThicknessPlot,
     VelocityTrianglePlot,
+    YplusPlot,
     cli,
     iterate,
     mixout,
     pipeline,
     post,
 )
-from turbigen.post import IterationPlot
+from turbigen.post import IterationPlot, ShapeFactorPlot
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -968,3 +974,207 @@ def test_a_clipped_step_is_marked_on_the_iteration_it_left(iterating):
     ]
     assert len(marked) == 1
     assert list(marked[0].get_xdata()) == [0]
+
+
+def test_yplus_plot_draws_a_physical_distribution(bladed, solved):
+    figures = YplusPlot().report(bladed, solved)
+
+    assert len(figures) == 1
+    (line,) = figures[0].axes[0].lines
+    zeta, yplus = line.get_xdata(), line.get_ydata()
+
+    # On the same folded abscissa as the surface distribution.
+    assert zeta.min() == pytest.approx(0.0, abs=1e-6)
+    assert zeta.max() == pytest.approx(1.0)
+    # Every node of the cut is on a wall, so none reads the zero a free face
+    # carries, and none is lost to a line that missed the cut.
+    assert np.all(np.isfinite(yplus))
+    assert np.all(yplus > 0.0)
+
+
+def test_yplus_plot_skips_a_section_above_a_clearance_gap(gapped):
+    config, result = gapped
+    figures = YplusPlot(spf=(0.5, 0.99)).report(config, result)
+
+    assert [len(fig.axes[0].lines) for fig in figures] == [2, 1]
+
+
+def test_yplus_plot_without_a_grid_is_empty(config, result):
+    assert YplusPlot().report(config, result) == []
+
+
+def test_yplus_plot_with_no_span_fractions_is_empty(bladed, solved):
+    """How a config turns the standard y+ plot off."""
+    assert YplusPlot(spf=()).report(bladed, solved) == []
+
+
+def test_station_contour_plot_draws_one_figure_per_station(bladed, solved):
+    figures = StationContourPlot(station=(0, 1)).report(bladed, solved)
+    assert len(figures) == 2
+
+
+def test_station_contour_plot_without_a_mean_line_skips_ys(bladed, solved):
+    unmixed = Result(machine=solved.machine, grid=solved.grid, history=solved.history)
+    assert StationContourPlot().report(bladed, unmixed) == []
+    assert len(StationContourPlot(variable="Ma_rel").report(bladed, unmixed)) == 1
+
+
+def test_station_contour_plot_without_a_grid_is_empty(config, result):
+    assert StationContourPlot().report(config, result) == []
+
+
+def test_shape_factor_on_an_h_mesh_matches_the_blade_surface(solved):
+    """One value per node of the surface the distributions are drawn on."""
+    import turbigen.util
+
+    (H,) = turbigen.util.blade_shape_factor(solved.grid)
+    (surface,) = turbigen.util.cut_blade_surfs(solved.grid)
+    assert H[0].shape == surface[0].shape
+    # Mostly measurable, however briefly the march ran
+    assert np.isfinite(H[0]).mean() > 0.5
+    assert np.nanmin(H[0]) >= 1.0
+
+
+def test_shape_factor_plot_draws_an_h_mesh(bladed, solved):
+    (figure,) = ShapeFactorPlot().report(bladed, solved)
+    # The section's curve, and the H_TE = 2.2 reference line under it
+    curve, reference = figure.axes[0].lines
+    assert list(reference.get_ydata()) == [2.2, 2.2]
+
+
+def test_shape_factor_plot_without_a_grid_is_empty(config, result):
+    assert ShapeFactorPlot().report(config, result) == []
+
+
+def test_shape_factor_plot_draws_the_line_it_is_asked_for(bladed, solved):
+    (figure,) = ShapeFactorPlot(line=True).report(bladed, solved)
+
+    curve, line, points, _reference = figure.axes[0].lines
+    assert len(line.get_xdata()) == 2
+    assert len(points.get_xdata()) == 2
+    assert "Delta A_{sb}" in curve.get_label()
+
+
+def test_mesh_plot_draws_every_grid_line_of_both_slices(bladed, meshed):
+    meridional, blade_to_blade = MeshPlot().report(bladed, meshed)
+
+    (block,) = meshed.grid
+    ni, nj, nk = block.shape
+    # One line per index in each of the two directions of a slice
+    assert len(meridional.axes[0].lines) == ni + nj
+    assert len(blade_to_blade.axes[0].lines) == ni + nk
+    # Both to scale
+    assert meridional.axes[0].get_aspect() == 1.0
+    assert blade_to_blade.axes[0].get_aspect() == 1.0
+
+
+def test_mesh_plot_slices_at_mid_pitch_and_mid_span(bladed, meshed):
+    meridional, blade_to_blade = MeshPlot().report(bladed, meshed)
+
+    (block,) = meshed.grid
+    ni, nj, nk = block.shape
+    # The first line of each is the first column: i varying, at j = 0 or k = 0
+    x, r = meridional.axes[0].lines[0].get_data()
+    np.testing.assert_allclose(r, block.r[:, 0, nk // 2])
+    x, rt = blade_to_blade.axes[0].lines[0].get_data()
+    np.testing.assert_allclose(rt, block.rt[:, nj // 2, 0])
+
+
+def test_mesh_plot_draws_the_periodic_surface_of_an_ohp_mesh():
+    """One surface per row from inlet to outlet, every grid line of it."""
+    from test_blade import ROUND, blade
+
+    from turbigen import util
+
+    config = build(
+        blades=[blade(section={"thickness": ROUND})] * 2,
+        mesh={"type": "ohp", "dspf_mid": 0.1, "resolution_factor": 0.5},
+    )
+    _, machine, grid = pipeline.prepare(config)
+
+    meridional, _ = MeshPlot().report(config, Result(machine=machine, grid=grid))
+
+    surfaces = [surface for row in util.cut_periodic(grid) for surface in row]
+    assert len(surfaces) == 2
+    assert meridional.axes[0].get_title() == "Meridional Grid, Periodic Surface"
+    assert len(meridional.axes[0].lines) == sum(sum(s.shape) for s in surfaces)
+
+
+def test_mesh_plot_without_a_grid_is_empty(config, result):
+    assert MeshPlot().report(config, result) == []
+
+
+def test_mesh_plot_draws_nothing_for_another_mesher(bladed, meshed):
+    other = types.SimpleNamespace(mesh=types.SimpleNamespace(type="other"))
+    assert MeshPlot().report(other, meshed) == []
+
+
+def test_spanwise_mach_number_is_taken_in_the_frame_it_is_asked_for(gapped):
+    """The rotor's relative Mach number is the one its blades see, not the duct's."""
+    config, result = gapped
+
+    Ma, Ma_rel = [
+        SpanwisePlot(m_cut=(4.1,), variable=variable)
+        .report(config, result)[0]
+        .axes[0]
+        .lines[0]
+        .get_data()[0]
+        for variable in ("Ma", "Ma_rel")
+    ]
+
+    assert np.all(np.abs(Ma - Ma_rel) > 0.01)
+    assert np.mean(Ma_rel) == pytest.approx(
+        float(result.actual[:, 1].Ma_rel[1]), abs=0.05
+    )
+
+
+def test_thickness_plot_draws_the_total_thickness_of_each_row(bladed, meshed):
+    figures = ThicknessPlot().report(bladed, meshed)
+
+    assert len(figures) == len(meshed.machine.rows)
+    # A symmetric distribution is one curve, the total over both surfaces, so
+    # twice the half-thickness each one carries.
+    (ax,) = figures[0].axes
+    (line,) = ax.lines
+    _, thickness = meshed.machine.rows[0].blade._get_cam_thick(0.5)
+    t_s, t_p = thickness.thick_both(line.get_xdata())
+    assert line.get_ydata() == pytest.approx(t_s + t_p)
+    assert line.get_ydata().max() == pytest.approx(2.0 * thickness.t_max, rel=0.01)
+
+
+def test_thickness_plot_takes_the_span_fractions_it_is_given(bladed, meshed):
+    figures = ThicknessPlot(spf=(0.25, 0.75)).report(bladed, meshed)
+
+    assert len(figures[0].axes[0].lines) == 2
+
+
+def test_thickness_plot_without_blades_is_empty(config, result):
+    assert ThicknessPlot().report(config, result) == []
+
+
+def test_camber_plot_normalised_runs_from_zero_to_one(bladed, meshed):
+    figures = CamberPlot(normalised=True).report(bladed, meshed)
+
+    chi = figures[0].axes[0].lines[0].get_ydata()
+    assert chi[0] == pytest.approx(0.0)
+    assert chi[-1] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("cls", [CamberPlot, ThicknessPlot])
+def test_reference_csv_is_drawn_over_the_design(cls, bladed, meshed, tmp_path):
+    path = tmp_path / "reference.csv"
+    path.write_text("# m, value\n0.0, 0.1\n0.5, 0.2\n1.0, 0.3\n")
+
+    figures = cls(reference_csv=str(path)).report(bladed, meshed)
+
+    reference = figures[0].axes[0].lines[-1]
+    assert reference.get_label() == "Reference"
+    assert list(reference.get_xdata()) == [0.0, 0.5, 1.0]
+    assert list(reference.get_ydata()) == [0.1, 0.2, 0.3]
+
+
+@pytest.mark.parametrize("cls", [CamberPlot, ThicknessPlot])
+def test_missing_reference_csv_is_skipped(cls, bladed, meshed, tmp_path):
+    figures = cls(reference_csv=str(tmp_path / "absent.csv")).report(bladed, meshed)
+
+    assert len(figures[0].axes[0].lines) == 1

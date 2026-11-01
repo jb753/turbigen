@@ -20,7 +20,6 @@ from turbigen import Config, Result, pipeline
 from turbigen.blade import to_xrrt
 from turbigen.loading import locate_arc_length, measure_clark_profile
 
-NCHORD = 2001
 """Coarse enough to be quick, fine enough for a nearest node to land close."""
 
 
@@ -36,9 +35,8 @@ def _point_at(blade, spf, i_surf, m_point):
     point that is exactly on the blade rather than one merely near it --- which
     is the case the docstring's "within microns" claim is about.
     """
-    m = turbigen.util.cluster_cosine(NCHORD)
-    surfaces = blade.evaluate_section(spf, m=m)
-    _, s = blade.evaluate_arc_length(spf, m=m)
+    surfaces = blade.evaluate_section(spf)
+    m, s = blade.evaluate_arc_length(spf)
 
     j = int(np.argmin(np.abs(m - m_point)))
     return to_xrrt(surfaces[i_surf])[:, j], float(s[i_surf][j])
@@ -51,7 +49,7 @@ def test_a_point_on_the_suction_surface_keeps_its_arc_length(machine, i_row, m_p
     blade = machine.rows[i_row].blade
     xrt, s_true = _point_at(blade, 0.5, 0, m_point)
 
-    assert locate_arc_length(blade, 0.5, xrt, nchord=NCHORD) == pytest.approx(
+    assert locate_arc_length(blade, 0.5, xrt) == pytest.approx(
         s_true, rel=1e-9
     )
     assert s_true > 0.0
@@ -76,7 +74,7 @@ def test_a_point_on_the_pressure_surface_comes_back_negated(machine, i_row, m_po
     blade = machine.rows[i_row].blade
     xrt, s_true = _point_at(blade, 0.5, 1, m_point)
 
-    assert locate_arc_length(blade, 0.5, xrt, nchord=NCHORD) == pytest.approx(
+    assert locate_arc_length(blade, 0.5, xrt) == pytest.approx(
         -s_true, rel=1e-9
     )
     assert s_true > 0.0
@@ -88,7 +86,7 @@ def test_the_leading_edge_is_the_origin_either_way(machine, i_row):
     blade = machine.rows[i_row].blade
     for i_surf in (0, 1):
         xrt, _ = _point_at(blade, 0.5, i_surf, 0.0)
-        assert locate_arc_length(blade, 0.5, xrt, nchord=NCHORD) == pytest.approx(
+        assert locate_arc_length(blade, 0.5, xrt) == pytest.approx(
             0.0, abs=1e-12
         )
 
@@ -107,7 +105,7 @@ def test_a_point_off_the_surface_lands_on_the_nearest_part_of_it(machine, spf):
     length = blade.evaluate_surface_length(spf)[0]
     nudged = xrt + np.array([0.0, 0.0, 0.01 * length])
 
-    assert locate_arc_length(blade, spf, nudged, nchord=NCHORD) == pytest.approx(
+    assert locate_arc_length(blade, spf, nudged) == pytest.approx(
         s_true, rel=0.05
     )
 

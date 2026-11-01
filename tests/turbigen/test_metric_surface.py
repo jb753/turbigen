@@ -260,7 +260,7 @@ def test_the_clip_removes_exactly_the_ducts(solved):
     """
     config, result = solved
     annulus = result.machine.annulus
-    planes = annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     values = SurfaceDissipation().evaluate(config, result)
     removed = _whole_endwall_area(result.grid) - float(values["A_surf"][0][0])
@@ -281,7 +281,7 @@ def test_blades_stand_on_the_endwall_they_are_counted_over(solved):
     """
     config, result = solved
     annulus = result.machine.annulus
-    planes = annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     kept = float(SurfaceDissipation().evaluate(config, result)["A_surf"][0][0])
     row = _swept_area(annulus, _m_of(annulus, planes[0]), _m_of(annulus, planes[-1]))

@@ -1,0 +1,624 @@
+"""Tests for swept edges and leaned sections.
+
+Built on the synthetic two-row axial turbine of `test_blade`, whose blades have
+sections at span fractions 0.2, 0.5 and 0.8. Edge positions are checked against
+arc lengths measured independently along the annulus, on a fine sample of
+:meth:`~turbigen.annulus.RowAnnulus.evaluate_xr`.
+
+Test cases:
+- test_no_offset_is_the_identity: exactly, with nothing evaluated
+- test_edges_land_at_the_asked_arc_distance: in local chords, either sign
+- test_equal_offsets_slide_the_section_rigidly: every point the same distance
+- test_points_between_move_in_proportion: linear along the section
+- test_a_section_crossing_a_station_has_no_kink: even spacing across it
+- test_offsets_out_of_reach_are_refused: past the segments either side
+- test_an_inverted_section_is_refused: leading edge behind the trailing edge
+- test_bad_offsets_fail_at_design: before anything is meshed
+- test_a_swept_blade_starts_where_its_edge_is: surfaces follow the map
+- test_a_swept_section_stretches_its_aerofoil: chord scales with its length
+- test_offsets_interpolate_between_sections: held beyond the end ones
+- test_a_single_section_blade_is_swept_everywhere
+- test_a_constant_rotation_turns_the_whole_blade
+- test_a_linear_rotation_leans_the_stacking_line
+- test_theta_offset_is_an_unknown_key: one way to turn the blade
+- test_a_swept_blade_pickles: the fitted placement is rebuilt
+- test_a_mesher_that_cannot_place_swept_edges_refuses_them
+- test_unswept_m_inverts_swept_m: both ways round, inside and beyond
+- test_unswept_m_is_outside_beyond_the_edges: in swept section lengths
+- test_no_offset_is_the_identity_both_ways
+- test_unswept_cuts_are_where_they_were: the stations, plus the offset
+- test_the_cuts_clear_the_furthest_edges: whatever span reaches furthest
+- test_an_exit_cut_may_cross_the_next_row: only the default must fit
+- test_rows_with_no_room_for_cuts_fail_at_design
+- test_cuts_out_of_the_annulus_fail_at_design
+- test_interpolated_maps_follow_the_exact_ones: to a tenth of a percent
+- test_interpolated_maps_are_the_identity_unswept: exactly, any shape
+- test_interpolated_maps_pass_nan_through
+- test_the_guess_holds_its_inflow_up_to_a_swept_leading_edge
+- test_the_guess_bridges_the_gap_from_a_swept_trailing_edge
+- test_the_guess_turns_between_the_swept_edges: not the stations
+- test_a_point_off_a_swept_blade_is_outside_its_passage
+- test_a_swept_surface_is_at_the_edge_of_its_passage
+- test_the_blend_is_confined_to_the_swept_blade
+- test_the_guess_of_a_swept_machine_is_finite
+- test_the_h_mesh_puts_the_blade_between_its_swept_edges
+- test_the_passage_mesh_puts_the_blade_between_its_swept_edges
+- test_swept_meshes_have_no_folded_cells
+- test_the_guess_lays_on_a_swept_passage_mesh
+- test_the_h_mesh_refuses_an_edge_past_its_mixing_plane
+- test_the_passage_mesh_refuses_an_edge_past_its_mixing_plane
+"""
+
+import pickle
+
+import numpy as np
+import pytest
+from test_blade import blade, build
+from test_mesh import MESH
+from test_ohpmesh import MESH as MESH_OHP
+
+from turbigen import OHPassage, guess
+from turbigen.mesh import Mesher
+
+import turbigen.blade
+import turbigen.guess
+import turbigen.util
+
+SWEEP = {"dm_LE": 0.1, "dm_TE": -0.05}
+
+
+def _row_annulus(machine, i_row=0):
+    return machine.rows[i_row].blade.row_annulus
+
+
+def _arc(row_annulus, spf, m):
+    """Arc length along the constant-`spf` line from the leading edge station
+    to row meridional coordinates `m`, measured on a fine sample."""
+    m_fine = np.linspace(-1.0, 2.0, 30001)
+    s = turbigen.util.cum_arc_length(row_annulus.evaluate_xr(m_fine, spf))
+    return np.interp(m, m_fine, s) - np.interp(0.0, m_fine, s)
+
+
+def _chord(row_annulus, spf):
+    return _arc(row_annulus, spf, 1.0)
+
+
+@pytest.fixture
+def machine():
+    return build().design()
+
+
+def test_no_offset_is_the_identity(machine):
+    m = np.linspace(0.0, 1.0, 7)
+    swept = _row_annulus(machine).evaluate_swept_m(m, 0.3, 0.0, 0.0)
+    np.testing.assert_array_equal(swept, m)
+
+
+@pytest.mark.parametrize("spf", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("dm_LE, dm_TE", [(0.1, -0.05), (-0.2, 0.3)])
+def test_edges_land_at_the_asked_arc_distance(machine, spf, dm_LE, dm_TE):
+    row_annulus = _row_annulus(machine)
+    m_LE, m_TE = row_annulus.evaluate_swept_m([0.0, 1.0], spf, dm_LE, dm_TE)
+    chord = _chord(row_annulus, spf)
+
+    np.testing.assert_allclose(
+        _arc(row_annulus, spf, [m_LE, m_TE]),
+        [dm_LE * chord, (1.0 + dm_TE) * chord],
+        atol=1e-4 * chord,
+    )
+
+
+def test_equal_offsets_slide_the_section_rigidly(machine):
+    row_annulus = _row_annulus(machine)
+    m = np.linspace(0.0, 1.0, 21)
+    for spf in (0.0, 1.0):
+        shift = _arc(row_annulus, spf, row_annulus.evaluate_swept_m(m, spf, 0.2, 0.2))
+        np.testing.assert_allclose(
+            shift - _arc(row_annulus, spf, m),
+            0.2 * _chord(row_annulus, spf),
+            atol=1e-4 * _chord(row_annulus, spf),
+        )
+
+
+def test_points_between_move_in_proportion(machine):
+    row_annulus = _row_annulus(machine)
+    spf, m = 0.0, np.linspace(0.0, 1.0, 21)
+    chord = _chord(row_annulus, spf)
+    moved = _arc(row_annulus, spf, row_annulus.evaluate_swept_m(m, spf, 0.1, 0.0))
+    np.testing.assert_allclose(
+        moved - _arc(row_annulus, spf, m), 0.1 * (1.0 - m) * chord, atol=1e-4 * chord
+    )
+
+
+def test_a_section_crossing_a_station_has_no_kink(machine):
+    """Points evenly spaced along the section stay evenly spaced in the annulus
+    across the leading edge station, where the scale of `m` jumps."""
+    row_annulus = _row_annulus(machine)
+    m = np.linspace(0.0, 1.0, 401)
+    m_row = row_annulus.evaluate_swept_m(m, 0.5, -0.3, 0.0)
+    assert m_row[0] < 0.0 < m_row[-1]
+
+    # The moved section is uniformly stretched, so even in chord fraction is
+    # even in arc length on the leading part, wherever the station falls
+    xr = row_annulus.evaluate_xr(m_row, 0.5)
+    ds = np.diff(turbigen.util.cum_arc_length(xr))
+    lead = m[1:] < 0.3
+    assert np.ptp(ds[lead]) < 1e-3 * ds[lead].mean()
+
+
+def test_offsets_out_of_reach_are_refused(machine):
+    with pytest.raises(ValueError, match="beyond the segments"):
+        _row_annulus(machine).evaluate_swept_m([0.0, 1.0], 0.5, -50.0, 0.0)
+
+
+def test_an_inverted_section_is_refused(machine):
+    with pytest.raises(ValueError, match="leading edge downstream"):
+        _row_annulus(machine).evaluate_swept_m([0.0, 1.0], 0.5, 0.8, -0.8)
+
+
+def test_bad_offsets_fail_at_design():
+    config = build(blades=[blade(section={"dm_LE": 0.8, "dm_TE": -0.8}), blade()])
+    with pytest.raises(ValueError, match="leading edge downstream"):
+        config.design()
+
+
+def test_a_swept_blade_starts_where_its_edge_is():
+    swept = build(blades=[blade(section=SWEEP), blade()]).design().rows[0].blade
+    for spf in (0.0, 0.5, 1.0):
+        surfaces = swept.evaluate_section(spf)
+        m_row = np.concatenate([surf[3] for surf in surfaces])
+        m_row -= swept.row_annulus.m_LE
+        np.testing.assert_allclose(
+            [m_row.min(), m_row.max()],
+            swept.evaluate_swept_m([0.0, 1.0], spf),
+            atol=1e-9,
+        )
+
+
+def test_a_swept_section_stretches_its_aerofoil():
+    plain = build().design().rows[0].blade
+    swept = build(blades=[blade(section=SWEEP), blade()]).design().rows[0].blade
+    stretch = 1.0 + SWEEP["dm_TE"] - SWEEP["dm_LE"]
+    for spf in (0.0, 0.5, 1.0):
+        np.testing.assert_allclose(
+            swept.evaluate_chord(spf), stretch * plain.evaluate_chord(spf), rtol=1e-3
+        )
+        # The aerofoil stretches meridionally only: the same turning
+        np.testing.assert_allclose(
+            swept.evaluate_chi(spf), plain.evaluate_chi(spf), atol=1e-12
+        )
+
+
+def test_offsets_interpolate_between_sections():
+    config = blade()
+    for section, dm in zip(config["sections"], (0.0, 0.1, 0.3)):
+        section["dm_LE"] = dm
+    leaned = build(blades=[config, blade()]).design().rows[0].blade
+
+    # Through every section, as the recambers are, and held beyond the
+    # outermost
+    for spf, dm in ((0.0, 0.0), (0.2, 0.0), (0.5, 0.1), (0.8, 0.3), (1.0, 0.3)):
+        assert leaned._placement(spf) == pytest.approx((dm, 0.0, 0.0))
+    assert 0.0 < leaned._placement(0.35)[0] < 0.1 < leaned._placement(0.65)[0] < 0.3
+
+
+def test_a_single_section_blade_is_swept_everywhere():
+    config = blade(section=SWEEP)
+    config["sections"] = config["sections"][1:2]
+    swept = build(blades=[config, blade()]).design().rows[0].blade
+    for spf in (0.0, 0.5, 1.0):
+        assert swept._placement(spf) == pytest.approx((0.1, -0.05, 0.0))
+
+
+def test_a_constant_rotation_turns_the_whole_blade():
+    offset = 0.1
+    plain = build().design().rows[0].blade
+    rotated = (
+        build(blades=[blade(section={"dtheta": offset}), blade()])
+        .design()
+        .rows[0]
+        .blade
+    )
+
+    for spf in (0.0, 1.0):
+        for turned, still in zip(
+            rotated.evaluate_section(spf), plain.evaluate_section(spf)
+        ):
+            np.testing.assert_allclose(turned[:2], still[:2], atol=1e-12)
+            np.testing.assert_allclose(turned[2] - still[2], offset, atol=1e-9)
+
+
+def test_a_linear_rotation_leans_the_stacking_line():
+    config = blade()
+    for section in config["sections"]:
+        section["dtheta"] = 0.2 * section["spf"]
+    leaned = build(blades=[config, blade()]).design().rows[0].blade
+
+    m = np.linspace(0.0, 1.0, 1001)
+    for spf in (0.2, 0.35, 0.5, 0.8):
+        theta = leaned.evaluate_camber(spf, m=m)[2]
+        # The camber line passes through the stacking point turned by dtheta
+        np.testing.assert_allclose(
+            np.interp(leaned.m_stack, m, theta), 0.2 * spf, atol=1e-3
+        )
+
+
+def test_theta_offset_is_an_unknown_key():
+    with pytest.raises(ValueError, match="theta_offset"):
+        build(blades=[blade(theta_offset=0.1), blade()])
+
+
+def test_a_swept_blade_pickles():
+    swept = build(blades=[blade(section=SWEEP), blade()]).design().rows[0].blade
+    swept._placement(0.5)
+    again = pickle.loads(pickle.dumps(swept))
+    for a, b in zip(again.evaluate_section(0.3), swept.evaluate_section(0.3)):
+        np.testing.assert_array_equal(a, b)
+
+
+def test_a_mesher_that_cannot_place_swept_edges_refuses_them():
+    class Unswept(Mesher):
+        def forward(self, machine, spacing):
+            raise AssertionError("refused before meshing")
+
+    machine = build(blades=[blade(section=SWEEP), blade()]).design()
+    with pytest.raises(NotImplementedError, match="Row 0 has swept edges"):
+        Unswept().mesh(machine)
+
+
+#
+# THE INVERSE MAP
+#
+
+
+@pytest.mark.parametrize("spf", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("dm_LE, dm_TE", [(0.1, -0.05), (-0.2, 0.3)])
+def test_unswept_m_inverts_swept_m(machine, spf, dm_LE, dm_TE):
+    row_annulus = _row_annulus(machine)
+    # Short of the end of the line beyond the trailing edge, a gap of half a
+    # chord, where the swept section is up to one and a half chords long
+    m = np.linspace(-0.5, 1.1, 41)
+    swept = row_annulus.evaluate_swept_m(m, spf, dm_LE, dm_TE)
+    back = row_annulus.evaluate_unswept_m(swept, spf, dm_LE, dm_TE)
+    np.testing.assert_allclose(back, m, atol=1e-12)
+
+    m_row = np.linspace(-0.5, 1.5, 41)
+    unswept = row_annulus.evaluate_unswept_m(m_row, spf, dm_LE, dm_TE)
+    again = row_annulus.evaluate_swept_m(unswept, spf, dm_LE, dm_TE)
+    np.testing.assert_allclose(again, m_row, atol=1e-12)
+
+
+def test_unswept_m_is_outside_beyond_the_edges(machine):
+    """The leading edge station lies upstream of a leading edge swept
+    downstream, by the sweep over the section's swept length."""
+    row_annulus = _row_annulus(machine)
+    stations = row_annulus.evaluate_unswept_m([0.0, 1.0], 0.5, **SWEEP)
+    length = 1.0 + SWEEP["dm_TE"] - SWEEP["dm_LE"]
+    np.testing.assert_allclose(
+        stations,
+        [-SWEEP["dm_LE"] / length, 1.0 - SWEEP["dm_TE"] / length],
+        atol=1e-4,
+    )
+
+
+def test_no_offset_is_the_identity_both_ways(machine):
+    m = np.linspace(-0.5, 1.5, 9)
+    plain = machine.rows[0].blade
+    np.testing.assert_array_equal(plain.evaluate_unswept_m(m, 0.3), m)
+    np.testing.assert_array_equal(plain.evaluate_swept_m(m, 0.3), m)
+
+
+#
+# CUT PLANES
+#
+
+
+def test_unswept_cuts_are_where_they_were(machine):
+    """Upstream of each leading edge station and downstream of each trailing
+    edge station by the offset, in the gap's own scale of `m`."""
+    chords = machine.annulus.evaluate_chords(0.5)
+    expected = []
+    for i_row in range(2):
+        step = 0.05 * chords[2 * i_row + 1]
+        expected += [
+            2 * i_row + 1.0 - step / chords[2 * i_row],
+            2 * i_row + 2.0 + step / chords[2 * i_row + 2],
+        ]
+    np.testing.assert_allclose(machine._m_cut(), expected, rtol=1e-14)
+    for m, xr in zip(expected, machine.cut_planes()):
+        np.testing.assert_allclose(xr, machine.annulus.evaluate_xr(m, [0.0, 1.0]).T)
+
+
+def test_the_cuts_clear_the_furthest_edges(machine):
+    config = blade()
+    for section, dm in zip(config["sections"], (-0.1, -0.3, 0.0)):
+        section.update(dm_LE=dm, dm_TE=-dm)
+    swept = build(blades=[config, blade()]).design()
+    row = swept.rows[0].blade
+
+    spf = np.linspace(0.0, 1.0, 101)
+    edges = np.array([row.evaluate_swept_m([0.0, 1.0], s) for s in spf])
+    m_LE, m_TE = edges[:, 0].min(), edges[:, 1].max()
+
+    # The machine searches fewer spans for the furthest edge, so finds it to
+    # within a fraction of a percent of the clearance the offset leaves
+    plain, cut = machine._m_cut(), swept._m_cut()
+    np.testing.assert_allclose(cut[0] - (1.0 + m_LE), plain[0] - 1.0, atol=1e-3)
+    np.testing.assert_allclose(cut[1] - (1.0 + m_TE), plain[1] - 2.0, atol=1e-3)
+    np.testing.assert_array_equal(cut[2:], plain[2:])
+
+
+def test_an_exit_cut_may_cross_the_next_row(machine):
+    """The exit profile reads half a chord on, past the next row's leading
+    edge cut here, which is no reason to refuse it."""
+    m_cut = machine._m_cut(0.5)
+    assert m_cut[1] > m_cut[2]
+    assert len(machine.cut_planes(0.5)) == 4
+
+
+def test_rows_with_no_room_for_cuts_fail_at_design():
+    config = build(
+        blades=[blade(section={"dm_TE": 0.3}), blade(section={"dm_LE": -0.3})]
+    )
+    with pytest.raises(ValueError, match="Rows 0 and 1 leave no room"):
+        config.design()
+
+
+def test_cuts_out_of_the_annulus_fail_at_design():
+    config = build(blades=[blade(section={"dm_LE": -1.45}), blade()])
+    with pytest.raises(ValueError, match="leave the annulus"):
+        config.design()
+
+
+#
+# THE INITIAL GUESS
+#
+# Evaluated at points rather than on a grid, which a swept blade cannot have
+# yet. The first row's edges are swept towards each other, by the same amount
+# at every section, so its blade spans the middle of the row.
+
+PINCH = {"dm_LE": 0.3, "dm_TE": -0.3}
+
+
+@pytest.fixture
+def pinched():
+    return build(blades=[blade(section=PINCH), blade()]).design()
+
+
+@pytest.fixture
+def twisted():
+    """Edges swept differently at every section."""
+    config = blade()
+    for section, dm in zip(config["sections"], (-0.1, -0.3, 0.1)):
+        section.update(dm_LE=dm, dm_TE=-dm)
+    return build(blades=[config, blade()]).design().rows[0].blade
+
+
+def _rVt(machine, m, spf):
+    return turbigen.guess._Field(machine).rVt(m, np.full_like(m, spf))
+
+
+def test_interpolated_maps_follow_the_exact_ones(twisted):
+    rng = np.random.default_rng(1)
+    spf = rng.uniform(0.0, 1.0, 200)
+    m = rng.uniform(-0.1, 1.1, 200)
+    exact_swept = [twisted.evaluate_swept_m(*args) for args in zip(m, spf)]
+    exact_unswept = [twisted.evaluate_unswept_m(*args) for args in zip(m, spf)]
+
+    # Within the crease where a section crosses a station at a different `m`
+    # at every span, which linear interpolation across the span rounds off
+    swept = twisted.interpolate_swept_m(m, spf)
+    unswept = twisted.interpolate_unswept_m(m, spf)
+    np.testing.assert_allclose(swept, exact_swept, atol=2e-3)
+    np.testing.assert_allclose(unswept, exact_unswept, atol=2e-3)
+    np.testing.assert_allclose(twisted.interpolate_unswept_m(swept, spf), m, atol=2e-3)
+
+
+def test_interpolated_maps_are_the_identity_unswept(machine):
+    plain = machine.rows[0].blade
+    m = np.linspace(-0.5, 1.5, 12).reshape(3, 4)
+    spf = np.linspace(0.0, 1.0, 4)
+    for method in (plain.interpolate_swept_m, plain.interpolate_unswept_m):
+        np.testing.assert_array_equal(method(m, spf), m)
+        assert method(0.5, spf).shape == (4,)
+
+
+def test_interpolated_maps_pass_nan_through(twisted):
+    m = twisted.interpolate_unswept_m([np.nan, 0.5], [0.5, 0.5])
+    assert np.isnan(m[0]) and np.isfinite(m[1])
+
+
+def test_the_guess_holds_its_inflow_up_to_a_swept_leading_edge(pinched):
+    """Past the station, inside the row as it was, but still upstream of the
+    blade: the inflow, as it is further upstream."""
+    m_LE = 1.0 + pinched.rows[0].blade.evaluate_swept_m(0.0, 0.5)
+    assert m_LE > 1.2
+    m = np.array([0.5, 1.0, 1.1, m_LE - 1e-3])
+    rVt = _rVt(pinched, m, 0.5)
+    np.testing.assert_allclose(rVt, rVt[0], rtol=1e-12)
+
+
+def test_the_guess_bridges_the_gap_from_a_swept_trailing_edge(pinched):
+    """From the swept trailing edge, not the station, to the next row."""
+    field = turbigen.guess._Field(pinched)
+    a = 1.0 + pinched.rows[0].blade.evaluate_swept_m(1.0, 0.5)
+    b = 3.0
+    assert a < 1.8
+    m = np.array([a + 0.02, 0.5 * (a + b), b - 0.02])
+    spf = np.full_like(m, 0.5)
+    w = (m - a) / (b - a)
+    out, into = field._edges(0, spf)["rVt"][1], field._edges(1, spf)["rVt"][0]
+    np.testing.assert_allclose(
+        field.rVt(m, spf), (1.0 - w) * out + w * into, rtol=1e-5
+    )
+
+
+def test_the_guess_turns_between_the_swept_edges(pinched, machine):
+    """The pinched row turns over its blade, which the unswept one turns
+    over all of: half way along each blade, each is half way round."""
+    blade = pinched.rows[0].blade
+    m_mid = 1.0 + blade.evaluate_swept_m(0.5, 0.5)
+    np.testing.assert_allclose(
+        _rVt(pinched, np.array([m_mid]), 0.5),
+        _rVt(machine, np.array([1.5]), 0.5),
+        rtol=2e-3,
+    )
+
+
+def test_a_point_off_a_swept_blade_is_outside_its_passage(pinched):
+    row = pinched.rows[0]
+    frac = row.evaluate_pitch_fraction([0.1, 0.9], 0.5, 0.0)
+    assert np.isnan(frac).all()
+
+
+def test_a_swept_surface_is_at_the_edge_of_its_passage(pinched):
+    row = pinched.rows[0]
+    m = turbigen.blade.CHORD_FRACTION
+    mid = (m > 0.2) & (m < 0.8)
+    for expected, surf in zip((0.0, 1.0), row.blade.evaluate_section(0.5)):
+        m_row = surf[3][mid] - row.blade.row_annulus.m_LE
+        frac = row.evaluate_pitch_fraction(m_row, 0.5, surf[2][mid], snap=True)
+        np.testing.assert_allclose(frac, expected, atol=1e-3)
+
+
+def test_the_blend_is_confined_to_the_swept_blade(pinched):
+    field = turbigen.guess._Field(pinched)
+    m = np.linspace(0.9, 2.1, 241)
+    spf = np.full_like(m, 0.5)
+    r = pinched.annulus.evaluate_xr(m, spf)[1]
+    passage = field.passage(0, m, spf, r, np.zeros_like(m))
+
+    m_LE, m_TE = 1.0 + pinched.rows[0].blade.evaluate_swept_m([0.0, 1.0], 0.5)
+    picked = m[passage["index"]]
+    assert picked.min() >= m_LE - 1e-3 and picked.max() <= m_TE + 1e-3
+    assert np.all((passage["m_sec"] >= 0.0) & (passage["m_sec"] <= 1.0))
+
+
+def test_the_guess_of_a_swept_machine_is_finite(pinched):
+    field = turbigen.guess._Field(pinched)
+    rng = np.random.default_rng(2)
+    m = rng.uniform(0.0, pinched.annulus.m_max, 5000)
+    spf = rng.uniform(0.0, 1.0, 5000)
+    t = rng.uniform(-0.3, 0.3, 5000)
+    r = pinched.annulus.evaluate_xr(m, spf)[1]
+    P, T, V = field.evaluate(m, spf, r)
+    for i in range(2):
+        passage = field.passage(i, m, spf, r, t)
+        turbigen.guess._blend(V, passage)
+    assert np.isfinite(P).all() and np.isfinite(T).all() and np.isfinite(V).all()
+
+
+#
+# MESHING
+#
+# Each mesher, coarse, on a machine whose rows are swept opposite ways: both
+# edges of the first row moved upstream at the hub and downstream at the
+# casing by a tenth of a chord, the second row's the other way.
+
+
+def _swept_blades(thickness=None):
+    blades = []
+    for sign, dchi_LE in ((1.0, -8.0), (-1.0, 2.0)):
+        config = blade(dchi_LE=dchi_LE)
+        for section, f in zip(config["sections"], (-1.0, 0.0, 1.0)):
+            section["dm_LE"] = section["dm_TE"] = 0.1 * sign * f
+            if thickness:
+                section["thickness"] = thickness
+        blades.append(config)
+    return blades
+
+
+@pytest.fixture(scope="module")
+def swept_h():
+    machine = build(blades=_swept_blades(), mesh=MESH).design()
+    return machine, build(blades=_swept_blades(), mesh=MESH).mesh.mesh(machine)
+
+
+@pytest.fixture(scope="module")
+def swept_ohp():
+    from test_blade import ROUND
+
+    config = build(blades=_swept_blades(ROUND), mesh=MESH_OHP)
+    machine = config.design()
+    return machine, OHPassage.from_dict(MESH_OHP).mesh(machine)
+
+
+def _xyz(x, r, t):
+    return np.stack((x, r * np.cos(t), r * np.sin(t)), axis=-1)
+
+
+def _on_blade(machine, i_row, x, r, t, spf, tol=1e-3):
+    """Whether points lie on the blade at span fraction `spf`, within `tol`
+    of its chord, either pitch round, and their row `m`."""
+    from scipy.spatial import cKDTree
+
+    row = machine.rows[i_row]
+    surfaces = np.concatenate(
+        [_xyz(*s[:3]) for s in row.blade.evaluate_section(spf)], axis=0
+    )
+    tree = cKDTree(surfaces)
+    chord = row.blade.evaluate_chord(spf)
+    d = np.min(
+        [tree.query(_xyz(x, r, t + k * row.pitch))[0] for k in (-1, 0, 1)], axis=0
+    )
+    m = machine.annulus.evaluate_mspf(x, r)[0] - row.blade.row_annulus.m_LE
+    return d < tol * chord, m
+
+
+def test_the_h_mesh_puts_the_blade_between_its_swept_edges(swept_h):
+    machine, grid = swept_h
+    for i_row, (block,) in enumerate(grid.rows):
+        for j in (0, block.shape[1] // 2):
+            spf = float(machine.annulus.evaluate_mspf(block.x[0, j, 0], block.r[0, j, 0])[1])
+            on, m = _on_blade(
+                machine, i_row, *(v[:, j, 0] for v in (block.x, block.r, block.t)), spf
+            )
+            edges = machine.rows[i_row].blade.evaluate_swept_m([0.0, 1.0], spf)
+            np.testing.assert_allclose([m[on].min(), m[on].max()], edges, atol=5e-3)
+
+
+def test_the_passage_mesh_puts_the_blade_between_its_swept_edges(swept_ohp):
+    machine, grid = swept_ohp
+    for i_row, blocks in enumerate(grid.rows):
+        (O,) = [b for b in blocks if b.label.endswith("_O")]
+        for j in (0, O.shape[1] // 2):
+            spf = float(machine.annulus.evaluate_mspf(O.x[0, j, 0], O.r[0, j, 0])[1])
+            on, m = _on_blade(
+                machine, i_row, *(v[:, j, 0] for v in (O.x, O.r, O.t)), spf
+            )
+            assert on.all(), "every wall node of the O block is on the blade"
+            edges = machine.rows[i_row].blade.evaluate_swept_m([0.0, 1.0], spf)
+            np.testing.assert_allclose([m.min(), m.max()], edges, atol=5e-3)
+
+
+@pytest.mark.parametrize("mesh", ["swept_h", "swept_ohp"])
+def test_swept_meshes_have_no_folded_cells(mesh, request):
+    _, grid = request.getfixturevalue(mesh)
+    for block in grid:
+        assert (block.vol > 0.0).all(), block.label
+
+
+def test_the_guess_lays_on_a_swept_passage_mesh(swept_ohp):
+    machine, grid = swept_ohp
+    guess.apply(grid, machine)
+    for block in grid:
+        assert np.isfinite(block.Vt).all() and np.isfinite(block.P).all()
+
+
+def test_the_h_mesh_refuses_an_edge_past_its_mixing_plane():
+    """Half a gap behind the first row, which a trailing edge swept 0.3 of a
+    chord into a gap half a chord long passes."""
+    config = build(blades=[blade(section={"dm_TE": 0.3}), blade()], mesh=MESH)
+    with pytest.raises(ValueError, match="past the ends of its mesh"):
+        config.mesh.mesh(config.design())
+
+
+def test_the_passage_mesh_refuses_an_edge_past_its_mixing_plane():
+    from test_blade import ROUND
+
+    config = build(
+        blades=[blade(section={"dm_TE": 0.3, "thickness": ROUND}), blade(section={"thickness": ROUND})],
+        mesh=MESH_OHP,
+    )
+    with pytest.raises(ValueError, match="leaves no room for the blocks"):
+        config.mesh.mesh(config.design())

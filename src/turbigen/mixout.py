@@ -15,13 +15,12 @@ import ember.average
 import ember.cut
 import numpy as np
 
-import turbigen.annulus
 import turbigen.util
 
 logger = logging.getLogger("turbigen")
 
 
-def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
+def mean_line(grid, machine, offset=None):
     """Return the mean line `grid` actually achieved, and its mixing loss.
 
     Parameters
@@ -30,8 +29,9 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
         A solved grid. Not modified.
     machine : Machine
         The design it was meshed from.
-    offset : float
-        Cut plane offset, as a fraction of blade chord.
+    offset : float, optional
+        Cut plane offset, as a fraction of blade chord;
+        :data:`~turbigen.machine.CUT_OFFSET` if not given.
 
     Returns
     -------
@@ -64,7 +64,7 @@ def mean_line(grid, machine, offset=turbigen.annulus.CUT_OFFSET):
     # so station i is row i // 2, end i % 2.
     Ds_mix_flat = np.empty(2 * machine.annulus.n_row)
 
-    for i_station, xr in enumerate(machine.annulus.cut_planes(offset)):
+    for i_station, xr in enumerate(machine.cut_planes(offset)):
         cut = ember.cut.unstructured(grid, xr)
         if cut is None:
             raise ValueError(

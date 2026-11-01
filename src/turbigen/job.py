@@ -219,7 +219,7 @@ class Slurm(Job):
         logger.debug(f"Wrote {len(tasks)} task(s) to {tasks_path}")
 
         script_path = base / SCRIPT_NAME
-        script_path.write_text(self.script(base.name, verb, options))
+        script_path.write_text(self.script(base.name, verb, options, tasks_path))
         logger.debug(f"Wrote the submission script to {script_path}")
 
         array = f"1-{len(tasks)}"
@@ -231,8 +231,8 @@ class Slurm(Job):
         # sbatch says "Submitted batch job 12345".
         return [f"SLURM job {out.split()[-1]} ({len(tasks)} array task(s)) in {base}"]
 
-    def script(self, name, verb, options):
-        """Return the sbatch script for an array over `TASKS_NAME`."""
+    def script(self, name, verb, options, tasks=TASKS_NAME):
+        """Return the sbatch script for an array over the lines of `tasks`."""
         # $CONFIG is left unquoted by shlex.join and quoted by hand, so the
         # shell expands it: quoting it as a literal is exactly the bug that
         # would run every array task on a file called "$CONFIG".
@@ -249,7 +249,11 @@ class Slurm(Job):
                 "#!/bin/bash",
                 *self.directives(name),
                 "",
-                f'CONFIG=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {TASKS_NAME})',
+                # Run where the submission was made, not where sbatch was
+                # called: the matplotlibrc and any relative option resolve
+                # there, exactly as they would have run locally.
+                f"cd {shlex.quote(str(Path.cwd()))}",
+                f'CONFIG=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {shlex.quote(str(tasks))})',
                 command,
                 "",
             ]

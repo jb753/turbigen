@@ -25,6 +25,7 @@ from typing import ClassVar
 import numpy as np
 from numpy.polynomial import legendre
 
+from turbigen import nozzle
 from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
@@ -552,8 +553,64 @@ class OperatingPoint(Node):
     mdot_adjust: float | None = None
     """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
+    # The controller's gains, as ember.patch.OutletPatch.set_throttle takes
+    # them, dimensionless; its defaults. Read only when mdot_adjust is set.
+    throttle_Kp: float = 0.5
+    """Proportional gain of the throttle [--]."""
+
+    throttle_Ki: float = 0.002
+    """Integral gain of the throttle [--]."""
+
+    throttle_tol: float = 1.0e-3
+    """Mass-flow error the throttle must finish inside, as a fraction of its
+    target, for the pressure it reached to be recorded as the operating point
+    [--]. ember's controller reaches parts in ten thousand on a converged
+    march; a solver whose throttle closes more slowly may want it looser."""
+
+    # A third way: squeeze the exit duct into a choked nozzle, morphing the
+    # mesh (see turbigen.nozzle), so the throat fixes mdot sqrt(To)/Po and the
+    # exit pressure is set low enough not to matter. None for no nozzle.
+    nozzle_area: float | None = None
+    """Throat area of a choked exit nozzle, as a fraction of the outlet area
+    [--]; null for none."""
+
+    nozzle_Ma: float = 1.1
+    """Mach number the nozzle expands to at the outlet, which sets both its
+    exit area and the exit pressure [--]."""
+
+    nozzle_spans: float = 1.0
+    """Length of the nozzle upstream of the outlet, in outlet spans [--]."""
+
+    # Every row's shaft speed scaled together, the blades keeping the shape
+    # they were designed and meshed in: a speedline of the same machine, with
+    # no account taken of how it untwists with speed.
+    speed: float = 1.0
+    """Shaft speed, as a fraction of the design's [--]."""
+
     def __post_init__(self):
         # Checked when the config is read, because it needs no design.
+        if not self.speed > 0.0:
+            raise ValueError(f"speed must be positive, got {self.speed}.")
+        if self.nozzle_area is not None:
+            if not self.nozzle_area > 0.0:
+                raise ValueError(
+                    f"nozzle_area must be positive, got {self.nozzle_area}."
+                )
+            if not self.nozzle_Ma > 1.0:
+                raise ValueError(
+                    f"nozzle_Ma must be supersonic, got {self.nozzle_Ma}: the "
+                    f"exit must be past the throat for it to be choked."
+                )
+            if not self.nozzle_spans > 0.0:
+                raise ValueError(
+                    f"nozzle_spans must be positive, got {self.nozzle_spans}."
+                )
+            if self.mdot_adjust is not None:
+                raise ValueError(
+                    "A choked nozzle fixes the mass flow, so it cannot also be "
+                    "throttled to one: state nozzle_area or mdot_adjust, not both."
+                )
+
         if self.mdot_adjust is None:
             return
 
@@ -652,7 +709,10 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
 
     apply_throttle(patches_out, machine, operating_point)
 
-    apply_rotation(grid, machine)
+    # Every row on the same fraction of its design speed; both stations of a
+    # row share a shaft, so the inlet value stands for the row.
+    speed = 1.0 if operating_point is None else operating_point.speed
+    apply_rotation(grid, machine.mean_line.Omega[0] * speed)
 
     logger.debug(
         f"Inlet Po={float(inlet.Po):.4g} Pa, To={float(inlet.To):.4g} K, "
@@ -680,6 +740,20 @@ def exit_pressure(machine, operating_point=None):
     """
     Po_in = float(machine.mean_line.inlet.Po)
     P_out = float(machine.mean_line.outlet.P)
+
+    # Behind a choked throat the exit pressure only has to be low enough to
+    # leave it choked: the isentropic one at the nozzle's exit Mach number,
+    # from the inlet stagnation pressure, below the exit's at any speed a
+    # compressor still raises pressure at
+    if operating_point is not None and operating_point.nozzle_area is not None:
+        P_nozzle = Po_in * nozzle.p_ratio(
+            operating_point.nozzle_Ma, float(machine.mean_line.outlet.gamma)
+        )
+        logger.info(
+            f"Operating point: choked nozzle, exit P={P_nozzle:.5g} Pa for "
+            f"Ma={operating_point.nozzle_Ma:.3g} at exit."
+        )
+        return P_nozzle
 
     if operating_point is None or not operating_point.DP_adjust:
         return P_out
@@ -789,20 +863,13 @@ def apply_throttle(patches_out, machine, operating_point=None):
     # row. `Nb` is the same number `mixout` multiplies by to get back to the
     # annulus, so the two agree by construction.
     Nb = int(patch.block.Nb)
-    patch.set_throttle(mdot / Nb)
+    patch.set_throttle(
+        mdot / Nb, Kp=operating_point.throttle_Kp, Ki=operating_point.throttle_Ki
+    )
 
     logger.debug(
         f"Throttling {patch.label!r} to {mdot / Nb:.5g} kg/s per passage, Nb={Nb}."
     )
-
-
-SETTLED_TOL = 1.0e-3
-"""Mass-flow error a throttle must be inside for its pressure to be read back.
-
-A fraction of the target. The controller reaches parts in ten thousand on a
-converged march, so this is loose enough not to reject a run that arrived and
-tight enough that a pressure recorded as an operating point is one.
-"""
 
 
 def achieved(grid, machine, operating_point=None):
@@ -859,10 +926,11 @@ def achieved(grid, machine, operating_point=None):
         return None
 
     error = stats["mdot_throttle"] / stats["mdot_target"] - 1.0
-    if abs(error) > SETTLED_TOL:
+    tol = operating_point.throttle_tol
+    if abs(error) > tol:
         logger.warning(
             f"The throttle finished {error:+.2%} from its target, outside "
-            f"{SETTLED_TOL:.2%}, so the exit pressure it reached is not "
+            f"{tol:.2%}, so the exit pressure it reached is not "
             f"recorded as an operating point."
         )
         return None
@@ -879,8 +947,8 @@ def achieved(grid, machine, operating_point=None):
     return dataclasses.replace(operating_point, DP_adjust=DP_adjust)
 
 
-def apply_rotation(grid, machine):
-    """Set every row turning at the speed its mean line was designed for.
+def apply_rotation(grid, Omega):
+    """Set every row turning at its own angular velocity.
 
     A block's angular velocity is the frame its row is solved in, and every
     wall of that block turns with it unless a `RotatingPatch` says otherwise.
@@ -892,14 +960,11 @@ def apply_rotation(grid, machine):
     ----------
     grid : ember.grid.Grid
         A meshed grid, which is modified.
-    machine : Machine
-        The design the grid was meshed from.
+    Omega : array-like
+        Angular velocity of each row [rad/s], shape ``(n_row,)``.
 
     """
-    Omega = np.asarray(machine.mean_line.Omega, dtype=float)
-    # One number per row, taken from the row inlet: a mean line carries a value
-    # per station and both stations of a row share a shaft.
-    Omega_row = Omega[0] if Omega.ndim > 1 else np.atleast_1d(Omega)[::2]
+    Omega_row = np.atleast_1d(np.asarray(Omega, dtype=float))
 
     rows = grid.rows
     if len(rows) != len(Omega_row):

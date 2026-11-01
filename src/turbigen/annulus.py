@@ -79,7 +79,7 @@ and a span fraction ``spf``. At the inlet, ``m=0``, then 1 at the first row
 leading edge, 2 at its trailing edge, and so on up to
 :attr:`~Annulus.m_max`. Span fraction ``spf`` runs from 0 at the hub to 1 at the casing.
 :meth:`Annulus.evaluate_xr` maps a pair of them to axial and radial
-coordinates.
+coordinates, and :meth:`Annulus.evaluate_mspf` maps back.
 
 .. figure:: /_static/annulus_coordinate.svg
    :width: 100%
@@ -94,6 +94,7 @@ import logging
 from typing import ClassVar
 
 import numpy as np
+from pykdtree.kdtree import KDTree
 from scipy.interpolate import PchipInterpolator
 
 import turbigen.util
@@ -101,15 +102,29 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
-CUT_OFFSET = 0.05
-"""Cut planes sit this fraction of blade chord into the gap, clear of the row.
+N_SWEPT_PTS = 3001
+"""Points along a constant-span line when placing a section with swept edges,
+over the row and the segment either side."""
 
-Cutting exactly at a leading or trailing edge would put the plane inside the
-blade, where there is no single annulus-spanning surface to integrate over.
-Clear of the row includes the H-mesh trailing edge cusp, which runs on
-``AR_cusp`` trailing edge thicknesses past the blade: a plane through it cuts
-less than a pitch of fluid.
-"""
+N_SEED_M = 32
+"""Samples per segment along `m` of the grid that seeds the inverse map."""
+
+N_SEED_SPF = 9
+"""Samples across the span of the grid that seeds the inverse map."""
+
+N_NEWTON = 20
+"""Most Newton steps the inverse map takes to place a point."""
+
+TOL_ENDS = 1e-12
+"""How far, as a fraction of the whole arc-length range, the inverse map may
+place a point beyond the inlet or outlet and still count it inside, on top of
+`ULP_ENDS` of the rounding of its coordinates."""
+
+ULP_ENDS = 8.0
+"""Units in the last place of the coordinates passed to the inverse map, at
+their largest, that a point may lie beyond the inlet or outlet and still count
+inside: a node on the outlet plane stored in single precision rounds to either
+side of it."""
 
 
 def _segment_average(values):
@@ -212,6 +227,9 @@ class RowAnnulus:
     chord: float
     """Meridional chord of the row at mid-span [m]."""
 
+    evaluate_mspf_annulus: object = dataclasses.field(default=None, repr=False)
+    """The inverse of :attr:`evaluate_xr_annulus`."""
+
     def evaluate_xr(self, m, spf):
         """Return meridional coordinates within the row.
 
@@ -236,6 +254,131 @@ class RowAnnulus:
 
         """
         return self.evaluate_xr_annulus(self.m_LE + np.asarray(m, dtype=float), spf)
+
+    def _swept_line(self, spf, dm_LE, dm_TE):
+        """Return the arc-length tables that place a swept section at `spf`.
+
+        Arc length along the constant-`spf` line at row coordinates `m_line`,
+        over the row and the segment either side, which is as far as an edge
+        can go; and the arc length each chordwise position `m_sec` of the
+        section is moved to. Both directions of the map interpolate the same
+        two tables, so each is the other's inverse to rounding.
+
+        Raises if the section reaches off the line, or does not run downstream
+        all along it.
+        """
+        m_line = np.linspace(-1.0, 2.0, N_SWEPT_PTS)
+        s_line = turbigen.util.cum_arc_length(self.evaluate_xr(m_line, spf))
+        s_LE, s_TE = np.interp([0.0, 1.0], m_line, s_line)
+        chord = s_TE - s_LE
+
+        # The section's chordwise positions are the line's own inside the row,
+        # so an unswept section is the line itself
+        in_row = (m_line >= 0.0) & (m_line <= 1.0)
+        m_sec = m_line[in_row]
+        s_sec = s_line[in_row] + ((1.0 - m_sec) * dm_LE + m_sec * dm_TE) * chord
+
+        if s_sec[0] < s_line[0] or s_sec[-1] > s_line[-1]:
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} reach "
+                "beyond the segments either side of the row."
+            )
+        if np.any(np.diff(s_sec) <= 0.0):
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} put "
+                "the leading edge downstream of the trailing edge."
+            )
+        return m_line, s_line, m_sec, s_sec
+
+    def evaluate_swept_m(self, m, spf, dm_LE, dm_TE):
+        """Return where points of a section with swept edges lie in the row.
+
+        An unswept section spans the row's stations, so its own chordwise
+        coordinate is the row's ``m``. A swept one is moved along its
+        constant-`spf` line: the leading edge by `dm_LE` meridional chords,
+        the trailing edge by `dm_TE`, and each point between by an amount
+        varying linearly from one to the other along the section. The moves are
+        distances along the line, not steps in ``m``, whose scale jumps at each
+        station, so a section that crosses one has no kink there; and they are
+        in the unswept chord at this span, so an offset means the same thing
+        whatever the segments either side.
+
+        Beyond the section, ``m`` below 0 or above 1 continues straight on in
+        arc length, a whole ``m`` per swept section length, so that
+        :meth:`evaluate_unswept_m` is its inverse everywhere on the line.
+
+        Parameters
+        ----------
+        m : array_like
+            Chordwise coordinate along the section, 0 at its leading edge and 1
+            at its trailing edge, being where it lies in the row unswept.
+        spf : float
+            Span fraction of the section.
+        dm_LE, dm_TE : float
+            Offset of the leading and trailing edge from the row's stations, as
+            fractions of the meridional chord at `spf`, positive downstream.
+
+        Returns
+        -------
+        ndarray
+            Row meridional coordinate of each point, the shape of `m`. `m`
+            itself, exactly, if neither edge is offset.
+
+        """
+        m = np.asarray(m, dtype=float)
+        if dm_LE == 0.0 and dm_TE == 0.0:
+            return m
+        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        length = s_sec[-1] - s_sec[0]
+        s = np.interp(m, m_sec, s_sec)
+        s = np.where(m < 0.0, s_sec[0] + m * length, s)
+        s = np.where(m > 1.0, s_sec[-1] + (m - 1.0) * length, s)
+        return np.interp(s, s_line, m_line)
+
+    def evaluate_unswept_m(self, m, spf, dm_LE, dm_TE):
+        """Return where row coordinates `m` lie along a swept section.
+
+        The inverse of :meth:`evaluate_swept_m`: 0 at the section's leading
+        edge and 1 at its trailing edge, below 0 upstream of it and above 1
+        downstream, in swept section lengths. `m` itself, exactly, if neither
+        edge is offset. Arguments as there.
+        """
+        m = np.asarray(m, dtype=float)
+        if dm_LE == 0.0 and dm_TE == 0.0:
+            return m
+        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        length = s_sec[-1] - s_sec[0]
+        s = np.interp(m, m_line, s_line)
+        m_out = np.interp(s, s_sec, m_sec)
+        m_out = np.where(s < s_sec[0], (s - s_sec[0]) / length, m_out)
+        return np.where(s > s_sec[-1], 1.0 + (s - s_sec[-1]) / length, m_out)
+
+    def evaluate_mspf(self, x, r, tol=1e-6):
+        """Return row annulus coordinates of meridional points.
+
+        The row-local counterpart of :meth:`Annulus.evaluate_mspf`, and the
+        inverse of :meth:`evaluate_xr`: ``m`` runs 0 at the leading edge to 1
+        at the trailing edge, and beyond either outside the row, so is NaN
+        only outside the whole annulus.
+
+        Parameters
+        ----------
+        x, r : array_like
+            Axial and radial coordinates, broadcast against each other.
+        tol : float
+            Newton step, as a fraction of the whole arc-length range, below
+            which a point is placed. The steps converge quadratically, so the
+            point is then good to about `tol` squared.
+
+        Returns
+        -------
+        mspf : ndarray, shape (2, ...)
+            Row meridional coordinate and span fraction, stacked on the first
+            axis.
+
+        """
+        m, spf = self.evaluate_mspf_annulus(x, r, tol)
+        return np.stack([m - self.m_LE, spf])
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -269,6 +412,10 @@ class Annulus:
 
     n_row: int
     """Number of blade rows."""
+
+    m_inviscid: tuple = dataclasses.field(default=(0.0, 0.0, 0.0, 0.0), repr=False)
+    """Where the inviscid stretches of the endwalls end, as the design that made
+    this annulus asks: see :attr:`AnnulusDesign.m_inviscid`."""
 
     #
     # STRUCTURE
@@ -304,24 +451,124 @@ class Annulus:
             Axial and radial coordinates, stacked on the first axis.
 
         """
-        mb, spfb = np.broadcast_arrays(
-            np.asarray(m, dtype=float), np.asarray(spf, dtype=float)
-        )
-        sq = np.interp(mb, np.arange(len(self.s)), self.s)
+        m = np.asarray(m, dtype=float)
+        spf = np.asarray(spf, dtype=float)
+        # The curves at `m` alone and broadcast against `spf` in the blend,
+        # into the output, rather than at `m` broadcast first: a mesher calls
+        # this thousands of times, and on short arrays that halves the cost.
+        sq = np.interp(m, np.arange(len(self.s)), self.s)
+        xhub, rhub, xcas, rcas = self._hub_casing(sq)
+        xr = np.empty((2, *np.broadcast_shapes(m.shape, spf.shape)))
+        w = 1.0 - spf
+        np.add(w * xhub, spf * xcas, out=xr[0, ...])
+        np.add(w * rhub, spf * rcas, out=xr[1, ...])
+        return xr
 
+    def evaluate_mspf(self, x, r, tol=1e-6):
+        """Return annulus coordinates of meridional points.
+
+        The inverse of :meth:`evaluate_xr`, so that
+        ``evaluate_mspf(*evaluate_xr(m, spf))`` gives back ``(m, spf)``.
+
+        At fixed `m` a point is a linear blend of the hub and casing, so `m` is
+        where the point lies on the straight line between them, found by
+        Newton's method in the curves' arc-length parameter from the nearest
+        point of a seed grid; and `spf` is then where along that line it lies.
+        Span fractions beyond 0 and 1 extrapolate across the hub or casing.
+        The seed is found in single precision and the Newton steps taken in
+        double, the splines evaluating in nothing else.
+
+        Parameters
+        ----------
+        x, r : array_like
+            Axial and radial coordinates, broadcast against each other.
+        tol : float
+            Newton step, as a fraction of the whole arc-length range, below
+            which a point is placed. The steps converge quadratically, so the
+            point is then good to about `tol` squared.
+
+        Returns
+        -------
+        mspf : ndarray, shape (2, ...)
+            Normalised meridional coordinate and span fraction, stacked on the
+            first axis, in single precision if `x` and `r` both are, else in
+            double; NaN for a point upstream of the inlet or downstream of the
+            outlet, which :meth:`evaluate_xr` cannot reach.
+
+        """
+        x, r = np.asarray(x), np.asarray(r)
+        dtype = np.result_type(x, r, np.float32)
+        xb, rb = np.broadcast_arrays(x.astype(float), r.astype(float))
+        P = np.stack([xb.ravel(), rb.ravel()])
+
+        tree, m_seed = self._seed_tree
+        _, i_seed = tree.query(np.ascontiguousarray(P.T, dtype=np.float32))
+        sq = np.interp(m_seed[i_seed], np.arange(len(self.s)), self.s)
+
+        # Newton on the cross product of the point, from the hub, with the
+        # line from hub to casing, which is zero where the point lies on it.
+        # In the arc-length parameter, along which the curves are smooth,
+        # rather than in `m`, which is piecewise linear in it.
+        # Each step only on the points not yet placed.
+        S = self.s[-1] - self.s[0]
+        tol = tol * S
+        active = np.arange(sq.size)
+        for _ in range(N_NEWTON):
+            s_a = sq[active]
+            xh, rh, xc, rc = self._hub_casing(s_a)
+            dxh, drh, dxc, drc = self._hub_casing(s_a, nu=1)
+            px, pr = P[0, active] - xh, P[1, active] - rh
+            ax, ar = xc - xh, rc - rh
+            f = px * ar - pr * ax
+            df = -dxh * ar + drh * ax + px * (drc - drh) - pr * (dxc - dxh)
+            step = f / df
+            sq[active] = s_a - step
+            active = active[~(np.abs(step) < tol)]
+            if not active.size:
+                break
+
+        xh, rh, xc, rc = self._hub_casing(sq)
+        ax, ar = xc - xh, rc - rh
+        spf = ((P[0] - xh) * ax + (P[1] - rh) * ar) / (ax**2 + ar**2)
+        m = np.interp(sq, self.s, np.arange(len(self.s), dtype=float))
+
+        # Outside the annulus at either end, by more than the coordinates'
+        # own rounding, or not placed at all
+        ends = TOL_ENDS * S + ULP_ENDS * np.finfo(dtype).eps * np.abs(P).max(
+            initial=0.0
+        )
+        lost = (sq < self.s[0] - ends) | (sq > self.s[-1] + ends)
+        lost[active] = True
+        m[lost] = spf[lost] = np.nan
+
+        return np.stack([m.reshape(xb.shape), spf.reshape(xb.shape)]).astype(dtype)
+
+    def _hub_casing(self, sq, nu=0):
+        """Return ``(x_hub, r_hub, x_cas, r_cas)`` at arc-length parameter
+        `sq`, blended by :attr:`merge_weight`, or their `nu`-th derivative."""
         weight = self.merge_weight
         if weight == 0.0:
-            xhub, rhub, xcas, rcas = self.curves(sq)
-        elif weight == 1.0:
-            xhub, rhub, xcas, rcas = self.curves_merged(sq)
-        else:
-            xhub, rhub, xcas, rcas = (1.0 - weight) * self.curves(
-                sq
-            ) + weight * self.curves_merged(sq)
+            return self.curves(sq, nu)
+        if weight == 1.0:
+            return self.curves_merged(sq, nu)
+        return (1.0 - weight) * self.curves(sq, nu) + weight * self.curves_merged(
+            sq, nu
+        )
 
-        x = (1.0 - spfb) * xhub + spfb * xcas
-        r = (1.0 - spfb) * rhub + spfb * rcas
-        return np.stack([x, r])
+    @functools.cached_property
+    def _seed_tree(self):
+        """A k-d tree of a grid of points over the annulus, in single
+        precision, and the `m` of each, from which :meth:`evaluate_mspf`
+        starts its search.
+
+        Cached, as :attr:`_xr_stations` is, being built once per annulus.
+        """
+        m = np.linspace(0.0, self.m_max, N_SEED_M * self.n_segment + 1)
+        spf = np.linspace(0.0, 1.0, N_SEED_SPF)
+        xr = self.evaluate_xr(m[:, None], spf[None, :])
+        m_grid = np.broadcast_to(m[:, None], xr.shape[1:])
+        pts = np.ascontiguousarray(xr.reshape(2, -1).T, dtype=np.float32)
+        return KDTree(pts), m_grid.ravel()
 
     @functools.cached_property
     def _xr_stations(self):
@@ -383,48 +630,6 @@ class Annulus:
         xr_cas = self.evaluate_xr(m, 1.0)
         return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
 
-    def cut_planes(self, offset=CUT_OFFSET):
-        """Return the meridional cut curve at each design station.
-
-        A cut plane is the straight hub-to-casing line at one meridional
-        position, so it is two points and needs nothing beyond
-        :meth:`evaluate_xr` --- which is why it lives here rather than with any
-        one of the things that cut with it. The mean line is reduced between
-        these planes, so a quantity integrated over the same bounds is directly
-        comparable with the loss the mean line reports.
-
-        Parameters
-        ----------
-        offset : float
-            Distance into the adjacent gap, as a fraction of blade chord.
-
-        Returns
-        -------
-        list of ndarray
-            One ``(2, 2)`` array per station, in streamwise order, each holding
-            two ``(x, r)`` points, hub then casing. This is the shape
-            :func:`ember.cut.unstructured` takes.
-
-        """
-        chords = self.evaluate_chords(0.5)
-
-        # The offset is given in blade chords but applied to `m`, which is
-        # normalised per segment -- so it has to be rescaled by the chord of
-        # the gap each station opens into. Rows are the odd segments, gaps the
-        # even.
-        chord_blade = np.repeat(chords[1::2], 2)
-        gaps = chords[::2]
-        chord_gap = np.concatenate([[gaps[0]], np.repeat(gaps[1:-1], 2), [gaps[-1]]])
-
-        # Leading edges step upstream, trailing edges downstream.
-        signed = offset * np.ones(2 * self.n_row)
-        signed[::2] *= -1.0
-        signed *= chord_blade / chord_gap
-
-        m_cut = np.arange(1.0, 2 * self.n_row + 1) + signed
-
-        return [self.evaluate_xr(m, [0.0, 1.0]).T for m in m_cut]
-
     def evaluate_chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.
 
@@ -453,6 +658,7 @@ class Annulus:
             self.evaluate_xr,
             2 * i_row + 1,
             self.evaluate_chords(0.5)[2 * i_row + 1],
+            self.evaluate_mspf,
         )
 
     def to_string(self):
@@ -484,6 +690,14 @@ class AnnulusDesign(Node):
     The :doc:`/annulus` page covers the shapes that ship with
     :program:`turbigen` and how a design is run.
     """
+
+    m_inviscid: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0)
+    """Where the endwalls stop being inviscid, slip walls, in normalised
+    meridional coordinate `m`: on the hub and the casing from the inlet, then
+    on the hub and the casing to the outlet. Inviscid from the inlet to the
+    first two, and from the last two to the outlet, so that the duct ahead
+    of and behind the machine grows no boundary layer; 0 for none on that
+    wall. Both meshers put each at its nearest grid line."""
 
     def design(self, mean_line) -> Annulus:
         """Return the annulus this design describes for `mean_line`."""
