@@ -132,7 +132,7 @@ def test_the_profile_loss_is_the_mixed_out_band(solved):
     """Cut, band and mix out at both planes, done here rather than by the metric."""
     config, result = solved
     i_row = 0
-    planes = result.machine.annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     s = []
     for xr in planes[2 * i_row : 2 * i_row + 2]:
@@ -238,7 +238,7 @@ def test_values_survive_the_case_file(solved, tmp_path):
 def test_cut_structured_resolution(solved):
     """Regridded at the brute-force resolution, and None where nothing is cut."""
     _, result = solved
-    planes = result.machine.annulus.cut_planes()
+    planes = result.machine.cut_planes()
 
     cut = util.cut_structured(result.grid, planes[0])
     assert cut.shape == (util.N_CUT_SPAN, util.N_CUT_PITCH)

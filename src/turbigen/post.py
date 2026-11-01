@@ -1573,20 +1573,20 @@ class StationContourPlot(Post):
     a wake --- is seen over the whole passage at once, rather than as the
     pitch average :class:`SpanwisePlot` draws or one span at a time as in
     :class:`ContourPlot`. The cut is the one the spanwise iterators take,
-    :meth:`~turbigen.annulus.Annulus.cut_planes`, so the picture is of the
+    :meth:`~turbigen.machine.Machine.cut_planes`, so the picture is of the
     same flow they measure.
     """
 
     type: ClassVar[str] = "station_contour"
 
     station: tuple[int, ...] = (1,)
-    """Stations to cut at, indexing :meth:`~turbigen.annulus.Annulus.cut_planes`:
+    """Stations to cut at, indexing :meth:`~turbigen.machine.Machine.cut_planes`:
     twice the row index for its inlet, one more for its outlet. The default is
     the first row's outlet."""
 
     offset: float | None = None
     """Distance of the cut into the adjacent gap, in blade chords; the
-    annulus's ``CUT_OFFSET`` if None."""
+    default :data:`~turbigen.machine.CUT_OFFSET` if None."""
 
     variable: str = "Ys"
     """``Ys``, the entropy rise over the row's inlet in units of its

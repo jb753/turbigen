@@ -560,14 +560,15 @@ def test_cut_planes_land_in_the_gaps():
     cut has to sit just below an odd integer and a trailing-edge cut just above
     the next one.
     """
-    annulus = build().design().annulus
+    machine = build().design()
+    annulus = machine.annulus
     n_row = annulus.n_row
 
     # Recover the m of each cut from its axial position, via the mid-span line.
     m_dense = np.linspace(0.0, annulus.m_max, 20001)
     x_dense = annulus.evaluate_xr(m_dense, 0.5)[0]
 
-    for i_station, xr in enumerate(annulus.cut_planes()):
+    for i_station, xr in enumerate(machine.cut_planes()):
         x_cut = float(xr.mean(axis=0)[0])
         m_cut = float(np.interp(x_cut, x_dense, m_dense))
 
@@ -578,14 +579,14 @@ def test_cut_planes_land_in_the_gaps():
             assert m_cut > station, "a trailing edge cut must sit downstream"
         assert abs(m_cut - station) < 0.5, "and still in the adjacent gap"
 
-    assert len(annulus.cut_planes()) == 2 * n_row
+    assert len(machine.cut_planes()) == 2 * n_row
 
 
 def test_cut_planes_span_hub_to_casing():
     """Two (x, r) points, which is the curve ember.cut.unstructured takes."""
-    annulus = build().design().annulus
+    machine = build().design()
 
-    for xr in annulus.cut_planes():
+    for xr in machine.cut_planes():
         assert xr.shape == (2, 2)
         r_hub, r_cas = xr[0][1], xr[1][1]
         assert r_cas > r_hub

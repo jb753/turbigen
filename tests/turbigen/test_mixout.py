@@ -250,7 +250,7 @@ def test_mixing_loss_averages_the_cut_the_metrics_read(solved):
     _, Ds_mix = mixout.mean_line(grid, machine)
 
     nominal = machine.mean_line.flat
-    for i_station, xr in enumerate(machine.annulus.cut_planes()):
+    for i_station, xr in enumerate(machine.cut_planes()):
         # Mixed out to the same area as mixout does, so only the averages
         # differ if the regrids do.
         raw = ember.cut.unstructured(grid, xr)

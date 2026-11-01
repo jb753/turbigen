@@ -205,5 +205,9 @@ class Config(Node):
         machine = Machine(
             mean_line=mean_line, annulus=annulus, rows=rows, spanwise=self.spanwise
         )
+        # Rows swept so far into a gap that no cut fits between them fail here,
+        # not when the solution is first reduced
+        if rows:
+            machine.check_cuts()
         self.iterate.check(machine)
         return machine

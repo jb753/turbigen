@@ -102,16 +102,6 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
-CUT_OFFSET = 0.05
-"""Cut planes sit this fraction of blade chord into the gap, clear of the row.
-
-Cutting exactly at a leading or trailing edge would put the plane inside the
-blade, where there is no single annulus-spanning surface to integrate over.
-Clear of the row includes the H-mesh trailing edge cusp, which runs on
-``AR_cusp`` trailing edge thicknesses past the blade: a plane through it cuts
-less than a pitch of fluid.
-"""
-
 N_SWEPT_PTS = 3001
 """Points along a constant-span line when placing a section with swept edges,
 over the row and the segment either side."""
@@ -265,6 +255,41 @@ class RowAnnulus:
         """
         return self.evaluate_xr_annulus(self.m_LE + np.asarray(m, dtype=float), spf)
 
+    def _swept_line(self, spf, dm_LE, dm_TE):
+        """Return the arc-length tables that place a swept section at `spf`.
+
+        Arc length along the constant-`spf` line at row coordinates `m_line`,
+        over the row and the segment either side, which is as far as an edge
+        can go; and the arc length each chordwise position `m_sec` of the
+        section is moved to. Both directions of the map interpolate the same
+        two tables, so each is the other's inverse to rounding.
+
+        Raises if the section reaches off the line, or does not run downstream
+        all along it.
+        """
+        m_line = np.linspace(-1.0, 2.0, N_SWEPT_PTS)
+        s_line = turbigen.util.cum_arc_length(self.evaluate_xr(m_line, spf))
+        s_LE, s_TE = np.interp([0.0, 1.0], m_line, s_line)
+        chord = s_TE - s_LE
+
+        # The section's chordwise positions are the line's own inside the row,
+        # so an unswept section is the line itself
+        in_row = (m_line >= 0.0) & (m_line <= 1.0)
+        m_sec = m_line[in_row]
+        s_sec = s_line[in_row] + ((1.0 - m_sec) * dm_LE + m_sec * dm_TE) * chord
+
+        if s_sec[0] < s_line[0] or s_sec[-1] > s_line[-1]:
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} reach "
+                "beyond the segments either side of the row."
+            )
+        if np.any(np.diff(s_sec) <= 0.0):
+            raise ValueError(
+                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} put "
+                "the leading edge downstream of the trailing edge."
+            )
+        return m_line, s_line, m_sec, s_sec
+
     def evaluate_swept_m(self, m, spf, dm_LE, dm_TE):
         """Return where points of a section with swept edges lie in the row.
 
@@ -277,6 +302,10 @@ class RowAnnulus:
         station, so a section that crosses one has no kink there; and they are
         in the unswept chord at this span, so an offset means the same thing
         whatever the segments either side.
+
+        Beyond the section, ``m`` below 0 or above 1 continues straight on in
+        arc length, a whole ``m`` per swept section length, so that
+        :meth:`evaluate_unswept_m` is its inverse everywhere on the line.
 
         Parameters
         ----------
@@ -299,33 +328,30 @@ class RowAnnulus:
         m = np.asarray(m, dtype=float)
         if dm_LE == 0.0 and dm_TE == 0.0:
             return m
+        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        length = s_sec[-1] - s_sec[0]
+        s = np.interp(m, m_sec, s_sec)
+        s = np.where(m < 0.0, s_sec[0] + m * length, s)
+        s = np.where(m > 1.0, s_sec[-1] + (m - 1.0) * length, s)
+        return np.interp(s, s_line, m_line)
 
-        # Arc length along the line, over the row and the segment either side,
-        # which is as far as an edge can go
-        m_line = np.linspace(-1.0, 2.0, N_SWEPT_PTS)
-        s_line = turbigen.util.cum_arc_length(self.evaluate_xr(m_line, spf))
-        s_LE, s_TE = np.interp([0.0, 1.0], m_line, s_line)
-        chord = s_TE - s_LE
+    def evaluate_unswept_m(self, m, spf, dm_LE, dm_TE):
+        """Return where row coordinates `m` lie along a swept section.
 
-        def arc(m):
-            return (
-                np.interp(m, m_line, s_line) + ((1.0 - m) * dm_LE + m * dm_TE) * chord
-            )
-
-        # The section must stay inside the line, and run downstream all along it
-        s_check = arc(np.linspace(0.0, 1.0, N_SWEPT_PTS // 3))
-        if s_check[0] < s_line[0] or s_check[-1] > s_line[-1]:
-            raise ValueError(
-                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} reach "
-                "beyond the segments either side of the row."
-            )
-        if np.any(np.diff(s_check) <= 0.0):
-            raise ValueError(
-                f"Edge offsets dm_LE={dm_LE}, dm_TE={dm_TE} at spf={spf} put "
-                "the leading edge downstream of the trailing edge."
-            )
-
-        return np.interp(arc(m), s_line, m_line)
+        The inverse of :meth:`evaluate_swept_m`: 0 at the section's leading
+        edge and 1 at its trailing edge, below 0 upstream of it and above 1
+        downstream, in swept section lengths. `m` itself, exactly, if neither
+        edge is offset. Arguments as there.
+        """
+        m = np.asarray(m, dtype=float)
+        if dm_LE == 0.0 and dm_TE == 0.0:
+            return m
+        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        length = s_sec[-1] - s_sec[0]
+        s = np.interp(m, m_line, s_line)
+        m_out = np.interp(s, s_sec, m_sec)
+        m_out = np.where(s < s_sec[0], (s - s_sec[0]) / length, m_out)
+        return np.where(s > s_sec[-1], 1.0 + (s - s_sec[-1]) / length, m_out)
 
     def evaluate_mspf(self, x, r, tol=1e-6):
         """Return row annulus coordinates of meridional points.
@@ -603,48 +629,6 @@ class Annulus:
         xr_hub = self.evaluate_xr(m, 0.0)
         xr_cas = self.evaluate_xr(m, 1.0)
         return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
-
-    def cut_planes(self, offset=CUT_OFFSET):
-        """Return the meridional cut curve at each design station.
-
-        A cut plane is the straight hub-to-casing line at one meridional
-        position, so it is two points and needs nothing beyond
-        :meth:`evaluate_xr` --- which is why it lives here rather than with any
-        one of the things that cut with it. The mean line is reduced between
-        these planes, so a quantity integrated over the same bounds is directly
-        comparable with the loss the mean line reports.
-
-        Parameters
-        ----------
-        offset : float
-            Distance into the adjacent gap, as a fraction of blade chord.
-
-        Returns
-        -------
-        list of ndarray
-            One ``(2, 2)`` array per station, in streamwise order, each holding
-            two ``(x, r)`` points, hub then casing. This is the shape
-            :func:`ember.cut.unstructured` takes.
-
-        """
-        chords = self.evaluate_chords(0.5)
-
-        # The offset is given in blade chords but applied to `m`, which is
-        # normalised per segment -- so it has to be rescaled by the chord of
-        # the gap each station opens into. Rows are the odd segments, gaps the
-        # even.
-        chord_blade = np.repeat(chords[1::2], 2)
-        gaps = chords[::2]
-        chord_gap = np.concatenate([[gaps[0]], np.repeat(gaps[1:-1], 2), [gaps[-1]]])
-
-        # Leading edges step upstream, trailing edges downstream.
-        signed = offset * np.ones(2 * self.n_row)
-        signed[::2] *= -1.0
-        signed *= chord_blade / chord_gap
-
-        m_cut = np.arange(1.0, 2 * self.n_row + 1) + signed
-
-        return [self.evaluate_xr(m, [0.0, 1.0]).T for m in m_cut]
 
     def evaluate_chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.

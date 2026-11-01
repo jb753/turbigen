@@ -173,9 +173,7 @@ def _interpolator(machine, delta):
     # Mid-span of each cut plane. `cut_planes` returns hub and casing, and
     # `Annulus.evaluate_xr` is linear in span fraction, so the mean of the two
     # is the mid-span point without evaluating the annulus again.
-    xr = np.array(
-        [plane.mean(axis=0) for plane in machine.annulus.cut_planes()], dtype=float
-    )
+    xr = np.array([plane.mean(axis=0) for plane in machine.cut_planes()], dtype=float)
 
     arc = np.concatenate(
         [[0.0], np.cumsum(np.linalg.norm(np.diff(xr, axis=0), axis=1))]

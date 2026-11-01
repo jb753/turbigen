@@ -23,6 +23,14 @@ Test cases:
 - test_theta_offset_is_an_unknown_key: one way to turn the blade
 - test_a_swept_blade_pickles: the fitted placement is rebuilt
 - test_a_swept_blade_cannot_be_meshed_yet
+- test_unswept_m_inverts_swept_m: both ways round, inside and beyond
+- test_unswept_m_is_outside_beyond_the_edges: in swept section lengths
+- test_no_offset_is_the_identity_both_ways
+- test_unswept_cuts_are_where_they_were: the stations, plus the offset
+- test_the_cuts_clear_the_furthest_edges: whatever span reaches furthest
+- test_an_exit_cut_may_cross_the_next_row: only the default must fit
+- test_rows_with_no_room_for_cuts_fail_at_design
+- test_cuts_out_of_the_annulus_fail_at_design
 """
 
 import pickle
@@ -230,3 +238,107 @@ def test_a_swept_blade_cannot_be_meshed_yet():
     config = build(blades=[blade(section=SWEEP), blade()], mesh=MESH)
     with pytest.raises(NotImplementedError, match="Row 0 has swept edges"):
         config.mesh.mesh(config.design())
+
+
+#
+# THE INVERSE MAP
+#
+
+
+@pytest.mark.parametrize("spf", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize("dm_LE, dm_TE", [(0.1, -0.05), (-0.2, 0.3)])
+def test_unswept_m_inverts_swept_m(machine, spf, dm_LE, dm_TE):
+    row_annulus = _row_annulus(machine)
+    # Short of the end of the line beyond the trailing edge, a gap of half a
+    # chord, where the swept section is up to one and a half chords long
+    m = np.linspace(-0.5, 1.1, 41)
+    swept = row_annulus.evaluate_swept_m(m, spf, dm_LE, dm_TE)
+    back = row_annulus.evaluate_unswept_m(swept, spf, dm_LE, dm_TE)
+    np.testing.assert_allclose(back, m, atol=1e-12)
+
+    m_row = np.linspace(-0.5, 1.5, 41)
+    unswept = row_annulus.evaluate_unswept_m(m_row, spf, dm_LE, dm_TE)
+    again = row_annulus.evaluate_swept_m(unswept, spf, dm_LE, dm_TE)
+    np.testing.assert_allclose(again, m_row, atol=1e-12)
+
+
+def test_unswept_m_is_outside_beyond_the_edges(machine):
+    """The leading edge station lies upstream of a leading edge swept
+    downstream, by the sweep over the section's swept length."""
+    row_annulus = _row_annulus(machine)
+    stations = row_annulus.evaluate_unswept_m([0.0, 1.0], 0.5, **SWEEP)
+    length = 1.0 + SWEEP["dm_TE"] - SWEEP["dm_LE"]
+    np.testing.assert_allclose(
+        stations,
+        [-SWEEP["dm_LE"] / length, 1.0 - SWEEP["dm_TE"] / length],
+        atol=1e-4,
+    )
+
+
+def test_no_offset_is_the_identity_both_ways(machine):
+    m = np.linspace(-0.5, 1.5, 9)
+    plain = machine.rows[0].blade
+    np.testing.assert_array_equal(plain.evaluate_unswept_m(m, 0.3), m)
+    np.testing.assert_array_equal(plain.evaluate_swept_m(m, 0.3), m)
+
+
+#
+# CUT PLANES
+#
+
+
+def test_unswept_cuts_are_where_they_were(machine):
+    """Upstream of each leading edge station and downstream of each trailing
+    edge station by the offset, in the gap's own scale of `m`."""
+    chords = machine.annulus.evaluate_chords(0.5)
+    expected = []
+    for i_row in range(2):
+        step = 0.05 * chords[2 * i_row + 1]
+        expected += [
+            2 * i_row + 1.0 - step / chords[2 * i_row],
+            2 * i_row + 2.0 + step / chords[2 * i_row + 2],
+        ]
+    np.testing.assert_allclose(machine._m_cut(), expected, rtol=1e-14)
+    for m, xr in zip(expected, machine.cut_planes()):
+        np.testing.assert_allclose(xr, machine.annulus.evaluate_xr(m, [0.0, 1.0]).T)
+
+
+def test_the_cuts_clear_the_furthest_edges(machine):
+    config = blade()
+    for section, dm in zip(config["sections"], (-0.1, -0.3, 0.0)):
+        section.update(dm_LE=dm, dm_TE=-dm)
+    swept = build(blades=[config, blade()]).design()
+    row = swept.rows[0].blade
+
+    spf = np.linspace(0.0, 1.0, 101)
+    edges = np.array([row.evaluate_swept_m([0.0, 1.0], s) for s in spf])
+    m_LE, m_TE = edges[:, 0].min(), edges[:, 1].max()
+
+    # The machine searches fewer spans for the furthest edge, so finds it to
+    # within a fraction of a percent of the clearance the offset leaves
+    plain, cut = machine._m_cut(), swept._m_cut()
+    np.testing.assert_allclose(cut[0] - (1.0 + m_LE), plain[0] - 1.0, atol=1e-3)
+    np.testing.assert_allclose(cut[1] - (1.0 + m_TE), plain[1] - 2.0, atol=1e-3)
+    np.testing.assert_array_equal(cut[2:], plain[2:])
+
+
+def test_an_exit_cut_may_cross_the_next_row(machine):
+    """The exit profile reads half a chord on, past the next row's leading
+    edge cut here, which is no reason to refuse it."""
+    m_cut = machine._m_cut(0.5)
+    assert m_cut[1] > m_cut[2]
+    assert len(machine.cut_planes(0.5)) == 4
+
+
+def test_rows_with_no_room_for_cuts_fail_at_design():
+    config = build(
+        blades=[blade(section={"dm_TE": 0.3}), blade(section={"dm_LE": -0.3})]
+    )
+    with pytest.raises(ValueError, match="Rows 0 and 1 leave no room"):
+        config.design()
+
+
+def test_cuts_out_of_the_annulus_fail_at_design():
+    config = build(blades=[blade(section={"dm_LE": -1.45}), blade()])
+    with pytest.raises(ValueError, match="leave the annulus"):
+        config.design()

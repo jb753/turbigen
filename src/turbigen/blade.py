@@ -902,6 +902,18 @@ class Blade:
         dm_LE, dm_TE, _ = self._placement(spf)
         return self.row_annulus.evaluate_swept_m(m, spf, dm_LE, dm_TE)
 
+    def evaluate_unswept_m(self, m, spf):
+        """Return where row meridional coordinates `m` lie along the section
+        at `spf`, 0 at its leading edge and 1 at its trailing edge.
+
+        The inverse of :meth:`evaluate_swept_m`, below 0 upstream of the
+        section and above 1 downstream of it; `m` itself where the section is
+        not swept. See
+        :meth:`~turbigen.annulus.RowAnnulus.evaluate_unswept_m`.
+        """
+        dm_LE, dm_TE, _ = self._placement(spf)
+        return self.row_annulus.evaluate_unswept_m(m, spf, dm_LE, dm_TE)
+
     @functools.cached_property
     def _surface_theta(self):
         """Angular coordinate of each surface, suction first, as a function of
