@@ -228,16 +228,20 @@ def test_the_cells_in_the_main_blocks_are_not_badly_skewed(grid):
 def test_the_guess_follows_the_mean_line_in_every_block(machine, grid):
     # Aligned with the grid lines of blocks whose `i` runs across the pitch
     # or round the blade, the guess once took its tangential velocity of
-    # either sign there, and started the rotor supersonic. Without the blend
-    # onto the blade surfaces, which turns the flow round the leading edges
-    # well outside the mean line's swirl, legitimately.
-    guess.apply(grid, machine, blend=False)
+    # either sign there, and started the rotor supersonic. The swirl is
+    # checked before the blend onto the blade surfaces, which turns the flow
+    # round the leading edges well outside the mean line's swirl,
+    # legitimately; the speed after it, which the blend keeps.
+    guess.apply(grid, machine)
+    field = guess._Field(machine)
     Vt = np.asarray(machine.mean_line.Vt)
     lo, hi = Vt.min(), Vt.max()
     slack = 0.15 * (hi - lo)
     for block in grid:
-        assert lo - slack < block.Vt.min(), block.label
-        assert block.Vt.max() < hi + slack, block.label
+        m, spf = field.mspf(block.x.reshape(-1), block.r.reshape(-1))
+        _, _, Vxrt = field.evaluate(m, spf, block.r.reshape(-1).astype(float))
+        assert lo - slack < Vxrt[:, 2].min(), block.label
+        assert Vxrt[:, 2].max() < hi + slack, block.label
         W = np.sqrt(block.Vx**2 + block.Vr**2 + (block.Vt - block.U) ** 2)
         assert (W / block.a).max() < 1.05, block.label
 

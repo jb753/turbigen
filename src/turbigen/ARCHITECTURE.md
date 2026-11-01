@@ -694,10 +694,6 @@ blade and divided by zero at its edges.
   and the surface table behind it) rather than off the wall distance search:
   the vector to the nearest wall node is a poor normal next to a wall that the
   grid lines meet at an angle, 20 to 50 degrees out on an H mesh.
-* Optionally (`loading=True`), the pitchwise pressure difference the turning
-  takes, from the tangential momentum equation, tapered to zero at the trailing
-  edge and carried upstream of the leading edge as decaying harmonics.
-
 It is a free function, and `prepare` calls it, so the grid a `report` draws is
 the one a solver would start from.
 

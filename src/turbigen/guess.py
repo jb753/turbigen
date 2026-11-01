@@ -23,12 +23,6 @@ and however the grid lines run:
   the relative flow angle is blended towards the surface's own, keeping the
   speed, so the flow runs along the blade rather than into it. From the blade
   geometry, not the grid, like everything else here.
-* **Blade loading**, optionally: the pitchwise pressure gradient that turning
-  the flow takes, from the tangential momentum equation, laid linearly across
-  the passage from the suction surface to the neighbouring pressure surface,
-  and tapered to nothing at both edges, where the pressure on the two surfaces
-  meets. The relative speed follows at constant rothalpy and entropy.
-
 It is deliberately crude --- it exists to give the solver a sane start, not to
 be right.
 """
@@ -57,18 +51,8 @@ M_EDGE = 0.05
 leading edge and out to the trailing edge [--]. A surface's angle there runs
 round the edge, which is no direction for the flow next to it."""
 
-M_TAPER = (0.1, 0.2)
-"""Fractions of chord over which the loading tapers to nothing at the leading
-and trailing edges [--]. The two surfaces meet round each edge, so the pressure
-difference between them has to go: at the leading edge through the stagnation
-point, at the trailing edge as the Kutta condition has it."""
 
-LOADING_MAX = 0.4
-"""Largest pressure change the loading may make, as a fraction of the relative
-dynamic pressure ``rho W^2`` [--], so the speed it implies stays real."""
-
-
-def apply(grid, machine, blend=True, loading=False):
+def apply(grid, machine):
     """Write an initial flow field into `grid`, in place.
 
     Parameters
@@ -77,10 +61,6 @@ def apply(grid, machine, blend=True, loading=False):
         A meshed grid, which is modified.
     machine : Machine
         The design the grid was meshed from.
-    blend : bool
-        Whether to turn the flow onto the blade surfaces near them.
-    loading : bool
-        Whether to lay the blade loading across each passage.
 
     """
     for block in grid:
@@ -107,35 +87,17 @@ def apply(grid, machine, blend=True, loading=False):
         P, T, Vxrt = field.evaluate(m, spf, r)
         W = Vxrt.copy()
         W[:, 2] -= Omega * r
-        dP = np.zeros_like(P)
-        for i in range(len(field.rows) if blend or loading else 0):
+        for i in range(len(field.rows)):
             passage = field.passage(i, m, spf, r, t)
-            if passage is None:
-                continue
-            if blend:
+            if passage is not None:
                 _blend(W, passage)
-            if loading:
-                dP[passage["index"]] += field.load(i, passage)
 
         block.set_P_T(P.reshape(block.shape), T.reshape(block.shape))
-        if loading:
-            # Faster where the pressure is lower, at constant rothalpy and
-            # entropy, and never by more than the flow has to give
-            rho = np.asarray(block.rho, dtype=float).reshape(-1)
-            W2 = np.sum(W**2, axis=-1)
-            dP = np.clip(dP, -LOADING_MAX * rho * W2, LOADING_MAX * rho * W2)
-            W *= np.sqrt(1.0 - 2.0 * dP / (rho * W2))[:, None]
-            s = np.asarray(block.s, dtype=float)
-            block.set_P_s((P + dP).reshape(block.shape), s)
         W[:, 2] += Omega * r
         block.set_Vxrt(W.reshape(*block.shape, 3))
         block.set_mu_turb(np.full(block.shape, field.mu))
 
-    logger.debug(
-        "Applied a guess from the design"
-        + (", along the blades" if blend else "")
-        + (", loaded" if loading else "")
-    )
+    logger.debug("Applied a guess from the design")
 
 
 class _Field:
@@ -150,7 +112,6 @@ class _Field:
         self.P = np.asarray(flat.P, dtype=float)
         self.T = np.asarray(flat.T, dtype=float)
         self.Vm = np.asarray(flat.Vm, dtype=float)
-        self.rho = np.asarray(flat.rho, dtype=float)
         self.mu = float(np.mean(self.ml.mu))
         self.turning = [_turning(row.blade) for row in self.rows]
 
@@ -275,39 +236,11 @@ class _Field:
             "m_row": m_row,
             "spf": spf,
             "r": r,
-            "dl_dm": dl_dm,
             "frac": frac,
             "width": row.pitch - np.abs(theta[:, 0] - theta[:, 1]),
             "Alpha_surface": np.arctan(r[:, None] * dtheta_dl),
             "row": row,
-            "i_row": i_row,
         }
-
-    def load(self, i_row, passage):
-        """Pressure change the loading of row `i_row` makes at the points of
-        `passage` [Pa].
-
-        In a passage the tangential momentum equation is, to first order,
-        ``dp/dtheta = -rho Vm d(r Vt)/dl``, so turning the flow takes a
-        pitchwise pressure difference ``Delta = rho Vm s d(r Vt)/dl``, ``s``
-        the angular pitch. It is laid linearly across the passage, averaging
-        to the mean-line pressure, low on the suction side, and tapered to
-        nothing at both edges over :data:`M_TAPER`.
-        """
-        row = passage["row"]
-        m_LE = 2.0 * i_row + 1.0
-        m_row = passage["m_row"]
-        spf = passage["spf"]
-        m = m_LE + m_row
-        lo = np.clip(m - DM_DERIVATIVE, m_LE, m_LE + 1.0)
-        hi = np.clip(m + DM_DERIVATIVE, m_LE, m_LE + 1.0)
-        drVt_dl = (self.rVt(hi, spf) - self.rVt(lo, spf)) / (hi - lo) / passage["dl_dm"]
-        rho_Vm = self._station(self.rho * self.Vm, m)
-        Delta = np.abs(rho_Vm * row.pitch * drVt_dl)
-        taper_LE, taper_TE = M_TAPER
-        Delta *= np.clip(m_row / taper_LE, 0.0, 1.0)
-        Delta *= np.clip((1.0 - m_row) / taper_TE, 0.0, 1.0)
-        return Delta * (passage["frac"] - 0.5)
 
 
 def _turning(blade):

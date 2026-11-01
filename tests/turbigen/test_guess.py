@@ -88,7 +88,7 @@ def test_relative_flow_leaves_each_row_at_its_design_angle(machine, spf):
 
 
 def test_guess_leaves_the_grid_ready_to_solve(machine, grid):
-    guess.apply(grid, machine, loading=True)
+    guess.apply(grid, machine)
 
     for block in grid:
         assert np.isfinite(block.T).all()
@@ -210,18 +210,16 @@ def _Alpha_rel(block, Omega, index):
 
 def test_blend_turns_the_flow_onto_the_blade_surfaces(machine, meshed):
     """Next to a surface mid-chord, the relative flow runs at the surface's own
-    angle, and the speed is what it was without the blend."""
-    plain = copy.deepcopy(meshed)
+    angle, and the speed is what the design gives there before the blend."""
     blended = copy.deepcopy(meshed)
-    guess.apply(plain, machine, blend=False)
     guess.apply(blended, machine)
+    field = guess._Field(machine)
 
     checked = 0
     for i_row, (blocks, Omega) in enumerate(
         zip(blended.rows, machine.mean_line.Omega[0])
     ):
         for block in blocks:
-            before = plain[[b is block for b in blended].index(True)]
             passage = _passages(machine, block, i_row)
             if passage is None:
                 continue
@@ -240,38 +238,16 @@ def test_blend_turns_the_flow_onto_the_blade_surfaces(machine, meshed):
                 np.testing.assert_allclose(after, surface, atol=np.radians(2.0))
                 checked += 1
 
-            def speed(b):
-                W = np.stack((b.Vx, b.Vr, b.Vt - Omega * b.r), axis=-1).reshape(-1, 3)
-                return np.linalg.norm(W, axis=-1)
-
-            np.testing.assert_allclose(speed(block), speed(before), rtol=1e-4)
-    assert checked
-
-
-def test_loading_puts_the_low_pressure_on_the_suction_side(machine, meshed):
-    """Mid-chord, the suction side is at lower pressure than the pressure side
-    across the passage, and the pitchwise mean barely moves."""
-    plain = copy.deepcopy(meshed)
-    loaded = copy.deepcopy(meshed)
-    guess.apply(plain, machine, blend=False)
-    guess.apply(loaded, machine, blend=False, loading=True)
-
-    for i, row in enumerate(machine.rows):
-        field = guess._Field(machine)
-        for block, before in zip(loaded, plain):
+            r = block.r.reshape(-1).astype(float)
             m, spf = field.mspf(block.x.reshape(-1), block.r.reshape(-1))
-            m_row = m - (2.0 * i + 1.0)
-            frac = row.evaluate_pitch_fraction(m_row, spf, block.t.reshape(-1))
-            mid = (np.abs(m_row - 0.5) < 0.1) & (np.abs(spf - 0.5) < 0.2)
-            P = block.P.reshape(-1)
-            suction = mid & (frac < 0.2)
-            pressure = mid & (frac > 0.8)
-            if not (suction.any() and pressure.any()):
-                continue
-            assert P[suction].mean() < P[pressure].mean()
-            mean = P[mid & np.isfinite(frac)].mean()
-            mean0 = before.P.reshape(-1)[mid & np.isfinite(frac)].mean()
-            assert mean == pytest.approx(mean0, rel=0.02)
+            _, _, W = field.evaluate(m, spf, r)
+            W[:, 2] -= Omega * r
+            b = block
+            W_now = np.stack((b.Vx, b.Vr, b.Vt - Omega * b.r), axis=-1).reshape(-1, 3)
+            np.testing.assert_allclose(
+                np.linalg.norm(W_now, axis=-1), np.linalg.norm(W, axis=-1), rtol=1e-4
+            )
+    assert checked
 
 
 def test_a_grid_without_a_fluid_is_refused(machine):
@@ -283,25 +259,3 @@ def test_a_grid_without_a_fluid_is_refused(machine):
 
     with pytest.raises(ValueError, match="fluid"):
         guess.apply(bare, machine)
-
-
-def test_loading_is_continuous_round_the_blade(machine, meshed):
-    """The loading tapers to nothing at both edges, where the two surfaces
-    meet, so the pressure is continuous round them. A sawtooth with loading at
-    the leading edge would jump by its whole height between the last suction
-    surface node and the first pressure surface one."""
-    field = guess._Field(machine)
-    checked = 0
-    for i_row in range(len(machine.rows)):
-        for block in meshed:
-            passage = _passages(machine, block, i_row)
-            if passage is None:
-                continue
-            dP = np.abs(field.load(i_row, passage))
-            m_row = passage["m_row"]
-            edges = (m_row < 0.005) | (m_row > 0.995)
-            if not edges.any():
-                continue
-            assert dP[edges].max() < 0.05 * dP.max()
-            checked += 1
-    assert checked
