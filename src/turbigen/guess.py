@@ -269,6 +269,20 @@ class _Field:
 
         frac = row.evaluate_pitch_fraction(m_row, spf, t, snap=True)
 
+        # How far into the designed blade a node lies, as a fraction of half
+        # its thickness. A mesh that thins the blade, as a tip pinch does, puts
+        # nodes there; snapped to opposite surfaces, two nodes a whisker apart
+        # would be turned the full difference between the surfaces' angles.
+        upper, lower = theta.max(axis=-1), theta.min(axis=-1)
+        thick = upper - lower
+        across = np.mod(t - upper, row.pitch)
+        depth = np.where(
+            across > row.pitch - thick,
+            np.minimum(across - (row.pitch - thick), row.pitch - across),
+            0.0,
+        )
+        solid = np.clip(1.0 - 2.0 * depth / np.maximum(thick, 1e-12), 0.0, 1.0)
+
         return {
             "index": index,
             "m_row": m_row,
@@ -277,6 +291,7 @@ class _Field:
             "r": r,
             "frac": frac,
             "width": row.pitch - np.abs(theta[:, 0] - theta[:, 1]),
+            "solid": solid,
             "Alpha_surface": np.arctan(r[:, None] * dtheta_dl),
             "row": row,
         }
@@ -309,7 +324,8 @@ def _blend(W, passage):
     The relative flow angle is blended towards the nearer surface's, with a
     weight of one on the surface falling to nothing :data:`SNAP_PITCH` of a
     pitch away, faded in from the leading edge and out to the trailing edge
-    over :data:`M_EDGE` of chord. The speed is kept, so turning the flow
+    over :data:`M_EDGE` of chord, and out to nothing at the middle of a blade
+    the mesh has thinned. The speed is kept, so turning the flow
     neither adds nor removes energy from it. Relative, because a rotor's
     blades move with it.
     """
@@ -332,7 +348,7 @@ def _blend(W, passage):
             ),
             axis=-1,
         )
-        * edge[:, None]
+        * (edge * passage["solid"][inside])[:, None]
     )
     if not w.any():
         return

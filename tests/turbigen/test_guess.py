@@ -17,6 +17,7 @@ Test cases:
 - test_flow_runs_along_the_hub_and_casing
 - test_swirl_varies_across_the_span
 - test_blend_turns_the_flow_onto_the_blade_surfaces
+- test_blend_fades_out_inside_a_thinned_blade: a tip pinch's knife edge
 - test_loading_puts_the_low_pressure_on_the_suction_side
 - test_loading_is_continuous_round_the_blade
 - test_a_grid_without_a_fluid_is_refused
@@ -248,6 +249,25 @@ def test_blend_turns_the_flow_onto_the_blade_surfaces(machine, meshed):
                 np.linalg.norm(W_now, axis=-1), np.linalg.norm(W, axis=-1), rtol=1e-4
             )
     assert checked
+
+
+def test_blend_fades_out_inside_a_thinned_blade(machine):
+    """A node a mesh has put inside the designed blade, as a tip pinch does, is
+    turned less the deeper it lies, and not at all at mid-thickness, so the
+    two sides of a knife edge are not snapped to surfaces 7 degrees apart."""
+    field = guess._Field(machine)
+    row = field.rows[1]
+    m_row, spf = np.full(4, 0.5), np.full(4, 0.5)
+    m_LE = 3.0
+    theta = row.blade._surface_theta(np.array([[0.5, 0.5]]))[0]
+    upper, lower = theta.max(), theta.min()
+    t = np.array(
+        (upper, lower + row.pitch, 0.5 * (upper + lower), 0.75 * upper + 0.25 * lower)
+    )
+    # Radius only scales the surface angles, which are not checked here
+    passage = field.passage(1, m_row + m_LE, spf, np.ones(4), t)
+
+    np.testing.assert_allclose(passage["solid"], (1.0, 1.0, 0.0, 0.5), atol=1e-6)
 
 
 def test_a_grid_without_a_fluid_is_refused(machine):
