@@ -4,23 +4,36 @@ Changelog
 v3.1.0
 ^^^^^^
 
-* Add a ``spanwise:`` key for the flow the blades are designed against, a power-law vortex or splines of meridional velocity and swirl through the blade sections, with ``spanwise_inflow``, ``spanwise_work`` and ``spanwise_swirl`` iterators and a ``spanwise_targets`` plot; blades lose ``vortex_exponent``, now ``spanwise: {type: vortex_expon, n: ...}``
-* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades, meshed by both the H and the passage meshers; blades lose ``theta_offset``, now ``dtheta`` on every section
-* Cut planes belong to the machine and clear the furthest a swept edge reaches; a design with no room for them between two rows fails
-* The initial guess turns the flow between a blade's swept edges at each span, and bridges the gaps from them
-* Evaluate every blade section at one fixed set of chordwise points, so a point's position no longer depends on what else was asked for; ``evaluate_section`` returns each point's annulus meridional coordinate as a fourth row and loses ``nchord`` and ``m``, and ``evaluate_camber(m=...)`` interpolates the full curve
-* Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold
-* Step every iterator on its declared gain, and drop the Broyden update, which no iterator used
-* Let ``clark_profile`` recamber the leading edge against the difference in nose loading, in place of an ``incidence`` iterator
-* Improve H-meshing in pinched tips, and add experimental gridded tip
+* Add OH-mesher with elliptic smoothing
+* Allow for inviscid walls in inlet and exit ducts
+* Replace the ``--restart`` flag with a ``restart:`` key in the config file, to
+  keep reproducible
+* Add TS3 solver back again
+* Run characteristics into stall using a choked exit nozzle
+* Plotters for yplus, shape factor, mesh, blade thickness, pitch-averaged
+  profiles, traverse contours
+* Add rounded trailing edge option, only compatible with OH meshes
+* Factor out spanwise flow as a seperate object, defaulting to old vortex
+  exponent but also allowing iteration of spanwise work and swirl
+* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades,
+  drop ``theta_offset``
+* Cut planes belong to the machine and clear swept LE or TE
+* Initial guess turns the flow between a blade's swept edges at each span
+* Evaluate every blade section at one fixed set of chordwise points, so caller
+  cannot specify different ones
+* Share pressure-side thickness between the camber normal and the
+  circumferential directions to prevent folding
+* Drop Broyden updates and keep Jacobian diagonal with assumed gain
+* Improve H-meshing in pinched tips, and add gridded tip
 * Add H-mesh setting to control aspect ratio at mixing planes
-* Add Bernstein and circluar-arc, camber lines
+* Add Bernstein and circluar-arc camber lines
 * Add Clark camber and thickness distributions with inverse design iterator
 * Repeating inlet profiles now support a proper orthogonal basis
 * Add ``metrics:`` key for extra measurements of the 3D flow field
-* Record mixing loss next to the mixed-out mean line data
+* Record mixing loss with the mixed-out mean line data
 * Allow for soft starts, and retrying a diverged run with soft settings
 * Fix incidence iterator to recamber all sections
+* Fix bug with restart file paths on Windows
 
 v3.0.0
 ^^^^^^
@@ -216,7 +229,8 @@ v1.6.0
 * Use improved clustering functions for H-meshing
 * Plot pressure distributions
 * Implement loading mean-line, annulus, and installation modules from file
-* Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to change body force)
+* Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to
+  change body force)
 * Configuration option for maximum H-mesh free stream skew
 * Fix AutoGrid patch matching bug
 * Fix bug with TS4 cfl_ramp_en not set
