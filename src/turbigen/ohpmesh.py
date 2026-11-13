@@ -724,7 +724,7 @@ class OHPassage(Mesher):
     """How far the rear of a tip gap's H block bows aft at its middle, as a
     fraction of the way to where the O block's inner face crosses the cut."""
 
-    tip_front_lean: float = 30.0
+    tip_front_lean: float = 20.0
     """Most the O block's lines from a tip gap's front corners B and C lean
     off the blade's normal, degrees, so that the corners slide along the
     inner face towards each other's place along the camber, and the H
