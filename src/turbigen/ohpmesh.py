@@ -550,8 +550,12 @@ class OHPassage(Mesher):
     cut_mixing: float = 0.3
     """Distance from a blade's edge on the side of a mixing plane at which
     the block ahead of or behind it ends, in meridional chords of that row;
-    the block beyond runs on to the mixing plane, so this must fall short
-    of it."""
+    the block beyond runs on to the mixing plane. Held to at most
+    `cut_mixing_frac` of the way there where the gap is too short for it."""
+
+    cut_mixing_frac: float = 0.5
+    """The furthest the block ahead of or behind a blade ends towards a
+    mixing plane, as a fraction of the way from the blade's edge to it."""
 
     cut: float = 0.3
     """Distance from the leading edge of the first row and the trailing edge
@@ -1183,11 +1187,19 @@ class OHPassage(Mesher):
         m_LE, m_TE = (float(m) for m in m_row + blade.evaluate_swept_m([0.0, 1.0], 0.5))
         extrude_in, extrude_out = i_row == 0, i_row == n_row - 1
         chord = blade.evaluate_chord(0.5)
+
         # Both a distance in chords from the edge: `cut` to the inlet or
         # outlet, beyond which the blocks are extruded; `cut_mixing` to a
-        # mixing plane, the block beyond running on to it
-        d_in = (self.cut if extrude_in else self.cut_mixing) * chord
-        d_out = (self.cut if extrude_out else self.cut_mixing) * chord
+        # mixing plane, the block beyond running on to it, held short of a
+        # mixing plane close to the blade
+        def to_mixing(m0, m1):
+            return min(
+                self.cut_mixing * chord,
+                self.cut_mixing_frac * _distance(machine.annulus, m0, m1),
+            )
+
+        d_in = self.cut * chord if extrude_in else to_mixing(m_LE, m_in)
+        d_out = self.cut * chord if extrude_out else to_mixing(m_TE, m_out)
         m_Zin = _m_at_distance(machine.annulus, m_LE, m_in, d_in)
         m_Zout = _m_at_distance(machine.annulus, m_TE, m_out, d_out)
 
@@ -4772,7 +4784,9 @@ def _geometric_many(f0, n):
     hi = np.full_like(f0, 10.0)
     for _ in range(60):
         r = 0.5 * (lo + hi)
-        over = f0 * np.expm1(m * np.log(r)) / (r - 1.0) > 1.0
+        # r reaches 1 exactly where f0 is even, 0/0, which compares False
+        with np.errstate(invalid="ignore", divide="ignore"):
+            over = f0 * np.expm1(m * np.log(r)) / (r - 1.0) > 1.0
         hi = np.where(over, r, hi)
         lo = np.where(over, lo, r)
     r = 0.5 * (lo + hi)
@@ -4889,6 +4903,13 @@ def _at_arc(curve, s):
     """Return points on a polyline (2, n) at arc lengths `s` from its start."""
     s_curve = util.cum_arc_length(curve)
     return np.stack([np.interp(s, s_curve, c) for c in curve])
+
+
+def _distance(annulus, m0, m1):
+    """Return the distance along mid-span from annulus meridional coordinate
+    `m0` to `m1`."""
+    m = np.linspace(m0, m1, 2001)
+    return float(util.cum_arc_length(annulus.evaluate_xr(m, 0.5))[-1])
 
 
 def _m_at_distance(annulus, m0, m1, dist):
