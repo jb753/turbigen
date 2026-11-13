@@ -286,6 +286,18 @@ and the leading edge either side of them: on a twisted rotor the corner
 rules can put C4 on the nose, which folds the block ahead of the blade.
 Zero for none."""
 
+CAMBER_PAIR = False
+"""With a tip gap, pair the blade nodes of the two halves across the camber
+line, along its normals, rather than at equal fractions of each half's arc
+length, which on a highly cambered blade puts the pairs, and so the lines of
+the gap's H block between them, at a slant. Prototype."""
+
+CAMBER_PAIR_LE = 0.15
+"""With `CAMBER_PAIR`, fraction of the way from the leading edge back over
+which the pairing eases from across the camber line to equal fractions of
+each half's arc length, which the nodes round a thick cambered nose keep
+evenly spaced on both sides. Prototype."""
+
 SLIDE_SHARE = 0.3
 """Share of the sweeps given to sliding where the blade nodes are then moved
 back and held, the rest swept held, so the two passes cost one; None for the
@@ -1090,6 +1102,19 @@ class OHPassage(Mesher):
         s_lo, s_hi = half, S - half
         s = np.linspace(0.0, S, N_WALL)
         wall = _at_arc(wall, s)
+        if CAMBER_PAIR:
+            # Where the section's two surfaces, sampled across from each other
+            # along the camber line, lie round the wall
+            upper, lower, _ = _blade_pieces(blade, cmap, cmap.spf, section)
+            # Short of the round trailing edge, where the arc wraps round,
+            # and as far along both, so the samples stay paired
+            n_pair = min(upper.shape[1], lower.shape[1])
+            tree = cKDTree(wall.T)
+            pair = tuple(
+                _project(wall, s, tree, q[:, :n_pair].T) for q in (lower, upper)
+            )
+            wall = wall.view(_PairedWall)
+            wall.pair = pair
         if corners is not None:
             marks = np.array([0.0, *(np.asarray(corners) * S), S])
             return wall, marks, (1, 2, 3, 4), s_LE
@@ -4641,11 +4666,60 @@ def _symmetric_halves(blade_wall, density):
     t = np.linspace(0.0, 1.0, 4001)
     s_lo = t * s_LE
     s_up = S - t * (S - s_LE)
+    if CAMBER_PAIR:
+        s_lo, s_up = _camber_pairing(blade_wall[0], s_LE, t)
     d = np.maximum(
         np.interp(s_lo, s, density) * s_LE, np.interp(s_up, s, density) * (S - s_LE)
     )
     c = np.concatenate(([0.0], np.cumsum(0.5 * (d[1:] + d[:-1]) * np.diff(t))))
     return t, c, s_lo, s_up
+
+
+class _PairedWall(np.ndarray):
+    """A closed blade wall carrying `pair`, the arc lengths round it of the
+    section's lower and upper surface points, leading edge first, each across
+    from the other along the camber line. Prototype."""
+
+    pair = None
+
+
+def _camber_pairing(wall, s_LE, t):
+    """Return arc lengths round closed blade `wall`, from the middle of the
+    trailing edge, of the points on each half, lower then upper, at fractions
+    `t` of the way from the trailing edge to the leading edge, paired across
+    the camber line as the section's surfaces are: along the round trailing
+    edge by arc, from where the surfaces end by the camber line between them.
+    Equal fractions of each half's arc length without `wall.pair`."""
+    S = util.arc_length(np.asarray(wall))
+    pair = getattr(wall, "pair", None)
+    if pair is None:
+        return t * s_LE, S - t * (S - s_LE)
+    s_l, s_u = (np.asarray(x, dtype=float)[::-1] for x in pair)  # trailing edge first
+    # Fraction along the camber line from the surfaces' trailing edge ends
+    W = np.asarray(wall)
+    sw = np.linspace(0.0, S, W.shape[1])
+
+    def at(q):
+        return np.stack([np.interp(q, sw, c) for c in W])
+
+    C = 0.5 * (at(s_l) + at(s_u))
+    c = util.cum_arc_length(C)
+    # The trailing edge arc takes its share of t by its length on the lower side
+    a = s_l[0] / s_LE
+    t_pts = np.concatenate(([0.0], a + (1.0 - a) * c / c[-1]))
+    lo = np.concatenate(([0.0], s_l))
+    up = np.concatenate(([S], s_u))
+    lo[-1] = up[-1] = s_LE
+    lo = np.maximum.accumulate(lo)
+    up = np.minimum.accumulate(up)
+    s_lo, s_up = np.interp(t, t_pts, lo), np.interp(t, t_pts, up)
+    if CAMBER_PAIR_LE > 0.0:
+        # Easing to equal arc fractions towards the leading edge
+        w = np.clip((1.0 - t) / CAMBER_PAIR_LE, 0.0, 1.0)
+        w = w * w * (3.0 - 2.0 * w)
+        s_lo = np.maximum.accumulate(w * s_lo + (1.0 - w) * t * s_LE)
+        s_up = np.minimum.accumulate(w * s_up + (1.0 - w) * (S - t * (S - s_LE)))
+    return s_lo, s_up
 
 
 def _symmetric_counts(blade_walls, densities, i_wall):
