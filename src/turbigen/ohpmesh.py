@@ -717,7 +717,7 @@ class OHPassage(Mesher):
     each of a tip gap's blocks on each plane, their faces fixed, the O
     block's lines respaced to the wall spacing after; 0 for none."""
 
-    even_corners: bool = True
+    even_corners: bool = False
     """Even the coarse cells round each singular point of a swept plane,
     where five grid lines meet: every one of them within `EVEN_RATIO` of the
     spokes' geometric mean, blended away over `EVEN_O_CELLS` along each
@@ -728,7 +728,7 @@ class OHPassage(Mesher):
     double-sided clustering, its end cells kept as they are, blended to no
     change at its pitchwise boundaries. See :func:`_cluster_P`."""
 
-    match_interfaces: bool = True
+    match_interfaces: bool = False
     """Keep the coarse spacing close to continuous across the interfaces
     between the blocks round the passage, LE to Pin, Pin to P, P to Pout and
     Pout to TE: each line crossing one has its cells either side brought
@@ -743,7 +743,7 @@ class OHPassage(Mesher):
     between its neighbours either side, endwalls included. See
     :func:`_straighten_mixing`."""
 
-    theta_even: bool = True
+    theta_even: bool = False
     """Blend the swept coarse blocks ahead of and behind the blade towards
     nodes even in theta across the pitch, fully where they end if the skew
     allows, none where they meet the blade's O block and the passage block.
