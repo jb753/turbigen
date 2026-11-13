@@ -280,6 +280,12 @@ FREEZE_LE_RAMP = 0.15
 """Fraction of the perimeter beyond :data:`FREEZE_LE` over which that eases
 off."""
 
+EDGE_GAP = 0.02
+"""Least fraction of the blade's perimeter between C4 and C1 of the O block
+and the leading edge either side of them: on a twisted rotor the corner
+rules can put C4 on the nose, which folds the block ahead of the blade.
+Zero for none."""
+
 SLIDE_SHARE = 0.3
 """Share of the sweeps given to sliding where the blade nodes are then moved
 back and held, the rest swept held, so the two passes cost one; None for the
@@ -831,6 +837,14 @@ class OHPassage(Mesher):
     even in between. 0 blends from the front's to the rear's along the whole
     block instead."""
 
+    sym_below: bool = True
+    """With a tip gap, lay the blade nodes alike on both halves only where
+    the gap needs it: below `tip_match_from` the corners at their own places
+    and the nodes by density, as without a gap, blending to alike by the top
+    of the blade, coarse and refined. Alike all the way down, the corners
+    sit where the counts, rounded for the gap, put them, which can move one
+    several cells towards the leading edge."""
+
     def __post_init__(self):
         if not 0.0 < self.relax <= 1.0:
             raise ValueError(f"relax={self.relax} must be in (0, 1].")
@@ -1152,6 +1166,10 @@ class OHPassage(Mesher):
             s_C["C4"] = np.clip(s_C["C4"], s_C["C3"] + gap, s_up - gap)
             normal_lands("C1", (s > s_up + gap) & (s < s_C["C2"] - gap), "C4", 1)
 
+        if EDGE_GAP > 0.0:
+            # Clear of the leading edge proper, s_LE
+            s_C["C4"] = min(s_C["C4"], s_LE - EDGE_GAP * S)
+            s_C["C1"] = max(s_C["C1"], s_LE + EDGE_GAP * S)
         corners = [s_C[k] for k in ("C3", "C4", "C1", "C2")]
         return wall, np.array([0.0, *corners, S]), (1, 2, 3, 4), s_LE
 
@@ -1520,7 +1538,17 @@ class OHPassage(Mesher):
             [layout.m_in, m_Zin, m_Zout, layout.m_out]
         )
         if layout.symmetric:
-            blade_wall, f_wall = _symmetric_wall(blade_wall, density, layout.n_wall)
+            sym_wall, f_sym = _symmetric_wall(blade_wall, density, layout.n_wall)
+            w = self._sym_weight(spf)
+            if w < 1.0:
+                # Free below, alike near the tip, blended between
+                f_free = self._coarse_wall(blade_wall, density, layout.n_wall)
+                wall, marks, i_C, s_LE = blade_wall
+                marks = (1.0 - w) * np.asarray(marks) + w * np.asarray(sym_wall[1])
+                blade_wall = (wall, marks, i_C, s_LE)
+                f_wall = tuple((1.0 - w) * a + w * b for a, b in zip(f_free, f_sym))
+            else:
+                blade_wall, f_wall = sym_wall, f_sym
         else:
             f_wall = self._coarse_wall(blade_wall, density, layout.n_wall)
         g = self._geometry(blade_wall, layout.t_O, f_wall)
@@ -1768,6 +1796,15 @@ class OHPassage(Mesher):
             if b <= a
             else np.clip((float(plane["cmap"].spf) - a) / (b - a), 0.0, 1.0)
         )
+        return float(x * x * (3.0 - 2.0 * x))
+
+    def _sym_weight(self, spf):
+        """How far plane `spf`'s blade nodes are laid alike on both halves
+        with a tip gap: wholly, unless `sym_below`, in which case none below
+        `tip_match_from`, rising as a smoothstep to wholly at the casing."""
+        if not self.sym_below:
+            return 1.0
+        x = np.clip((spf - self.tip_match_from) / (1.0 - self.tip_match_from), 0.0, 1.0)
         return float(x * x * (3.0 - 2.0 * x))
 
     @staticmethod
@@ -2690,7 +2727,9 @@ class OHPassage(Mesher):
             nh = (len(s_c) - 1) // 2
             s_lo = _pchip_unit(s_c[: nh + 1], kappa)
             s_up = _pchip_unit(s_c[len(s_c) - 1 - nh :][::-1], kappa)
-            s_f = np.concatenate((s_lo, s_up[::-1][1:]))
+            s_sym = np.concatenate((s_lo, s_up[::-1][1:]))
+            w = self._sym_weight(float(plane["cmap"].spf))
+            s_f = (1.0 - w) * s_f + w * s_sym
 
         out = []
         for name, B in zip(LABELS, xy):
