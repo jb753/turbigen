@@ -149,12 +149,21 @@ def _outer_face_steps(O, row):
 
 def measure(name):
     """Mesh case `name` and return what was measured of it."""
-    config = Config.from_dict(copy.deepcopy(CASES[name]()))
+    return measure_doc(CASES[name]())
+
+
+def measure_doc(doc):
+    """Mesh the config held in dict `doc` and return what was measured of it."""
+    config = Config.from_dict(copy.deepcopy(doc))
     machine = config.design()
     t0 = time.perf_counter()
     grid = config.mesh.mesh(machine)
     t_mesh = time.perf_counter() - t0
+    return measure_grid(grid, t_mesh)
 
+
+def measure_grid(grid, t_mesh):
+    """Return what was measured of a passage mesh made in `t_mesh` seconds."""
     blocks = {}
     for block in grid:
         steps = _block_steps(block)

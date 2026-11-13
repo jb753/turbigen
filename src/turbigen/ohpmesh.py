@@ -222,6 +222,9 @@ the pitch-mean line, as a fraction of the gap to its nearer neighbour."""
 N_ENDS_MIN = 8
 """Least coarse cells along the blocks ahead of and behind the blade."""
 
+N_SIDE_MIN = 4
+"""Least coarse cells along each side of the passage block."""
+
 COARSE_FACTOR = 2.0
 """How many times finer than `ds_free` the coarse mesh is everywhere, which
 leaves the refined mesh's cell sizes as they are."""
@@ -535,8 +538,14 @@ class OHPassage(Mesher):
     ER_O: float = 1.2
     """Expansion ratio off the blade in the O block."""
 
-    n_sweep: int = 2000
+    n_sweep: int = 5000
     """Smoothing sweeps on the coarse mesh."""
+
+    relax: float = 0.8
+    """Fraction of the way each node moves each smoothing sweep, the blade
+    nodes aside. One is plain point-Jacobi; below one damps the node-to-node
+    oscillation it leaves where the coarse mesh is skewed, and converges to
+    the same mesh more slowly."""
 
     orth_taper: float = 8.0
     """With it, the sweeps draw square to the blade not only the first line
@@ -597,11 +606,11 @@ class OHPassage(Mesher):
     stagger_max: float = 30.0
     """Most the bounding box that places the corners is turned, degrees."""
 
-    cor_fac: float = 0.6
+    cor_fac: float = 0.5
     """How hard the nodes near each corner are drawn in towards it each
     sweep: lower draws them in harder."""
 
-    cor_fac_mid: float | None = 0.4
+    cor_fac_mid: float | None = 0.5
     """`cor_fac` of the first row's corners part way along the blade, more
     than `CORNER_MID` of the way round it from both edges, rather than by one
     of them; null for `cor_fac`."""
@@ -806,6 +815,8 @@ class OHPassage(Mesher):
     block instead."""
 
     def __post_init__(self):
+        if not 0.0 < self.relax <= 1.0:
+            raise ValueError(f"relax={self.relax} must be in (0, 1].")
         if min(self.ds, self.ds_LE, self.ds_TE, self.ds_free, self.t_O) <= 0.0:
             raise ValueError("ds, ds_LE, ds_TE, ds_free and t_O must be positive.")
         if not max(self.ds_LE, self.ds_TE) <= self.ds <= self.ds_free:
@@ -1292,7 +1303,7 @@ class OHPassage(Mesher):
         density = _coarse_density(wall, Hc, np.radians(self.turn_max), ER_COARSE)
         i3, _, i1, _ = i_C
         n = [max(1, round(_integral(s, density, a, b))) for a, b in _pairs(marks)]
-        n[i3] = n[i1] = max(n[i3], n[i1])
+        n[i3] = n[i1] = max(n[i3], n[i1], N_SIDE_MIN)
         # Where the coarse nodes lie along each piece, by the curvature at
         # mid-span; each plane places its own, see `_coarse_wall`.
         f_wall = tuple(
@@ -1447,7 +1458,9 @@ class OHPassage(Mesher):
         the most any plane of `blade_walls`, at `densities`, asks for; the two
         sides of the passage block alike."""
         if layout.symmetric:
-            n = _symmetric_counts(blade_walls, densities, layout.i_wall)
+            n = list(_symmetric_counts(blade_walls, densities, layout.i_wall))
+            i3, _, i1, _ = layout.i_wall
+            n[i3] = n[i1] = max(n[i3], n[i1], N_SIDE_MIN)
             logger.debug(
                 f"Row {i_row} coarse cells along the blade, alike on both sides: "
                 f"{tuple(n)}"
@@ -1458,7 +1471,7 @@ class OHPassage(Mesher):
             need = np.maximum(need, self._coarse_wall(blade_wall, density))
         n = [max(1, round(x)) for x in need]
         i3, _, i1, _ = layout.i_wall
-        n[i3] = n[i1] = max(n[i3], n[i1])
+        n[i3] = n[i1] = max(n[i3], n[i1], N_SIDE_MIN)
         logger.debug(
             f"Row {i_row} coarse cells along the blade: {layout.n_wall} at "
             f"mid-span, {tuple(n)} the most any plane asks for"
@@ -1839,6 +1852,7 @@ class OHPassage(Mesher):
             n_sweep,
             ORTH,
             0.0 if frozen else self._slide_factors(plane, line, s_line, tree, w0),
+            relax=self.relax,
             **lines,
         )
         return X

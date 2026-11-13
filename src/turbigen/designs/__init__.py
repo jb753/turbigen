@@ -6,6 +6,7 @@ whichever module happens to be imported first.
 """
 
 from turbigen.designs.axial_turbine import AxialTurbine
+from turbigen.designs.stage_row import StageRow
 from turbigen.designs.turbine_cascade import TurbineCascade
 
-__all__ = ["AxialTurbine", "TurbineCascade"]
+__all__ = ["AxialTurbine", "StageRow", "TurbineCascade"]
