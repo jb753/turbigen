@@ -269,6 +269,17 @@ N_SPLINE_O = 16
 """Samples per coarse cell of the spline along each line of the O block that
 its refined nodes are respaced along."""
 
+FREEZE_LE = 0.05
+"""Fraction of the blade's perimeter either side of the leading edge over
+which the blade nodes are moved back to where they started after the sliding
+sweeps and held through the sweeps after: the sweeps slide them round the
+nose, all one way, which leaves the clustering there to one side of it and
+the cells past it growing twice as fast as they should. Zero for none."""
+
+FREEZE_LE_RAMP = 0.15
+"""Fraction of the perimeter beyond :data:`FREEZE_LE` over which that eases
+off."""
+
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
 they slide: only a guard against a run of them collapsing, the crowding the
@@ -1753,15 +1764,29 @@ class OHPassage(Mesher):
         )
         return float(x * x * (3.0 - 2.0 * x))
 
+    @staticmethod
+    def _freeze_LE(topo, X, plane):
+        """Return how far each blade node of plane `X` is held where it
+        starts for being near the leading edge: one within `FREEZE_LE` of the
+        perimeter of it, easing to none over `FREEZE_LE_RAMP` beyond."""
+        wall = plane["wall"]
+        S = util.arc_length(wall)
+        sigma = _wall_arc(plane, topo.scatter(X)[0][:, :, 0].astype(float)) / S
+        d = np.abs(sigma - plane["sigma_LE"])
+        u = np.clip((d - FREEZE_LE) / max(FREEZE_LE_RAMP, 1e-12), 0.0, 1.0)
+        return 1.0 - u * u * (3.0 - 2.0 * u)
+
     def _sweeps(self, topo, X, n_sweep, plane):
         """Return `X` after `n_sweep` sweeps by :meth:`_sweeps_once`, its blade
         nodes held as far as :meth:`_freeze_weight` says: slid, held where they
         are, or slid, moved back that far towards where they started, and
         swept again held there."""
         w = self._freeze_weight(topo, plane)
-        if w <= 0.0:
+        if FREEZE_LE > 0.0:
+            w = np.maximum(w, self._freeze_LE(topo, X, plane))
+        if np.all(w <= 0.0):
             return self._sweeps_once(topo, X, n_sweep, plane, False)
-        if w < 1.0:
+        if np.any(w < 1.0):
             # Slid, moved back that far towards where they started, and the
             # plane swept again held there
             X0 = X
