@@ -240,7 +240,13 @@ class PlaneTopology:
                 continue
 
             if is_slide[node]:
-                inward = _crossing(nxt, prv, is_slide)
+                # A node on a face between blocks, held in `x` like one on the
+                # edge of the mesh, has cells all round it: it sits level with
+                # its neighbours off the face, one either side of it
+                if sorted(nxt) == sorted(prv):
+                    inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
+                else:
+                    inward = _crossing(nxt, prv, is_slide)
                 if not inward:
                     inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
                 if not inward:
