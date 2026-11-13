@@ -620,7 +620,7 @@ class OHPassage(Mesher):
     along it, the same at every span, still fit. Zero, or one, the corners
     found at `spf_corners` kept at every span."""
 
-    stagger_max: float = 30.0
+    stagger_max: float = 45.0
     """Most the bounding box that places the corners is turned, degrees."""
 
     cor_fac: float = 0.5
