@@ -14,6 +14,7 @@ does not run downstream.
 
 import dataclasses
 
+import ember.patch
 import numpy as np
 import pytest
 from test_blade import ROUND, blade, build
@@ -79,31 +80,77 @@ def test_every_periodic_patch_pairs(grid):
 
 
 def test_the_gap_outline_is_the_o_block_over_the_gap(grid):
-    # Renoded, so joined by a non-matching interface rather than node for
-    # node: the two faces pair, unpermuted and unflipped, and each lies on
-    # the other to well within the size of a cell.
-    pairs = grid.connectivity.nonmatch.pair()
-    assert len(pairs) == 2
-    for _, transform in pairs.values():
-        assert transform == ((0, 1, 2), ())
-
+    # Node for node, so a periodic patch joins them.
     row = blocks_of_row(grid, 1)
     O, tO = row["O"], row["tipO"]
     jtip = O.shape[1] - tO.shape[1]
     assert tO.shape[0] == O.shape[0]
-    outline = tO.xrt[:, :, -1]
-    face = O.xrt[:, jtip:, 0]
-    np.testing.assert_array_equal(outline[[0, -1]], face[[0, -1]])
+    np.testing.assert_array_equal(tO.xrt[:, :, -1], O.xrt[:, jtip:, 0])
+
+
+def test_the_gap_h_block_meets_the_o_block_inside_the_outline(grid):
+    # Node for node round the tail and along the matched side, and the front
+    # too if as many nodes go round the nose as the tail; elsewhere renoded,
+    # so joined by a non-matching interface: one patch on each block for the
+    # other side, and one more on each for the front if it did not match.
+    # Both sides of each lie on one curve, so every node of the O block's
+    # inner face lies on the H block's edges to well within the size of a
+    # cell: off the chords between its nodes by no more than their sag.
+    row = blocks_of_row(grid, 1)
+    tO, tH = row["tipO"], row["tipH"]
+    pairs = grid.connectivity.nonmatch.pair()
+    n_nonmatch = sum(
+        isinstance(p, ember.patch.NonMatchPatch) for b in (tO, tH) for p in b.patches
+    )
+    assert n_nonmatch in (2, 4)
+    assert len(pairs) == n_nonmatch  # each pair both ways round
+
     xy = lambda xrt: np.stack((xrt[..., 0], xrt[..., 1] * xrt[..., 2]), axis=-1)
-    chord = np.ptp(face[:, 0, 0])
-    for j in range(face.shape[1]):
-        P, W = xy(outline[:, j]), xy(face[:, j])
-        seg = W[1:] - W[:-1]
-        t = np.einsum("pij,ij->pi", P[:, None] - W[None, :-1], seg)
+    inner = xy(tO.xrt[:, :, 0])
+    # Each edge of the H block (n, nj, 2), along it
+    H = xy(tH.xrt)
+    edges = [H[:, :, 0], H[:, :, -1], H[0].swapaxes(0, 1), H[-1].swapaxes(0, 1)]
+    for j in range(inner.shape[1]):
+        a = np.concatenate([e[:-1, j] for e in edges])
+        seg = np.concatenate([e[1:, j] for e in edges]) - a
+        P = inner[:, j]
+        t = np.einsum("pij,ij->pi", P[:, None] - a[None], seg)
         t = np.clip(t / np.sum(seg**2, axis=-1), 0.0, 1.0)
-        foot = W[None, :-1] + t[..., None] * seg
-        dist = np.linalg.norm(P[:, None] - foot, axis=-1).min(axis=1)
-        assert dist.max() < 1e-4 * chord
+        foot = a[None] + t[..., None] * seg
+        dist = np.linalg.norm(P[:, None] - foot, axis=-1)
+        near = dist.argmin(axis=1)
+        cell = np.linalg.norm(seg, axis=-1)[near]
+        assert (dist.min(axis=1) < 0.05 * cell).all()
+
+
+@pytest.mark.parametrize("tip_match", [1, 2])
+def test_the_unmatched_rear_corner_is_never_ahead_of_the_rear_line(
+    machine, monkeypatch, tip_match
+):
+    """The H block's rear corner on the side it does not match sits at or
+    behind where the rear line crosses that side, so spreading the side onto
+    the crossing slides the corner forward, never back over the nodes behind
+    it, which folded the O block by a thin trailing edge."""
+    import turbigen.ohpmesh as om
+
+    calls = []
+    original = om._gap_corners
+
+    def recording(inner, i_LE, cam, mesher):
+        out = original(inner, i_LE, cam, mesher)
+        calls.append((inner, i_LE, cam, out))
+        return out
+
+    monkeypatch.setattr(om, "_gap_corners", recording)
+    OHPassage.from_dict({**MESH, "tip_match": tip_match}).mesh(machine)
+
+    assert calls
+    for inner, i_LE, cam, ((iA, _, _, iD), u) in calls:
+        pA, pD = om._gap_rear(inner, i_LE, cam, u)
+        if tip_match == 1:
+            assert iD >= i_LE + om._on_polyline(inner[:, i_LE:], pD) - 1e-9
+        else:
+            assert iA <= om._on_polyline(inner[:, : i_LE + 1], pA) + 1e-9
 
 
 def test_the_gap_spans_the_clearance(grid):
@@ -172,11 +219,21 @@ def test_rows_with_different_clearances_are_refused():
 
 @pytest.mark.parametrize(
     "kwargs",
-    [{"nk_tip": 10}, {"nk_tip_O": 5}, {"njtip_min": 4}, {"t_tip_O": 0.5}],
+    [
+        {"nk_tip_O": 5},
+        {"njtip_min": 4},
+        {"t_tip_O": 0.5},
+        {"tip_match": 4},
+        {"tip_match_from": 1.0},
+        {"tip_end": 0.0},
+        {"n_sweep_tip": -1},
+        {"tip_blend": -0.1},
+    ],
 )
 def test_inconsistent_tip_settings_are_refused(kwargs):
     with pytest.raises(ValueError):
         OHPassage.from_dict({"type": "ohp", **kwargs})
+
 
 
 def _cartesian(block):
