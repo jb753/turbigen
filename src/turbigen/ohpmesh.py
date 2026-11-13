@@ -280,6 +280,12 @@ FREEZE_LE_RAMP = 0.15
 """Fraction of the perimeter beyond :data:`FREEZE_LE` over which that eases
 off."""
 
+SLIDE_SHARE = 0.3
+"""Share of the sweeps given to sliding where the blade nodes are then moved
+back and held, the rest swept held, so the two passes cost one; None for the
+full count each. More to the held pass evens the O block's outer face
+better."""
+
 MIN_GAP = 0.1
 """Least fraction of its length as built a gap between blade nodes keeps as
 they slide: only a guard against a run of them collapsing, the crowding the
@@ -1789,8 +1795,12 @@ class OHPassage(Mesher):
         if np.any(w < 1.0):
             # Slid, moved back that far towards where they started, and the
             # plane swept again held there
+            n_slide = n_sweep
+            if SLIDE_SHARE is not None:
+                n_slide = max(1, round(SLIDE_SHARE * n_sweep))
+                n_sweep = max(1, n_sweep - n_slide)
             X0 = X
-            X = self._sweeps_once(topo, X, n_sweep, plane, False)
+            X = self._sweeps_once(topo, X, n_slide, plane, False)
             X = self._blade_toward(topo, X, X0, plane, w)
         return self._sweeps_once(topo, X, n_sweep, plane, True)
 
