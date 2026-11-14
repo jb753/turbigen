@@ -143,11 +143,6 @@ DN_SMOOTH_SPF = 0.02
 block to the mixing plane is smoothed over across span, so neighbouring
 planes' stations agree. See :meth:`OHPassage.mesh_row`."""
 
-MIX_BLEND = 8
-"""Cells along each line from a mixing plane over which
-:attr:`OHPassage.straight_mixing` blends its end cell to the common one. See
-:func:`_straighten_mixing`."""
-
 TIP_O_TURN = 0.5
 """Most a tip gap's O line is squared to the outline, `tip_O_square`, times
 its length and the outline's curvature there, so that where the outline
@@ -693,19 +688,6 @@ class OHPassage(Mesher):
     normal to the line between its front corners, as a fraction of the way
     to the O block's inner face round the nose."""
 
-    cluster_P: bool = True
-    """Respace the swept coarse passage block along its mid-pitch line by
-    double-sided clustering, its end cells kept as they are, blended to no
-    change at its pitchwise boundaries. See :func:`_cluster_P`."""
-
-    straight_mixing: bool = True
-    """Keep the grid lines straight across each mixing plane: the lines
-    either side of it respaced so their cell at the plane is the same length
-    in (x, r) across the pitch and on both sides, and level in theta, blended
-    away over `MIX_BLEND` cells, then each node on the plane put midway
-    between its neighbours either side, endwalls included. See
-    :func:`_straighten_mixing`."""
-
     dw_max: float = 0.15
     """Most the blend of the blocks ahead of and behind the blade towards
     nodes even in theta across the pitch (:func:`_theta_even`) grows from
@@ -819,7 +801,6 @@ class OHPassage(Mesher):
         _stitch_mixing_planes(
             [row[: len(self.labels)] for row in blocks],
             self.labels,
-            self.straight_mixing,
         )
         self._relax_outlet([b for row in blocks for b in row], machine.annulus, spf)
         grid = ember.grid.Grid([b for row in blocks for b in row])
@@ -1870,8 +1851,6 @@ class OHPassage(Mesher):
                 X += self._polish_shift(
                     topo, hold, topo.scatter(X), POLISH_COARSE_RINGS
                 )
-            if self.cluster_P:
-                X = topo.gather(_cluster_P(topo.scatter(X))).astype(X.dtype)
             if self.theta_lean:
                 swept[j] = X
                 logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
@@ -3000,40 +2979,6 @@ def _dn_apply(dn, f):
     for k in range(nk):
         for c in range(2):
             out[c, :, k] = np.interp(f[k] * s[k, -1], s[k], dn[c, :, k])
-    return out
-
-
-def _cluster_P(xy):
-    """Return blocks `xy` (2, ni, nk) with the passage block respaced along
-    `i`.
-
-    Its mid-pitch line by double-sided clustering between its own first and
-    last cells, the expansion ratio varying linearly between, so the cells
-    along it grade smoothly from one end to the other; the change in where
-    each node is along its line, as a fraction of `i`, falling linearly in
-    `k` to none at the pitchwise boundaries, which do not move. Each node
-    moves by arc length along its `i` line, so the ends of every line stay.
-    """
-    out = [np.asarray(B, dtype=float) for B in xy]
-    P = out[1]
-    ni, nk = P.shape[1:]
-    k_mid = nk // 2
-    line = P[:, :, k_mid]
-    s = np.concatenate(
-        ([0.0], np.cumsum(np.linalg.norm(np.diff(line, axis=1), axis=0)))
-    )
-    L = s[-1]
-    f = clusterfunc.double.smooth_many([(s[1] - s[0]) / L], [(s[-1] - s[-2]) / L], ni)[
-        0
-    ]
-    xi_mid = np.interp(f * L, s, np.arange(ni))
-    w = 1.0 - np.abs(np.arange(nk) - 0.5 * (nk - 1)) / (0.5 * (nk - 1))
-    xi = np.arange(ni)[:, None] + w[None, :] * (xi_mid - np.arange(ni))[:, None]
-    new = P.copy()
-    for k in range(nk):
-        for c in range(2):
-            new[c, :, k] = np.interp(xi[:, k], np.arange(ni), P[c, :, k])
-    out[1] = new
     return out
 
 
@@ -4692,10 +4637,8 @@ def _double(d0, d1, dmax, ER):
         return clusterfunc.double.fixed(d0, d1, n)
 
 
-def _stitch_mixing_planes(rows, labels=LABELS, straight=False):
-    """Force xr coordinates to match exactly at mixing planes, and with
-    `straight`, the lines crossing each run straight through it, by
-    :func:`_straighten_mixing`."""
+def _stitch_mixing_planes(rows, labels=LABELS):
+    """Force xr coordinates to match exactly at mixing planes."""
     for i_row in range(len(rows) - 1):
         dn = rows[i_row][labels.index("dn")]
         up = rows[i_row + 1][labels.index("up")]
@@ -4705,90 +4648,3 @@ def _stitch_mixing_planes(rows, labels=LABELS, straight=False):
         up[0].set_x(x)
         dn[-1].set_r(r)
         up[0].set_r(r)
-        if straight:
-            _straighten_mixing(dn, up)
-
-
-def _straighten_mixing(dn, up, n_blend=MIX_BLEND):
-    """Make the lines along `i` of blocks `dn` and `up`, which meet at a
-    mixing plane at the last `i` of `dn` and the first of `up`, run straight
-    through it in (x, r) and square to it in theta, in place.
-
-    Every line's cell at the plane is set to one length in (x, r) for each
-    `j`, the mean of the cells there across the pitch, averaged over the two
-    sides. Along the line, the cells are scaled by a factor easing as a
-    half cosine from that at the plane to one over `n_blend` cells, those
-    after the first rescaled to keep the length the `n_blend` cells span, and
-    the nodes moved along the line, which lies on its plane's surface of
-    revolution, by arc length in (x, r). The nodes one in from the plane then
-    sit the same distance from it along that surface on both sides and at
-    every `k`, but for the sag of the lines they move along, which setting
-    them to their mean across the pitch takes out; each node on the plane is
-    then put midway between them in
-    (x, r), endwalls included, which takes the plane off the surface by the
-    sag of the chord between them. Each node one in from the plane is also
-    put at the theta of the node on it, so the cell there has no slope in
-    theta, the shift eased away as a half cosine over the `n_blend` nodes in
-    and the plane's nodes held.
-    """
-    sides = []
-    for block, flip in ((dn, True), (up, False)):
-        X = np.stack([np.asarray(getattr(block, c), dtype=float) for c in "xrt"])
-        if flip:
-            X = X[:, ::-1]
-        n = min(n_blend, X.shape[1] - 2)
-        c = np.linalg.norm(np.diff(X[:2, : n + 1], axis=1), axis=0)
-        sides.append((block, flip, X, n, c))
-    d = 0.5 * sum(c[0].mean(axis=-1) for *_, c in sides)[:, None]
-
-    for block, flip, X, n, c in sides:
-        w = 0.5 * (1.0 + np.cos(np.pi * np.arange(n) / n))
-        new = c * (1.0 + (d / c[0] - 1.0) * w[:, None, None])
-        spare = c.sum(axis=0) - new[0]
-        if np.any(spare <= 0.0):
-            raise ValueError(
-                f"Block {block.label} is too short over {n} cells from its mixing "
-                f"plane for an end cell of {d.max():.3g} m."
-            )
-        new[1:] *= spare / new[1:].sum(axis=0)
-        s = np.zeros((n + 1,) + c.shape[1:])
-        s_new = np.zeros_like(s)
-        np.cumsum(c, axis=0, out=s[1:])
-        np.cumsum(new, axis=0, out=s_new[1:])
-        # Linear interpolation along every line at once, by the cell each new
-        # node falls in
-        at = np.clip((s[None] <= s_new[:, None]).sum(axis=1) - 1, 0, n - 1)
-        s0 = np.take_along_axis(s, at, axis=0)
-        s1 = np.take_along_axis(s, at + 1, axis=0)
-        f = (s_new - s0) / (s1 - s0)
-        X0 = np.take_along_axis(X[:, : n + 1], at[None].repeat(3, axis=0), axis=1)
-        X1 = np.take_along_axis(X[:, : n + 1], at[None].repeat(3, axis=0) + 1, axis=1)
-        Y = X.copy()
-        Y[:, : n + 1] = X0 + f * (X1 - X0)
-        # Level in theta with the plane over the cell at it, the shift that
-        # takes eased away as a half cosine to none `n` nodes in, the plane
-        # itself held
-        w = np.zeros(n + 1)
-        w[1:] = 0.5 * (1.0 + np.cos(np.pi * np.arange(n) / max(n - 1, 1)))
-        Y[2, : n + 1] += (Y[2, 0] - Y[2, 1]) * w[:, None, None]
-        if flip:
-            Y = Y[:, ::-1]
-        block.set_x(Y[0])
-        block.set_r(Y[1])
-        block.set_t(Y[2])
-
-    # The nodes one in from the plane differ across the pitch by the sag of
-    # the lines they were moved along, so set each side's to its pitch mean,
-    # which puts every line through the plane exactly straight. Each side's
-    # pitch counted apart, as the two need not have as many nodes.
-    xr = {}
-    for block, i in ((dn, -2), (up, 1)):
-        xr[i] = (block.x[i].mean(axis=-1)[:, None], block.r[i].mean(axis=-1)[:, None])
-        block[i].set_x(xr[i][0])
-        block[i].set_r(xr[i][1])
-    x = 0.5 * (xr[-2][0] + xr[1][0])
-    r = 0.5 * (xr[-2][1] + xr[1][1])
-    dn[-1].set_x(x)
-    up[0].set_x(x)
-    dn[-1].set_r(r)
-    up[0].set_r(r)
