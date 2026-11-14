@@ -778,28 +778,36 @@ class OHPassage(Mesher):
     several cells towards the leading edge."""
 
     def __post_init__(self):
-        if not 0.0 < self.relax <= 1.0:
-            raise ValueError(f"relax={self.relax} must be in (0, 1].")
-        if min(self.ds, self.ds_LE, self.ds_TE, self.ds_free, self.t_O) <= 0.0:
-            raise ValueError("ds, ds_LE, ds_TE, ds_free and t_O must be positive.")
+        def positive(v):
+            return v > 0.0
+
+        def fraction(v):
+            return 0.0 <= v <= 1.0
+
+        checks = {
+            "relax": (lambda v: 0.0 < v <= 1.0, "in (0, 1]"),
+            "spf_corners": (fraction, "from 0 to 1"),
+            "corner_ref": (lambda v: v in ("spf", "ends", "span"), "spf, ends or span"),
+            "polish_below": (lambda v: 0.0 <= v < 90.0, "from zero to 90 degrees"),
+            "t_tip_O": (lambda v: 0.0 < v < 0.5, "between zero and 0.5"),
+            "tip_match": (lambda v: v in (0, 1, 2), "0, 1 or 2"),
+            "tip_match_from": (lambda v: 0.0 <= v < 1.0, "in [0, 1)"),
+            "tip_nose_outline": (fraction, "in [0, 1]"),
+            "tip_tail_outline": (fraction, "in [0, 1]"),
+            "tip_blend": (lambda v: v >= 0.0, "zero or more"),
+        }
+        for name in ("ds", "ds_LE", "ds_TE", "ds_free", "t_O", "cut", "cut_mixing"):
+            checks[name] = (positive, "positive")
+        for name in ("tip_match_drift", "tip_end", "tip_end_rear"):
+            checks[name] = (positive, "positive")
+        for name, (ok, text) in checks.items():
+            v = getattr(self, name)
+            if not ok(v):
+                raise ValueError(f"{name}={v!r} must be {text}.")
         if not max(self.ds_LE, self.ds_TE) <= self.ds <= self.ds_free:
             raise ValueError(
                 f"Need ds_LE and ds_TE <= ds <= ds_free, got {self.ds_LE}, "
                 f"{self.ds_TE}, {self.ds}, {self.ds_free}."
-            )
-        if min(self.cut, self.cut_mixing) <= 0.0:
-            raise ValueError(
-                f"cut={self.cut} and cut_mixing={self.cut_mixing} must be positive."
-            )
-        if not 0.0 <= self.spf_corners <= 1.0:
-            raise ValueError(f"spf_corners={self.spf_corners} must be from 0 to 1.")
-        if self.corner_ref not in ("spf", "ends", "span"):
-            raise ValueError(
-                f"corner_ref={self.corner_ref!r} must be 'spf', 'ends' or 'span'."
-            )
-        if not 0.0 <= self.polish_below < 90.0:
-            raise ValueError(
-                f"polish_below={self.polish_below} must be from zero to 90 degrees."
             )
         for name in ("njtip_min", "nk_tip_O"):
             n = getattr(self, name)
@@ -808,28 +816,8 @@ class OHPassage(Mesher):
                     f"{name}={n} is not a count a multigrid level can halve; "
                     f"give it nine or more, one above a multiple of eight."
                 )
-        if not 0.0 < self.t_tip_O < 0.5:
-            raise ValueError(f"t_tip_O={self.t_tip_O} must be between zero and 0.5.")
-        if self.tip_match not in (0, 1, 2):
-            raise ValueError(f"tip_match={self.tip_match} must be 0, 1 or 2.")
-        if not self.tip_match_drift > 0.0:
-            raise ValueError(
-                f"tip_match_drift={self.tip_match_drift} must be positive."
-            )
-        if not 0.0 <= self.tip_match_from < 1.0:
-            raise ValueError(f"tip_match_from={self.tip_match_from} must be in [0, 1).")
         if self.tip_match == 1 and not self.tip_rear_search:
             raise ValueError("tip_match=1 needs tip_rear_search.")
-        if min(self.tip_end, self.tip_end_rear) <= 0.0:
-            raise ValueError(
-                f"tip_end={self.tip_end} and tip_end_rear={self.tip_end_rear} "
-                "must be positive."
-            )
-        for name in ("tip_nose_outline", "tip_tail_outline"):
-            if not 0.0 <= getattr(self, name) <= 1.0:
-                raise ValueError(f"{name}={getattr(self, name)} must be in [0, 1].")
-        if self.tip_blend < 0.0:
-            raise ValueError(f"tip_blend={self.tip_blend} must not be negative.")
 
     #
     # THE STAGE
@@ -1119,7 +1107,7 @@ class OHPassage(Mesher):
                 for j, (a, b, f) in enumerate(zip(marks[:-1], marks[1:], f_wall))
             ]
         )
-        loop = np.stack([np.interp(s_loop, s, c) for c in wall])
+        loop = _interp_rows(s_loop, s, wall)
         loop[:, -1] = loop[:, 0]
         outer = loop + t_O * _outward_normals(loop)
         ends = np.cumsum((0, *n_wall))
@@ -1205,30 +1193,26 @@ class OHPassage(Mesher):
         # round at every span: found at each, the nearest point to a corner of
         # the box can jump from one part of the blade to another between
         # spans, and the planes either side no longer fit together.
+        def found_at(x):
+            """The corners the rules find at span fraction `x`."""
+            cmap_C = ConformalMap(machine.annulus, x, m_in, m_out)
+            _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
+            return marks_C[1:5] / marks_C[-1]
+
         if self.corner_ref == "ends":
-            ends = []
-            for x in (0.0, 1.0):
-                cmap_C = ConformalMap(machine.annulus, x, m_in, m_out)
-                _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
-                ends.append(marks_C[1:5] / marks_C[-1])
-            corners = tuple(float(x) for x in np.mean(ends, axis=0))
+            corners = np.mean([found_at(0.0), found_at(1.0)], axis=0)
         elif self.corner_ref == "span":
             found = []
             for x in np.linspace(0.0, 1.0, CORNER_REF_SPANS):
-                cmap_C = ConformalMap(machine.annulus, x, m_in, m_out)
-                _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
-                found.append(marks_C[1:5] / marks_C[-1])
+                found.append(found_at(x))
                 logger.info(
                     f"Row {i_row} corners found at spf={x:.2f}: {np.round(found[-1], 4)}"
                 )
-            corners = tuple(
-                float(x) for x in 0.5 * (np.min(found, axis=0) + np.max(found, axis=0))
-            )
+            corners = 0.5 * (np.min(found, axis=0) + np.max(found, axis=0))
             logger.info(f"Row {i_row} corners, midway: {np.round(corners, 4)}")
         else:
-            cmap_C = ConformalMap(machine.annulus, self.spf_corners, m_in, m_out)
-            _, marks_C, _, _ = self._wall(blade, cmap_C, t_O, pitch=pitch)
-            corners = tuple(float(x) for x in marks_C[1:5] / marks_C[-1])
+            corners = found_at(self.spf_corners)
+        corners = tuple(float(x) for x in corners)
         blade_wall = self._wall(blade, cmap, t_O, corners)
         wall, marks, i_C, s_LE = blade_wall
         S = marks[-1]
@@ -1690,12 +1674,7 @@ class OHPassage(Mesher):
         if getattr(topo, "freeze", None) is None:
             return 0.0
         a, b = topo.freeze
-        x = (
-            1.0
-            if b <= a
-            else np.clip((float(plane["cmap"].spf) - a) / (b - a), 0.0, 1.0)
-        )
-        return float(x * x * (3.0 - 2.0 * x))
+        return float(_smoothstep(1.0 if b <= a else (plane["cmap"].spf - a) / (b - a)))
 
     def _sym_weight(self, spf):
         """How far plane `spf`'s blade nodes are laid alike on both halves
@@ -1703,8 +1682,9 @@ class OHPassage(Mesher):
         `tip_match_from`, rising as a smoothstep to wholly at the casing."""
         if not self.sym_below:
             return 1.0
-        x = np.clip((spf - self.tip_match_from) / (1.0 - self.tip_match_from), 0.0, 1.0)
-        return float(x * x * (3.0 - 2.0 * x))
+        return float(
+            _smoothstep((spf - self.tip_match_from) / (1.0 - self.tip_match_from))
+        )
 
     @staticmethod
     def _freeze_LE(topo, X, plane):
@@ -1715,8 +1695,7 @@ class OHPassage(Mesher):
         S = util.arc_length(wall)
         sigma = _wall_arc(plane, topo.scatter(X)[0][:, :, 0].astype(float)) / S
         d = np.abs(sigma - plane["sigma_LE"])
-        u = np.clip((d - FREEZE_LE) / max(FREEZE_LE_RAMP, 1e-12), 0.0, 1.0)
-        return 1.0 - u * u * (3.0 - 2.0 * u)
+        return 1.0 - _smoothstep((d - FREEZE_LE) / max(FREEZE_LE_RAMP, 1e-12))
 
     def _sweeps(self, topo, X, n_sweep, plane):
         """Return `X` after `n_sweep` sweeps by :meth:`_sweeps_once`, its blade
@@ -2214,8 +2193,7 @@ class OHPassage(Mesher):
         theta = face[1][None] + sense * (mean * run + (slope - mean)[None] * own)
         nk = face.shape[1]
         even = theta[:, :1] + lay.pitch * np.linspace(0.0, 1.0, nk)[None]
-        x = np.clip(d / (self.even_theta * chord), 0.0, 1.0)
-        w = x * x * (3.0 - 2.0 * x)
+        w = _smoothstep(d / (self.even_theta * chord))
         theta = (1.0 - w) * theta + w * even
         B = np.stack((mp, theta)).astype(xy[0].dtype)
         B[:, 0] = face
@@ -2244,9 +2222,7 @@ class OHPassage(Mesher):
             S = util.arc_length(plane["wall"])
             s_c = _wall_arc(plane, xy[0][:, :, 0])
             c = s_c[np.cumsum((0, *lay.n_wall))] / S
-            sigma, dens = self._plane_density(lay, plane)
-            sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
-            dens = np.concatenate((dens[:-1], dens[:-1], dens))
+            sigma, dens = _round_twice(*self._plane_density(lay, plane))
             here = [_integral(sigma, dens, a, b) for a, b in itertools.pairwise(c)]
             need = np.maximum(need, here)
         nf_wall = _wall_counts(need, row.tip_gap)
@@ -2333,9 +2309,7 @@ class OHPassage(Mesher):
 
         # The density round the whole blade, from the first corner to where
         # it closes on itself.
-        sigma, dens = self._plane_density(lay, plane)
-        sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
-        dens = np.concatenate((dens[:-1], dens[:-1], dens))
+        sigma, dens = _round_twice(*self._plane_density(lay, plane))
         c = s_c[e] / S
         t = np.linspace(c[0], c[-1], N_WALL)
         d = np.interp(t, sigma, dens)
@@ -2846,7 +2820,6 @@ class OHPassage(Mesher):
                 cam,
                 match,
                 self.tip_blend,
-                both=match == 3,
             )
             O = _gap_O_lines(inner, W, self.tip_O_square)
             d_wall = layout.d_wall / cmap.xr_from_mp(W[0])[1]
@@ -3190,7 +3163,7 @@ def _theta_even(xy, pitch, skew_min, dw_max, side, cap=None, weights=False):
         if w == 0.0 or s_even is None:
             return line
         s_new = (1.0 - w) * s + w * s_even
-        return np.stack([np.interp(s_new, s, c) for c in line])
+        return _interp_rows(s_new, s, line)
 
     new = band.copy()
     full = band.copy()
@@ -3516,12 +3489,12 @@ class _Camber:
 
     def tangent(self, s):
         """Return the unit tangent (2,) at arc length `s`, towards the tail."""
-        t = np.array([np.interp(s, self.s, c) for c in self.t])
+        t = _interp_rows(s, self.s, self.t)
         return t / np.linalg.norm(t)
 
     def normal(self, s):
         """Return the point (2,) at arc length `s` and the unit normal there."""
-        P = np.array([np.interp(s, self.s, c) for c in self.xy])
+        P = _interp_rows(s, self.s, self.xy)
         t = self.tangent(s)
         return P, np.array([-t[1], t[0]])
 
@@ -3543,7 +3516,7 @@ def _pairing_drift(blade, cmap, section=None):
 
     def at_fractions(P):
         s = util.cum_arc_length(P)
-        return np.array([np.interp(t * s[-1], s, c) for c in P])
+        return _interp_rows(t * s[-1], s, P)
 
     u = cam.at(at_fractions(upper)) - cam.at(at_fractions(lower))
     return float(np.abs(u).max() / cam.s[-1])
@@ -3715,10 +3688,11 @@ def _gap_spread(inner, corners, rear, i_LE, match, fade=None):
     f = (s[idx] - s[i0]) / (s[i1] - s[i0])
     s_new = s0 + f * (s[i1] - s0)
     if fade is not None:
-        x = np.clip(np.abs(s[idx] - s[i0]) / fade, 0.0, 1.0)
-        s_new = s[idx] + (1.0 - x * x * (3.0 - 2.0 * x)) * (s_new - s[idx])
+        s_new = s[idx] + (1.0 - _smoothstep(np.abs(s[idx] - s[i0]) / fade)) * (
+            s_new - s[idx]
+        )
     out = inner.copy()
-    out[:, idx] = [np.interp(s_new, s, c) for c in inner]
+    out[:, idx] = _interp_rows(s_new, s, inner)
     return out
 
 
@@ -3743,41 +3717,49 @@ def _gap_lean(inner, W, corners, cam, lean, rear=False):
     tan = np.tan(np.radians(lean))
     s_corner = {}
     for i, i_rear in pairs:
-        reach = tan * np.linalg.norm(W[:, i] - inner[:, i])
         # Where along the face, within reach of the node, is nearest the
-        # target along the camber
-        a = s[i] + np.linspace(-reach, reach, 201)
-        pts = np.array([np.interp(a, s, c) for c in inner])
+        # target along the camber; its side behind it eased from the whole
+        # slide to none
+        a, pts = _within_reach(inner, s, W, i, tan)
         slide = a[int(np.argmin(np.abs(cam.at(pts) - target)))] - s[i]
         s_corner[i] = s[i] + slide
-        # Its side behind it eased from the whole slide to none
-        fade = 0.5 * abs(s[i_rear] - s[i])
-        step = 1 if i_rear > i else -1
-        idx = np.arange(i, i_rear + step, step)
-        x = np.clip(np.abs(s[idx] - s[i]) / fade, 0.0, 1.0)
-        s_new = s[idx] + (1.0 - x * x * (3.0 - 2.0 * x)) * slide
-        out[:, idx] = [np.interp(s_new, s, c) for c in inner]
+        idx, s_new = _slid_arcs(s, i, i_rear, slide)
+        out[:, idx] = _interp_rows(s_new, s, inner)
     if not rear:
         iB, iC = pairs[0][0], pairs[1][0]
         idx = np.arange(iB + 1, iC)
         x = (s[idx] - s[iB]) / (s[iC] - s[iB])
         s_new = s_corner[iB] + x * (s_corner[iC] - s_corner[iB])
-        out[:, idx] = [np.interp(s_new, s, c) for c in inner]
+        out[:, idx] = _interp_rows(s_new, s, inner)
     out[:, N] = out[:, 0]
     return out
 
 
-def _gap_slide(inner, s, i, i_far, slide):
-    """Return inner face `inner` (2, N + 1), arc lengths `s` along it, with
-    node `i` slid `slide` along it, the nodes towards `i_far` following less
-    and less, to none half way there."""
-    fade = 0.5 * abs(s[i_far] - s[i])
+def _slid_arcs(s, i, i_far, slide):
+    """Return the nodes from `i` to `i_far` and their arc lengths, `s` round
+    a face, with node `i` slid `slide` along it and those towards `i_far`
+    following less and less, to none half way there."""
     step = 1 if i_far > i else -1
     idx = np.arange(i, i_far + step, step)
-    x = np.clip(np.abs(s[idx] - s[i]) / fade, 0.0, 1.0)
-    s_new = s[idx] + (1.0 - x * x * (3.0 - 2.0 * x)) * slide
+    x = np.abs(s[idx] - s[i]) / (0.5 * abs(s[i_far] - s[i]))
+    return idx, s[idx] + (1.0 - _smoothstep(x)) * slide
+
+
+def _within_reach(inner, s, W, i, tan):
+    """Return arc lengths round face `inner`, `s` along it, within reach of
+    node `i`, as far as leans the line from it to outline `W` by an angle of
+    tangent `tan`, and the points there."""
+    reach = tan * np.linalg.norm(W[:, i] - inner[:, i])
+    a = s[i] + np.linspace(-reach, reach, 201)
+    return a, _interp_rows(a, s, inner)
+
+
+def _gap_slide(inner, s, i, i_far, slide):
+    """Return inner face `inner` (2, N + 1), arc lengths `s` along it, with
+    node `i` slid `slide` along it (:func:`_slid_arcs`)."""
+    idx, s_new = _slid_arcs(s, i, i_far, slide)
     out = inner.copy()
-    out[:, idx] = [np.interp(s_new, s, c) for c in inner]
+    out[:, idx] = _interp_rows(s_new, s, inner)
     return out
 
 
@@ -3811,9 +3793,7 @@ def _gap_rear_bisect(inner, W, corners, mesher, lean, passes=4):
         for i, (i_far, i_side, i_tail) in ends.items():
             t1, t2 = (sq[:, k] - sq[:, i] for k in (i_side, i_tail))
             b = -(t1 / np.linalg.norm(t1) + t2 / np.linalg.norm(t2))
-            reach = tan * np.linalg.norm(W[:, i] - inner[:, i])
-            a = s[i] + np.linspace(-reach, reach, 201)
-            pts = np.array([np.interp(a, s, c) for c in inner])
+            a, pts = _within_reach(inner, s, W, i, tan)
             o = W[:, i, None] - pts
             cos = (b @ o) / np.linalg.norm(b) / np.linalg.norm(o, axis=0)
             slides[i] = a[int(np.argmax(cos))] - s[i]
@@ -3933,10 +3913,10 @@ def _gap_corners(inner, i_LE, cam, mesher, match=1):
     return corners, u
 
 
-def _gap_rear_corners(inner, i_LE, cam, scan, iA, iB, iD, side=1):
+def _gap_rear_corners(inner, i_LE, cam, scan, iA, iB, iD):
     """Return the corners (iA, iB, iC, iD), how far along the camber the rear
-    line is, and whether the front matches, for the rear corner on side
-    `side`, the matched one, at node `iA` (side 1) or `iD` (side 2).
+    line is, and whether the front matches, for the rear corner on the lower
+    side, the matched one, at node `iA`.
 
     The rear line is the normal to the camber through the matched corner.
     The cells round the tail, the H block's across, a multiple of eight, by
@@ -3949,44 +3929,35 @@ def _gap_rear_corners(inner, i_LE, cam, scan, iA, iB, iD, side=1):
     its own.
 
     The front as many cells round the nose, so it too meets the O block node
-    for node, on side 1: B any node, the H block's length then not a
+    for node: B any node, the H block's length then not a
     multiple of eight, and C that count on, nearest where the normal to the
     camber through B meets the upper side, so the front line is square to
     the camber; of those, nearest the scan's B. Otherwise B and C stay the
     scan's and the front does not match.
     """
     N = inner.shape[1] - 1
-    i_far = iA if side == 1 else iD
-    s_far = cam.at(inner[:, [i_far]])[0]
+    s_far = cam.at(inner[:, [iA]])[0]
     u = float((s_far - scan.s[0]) / (scan.s[-1] - scan.s[0]))
-    pA, pD = _gap_rear(inner, i_LE, cam, u)
-    if side == 1:
-        uD = i_LE + _on_polyline(inner[:, i_LE:], pD)
-        n = 8 * max(1, int(np.floor((iA + N - uD) / 8)))
-        iD = N - (n - iA)
-    else:
-        uA = _on_polyline(inner[:, : i_LE + 1], pA)
-        n = 8 * max(1, int(np.floor((uA + N - iD) / 8)))
-        iA = n - (N - iD)
-    iC = scan.iC
-    matched = False
-    if side == 1:
-        best = None
-        for jB in range(iA + 1, iD - n):
-            jC = jB + n
-            if not jB < i_LE < jC:
-                continue
-            P, nrm = cam.normal(cam.at(inner[:, [jB]])[0])
-            q = _intersect(inner[:, i_LE:], P, nrm)
-            if q is None:
-                continue
-            key = (abs(jC - i_LE - _on_polyline(inner[:, i_LE:], q)), abs(jB - iB))
-            if best is None or key < best[0]:
-                best = (key, jB, jC)
-        if best is not None:
-            _, iB, iC = best
-            matched = True
-    return iA, iB, iC, iD, u, matched
+    _, pD = _gap_rear(inner, i_LE, cam, u)
+    uD = i_LE + _on_polyline(inner[:, i_LE:], pD)
+    n = 8 * max(1, int(np.floor((iA + N - uD) / 8)))
+    iD = N - (n - iA)
+    best = None
+    for jB in range(iA + 1, iD - n):
+        jC = jB + n
+        if not jB < i_LE < jC:
+            continue
+        P, nrm = cam.normal(cam.at(inner[:, [jB]])[0])
+        q = _intersect(inner[:, i_LE:], P, nrm)
+        if q is None:
+            continue
+        key = (abs(jC - i_LE - _on_polyline(inner[:, i_LE:], q)), abs(jB - iB))
+        if best is None or key < best[0]:
+            best = (key, jB, jC)
+    if best is None:
+        return iA, iB, scan.iC, iD, u, False
+    _, iB, iC = best
+    return iA, iB, iC, iD, u, True
 
 
 def _gap_square(inner, corners, rear, mesher):
@@ -4046,11 +4017,11 @@ def _gap_square(inner, corners, rear, mesher):
             # Part way to as the nodes before squaring lie along it
             a = util.cum_arc_length(inner[:, idx])
             f = (1.0 - w) * f + w * a / a[-1]
-        out[:, idx] = [np.interp(f, g / g[-1], c) for c in curve]
+        out[:, idx] = _interp_rows(f, g / g[-1], curve)
         if front is None:
             u = np.linspace(0.0, 1.0, iA + N - iD + 1)
             fH = np.interp(u, np.linspace(0.0, 1.0, len(idx)), f)
-            front = np.array([np.interp(fH, g / g[-1], c) for c in curve])
+            front = _interp_rows(fH, g / g[-1], curve)
     out[:, N] = out[:, 0]
     if iC - iB == iA + N - iD:
         # As many round the nose as the tail: the front meets them node for node
@@ -4058,7 +4029,7 @@ def _gap_square(inner, corners, rear, mesher):
     return out, front
 
 
-def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0, both=False):
+def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0):
     """Return the H block (2, ni, nk) inside squared inner face `inner`
     (2, N + 1), and the `k` at which its rear face crosses the cut.
 
@@ -4076,7 +4047,7 @@ def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0, both=False):
     even, easing into each end face's own over `blend` of the camber line's
     length from it. Each end
     face's bow eases out along the block over `GAP_BOW_DECAY` of its widths.
-    With `both`, the far side's nodes, as many, are the lines' ends, so it
+    With `match` 3, the far side's nodes, as many, are the lines' ends, so it
     meets that side node for node too.
     """
     iA, iB, iC, iD = corners
@@ -4089,8 +4060,8 @@ def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0, both=False):
     own, far = (lo_nodes, up_nodes) if match == 1 else (up_nodes, lo_nodes)
     f_own = util.cum_arc_length(own)
     s_far = util.cum_arc_length(far)
-    ends = np.array([np.interp(f_own / f_own[-1] * s_far[-1], s_far, c) for c in far])
-    if both:
+    ends = _interp_rows(f_own / f_own[-1] * s_far[-1], s_far, far)
+    if match == 3:
         if far.shape[1] != own.shape[1]:
             raise ValueError(
                 f"The tip gap's H block has {own.shape[1]} nodes along one side "
@@ -4120,8 +4091,7 @@ def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0, both=False):
         # Each end's weight easing smoothly from one at its face to nothing a
         # `blend` of the chord in, shared out where the two overlap
         def ease(d):
-            x = np.clip(d / (blend * cam.s[-1]), 0.0, 1.0)
-            return 1.0 - x * x * (3.0 - 2.0 * x)
+            return 1.0 - _smoothstep(d / (blend * cam.s[-1]))
 
         w_front = ease(s_own - s_own[0])[:, None]
         w_rear = ease(s_own[-1] - s_own)[:, None]
@@ -4139,8 +4109,8 @@ def _gap_H(inner, i_LE, corners, front, cam, match, blend=0.0, both=False):
     for face, dist in ((front, s_own - s_own[0]), (rear, s_own[-1] - s_own)):
         P0, P1 = face[:, 0], face[:, -1]
         bow = face - (P0[:, None] + fractions(face) * (P1 - P0)[:, None])
-        x = np.clip(dist / (GAP_BOW_DECAY * np.linalg.norm(P1 - P0)), 0.0, 1.0)
-        H += (1.0 - x * x * (3.0 - 2.0 * x))[None, :, None] * bow[:, None, :]
+        x = dist / (GAP_BOW_DECAY * np.linalg.norm(P1 - P0))
+        H += (1.0 - _smoothstep(x))[None, :, None] * bow[:, None, :]
     H[:, 0], H[:, -1] = front, rear
     return H, k_cut
 
@@ -4562,8 +4532,25 @@ def _blade_pieces(blade, cmap, spf, section=None):
 
 def _at_arc(curve, s):
     """Return points on a polyline (2, n) at arc lengths `s` from its start."""
-    s_curve = util.cum_arc_length(curve)
-    return np.stack([np.interp(s, s_curve, c) for c in curve])
+    return _interp_rows(s, util.cum_arc_length(curve), curve)
+
+
+def _round_twice(sigma, dens):
+    """Return density `dens` at fractions `sigma` of the way round the blade,
+    from 0 to 1, repeated from -1 to 2, so it can be read past either end."""
+    sigma = np.concatenate((sigma[:-1] - 1.0, sigma[:-1], sigma + 1.0))
+    return sigma, np.concatenate((dens[:-1], dens[:-1], dens))
+
+
+def _interp_rows(x, xp, P):
+    """Return each row of `P` (m, n), given at `xp` (n,), at `x`."""
+    return np.stack([np.interp(x, xp, c) for c in P])
+
+
+def _smoothstep(x):
+    """Return the cubic smoothstep of `x`, clipped to [0, 1]."""
+    x = np.clip(x, 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
 
 
 def _distance(annulus, m0, m1):
