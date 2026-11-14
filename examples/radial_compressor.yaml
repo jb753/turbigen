@@ -2,11 +2,10 @@
 #
 # A radial compressor rotor with axial inflow and a radial exit, at the datum
 # design of Brind (2024), J. Turbomach. 147(2). The mean line covers the rotor
-# alone; the vaneless diffuser is the annulus outlet duct.
+# alone; the annulus outlet duct is a vaneless diffuser with a nozzle.
 #
-# Meshed with the passage mesher, as the H mesher cannot cusp a trailing edge
-# that is not axial, and without a tip gap. The geometry meshes, but the solve
-# does not yet run through.
+# Meshed with the H mesher, with a blunt trailing edge cusped into the radial
+# exit, and without a tip gap.
 
 fluid:
   type: perfect
@@ -35,6 +34,8 @@ annulus:
   type: aspect_ratio
   AR_row: [0.3]
   AR_gap: [1.0, 0.2]
+  # Outlet duct at constant area for half its length, then contracting
+  nozzle_ratio: 0.9
 
 blades:
   - count:
@@ -55,7 +56,6 @@ blades:
           kappa_max: 0.0
           t_TE: 0.02
           tanwedge: 0.1
-          round_TE: true
       - spf: 0.5
         dchi_LE: 0.0
         dchi_TE: 0.0
@@ -100,5 +100,8 @@ batch:
     mean_line.Alpha2_rel: [-80.0, -20.0]
     blades[0].count.Co: [0.4, 1.0]
 mesh:
-  type: ohp
+  type: h
   yplus: 30.0
+  dm_TE: 0.0
+  AR_cusp: 2.0
+  ni_cusp: 5
