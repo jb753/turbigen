@@ -47,9 +47,10 @@ A row with a tip gap has two more blocks, from a spanwise node at the top of
 the blade to the casing, inside the outline the blade would have had: an O
 block, whose outer face is the O block's inner one over the gap, node for
 node, and an H block filling it from the leading edge to the trailing edge,
-its lines normal to the camber line, meeting the O block node for node along
-one side and the rear and by non-matching interfaces along the front and the
-other side. See :meth:`OHPassage._tip_gap`.
+its lines normal to the camber line, meeting the O block node for node all
+round, or along the lower side and the rear only, by non-matching interfaces
+along the front and the upper side, as :attr:`OHPassage.tip_match` chooses.
+See :meth:`OHPassage._tip_gap`.
 """
 
 import dataclasses
@@ -486,7 +487,8 @@ class _Layout:
     empty, `corners` at every span."""
     symmetric: bool = False
     """Whether the blade nodes are alike on both halves of the blade, a row
-    with a tip gap under :attr:`OHPassage.tip_match` 3."""
+    with a tip gap matched node for node all round
+    (:attr:`OHPassage.tip_match`)."""
 
     def corners_at(self, spf):
         """Where the corners C3, C4, C1, C2 lie at span fraction `spf`, as
@@ -683,22 +685,36 @@ class OHPassage(Mesher):
     greatest thickness on the section at its tip, capped at `GAP_CAP` of the
     radius of the largest circle inside the blade touching it at each node."""
 
-    tip_match: int = 3
-    """Side of a tip gap's H block, 1 the lower or 2 the upper, whose lines
-    start from the O block's inner nodes, meeting it node for node, the other
-    side meeting it by a non-matching interface; or 3, both (1 | 2), node for
-    node all round. With 3, a row with a tip gap has its blade nodes alike on
+    tip_match: int = 0
+    """How a tip gap's H block meets its O block: 1 node for node all round;
+    2 node for node along the lower side and the rear, by non-matching
+    interfaces along the upper side and, unless as many cells round the nose
+    as the tail, the front; 0 to choose for each row, 1 where nodes at equal
+    fractions of each surface's length lie across the camber line from each
+    other at the top of the blade, within `tip_match_drift`, else 2.
+
+    Matched all round, a row with a tip gap has its blade nodes alike on
     both halves of the blade, from the middle of the trailing edge to the
     leading edge, coarse and refined, by the greater of the two sides'
     densities, so node `h - k` lies across from node `h + k`; held where they
     are put through the sweeps from `tip_match_from` up; and the H block's
     corners paired across the blade. The coarse blade nodes are then spaced
-    at half the refined density, and each coarse cell split in two. See
-    :func:`_symmetric_wall`, :meth:`OHPassage._doubled_wall` and
-    :func:`_gap_corners`."""
+    at half the refined density, and each coarse cell split in two. On a
+    blade whose surfaces differ much in length the pairs then lie far apart
+    along the camber line, and the H block's lines between them run nearly
+    along the blade. See :func:`_symmetric_wall`,
+    :meth:`OHPassage._doubled_wall`, :func:`_gap_corners` and
+    :func:`_pairing_drift`."""
+
+    tip_match_drift: float = 0.08
+    """With `tip_match` 0, the most that points at equal fractions of the
+    two surfaces' lengths may lie apart along the camber line, as a fraction
+    of its length, on the section at the top of the blade, for the gap to be
+    matched node for node all round."""
 
     tip_match_from: float = 0.7
-    """With `tip_match` 3, the span fraction from which the blade nodes are
+    """With a tip gap matched node for node all round, the span fraction
+    from which the blade nodes are
     held where the algebraic plane put them through the sweeps, rather than
     slid along the blade: not at all there, wholly from the tip of the blade
     up, and between, each node put a smoothstep of the way from where the
@@ -894,12 +910,16 @@ class OHPassage(Mesher):
                 )
         if not 0.0 < self.t_tip_O < 0.5:
             raise ValueError(f"t_tip_O={self.t_tip_O} must be between zero and 0.5.")
-        if self.tip_match not in (1, 2, 3):
-            raise ValueError(f"tip_match={self.tip_match} must be 1, 2 or 3.")
+        if self.tip_match not in (0, 1, 2):
+            raise ValueError(f"tip_match={self.tip_match} must be 0, 1 or 2.")
+        if not self.tip_match_drift > 0.0:
+            raise ValueError(
+                f"tip_match_drift={self.tip_match_drift} must be positive."
+            )
         if not 0.0 <= self.tip_match_from < 1.0:
             raise ValueError(f"tip_match_from={self.tip_match_from} must be in [0, 1).")
-        if self.tip_match == 3 and not self.tip_rear_search:
-            raise ValueError("tip_match=3 needs tip_rear_search.")
+        if self.tip_match == 1 and not self.tip_rear_search:
+            raise ValueError("tip_match=1 needs tip_rear_search.")
         if min(self.tip_end, self.tip_end_rear) <= 0.0:
             raise ValueError(
                 f"tip_end={self.tip_end} and tip_end_rear={self.tip_end_rear} "
@@ -1993,13 +2013,15 @@ class OHPassage(Mesher):
     def mesh_row(self, machine, i_row, spacing, spf, jtip=None):
         """Return the ember blocks of one row, with a tip gap from `jtip`."""
         lay = self.layout(machine, i_row, spacing, spf)
-        lay = dataclasses.replace(
-            lay, symmetric=self.tip_match == 3 and jtip is not None
-        )
         # Each plane's blade evaluated once, for its coarse counts and nodes
         blade = machine.rows[i_row].blade
         cmaps = [ConformalMap(machine.annulus, s, lay.m_in, lay.m_out) for s in spf]
         sections = [_section(blade, s) for s in spf]
+        if jtip is not None:
+            lay = dataclasses.replace(
+                lay,
+                symmetric=self._full_match(i_row, blade, cmaps[jtip], sections[jtip]),
+            )
         walls = [
             self._wall(blade, c, lay.t_O, lay.corners_at(c.spf), section=sec)
             for c, sec in zip(cmaps, sections)
@@ -2884,6 +2906,22 @@ class OHPassage(Mesher):
     # TIP GAP
     #
 
+    def _full_match(self, i_row, blade, cmap, section):
+        """Whether row `i_row`'s tip gap meets its H block node for node all
+        round, by :attr:`tip_match`, choosing from the drift of the blade's
+        section `section` at the top of the blade, on `cmap`, with 0."""
+        if self.tip_match != 0:
+            return self.tip_match == 1
+        drift = _pairing_drift(blade, cmap, section)
+        full = self.tip_rear_search and drift <= self.tip_match_drift
+        logger.info(
+            f"Row {i_row} tip gap: pairing drift {drift:.3f} of the camber "
+            f"{'within' if drift <= self.tip_match_drift else 'over'} "
+            f"{self.tip_match_drift}, so "
+            f"{'matched node for node all round' if full else 'non-matching along the upper side'}"
+        )
+        return full
+
     def _tip_gap(self, blade, layout, planes, per_plane):
         """Return the blocks of a tip gap on each plane, and where they meet.
 
@@ -2904,11 +2942,12 @@ class OHPassage(Mesher):
         the rear line, back from the tail by `tip_end_rear`
         (:func:`_gap_corners`).
         The H block's lines run across the blade normal to the camber line
-        from each inner node on side `tip_match`, which meets the O block
+        from each inner node on the lower side, which meets the O block
         node for node, as does the rear, round the tail through the cut,
         whose nodes set the H block's count across; the front, of as many
-        nodes, and the other side meet it by non-matching interfaces
-        (:func:`_gap_H`).
+        nodes, and the upper side meet it by non-matching interfaces
+        (:func:`_gap_H`); with `layout.symmetric` (:attr:`tip_match`), from
+        the nodes paired across, every face meeting node for node.
 
         Every plane is built so, algebraically, on its own outline and
         camber line, with the corners, the rear line's fraction of the way
@@ -2939,6 +2978,9 @@ class OHPassage(Mesher):
         """
         walls = [np.asarray(xy[0][:, :, 0], dtype=float) for xy in per_plane]
         i_LE = int(np.argmin(walls[0][0]))
+        # Sides of the H block meeting the O block node for node: 1 the
+        # lower, 3 both
+        match = 3 if layout.symmetric else 1
         corners = u_rear = k_cut = None
         gap = []
         for W, plane in zip(walls, planes):
@@ -2946,7 +2988,7 @@ class OHPassage(Mesher):
             cam = _Camber(*_surfaces(blade, cmap, cmap.spf))
             inner = _gap_offset(W, plane["wall"], self.t_tip_O)
             if corners is None:
-                corners, u_rear = _gap_corners(inner, i_LE, cam, self)
+                corners, u_rear = _gap_corners(inner, i_LE, cam, self, match)
             if self.tip_rear_search:
                 # Through the corners' own nodes, which so stay where they
                 # are, once leant level along the camber
@@ -2973,7 +3015,7 @@ class OHPassage(Mesher):
                     rear,
                     i_LE,
                     side,
-                    fade=None if side & self.tip_match else fade,
+                    fade=None if side & match else fade,
                 )
             inner, front = _gap_square(inner, corners, rear, self)
             H, k_cut = _gap_H(
@@ -2982,9 +3024,9 @@ class OHPassage(Mesher):
                 corners,
                 front,
                 cam,
-                self.tip_match,
+                match,
                 self.tip_blend,
-                both=self.tip_match == 3,
+                both=match == 3,
             )
             O = _gap_O_lines(inner, W, self.tip_O_square)
             d_wall = layout.d_wall / cmap.xr_from_mp(W[0])[1]
@@ -3005,10 +3047,6 @@ class OHPassage(Mesher):
             f"worst cell corner {q_tip:.1f} deg"
         )
         return gap, corners, k_cut
-
-    #
-    # BLOCKS
-    #
 
     def blocks(self, machine, i_row, planes, per_plane, labels):
         """Return bare ember blocks, without patches, from finished planes.
@@ -3096,10 +3134,10 @@ class OHPassage(Mesher):
 
         # Over the gap the blade's outline is the face the O block of the gap
         # shares with the O block round the blade, node for node. Inside it,
-        # the gap's O block meets its H block node for node along the matched
+        # the gap's O block meets its H block node for node along the lower
         # side and the rear, either side of the cut, and by non-matching
-        # interfaces along the front and the other side, or with
-        # `tip_match` 3 node for node all round.
+        # interfaces along the front and the upper side, or, matched all
+        # round (`layout.symmetric`), node for node everywhere.
         NonMatch = ember.patch.NonMatchPatch
         O.patches.append(Per(k=0, j=(jtip, -1), label="tip_gap"))
         gap, (iA, iB, iC, iD), k_cut = self._tip_gap(
@@ -3111,8 +3149,8 @@ class OHPassage(Mesher):
         tO, tH = self.blocks(machine, i_row, planes[jtip:], gap, ("tipO", "tipH"))
         # The front matched node for node if as many round the nose as the tail
         Front = Per if iC - iB == iA + (tO.shape[0] - 1) - iD else NonMatch
-        Lower, Upper = (Per, NonMatch) if self.tip_match == 1 else (NonMatch, Per)
-        if self.tip_match == 3:
+        Lower, Upper = (Per, NonMatch)
+        if layout.symmetric:
             # The halves of the gap's inner face alike: both sides node for node
             Lower = Upper = Per
         tO.patches.extend(
@@ -3947,6 +3985,24 @@ class _Camber:
         return [_intersect(Q, P, n) for Q in sides]
 
 
+def _pairing_drift(blade, cmap, section=None):
+    """Return how far apart along the camber line points at equal fractions
+    of the two surfaces' lengths lie, at most, as a fraction of its length,
+    on `blade`'s section at `cmap`'s span fraction (`section` if given): near
+    nothing on a thin blade whose surfaces are about as long, a fifth on a
+    thick, highly cambered one."""
+    upper, lower = _surfaces(blade, cmap, cmap.spf, section)
+    cam = _Camber(upper, lower)
+    t = np.linspace(0.0, 1.0, 401)
+
+    def at_fractions(P):
+        s = util.cum_arc_length(P)
+        return np.array([np.interp(t * s[-1], s, c) for c in P])
+
+    u = cam.at(at_fractions(upper)) - cam.at(at_fractions(lower))
+    return float(np.abs(u).max() / cam.s[-1])
+
+
 class _GapScan:
     """Lines normal to the camber line of a tip gap's inner face `inner`
     (2, N + 1), at `N_GAP_SCAN` points from its nose to its tail: where each
@@ -3954,7 +4010,7 @@ class _GapScan:
     on them."""
 
     def __init__(self, inner, i_LE, cam, mesher):
-        self.inner, self.i_LE, self.mesher = inner, i_LE, mesher
+        self.inner, self.i_LE = inner, i_LE
         self.sides = (inner[:, : i_LE + 1], inner[:, i_LE:])
         s_nose, s_tail = cam.at(inner[:, [i_LE, 0]])
         self.s = np.linspace(s_nose, s_tail, N_GAP_SCAN)
@@ -3987,19 +4043,16 @@ class _GapScan:
 
     def corners(self, j):
         """Return the corners (iA, iB, iC, iD), A and D the nodes nearest
-        where line `j` meets each side, the far one on side `tip_match` the
-        node a multiple of eight cells along that side from B or C, the H
-        block's length, nearest its crossing; or None if out of order. That
-        side's nodes are then spread to put it on the crossing: see
-        :func:`_gap_spread`."""
+        where line `j` meets each side, A on the lower side, which the H
+        block meets node for node, the node a multiple of eight cells along
+        it from B, the H block's length, nearest its crossing; or None if out
+        of order. That side's nodes are then spread to put it on the
+        crossing: see :func:`_gap_spread`."""
         uA = _on_polyline(self.sides[0], self.across[j][0])
         uD = self.i_LE + _on_polyline(self.sides[1], self.across[j][1])
         iA, iD = int(round(uA)), int(round(uD))
         iB, iC = self.iB, self.iC
-        if self.mesher.tip_match == 1:
-            iA = iB - max(8, 8 * round((iB - uA) / 8))
-        else:
-            iD = iC + max(8, 8 * round((uD - iC) / 8))
+        iA = iB - max(8, 8 * round((iB - uA) / 8))
         N = self.inner.shape[1] - 1
         return (iA, iB, iC, iD) if 0 < iA < iB < iC < iD < N else None
 
@@ -4130,8 +4183,10 @@ def _gap_lean(inner, W, corners, cam, lean, rear=False):
     leans the O block's line from it to outline `W` `lean` degrees off the
     normal; the nodes on its side towards the other end of the block
     following it less and less, to none half way to the corner there.
-    Round the nose or the tail, the nodes between are spread again when it
-    is squared off (:func:`_gap_square`)."""
+    Round the nose, the nodes between B and C are spread in proportion
+    between where the two now sit, so none is left bunched against a corner
+    that slid towards it: :func:`_gap_square` spaces the nose part way to
+    them. Round the tail they are spread again when it is squared off."""
     iA, iB, iC, iD = corners
     N = inner.shape[1] - 1
     s = util.cum_arc_length(inner)
@@ -4140,6 +4195,7 @@ def _gap_lean(inner, W, corners, cam, lean, rear=False):
     target = 0.5 * (u[0] + u[1])
     out = inner.copy()
     tan = np.tan(np.radians(lean))
+    s_corner = {}
     for i, i_rear in pairs:
         reach = tan * np.linalg.norm(W[:, i] - inner[:, i])
         # Where along the face, within reach of the node, is nearest the
@@ -4147,12 +4203,19 @@ def _gap_lean(inner, W, corners, cam, lean, rear=False):
         a = s[i] + np.linspace(-reach, reach, 201)
         pts = np.array([np.interp(a, s, c) for c in inner])
         slide = a[int(np.argmin(np.abs(cam.at(pts) - target)))] - s[i]
+        s_corner[i] = s[i] + slide
         # Its side behind it eased from the whole slide to none
         fade = 0.5 * abs(s[i_rear] - s[i])
         step = 1 if i_rear > i else -1
         idx = np.arange(i, i_rear + step, step)
         x = np.clip(np.abs(s[idx] - s[i]) / fade, 0.0, 1.0)
         s_new = s[idx] + (1.0 - x * x * (3.0 - 2.0 * x)) * slide
+        out[:, idx] = [np.interp(s_new, s, c) for c in inner]
+    if not rear:
+        iB, iC = pairs[0][0], pairs[1][0]
+        idx = np.arange(iB + 1, iC)
+        x = (s[idx] - s[iB]) / (s[iC] - s[iB])
+        s_new = s_corner[iB] + x * (s_corner[iC] - s_corner[iB])
         out[:, idx] = [np.interp(s_new, s, c) for c in inner]
     out[:, N] = out[:, 0]
     return out
@@ -4211,16 +4274,16 @@ def _gap_rear_bisect(inner, W, corners, mesher, lean, passes=4):
     return slid()
 
 
-def _gap_corners(inner, i_LE, cam, mesher):
+def _gap_corners(inner, i_LE, cam, mesher, match=1):
     """Return the corners (iA, iB, iC, iD) of a tip gap's H block, nodes of
     inner face `inner` (2, N + 1), and how far along the camber its rear line
     is, from the nose to the tail.
 
     B and C the nodes nearest where a line normal to the camber, back from
     the inner face's nose along it by `tip_end` of half the width across
-    there, meets each side (:class:`_GapScan`). The rear corner on side
-    `tip_match` the node a multiple of eight cells along it from B or C, the
-    H block's length, nearest where another, `tip_end_rear` from its tail,
+    there, meets each side (:class:`_GapScan`). The rear corner A on the
+    lower side, which the H block meets node for node, the node a multiple
+    of eight cells along it from B, the H block's length, nearest where another, `tip_end_rear` from its tail,
     meets it; the rear line then moved to the normal to the camber through
     that node, so that it sits at its own node of the outline and its O
     line leaves the side square, and the other rear corner the node nearest
@@ -4229,13 +4292,15 @@ def _gap_corners(inner, i_LE, cam, mesher):
     the tail from A through the cut to D, the H block's count across, which
     its rear meets node for node: to the nearest such node at or behind
     where the rear line crosses its side, so that :func:`_gap_spread` only
-    ever slides it forward (:func:`_gap_rear_corners`). With `tip_match` 1,
-    if then no front has as many cells round the nose, the rear corner on
-    side 1 is moved forward eight cells at a time, up to three times, until
-    one does.
+    ever slides it forward (:func:`_gap_rear_corners`). If then no front
+    has as many cells round the nose, A is moved forward eight cells at a
+    time, up to three times, until one does.
+
+    With `match` 3, both sides node for node, the corners are instead
+    paired across the halves of the inner face, which are alike.
     """
     scan = _GapScan(inner, i_LE, cam, mesher)
-    if mesher.tip_match == 3:
+    if match == 3:
         # The halves of the inner face alike, node h - k across from h + k:
         # the rear corners as far round from the cut either way, and the front
         # as far round from the leading edge, so the rear and front have as
@@ -4292,22 +4357,17 @@ def _gap_corners(inner, i_LE, cam, mesher):
     u = None
     if corners is not None:
         iA, iB, iC, iD = corners
-        if mesher.tip_match == 1:
-            # The matched corner where the scan put it, or failing a front
-            # that matches, a multiple of eight cells further forward: the
-            # rear line then crosses the other side further forward too,
-            # leaving more cells round the tail for the nose to match
-            first = None
-            for iA_try in range(iA, iB, 8)[:4]:
-                tried = _gap_rear_corners(inner, i_LE, cam, scan, iA_try, iB, iD)
-                first = first or tried
-                if tried[-1]:
-                    break
-            *corners, u, _ = tried if tried[-1] else first
-        else:
-            *corners, u, _ = _gap_rear_corners(
-                inner, i_LE, cam, scan, iA, iB, iD, side=2
-            )
+        # The matched corner where the scan put it, or failing a front that
+        # matches, a multiple of eight cells further forward: the rear line
+        # then crosses the other side further forward too, leaving more
+        # cells round the tail for the nose to match
+        first = None
+        for iA_try in range(iA, iB, 8)[:4]:
+            tried = _gap_rear_corners(inner, i_LE, cam, scan, iA_try, iB, iD)
+            first = first or tried
+            if tried[-1]:
+                break
+        *corners, u, _ = tried if tried[-1] else first
         corners = tuple(corners)
         if (
             not 0
@@ -4735,7 +4795,9 @@ def _symmetric_counts(blade_walls, densities, i_wall):
     round the blade, that :func:`_wall_counts` makes them.
     """
     if tuple(i_wall) != (1, 2, 3, 4):
-        raise ValueError(f"tip_match=3 needs the corners in order, not {i_wall}.")
+        raise ValueError(
+            f"a tip gap matched all round needs the corners in order, not {i_wall}."
+        )
     halves, ks = [], []
     for blade_wall, density in zip(blade_walls, densities):
         t, c, _, _ = _symmetric_halves(blade_wall, density)
@@ -4762,7 +4824,7 @@ def _symmetric_counts(blade_walls, densities, i_wall):
     k4, k1 = k3 + side, k2 + side
     if max(k4, k1) > n_half - 2:
         raise ValueError(
-            f"tip_match=3 puts a corner at the leading edge: {n_half} cells "
+            f"a tip gap matched all round puts a corner at the leading edge: {n_half} cells "
             f"each half, corners {k3}, {k4} from the trailing edge on one side "
             f"and {k2}, {k1} on the other."
         )
@@ -4782,7 +4844,9 @@ def _symmetric_wall(blade_wall, density, counts):
     wall, marks, i_C, s_LE = blade_wall
     N = int(sum(counts))
     if N % 2:
-        raise ValueError(f"tip_match=3 needs an even count round the blade, not {N}.")
+        raise ValueError(
+            f"a tip gap matched all round needs an even count round the blade, not {N}."
+        )
     n_half = N // 2
     t, c, s_lo, s_up = _symmetric_halves(blade_wall, density)
     t_k = np.interp(np.linspace(0.0, c[-1], n_half + 1), c, t)

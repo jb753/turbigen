@@ -89,8 +89,10 @@ def test_the_gap_outline_is_the_o_block_over_the_gap(grid):
 
 
 def test_the_gap_h_block_meets_the_o_block_inside_the_outline(grid):
-    # With `tip_match` 3, the default, node for node all round, so no
-    # non-matching interface joins them.
+    # Node for node all round, so no non-matching interface joins them: the
+    # default, `tip_match` 0, chooses that for this rotor, whose surfaces'
+    # points at equal fractions of their lengths lie close enough across the
+    # camber line (`tip_match_drift`).
     # Both sides of each lie on one curve, so every node of the O block's
     # inner face lies on the H block's edges to well within the size of a
     # cell: off the chords between its nodes by no more than their sag.
@@ -121,38 +123,64 @@ def test_the_gap_h_block_meets_the_o_block_inside_the_outline(grid):
         assert (dist.min(axis=1) < 0.05 * cell).all()
 
 
-@pytest.mark.parametrize("tip_match", [1, 2])
 def test_the_unmatched_rear_corner_is_never_ahead_of_the_rear_line(
-    machine, monkeypatch, tip_match
+    machine, monkeypatch
 ):
-    """The H block's rear corner on the side it does not match sits at or
-    behind where the rear line crosses that side, so spreading the side onto
-    the crossing slides the corner forward, never back over the nodes behind
-    it, which folded the O block by a thin trailing edge. Only without
-    `tip_rear_search`, which puts the rear line through the corners'
-    own nodes."""
+    """The H block's rear corner on the upper side, which it does not match,
+    sits at or behind where the rear line crosses that side, so spreading
+    the side onto the crossing slides the corner forward, never back over
+    the nodes behind it, which folded the O block by a thin trailing edge.
+    Only without `tip_rear_search`, which puts the rear line through the
+    corners' own nodes."""
     import turbigen.ohpmesh as om
 
     calls = []
     original = om._gap_corners
 
-    def recording(inner, i_LE, cam, mesher):
-        out = original(inner, i_LE, cam, mesher)
+    def recording(inner, i_LE, cam, mesher, match=1):
+        out = original(inner, i_LE, cam, mesher, match)
         calls.append((inner, i_LE, cam, out))
         return out
 
     monkeypatch.setattr(om, "_gap_corners", recording)
-    OHPassage.from_dict(
-        {**MESH, "tip_match": tip_match, "tip_rear_search": False}
-    ).mesh(machine)
+    OHPassage.from_dict({**MESH, "tip_match": 2, "tip_rear_search": False}).mesh(
+        machine
+    )
 
     assert calls
-    for inner, i_LE, cam, ((iA, _, _, iD), u) in calls:
-        pA, pD = om._gap_rear(inner, i_LE, cam, u)
-        if tip_match == 1:
-            assert iD >= i_LE + om._on_polyline(inner[:, i_LE:], pD) - 1e-9
-        else:
-            assert iA <= om._on_polyline(inner[:, : i_LE + 1], pA) + 1e-9
+    for inner, i_LE, cam, ((_, _, _, iD), u) in calls:
+        _, pD = om._gap_rear(inner, i_LE, cam, u)
+        assert iD >= i_LE + om._on_polyline(inner[:, i_LE:], pD) - 1e-9
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"tip_match": 2}, {"tip_match": 0, "tip_match_drift": 1e-3}]
+)
+def test_a_gap_not_matched_all_round_meets_its_upper_side_by_a_nonmatch(
+    machine, kwargs
+):
+    # Asked for, or chosen because the drift allowed is less than this
+    # rotor's: the upper side, and only that and perhaps the front, by
+    # non-matching interfaces that all pair.
+    grid = OHPassage.from_dict({**MESH, **kwargs}).mesh(machine)
+    row = blocks_of_row(grid, 1)
+    labels = {
+        p.label
+        for b in (row["tipO"], row["tipH"])
+        for p in b.patches
+        if isinstance(p, ember.patch.NonMatchPatch)
+    }
+    assert "tip_upper" in labels
+    assert labels <= {"tip_upper", "tip_front"}
+    assert "tip_lower" not in labels
+    n_nonmatch = sum(
+        isinstance(p, ember.patch.NonMatchPatch)
+        for b in (row["tipO"], row["tipH"])
+        for p in b.patches
+    )
+    assert len(grid.connectivity.nonmatch.pair()) == n_nonmatch
+    for block in grid:
+        assert (block.vol > 0.0).all(), block.label
 
 
 def test_the_gap_spans_the_clearance(grid):
@@ -228,7 +256,9 @@ def test_rows_with_different_clearances_are_refused():
         {"nk_tip_O": 5},
         {"njtip_min": 4},
         {"t_tip_O": 0.5},
-        {"tip_match": 4},
+        {"tip_match": 3},
+        {"tip_match": 1, "tip_rear_search": False},
+        {"tip_match_drift": 0.0},
         {"tip_match_from": 1.0},
         {"tip_end": 0.0},
         {"n_sweep_tip": -1},
