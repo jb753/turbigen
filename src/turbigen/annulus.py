@@ -115,6 +115,9 @@ N_SEED_SPF = 9
 N_NEWTON = 20
 """Most Newton steps the inverse map takes to place a point."""
 
+N_DUCT = 8
+"""Control-point intervals along the outlet duct, on which its area is set."""
+
 TOL_ENDS = 1e-12
 """How far, as a fraction of the whole arc-length range, the inverse map may
 place a point beyond the inlet or outlet and still count it inside, on top of
@@ -396,6 +399,14 @@ class Annulus:
     s: np.ndarray = dataclasses.field(repr=False)
     """Arc-length parameter of each control point."""
 
+    _m_knot: np.ndarray = dataclasses.field(repr=False)
+    """Normalised meridional coordinate of each control point.
+
+    The stations are at the integers, and a segment may hold more control
+    points in between, as the outlet duct does to set its area. `m` is linear
+    in `s` between control points.
+    """
+
     curves: object = dataclasses.field(repr=False)
     """Fitted hub and casing curves, as one vector-valued interpolator.
 
@@ -456,7 +467,7 @@ class Annulus:
         # The curves at `m` alone and broadcast against `spf` in the blend,
         # into the output, rather than at `m` broadcast first: a mesher calls
         # this thousands of times, and on short arrays that halves the cost.
-        sq = np.interp(m, np.arange(len(self.s)), self.s)
+        sq = np.interp(m, self._m_knot, self.s)
         xhub, rhub, xcas, rcas = self._hub_casing(sq)
         xr = np.empty((2, *np.broadcast_shapes(m.shape, spf.shape)))
         w = 1.0 - spf
@@ -503,7 +514,7 @@ class Annulus:
 
         tree, m_seed = self._seed_tree
         _, i_seed = tree.query(np.ascontiguousarray(P.T, dtype=np.float32))
-        sq = np.interp(m_seed[i_seed], np.arange(len(self.s)), self.s)
+        sq = np.interp(m_seed[i_seed], self._m_knot, self.s)
 
         # Newton on the cross product of the point, from the hub, with the
         # line from hub to casing, which is zero where the point lies on it.
@@ -530,7 +541,7 @@ class Annulus:
         xh, rh, xc, rc = self._hub_casing(sq)
         ax, ar = xc - xh, rc - rh
         spf = ((P[0] - xh) * ax + (P[1] - rh) * ar) / (ax**2 + ar**2)
-        m = np.interp(sq, self.s, np.arange(len(self.s), dtype=float))
+        m = np.interp(sq, self.s, self._m_knot)
 
         # Outside the annulus at either end, by more than the coordinates'
         # own rounding, or not placed at all
@@ -720,7 +731,15 @@ class PchipAnnulus(AnnulusDesign):
     """
 
     nozzle_ratio: float = 1.0
-    """Scaling applied to the exit span, for a nozzle area ratio [--]."""
+    """Area at the outlet over that at the last row's exit [--].
+
+    The outlet duct runs straight on at the exit pitch angle, at the area of
+    the last row's exit for :attr:`nozzle_start` of its length, then
+    contracts smoothly, with no change in slope at either end, to this.
+    """
+
+    nozzle_start: float = 0.5
+    """Fraction of the outlet duct's length at constant area [--]."""
 
     merge_weight: float = 0.0
     """Blend towards a curve fitted through the endpoints only [--].
@@ -772,6 +791,8 @@ class PchipAnnulus(AnnulusDesign):
 
         if not 0.0 <= self.merge_weight <= 1.0:
             raise ValueError(f"merge_weight={self.merge_weight} must lie in [0, 1].")
+        if not 0.0 <= self.nozzle_start < 1.0:
+            raise ValueError(f"nozzle_start={self.nozzle_start} must lie in [0, 1).")
 
         # Ask the design how long each segment is, and take the axial length
         # from the pitch angle rather than the other way round.
@@ -790,18 +811,21 @@ class PchipAnnulus(AnnulusDesign):
         x_mid = turbigen.util.cumsum0(Dx)
         x_mid -= x_mid[1]
 
-        # Pad the station arrays out to the n_segment + 1 control points
-        span_ext = np.pad(span, 1, "edge")
-        Beta_ext = np.pad(Beta, 1, "edge")
-        r_mid_ext = np.pad(r_mid, 1, "edge")
-
-        # Replace the padded ends with duct extensions at constant pitch angle
+        # Control points at the stations, with straight ducts at constant pitch
+        # angle ahead and behind. The outlet duct has N_DUCT intervals, so
+        # that its area follows the nozzle all along rather than at its ends.
+        f = np.linspace(0.0, 1.0, N_DUCT + 1)[1:]
         sin_Beta_in, sin_Beta_out = np.sin(np.radians(Beta[[0, -1]]))
-        r_mid_ext[0] = r_mid_ext[1] - Ds[0] * sin_Beta_in
-        r_mid_ext[-1] = r_mid_ext[-2] + Ds[-1] * sin_Beta_out
-
-        # Scale the exit span for the nozzle area ratio
-        span_ext[-1] *= self.nozzle_ratio * r_mid_ext[-2] / r_mid_ext[-1]
+        r_duct = r_mid[-1] + f * Ds[-1] * sin_Beta_out
+        A_duct = self._nozzle_area(f)
+        x_mid = np.concatenate((x_mid[:-1], x_mid[-2] + f * Dx[-1]))
+        r_mid_ext = np.concatenate(([r_mid[0] - Ds[0] * sin_Beta_in], r_mid, r_duct))
+        span_ext = np.concatenate(
+            ([span[0]], span, span[-1] * A_duct * r_mid[-1] / r_duct)
+        )
+        Beta_ext = np.concatenate(([Beta[0]], Beta, np.full(N_DUCT, Beta[-1])))
+        Ds = np.concatenate((Ds[:-1], np.full(N_DUCT, Ds[-1] / N_DUCT)))
+        m_knot = np.concatenate((np.arange(n_segment, dtype=float), n_segment - 1 + f))
 
         # Hub and casing control points
         sin_B = np.sin(np.radians(Beta_ext))
@@ -817,7 +841,7 @@ class PchipAnnulus(AnnulusDesign):
         # A second fit through the endpoints only, for the merged blend. When
         # the weight is zero it is never evaluated, so do not pay for it.
         if self.merge_weight > 0.0:
-            ends = np.array([0, 1, n_segment - 1, n_segment])
+            ends = np.r_[0, 1, n_segment - 1 : len(m_knot)]
             s_ends = s_init[ends]
             _, curves_merged = _fit_pchips(
                 s_ends,
@@ -830,7 +854,13 @@ class PchipAnnulus(AnnulusDesign):
         else:
             curves_merged = curves
 
-        return Annulus(s, curves, curves_merged, self.merge_weight, n_row)
+        return Annulus(s, m_knot, curves, curves_merged, self.merge_weight, n_row)
+
+    def _nozzle_area(self, f):
+        """Return the outlet duct's area at fractions `f` of its length, over
+        the area at the last row's exit [--]."""
+        t = np.clip((f - self.nozzle_start) / (1.0 - self.nozzle_start), 0.0, 1.0)
+        return 1.0 - (1.0 - self.nozzle_ratio) * t**2 * (3.0 - 2.0 * t)
 
 
 class FixedAxialChord(PchipAnnulus):

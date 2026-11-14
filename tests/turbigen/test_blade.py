@@ -593,20 +593,23 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
                 surface_new[:3],
                 surface_old,
                 rtol=1e-12,
-                atol=1e-12,
+                # The annulus differs from the old package's by its outlet
+                # duct's own fit, see test_annulus.ATOL_REF.
+                atol=1e-7,
                 err_msg=f"differs from the turbigen blade at spf={spf}",
             )
 
-        np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-12)
+        np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-7)
         # Arc lengths the old package sums over its own ten thousand points,
         # one fewer than these, which is a difference in discretisation of a
-        # few parts in ten thousand million
+        # few parts in ten thousand million; the annulus adds a few parts in
+        # ten million, see test_annulus.ATOL_REF
         np.testing.assert_allclose(
             new.evaluate_surface_length(spf).max(),
             old.surface_length(spf),
-            rtol=1e-9,
+            rtol=1e-6,
         )
-        np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-9)
+        np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-6)
 
 
 #

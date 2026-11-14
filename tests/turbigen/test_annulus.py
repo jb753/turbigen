@@ -37,6 +37,11 @@ ANNULUS_AR = {
     "AR_gap": [1.0, 3.0, 0.8],
 }
 
+ATOL_REF = 1e-6
+"""Agreement with the old package's annulus [m]. Its outlet duct is one
+segment and this one's is several, on which the nozzle area is set, so the
+arc-length fit converges on knots apart by up to its own tolerance."""
+
 
 def build(**annulus):
     """A two-row config, with the annulus overridden as asked."""
@@ -169,8 +174,8 @@ def test_nozzle_ratio_scales_the_exit_span():
     narrow = build(nozzle_ratio=1.0).design().annulus
     wide = build(nozzle_ratio=1.5).design().annulus
 
-    span_narrow = (narrow.r_tip - narrow.r_hub)[-1]
-    span_wide = (wide.r_tip - wide.r_hub)[-1]
+    span_narrow = narrow.evaluate_span(narrow.m_max)
+    span_wide = wide.evaluate_span(wide.m_max)
 
     assert span_wide > span_narrow
 
@@ -282,7 +287,7 @@ def test_matches_the_turbigen_implementation(weight):
         np.testing.assert_allclose(
             machine.annulus.evaluate_xr(m, spf),
             old.evaluate_xr(m, spf),
-            atol=1e-12,
+            atol=ATOL_REF,
             err_msg=f"differs from the turbigen annulus at spf={spf}",
         )
 
@@ -391,7 +396,7 @@ def test_aspect_ratio_takes_a_nozzle_ratio():
     narrow = build_AR(nozzle_ratio=1.0).design().annulus
     wide = build_AR(nozzle_ratio=1.5).design().annulus
 
-    assert (wide.r_tip - wide.r_hub)[-1] > (narrow.r_tip - narrow.r_hub)[-1]
+    assert wide.evaluate_span(wide.m_max) > narrow.evaluate_span(narrow.m_max)
 
 
 def test_the_two_designs_agree_when_they_ask_for_the_same_thing():
@@ -504,7 +509,7 @@ def test_aspect_ratio_matches_the_turbigen_implementation(weight):
         np.testing.assert_allclose(
             machine.annulus.evaluate_xr(m, spf),
             old.evaluate_xr(m, spf),
-            atol=1e-12,
+            atol=ATOL_REF,
             err_msg=f"differs from the turbigen annulus at spf={spf}",
         )
 

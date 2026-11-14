@@ -38,6 +38,9 @@ MESH = {
 }
 """A deliberately coarse mesh, so that the tests run in about a second each."""
 
+ATOL_REF = 1e-6
+"""Agreement with the old package's mesh [m, rad]. The annulus differs from
+the old one by its outlet duct's own fit, see test_annulus.ATOL_REF."""
 CUSP = {**MESH, "dm_TE": 0.0, "AR_cusp": 1.0, "ni_cusp": 8}
 TIP = [blade(), blade(dchi_LE=2.0, tip_span=0.02)]
 
@@ -376,7 +379,7 @@ def test_matches_the_turbigen_implementation(machine, vinokur):
     for block, block_ref in zip(grid, reference):
         assert block.shape == block_ref.shape
         assert block.Nb == block_ref.Nb
-        np.testing.assert_allclose(block.xrt, block_ref.xrt, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(block.xrt, block_ref.xrt, rtol=1e-12, atol=ATOL_REF)
         assert [repr(p) for p in block.patches] == [repr(p) for p in block_ref.patches]
 
 
@@ -424,7 +427,7 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades, vinok
             block.xrt[: i_blend + 1],
             block_ref.xrt[: i_blend + 1],
             rtol=1e-12,
-            atol=1e-12,
+            atol=ATOL_REF,
         )
         shared = [
             p for p in block.patches if not isinstance(p, ember.patch.RotatingPatch)
