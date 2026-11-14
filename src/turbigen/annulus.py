@@ -206,6 +206,9 @@ def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=2
             f"after {max_iter} iterations."
         )
 
+    # Refit on the converged knots, so the curves pass through each control
+    # point at the `s` returned for it rather than at the last iterate's.
+    curves = PchipInterpolator(s, np.stack((xhub, rhub, xcas, rcas)), axis=1)
     return s, curves
 
 
