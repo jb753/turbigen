@@ -26,7 +26,7 @@ MESH = {
     "type": "ohp",
     "dspf_mid": 0.1,
     "resolution_factor": 0.5,
-    "n_span_smooth": 4,
+    "tune": {"n_span_smooth": 4},
 }
 """A deliberately coarse mesh, swept on few planes."""
 
@@ -132,7 +132,9 @@ def test_a_gap_not_matched_all_round_meets_its_upper_side_by_a_nonmatch(
     # Asked for, or chosen because the drift allowed is less than this
     # rotor's: the upper side, and only that and perhaps the front, by
     # non-matching interfaces that all pair.
-    grid = OHPassage.from_dict({**MESH, **kwargs}).mesh(machine)
+    grid = OHPassage.from_dict({**MESH, "tune": {**MESH["tune"], **kwargs}}).mesh(
+        machine
+    )
     row = blocks_of_row(grid, 1)
     labels = {
         p.label
@@ -223,20 +225,19 @@ def test_rows_with_different_clearances_are_refused():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"nk_tip_O": 5},
+        {"tune": {"nk_tip_O": 5}},
         {"njtip_min": 4},
-        {"t_tip_O": 0.5},
-        {"tip_match": 3},
-        {"tip_match_drift": 0.0},
-        {"tip_match_from": 1.0},
-        {"tip_end": 0.0},
-        {"tip_blend": -0.1},
+        {"tune": {"t_tip_O": 0.5}},
+        {"tune": {"tip_match": 3}},
+        {"tune": {"tip_match_drift": 0.0}},
+        {"tune": {"tip_match_from": 1.0}},
+        {"tune": {"tip_end": 0.0}},
+        {"tune": {"tip_blend": -0.1}},
     ],
 )
 def test_inconsistent_tip_settings_are_refused(kwargs):
     with pytest.raises(ValueError):
         OHPassage.from_dict({"type": "ohp", **kwargs})
-
 
 
 def _cartesian(block):

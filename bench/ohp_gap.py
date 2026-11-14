@@ -65,7 +65,7 @@ class _Captured(Exception):
 
 def _coerce(mesher, key, text):
     """Value `text` of option `key`, of the type of its current value."""
-    now = getattr(mesher, key)
+    now = ohp_mesh.get_option(mesher, key)
     if isinstance(now, bool):
         return text.lower() in ("1", "true", "yes")
     if now is None:
@@ -82,9 +82,7 @@ def _mesher(doc, overrides):
     mesher = Config.from_dict(doc).mesh
     for item in overrides:
         key, text = item.split("=", 1)
-        if not hasattr(mesher, key):
-            raise SystemExit(f"OHPassage has no option {key!r}")
-        doc["mesh"][key] = _coerce(mesher, key, text)
+        ohp_mesh.set_option(doc["mesh"], key, _coerce(mesher, key, text))
     return Config.from_dict(doc).mesh
 
 

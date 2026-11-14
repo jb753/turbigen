@@ -412,12 +412,13 @@ def main():
         return 0
 
     all_cases = cases(args.n, args.seed)
-    overrides = {}
+    sys.path.insert(0, str(HERE))
+    import ohp_mesh
+
     for item in args.mesh:
         key, _, value = item.partition("=")
-        overrides[key] = yaml.safe_load(value)
-    for case in all_cases.values():
-        case["doc"]["mesh"].update(overrides)
+        for case in all_cases.values():
+            ohp_mesh.set_option(case["doc"]["mesh"], key, yaml.safe_load(value))
     unknown = set(args.cases) - set(all_cases)
     if unknown:
         parser.error(f"no such case: {', '.join(sorted(unknown))}")

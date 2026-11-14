@@ -20,6 +20,7 @@ Usage::
 
 import argparse
 import copy
+import dataclasses
 import json
 import sys
 import time
@@ -31,7 +32,7 @@ import yaml
 from scipy.spatial import cKDTree
 
 from turbigen.config import Config
-from turbigen.ohpmesh import _cell_angles
+from turbigen.ohpmesh import OHPassage, _cell_angles, _Tune
 
 HERE = Path(__file__).resolve().parent
 EXAMPLES = HERE.parent / "examples"
@@ -48,6 +49,25 @@ WORSE_STEP = 1.05
 
 WORSE_TIME = 1.25
 """Factor of rise in meshing time counted as a regression."""
+
+
+def set_option(mesh, key, value):
+    """Set mesher setting `key` to `value` in config dict `mesh`, under
+    `tune` if it is one of the numbers the mesher is tuned by; `key` may
+    also name it as `tune.key`."""
+    key = key.removeprefix("tune.")
+    if key in {f.name for f in dataclasses.fields(OHPassage)}:
+        mesh[key] = value
+    elif key in {f.name for f in dataclasses.fields(_Tune)}:
+        mesh["tune"] = {**mesh.get("tune", {}), key: value}
+    else:
+        raise SystemExit(f"OHPassage has no setting {key!r}")
+
+
+def get_option(mesher, key):
+    """The value of setting `key` of `mesher`, wherever it is held."""
+    key = key.removeprefix("tune.")
+    return getattr(mesher, key) if hasattr(mesher, key) else getattr(mesher.tune, key)
 
 
 def _load(path):
