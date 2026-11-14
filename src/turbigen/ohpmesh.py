@@ -126,10 +126,6 @@ CORNER_MID = 0.1
 way along it, for :attr:`OHPassage.cor_fac_mid`; the leading edge taken half way
 round."""
 
-CORNER_REF_SPANS = 21
-"""Spans, evenly from hub to casing, across which `corner_ref="span"` finds the
-corners of the O block."""
-
 POLISH_COARSE_RINGS = 2
 """How many cells out from each poor cell of a swept plane are polished."""
 
@@ -578,8 +574,7 @@ class OHPassage(Mesher):
     corner_ref: str = "ends"
     """Where the corners every span starts from are found: "spf", at
     `spf_corners`; "ends", the mean of those found at the hub and at the
-    casing, as fractions of the way round the blade; "span", midway between
-    the least and greatest of those found every 0.05 of span, each logged."""
+    casing, as fractions of the way round the blade."""
 
     stagger_max: float = 45.0
     """Most the bounding box that places the corners is turned, degrees."""
@@ -724,42 +719,26 @@ class OHPassage(Mesher):
     this much further, degrees, by how far a node moves with the weight; the
     planes blended again under those. Zero blends each plane alone."""
 
-    geometric_O: bool = True
-    """Respace the refined O block's lines off the blade by geometric growth
-    from the wall spacing, the same expansion ratio all along each line,
-    rather than double-sided stretching to the first cell beyond the O
-    block: neighbouring lines of different lengths then keep their nodes at
-    like fractions along them, at the cost of a step in cell size at the O
-    block's edge."""
-
     geometric_O_match: float = 3.0
-    """With `geometric_O`, how far each line's outer cell may move from the
+    """How far each refined O block line's outer cell, grown geometrically
+    from the wall spacing, may move from the
     geometric towards the first cell beyond the O block: within this factor
     of it either way, smoothed round the blade over `O_MATCH_SMOOTH` lines,
     the line then double-sided stretched between the two. One, purely
     geometric."""
 
-    tip_rear_search: bool = True
-    """Place a tip gap's rear corners by a search instead of `tip_end_rear`:
-    the pair a multiple of `tip_rear_multiple` cells round the tail apart
-    whose line through their own nodes is nearest normal to the camber, so
-    that both leave the outline square, rather than one moved onto a line
-    normal to the camber through the other; and the front corners as many
-    cells round the nose, so the H block's front meets the O block node for
-    node. See :func:`_gap_rear_search`."""
-
     tip_rear_multiple: int = 4
-    """With `tip_rear_search`, what the cells round a tip gap's tail, the H
+    """What the cells round a tip gap's tail, the H
     block's count across, are a multiple of."""
 
     tip_rear_lean: float = 30.0
-    """With `tip_rear_search`, most the O block's lines from a tip gap's
+    """Most the O block's lines from a tip gap's
     rear corners A and D lean off the blade's normal, degrees, so that each
     corner slides along the inner face to where its line bisects the turn
     between the side and the rear line. None if zero."""
 
     tip_rear_max: int = 37
-    """With `tip_rear_search`, the most nodes round a tip gap's tail, from
+    """The most nodes round a tip gap's tail, from
     A through the cut to D, the H block's count of nodes across. No cap if
     zero."""
 
@@ -768,14 +747,6 @@ class OHPassage(Mesher):
     across a tip gap's H block eases from each end face's to even, being
     even in between. 0 blends from the front's to the rear's along the whole
     block instead."""
-
-    sym_below: bool = True
-    """With a tip gap, lay the blade nodes alike on both halves only where
-    the gap needs it: below `tip_match_from` the corners at their own places
-    and the nodes by density, as without a gap, blending to alike by the top
-    of the blade, coarse and refined. Alike all the way down, the corners
-    sit where the counts, rounded for the gap, put them, which can move one
-    several cells towards the leading edge."""
 
     def __post_init__(self):
         def positive(v):
@@ -787,7 +758,7 @@ class OHPassage(Mesher):
         checks = {
             "relax": (lambda v: 0.0 < v <= 1.0, "in (0, 1]"),
             "spf_corners": (fraction, "from 0 to 1"),
-            "corner_ref": (lambda v: v in ("spf", "ends", "span"), "spf, ends or span"),
+            "corner_ref": (lambda v: v in ("spf", "ends"), "spf or ends"),
             "polish_below": (lambda v: 0.0 <= v < 90.0, "from zero to 90 degrees"),
             "t_tip_O": (lambda v: 0.0 < v < 0.5, "between zero and 0.5"),
             "tip_match": (lambda v: v in (0, 1, 2), "0, 1 or 2"),
@@ -816,8 +787,6 @@ class OHPassage(Mesher):
                     f"{name}={n} is not a count a multigrid level can halve; "
                     f"give it nine or more, one above a multiple of eight."
                 )
-        if self.tip_match == 1 and not self.tip_rear_search:
-            raise ValueError("tip_match=1 needs tip_rear_search.")
 
     #
     # THE STAGE
@@ -1201,15 +1170,6 @@ class OHPassage(Mesher):
 
         if self.corner_ref == "ends":
             corners = np.mean([found_at(0.0), found_at(1.0)], axis=0)
-        elif self.corner_ref == "span":
-            found = []
-            for x in np.linspace(0.0, 1.0, CORNER_REF_SPANS):
-                found.append(found_at(x))
-                logger.info(
-                    f"Row {i_row} corners found at spf={x:.2f}: {np.round(found[-1], 4)}"
-                )
-            corners = 0.5 * (np.min(found, axis=0) + np.max(found, axis=0))
-            logger.info(f"Row {i_row} corners, midway: {np.round(corners, 4)}")
         else:
             corners = found_at(self.spf_corners)
         corners = tuple(float(x) for x in corners)
@@ -1678,10 +1638,10 @@ class OHPassage(Mesher):
 
     def _sym_weight(self, spf):
         """How far plane `spf`'s blade nodes are laid alike on both halves
-        with a tip gap: wholly, unless `sym_below`, in which case none below
-        `tip_match_from`, rising as a smoothstep to wholly at the casing."""
-        if not self.sym_below:
-            return 1.0
+        with a tip gap matched all round: only where the gap needs it, none
+        below `tip_match_from`, where the corners sit at their own places and
+        the nodes by density, as without a gap, rising as a smoothstep to
+        wholly at the casing."""
         return float(
             _smoothstep((spf - self.tip_match_from) / (1.0 - self.tip_match_from))
         )
@@ -2617,41 +2577,32 @@ class OHPassage(Mesher):
         s = np.zeros(O.shape[1:])
         np.cumsum(np.sqrt(d[0] + d[1]), axis=1, out=s[:, 1:])
         L = s[:, -1]
-        # Double-sided stretching along each line, from the wall spacing, no
-        # coarser than even, to the first cell of the block beyond, its
-        # expansion ratio varying linearly between them.
-        even = 1.0 / (nk - 1)
-        f0 = np.clip(d_wall / L, 1e-12, even)
-        # The outer end at the first cell beyond, coarser than even spacing
-        # if it is, so the line meets it rather than growing past it and
-        # shrinking back; only a line too short to hold both ends is held to
-        # half its length there.
-        if self.geometric_O:
-            T = _geometric_many(f0, nk)
-            if self.geometric_O_match > 1.0:
-                # The outer cell towards the first beyond, by a factor
-                # capped and smoothed round the blade, its last line the
-                # first again.
-                g1 = T[:, -1] - T[:, -2]
-                c = np.log(self.geometric_O_match)
-                q = np.clip(np.log(_beyond_O(out, lay) / L / g1), -c, c)[:-1]
-                w = np.exp(
-                    -0.5
-                    * (
-                        np.arange(-3 * O_MATCH_SMOOTH, 3 * O_MATCH_SMOOTH + 1)
-                        / O_MATCH_SMOOTH
-                    )
-                    ** 2
+        # Geometric growth along each line from the wall spacing, no coarser
+        # than even, the same expansion ratio all along it, so neighbouring
+        # lines of different lengths keep their nodes at like fractions.
+        f0 = np.clip(d_wall / L, 1e-12, 1.0 / (nk - 1))
+        T = _geometric_many(f0, nk)
+        if self.geometric_O_match > 1.0:
+            # The outer cell towards the first beyond, by a factor
+            # capped and smoothed round the blade, its last line the
+            # first again.
+            g1 = T[:, -1] - T[:, -2]
+            c = np.log(self.geometric_O_match)
+            q = np.clip(np.log(_beyond_O(out, lay) / L / g1), -c, c)[:-1]
+            w = np.exp(
+                -0.5
+                * (
+                    np.arange(-3 * O_MATCH_SMOOTH, 3 * O_MATCH_SMOOTH + 1)
+                    / O_MATCH_SMOOTH
                 )
-                q = np.convolve(
-                    np.concatenate((q[-len(w) :], q, q[: len(w)])), w / w.sum(), "same"
-                )[len(w) : -len(w)]
-                f1 = g1 * np.exp(np.append(q, q[0]))
-                T = clusterfunc.double.smooth_many(f0, f1, nk)
-            T = L[:, None] * T
-        else:
-            f1 = np.clip(_beyond_O(out, lay) / L, 1e-12, 0.5)
-            T = L[:, None] * clusterfunc.double.smooth_many(f0, f1, nk)
+                ** 2
+            )
+            q = np.convolve(
+                np.concatenate((q[-len(w) :], q, q[: len(w)])), w / w.sum(), "same"
+            )[len(w) : -len(w)]
+            f1 = g1 * np.exp(np.append(q, q[0]))
+            T = clusterfunc.double.smooth_many(f0, f1, nk)
+        T = L[:, None] * T
         # Every line at once: which segment each new node falls in, and how
         # far along it, searched in one sorted run with each line lifted
         # clear of the one before.
@@ -2707,7 +2658,7 @@ class OHPassage(Mesher):
         if self.tip_match != 0:
             return self.tip_match == 1
         drift = _pairing_drift(blade, cmap, section)
-        full = self.tip_rear_search and drift <= self.tip_match_drift
+        full = drift <= self.tip_match_drift
         logger.info(
             f"Row {i_row} tip gap: pairing drift {drift:.3f} of the camber "
             f"{'within' if drift <= self.tip_match_drift else 'over'} "
@@ -2775,24 +2726,19 @@ class OHPassage(Mesher):
         # Sides of the H block meeting the O block node for node: 1 the
         # lower, 3 both
         match = 3 if layout.symmetric else 1
-        corners = u_rear = k_cut = None
+        corners = k_cut = None
         gap = []
         for W, plane in zip(walls, planes):
             cmap = plane["cmap"]
             cam = _Camber(*_surfaces(blade, cmap, cmap.spf))
             inner = _gap_offset(W, plane["wall"], self.t_tip_O)
             if corners is None:
-                corners, u_rear = _gap_corners(inner, i_LE, cam, self, match)
-            if self.tip_rear_search:
-                # Through the corners' own nodes, which so stay where they
-                # are, once leant level along the camber
-                if self.tip_rear_lean:
-                    inner = _gap_rear_bisect(
-                        inner, W, corners, self, self.tip_rear_lean
-                    )
-                rear = (inner[:, corners[0]], inner[:, corners[3]])
-            else:
-                rear = _gap_rear(inner, i_LE, cam, u_rear)
+                corners = _gap_corners(inner, i_LE, cam, self, match)
+            # The rear line through the corners' own nodes, which so stay
+            # where they are, once leant level along the camber
+            if self.tip_rear_lean:
+                inner = _gap_rear_bisect(inner, W, corners, self, self.tip_rear_lean)
+            rear = (inner[:, corners[0]], inner[:, corners[3]])
             if self.tip_front_lean:
                 inner = _gap_lean(inner, W, corners, cam, self.tip_front_lean)
             # Both sides, each rear corner landing where the rear line meets
@@ -3544,7 +3490,6 @@ class _GapScan:
         )
         # Distances from the nose and to the tail, in half widths
         self.from_nose = (self.s - s_nose) / (0.5 * self.width)
-        self.to_tail = (s_tail - self.s) / (0.5 * self.width)
         front = self.ok & (self.from_nose >= mesher.tip_end)
         if not front.any():
             raise ValueError(
@@ -3560,36 +3505,13 @@ class _GapScan:
             for Q, P, offset in zip(self.sides, self.across[j], (0, self.i_LE))
         )
 
-    def corners(self, j):
-        """Return the corners (iA, iB, iC, iD), A and D the nodes nearest
-        where line `j` meets each side, A on the lower side, which the H
-        block meets node for node, the node a multiple of eight cells along
-        it from B, the H block's length, nearest its crossing; or None if out
-        of order. That side's nodes are then spread to put it on the
-        crossing: see :func:`_gap_spread`."""
-        uA = _on_polyline(self.sides[0], self.across[j][0])
-        uD = self.i_LE + _on_polyline(self.sides[1], self.across[j][1])
-        iA, iD = int(round(uA)), int(round(uD))
-        iB, iC = self.iB, self.iC
-        iA = iB - max(8, 8 * round((iB - uA) / 8))
-        N = self.inner.shape[1] - 1
-        return (iA, iB, iC, iD) if 0 < iA < iB < iC < iD < N else None
-
-    def rear(self, to_tail):
-        """Return the line furthest aft at least `to_tail` half widths from
-        the tail, or None if there is none behind the front."""
-        js = np.flatnonzero(self.ok & (self.to_tail >= to_tail))
-        js = js[js > self.j_F]
-        return int(js[-1]) if len(js) else None
-
 
 def _gap_rear_search(
     inner, i_LE, cam, scan, to_tail, multiple=8, most=0, symmetric=False
 ):
     """Return the rear corners (iA, iD) of a tip gap's H block, nodes of
     inner face `inner` (2, N + 1), whose line is nearest normal to the
-    camber, and how far along the camber that line's middle is, from the
-    nose to the tail.
+    camber.
 
     Over every A on side 1 behind the front corner B of `scan`, and every
     D on side 2 behind C a multiple of `multiple` cells round the tail from
@@ -3606,7 +3528,7 @@ def _gap_rear_search(
     """
     N = inner.shape[1] - 1
     iB, iC = scan.iB, scan.iC
-    s_nose, s_tail = cam.at(inner[:, [i_LE, 0]])
+    s_tail = cam.at(inner[:, [0]])[0]
     ok = scan.ok
     best = (None, None)
     for iA in range(1, iB):
@@ -3637,21 +3559,9 @@ def _gap_rear_search(
             f"The tip gap's H block has no rear corners a multiple of {multiple} "
             "cells round the tail behind its front corners."
         )
-    (tilt, _), iA, iD, s_mid = best
+    (tilt, _), iA, iD, _ = best
     logger.debug(f"Tip gap rear corners A={iA}, D={iD}, {tilt:.2f} deg off normal")
-    return iA, iD, float((s_mid - s_nose) / (s_tail - s_nose))
-
-
-def _gap_rear(inner, i_LE, cam, u):
-    """Return where the line normal to the camber of inner face `inner`
-    (2, N + 1), `u` of the way along it from the nose to the tail, meets
-    each side."""
-    s_nose, s_tail = cam.at(inner[:, [i_LE, 0]])
-    sides = (inner[:, : i_LE + 1], inner[:, i_LE:])
-    pA, pD = cam.across(s_nose + u * (s_tail - s_nose), sides)
-    if pA is None or pD is None:
-        raise ValueError("The tip gap's H block's rear line misses the inner face.")
-    return pA, pD
+    return iA, iD
 
 
 def _on_polyline(Q, p):
@@ -3802,162 +3712,54 @@ def _gap_rear_bisect(inner, W, corners, mesher, lean, passes=4):
 
 def _gap_corners(inner, i_LE, cam, mesher, match=1):
     """Return the corners (iA, iB, iC, iD) of a tip gap's H block, nodes of
-    inner face `inner` (2, N + 1), and how far along the camber its rear line
-    is, from the nose to the tail.
+    inner face `inner` (2, N + 1).
 
-    B and C the nodes nearest where a line normal to the camber, back from
-    the inner face's nose along it by `tip_end` of half the width across
-    there, meets each side (:class:`_GapScan`). The rear corner A on the
-    lower side, which the H block meets node for node, the node a multiple
-    of eight cells along it from B, the H block's length, nearest where another, `tip_end_rear` from its tail,
-    meets it; the rear line then moved to the normal to the camber through
-    that node, so that it sits at its own node of the outline and its O
-    line leaves the side square, and the other rear corner the node nearest
-    where that meets the other side.
-    The other rear corner is then moved, for a multiple of eight cells round
-    the tail from A through the cut to D, the H block's count across, which
-    its rear meets node for node: to the nearest such node at or behind
-    where the rear line crosses its side, so that :func:`_gap_spread` only
-    ever slides it forward (:func:`_gap_rear_corners`). If then no front
-    has as many cells round the nose, A is moved forward eight cells at a
-    time, up to three times, until one does.
+    The rear corners A and D by :func:`_gap_rear_search`, the pair whose
+    line through their own nodes is nearest normal to the camber, a multiple
+    of `tip_rear_multiple` cells round the tail apart. The front corners B
+    and C as many cells round the nose, so the H block's front meets the O
+    block node for node, centred where a line normal to the camber, back
+    from the inner face's nose by `tip_end` of half the width across there,
+    meets each side (:class:`_GapScan`).
 
     With `match` 3, both sides node for node, the corners are instead
     paired across the halves of the inner face, which are alike.
     """
     scan = _GapScan(inner, i_LE, cam, mesher)
+    iA, iD = _gap_rear_search(
+        inner,
+        i_LE,
+        cam,
+        scan,
+        mesher.tip_end_rear,
+        mesher.tip_rear_multiple,
+        mesher.tip_rear_max,
+        symmetric=match == 3,
+    )
+    N = inner.shape[1] - 1
     if match == 3:
         # The halves of the inner face alike, node h - k across from h + k:
         # the rear corners as far round from the cut either way, and the front
         # as far round from the leading edge, so the rear and front have as
         # many cells, and the sides too
-        iA, iD, u = _gap_rear_search(
-            inner,
-            i_LE,
-            cam,
-            scan,
-            mesher.tip_end_rear,
-            mesher.tip_rear_multiple,
-            mesher.tip_rear_max,
-            symmetric=True,
-        )
-        h = (inner.shape[1] - 1) // 2
-        corners = (iA, h - iA, h + iA, iD)
+        h = N // 2
         if not iA < h - iA:
             raise ValueError(
                 f"The tip gap's rear corners {(iA, iD)} are past its front ones "
                 f"{(h - iA, h + iA)}, the halves of its inner face {h} cells."
             )
-        return corners, u
-    if mesher.tip_rear_search:
-        iA, iD, u = _gap_rear_search(
-            inner,
-            i_LE,
-            cam,
-            scan,
-            mesher.tip_end_rear,
-            mesher.tip_rear_multiple,
-            mesher.tip_rear_max,
-        )
-        # As many cells round the nose as the tail, centred where the scan
-        # put the front corners, so the H block's front meets the O block
-        # node for node and only its unmatched side does not
-        n = iA + inner.shape[1] - 1 - iD
-        iB = int(round(0.5 * (scan.iB + scan.iC - n)))
-        corners = (iA, iB, iB + n, iD)
-        if (
-            not 0
-            < corners[0]
-            < corners[1]
-            < corners[2]
-            < corners[3]
-            < inner.shape[1] - 1
-        ):
-            raise ValueError(
-                f"The tip gap's front corners, {n} cells round the nose to match "
-                f"the tail, overlap its rear corners {(iA, iD)}."
-            )
-        return corners, u
-    j = scan.rear(mesher.tip_end_rear)
-    corners = None if j is None else scan.corners(j)
-    u = None
-    if corners is not None:
-        iA, iB, iC, iD = corners
-        # The matched corner where the scan put it, or failing a front that
-        # matches, a multiple of eight cells further forward: the rear line
-        # then crosses the other side further forward too, leaving more
-        # cells round the tail for the nose to match
-        first = None
-        for iA_try in range(iA, iB, 8)[:4]:
-            tried = _gap_rear_corners(inner, i_LE, cam, scan, iA_try, iB, iD)
-            first = first or tried
-            if tried[-1]:
-                break
-        *corners, u, _ = tried if tried[-1] else first
-        corners = tuple(corners)
-        if (
-            not 0
-            < corners[0]
-            < corners[1]
-            < corners[2]
-            < corners[3]
-            < inner.shape[1] - 1
-        ):
-            corners = None
-    if corners is None:
+        return iA, h - iA, h + iA, iD
+    # As many cells round the nose as the tail, centred where the scan put
+    # the front corners, so only the H block's unmatched side does not match
+    n = iA + N - iD
+    iB = int(round(0.5 * (scan.iB + scan.iC - n)))
+    corners = (iA, iB, iB + n, iD)
+    if not 0 < iA < iB < iB + n < iD < N:
         raise ValueError(
-            f"The tip gap's H block has no rear corners in order behind "
-            f"{(scan.iB, scan.iC)} round {inner.shape[1] - 1} cells: reduce "
-            "tip_end or tip_end_rear, or give the blade more nodes round it."
+            f"The tip gap's front corners, {n} cells round the nose to match "
+            f"the tail, overlap its rear corners {(iA, iD)}."
         )
-    return corners, u
-
-
-def _gap_rear_corners(inner, i_LE, cam, scan, iA, iB, iD):
-    """Return the corners (iA, iB, iC, iD), how far along the camber the rear
-    line is, and whether the front matches, for the rear corner on the lower
-    side, the matched one, at node `iA`.
-
-    The rear line is the normal to the camber through the matched corner.
-    The cells round the tail, the H block's across, a multiple of eight, by
-    the other rear corner: at or behind where the rear line crosses its
-    side, never ahead of it. :func:`_gap_spread` then slides it forward onto
-    the crossing, closing up the nodes between it and the front corner.
-    Ahead of the crossing it would slide back over the nodes behind it,
-    which stay where they are until :func:`_gap_square` puts them on the
-    tail, and near a thin trailing edge the O block's lines from them cross
-    its own.
-
-    The front as many cells round the nose, so it too meets the O block node
-    for node: B any node, the H block's length then not a
-    multiple of eight, and C that count on, nearest where the normal to the
-    camber through B meets the upper side, so the front line is square to
-    the camber; of those, nearest the scan's B. Otherwise B and C stay the
-    scan's and the front does not match.
-    """
-    N = inner.shape[1] - 1
-    s_far = cam.at(inner[:, [iA]])[0]
-    u = float((s_far - scan.s[0]) / (scan.s[-1] - scan.s[0]))
-    _, pD = _gap_rear(inner, i_LE, cam, u)
-    uD = i_LE + _on_polyline(inner[:, i_LE:], pD)
-    n = 8 * max(1, int(np.floor((iA + N - uD) / 8)))
-    iD = N - (n - iA)
-    best = None
-    for jB in range(iA + 1, iD - n):
-        jC = jB + n
-        if not jB < i_LE < jC:
-            continue
-        P, nrm = cam.normal(cam.at(inner[:, [jB]])[0])
-        q = _intersect(inner[:, i_LE:], P, nrm)
-        if q is None:
-            continue
-        key = (abs(jC - i_LE - _on_polyline(inner[:, i_LE:], q)), abs(jB - iB))
-        if best is None or key < best[0]:
-            best = (key, jB, jC)
-    if best is None:
-        return iA, iB, scan.iC, iD, u, False
-    _, iB, iC = best
-    return iA, iB, iC, iD, u, True
+    return corners
 
 
 def _gap_square(inner, corners, rear, mesher):

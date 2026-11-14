@@ -123,36 +123,6 @@ def test_the_gap_h_block_meets_the_o_block_inside_the_outline(grid):
         assert (dist.min(axis=1) < 0.05 * cell).all()
 
 
-def test_the_unmatched_rear_corner_is_never_ahead_of_the_rear_line(
-    machine, monkeypatch
-):
-    """The H block's rear corner on the upper side, which it does not match,
-    sits at or behind where the rear line crosses that side, so spreading
-    the side onto the crossing slides the corner forward, never back over
-    the nodes behind it, which folded the O block by a thin trailing edge.
-    Only without `tip_rear_search`, which puts the rear line through the
-    corners' own nodes."""
-    import turbigen.ohpmesh as om
-
-    calls = []
-    original = om._gap_corners
-
-    def recording(inner, i_LE, cam, mesher, match=1):
-        out = original(inner, i_LE, cam, mesher, match)
-        calls.append((inner, i_LE, cam, out))
-        return out
-
-    monkeypatch.setattr(om, "_gap_corners", recording)
-    OHPassage.from_dict({**MESH, "tip_match": 2, "tip_rear_search": False}).mesh(
-        machine
-    )
-
-    assert calls
-    for inner, i_LE, cam, ((_, _, _, iD), u) in calls:
-        _, pD = om._gap_rear(inner, i_LE, cam, u)
-        assert iD >= i_LE + om._on_polyline(inner[:, i_LE:], pD) - 1e-9
-
-
 @pytest.mark.parametrize(
     "kwargs", [{"tip_match": 2}, {"tip_match": 0, "tip_match_drift": 1e-3}]
 )
@@ -257,7 +227,6 @@ def test_rows_with_different_clearances_are_refused():
         {"njtip_min": 4},
         {"t_tip_O": 0.5},
         {"tip_match": 3},
-        {"tip_match": 1, "tip_rear_search": False},
         {"tip_match_drift": 0.0},
         {"tip_match_from": 1.0},
         {"tip_end": 0.0},
