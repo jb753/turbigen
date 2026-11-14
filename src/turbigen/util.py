@@ -173,25 +173,6 @@ def resample_to(x, npts):
     return xnew
 
 
-#
-# COORDINATES
-#
-# A tangential coordinate is an angle, so it is not a length and cannot be
-# compared with one. Scaling by a reference radius makes the three components
-# commensurate, which is what an interpolation or a distance needs.
-#
-
-
-def to_xrrt_ref(xrt, rref):
-    """Return `xrt` with its angle scaled to a length by `rref`."""
-    return np.stack((xrt[0], xrt[1], xrt[2] * rref)).copy()
-
-
-def from_xrrt_ref(xrrt_ref, rref):
-    """Return coordinates scaled by `to_xrrt_ref` back to an angle."""
-    return np.stack((xrrt_ref[0], xrrt_ref[1], xrrt_ref[2] / rref)).copy()
-
-
 def cluster_cosine(npts):
     """Return `npts` points on the unit interval, clustered at both ends.
 
