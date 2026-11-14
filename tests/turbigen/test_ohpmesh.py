@@ -261,7 +261,6 @@ def test_rows_with_different_clearances_are_refused():
         {"tip_match_drift": 0.0},
         {"tip_match_from": 1.0},
         {"tip_end": 0.0},
-        {"n_sweep_tip": -1},
         {"tip_blend": -0.1},
     ],
 )
