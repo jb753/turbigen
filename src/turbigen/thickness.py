@@ -18,6 +18,10 @@ Bernstein polynomial in shape space per surface, so the aerofoil need not be
 symmetric about its camber line. A distribution answers with a half-thickness
 for each surface, suction first, and one that says nothing about sides gives
 the same number twice.
+
+:class:`Impeller` (``impeller``) is the radial compressor blade of
+:cite:`Brind2024`: an elliptic nose, constant thickness, and a parabolic taper
+to a blunt trailing edge.
 """
 
 import dataclasses
@@ -565,6 +569,95 @@ class ClarkThickness(ThicknessDesign):
         if np.isscalar(m):
             return tuple(float(side.item()) for side in t)
         return t
+
+    def ramp_TE(self, m):
+        return shapespace.ramp_TE(m, self.t_TE)
+
+
+class Impeller(ThicknessDesign):
+    """An elliptic nose, a constant thickness, and a parabolic taper.
+
+    The shape of a radial compressor impeller blade, after
+    :cite:`Brind2024`: a nose approximating an ellipse of the stated axis
+    ratio, then the maximum thickness held constant, then a parabola down to
+    a blunt trailing edge from :attr:`m_taper` of chord.
+
+    The nose is ``sqrt(1 - (1 - s)^3 (1 + s))`` over its length ``s`` from 0
+    to 1. Against a true ellipse, ``sqrt(1 - (1 - s)^2)``, it has the same
+    length and the same leading edge radius, but its slope and curvature both
+    fall to zero where it meets the constant thickness, rather than leaving a
+    step in curvature there. It thickens monotonically all the way.
+
+    The parabola leaves the constant thickness with zero slope, as the paper
+    states it, so curvature steps there rather than at the nose.
+    """
+
+    type: ClassVar[str] = "impeller"
+
+    t_max: float
+    """Maximum thickness, normalised by meridional chord [--]."""
+
+    ellipse_ratio: float = 4.0
+    """Length of the nose over its half thickness, being the axis ratio of
+    the ellipse it approximates [--]."""
+
+    m_taper: float = 0.6
+    """Normalised meridional position the thickness starts to fall [--]."""
+
+    TE_ratio: float = 0.35
+    """Trailing edge thickness as a fraction of :attr:`t_max` [--]."""
+
+    @property
+    def t_TE(self):
+        """Trailing edge thickness, the total due to both sides [--]."""
+        return self.TE_ratio * self.t_max
+
+    @property
+    def m_nose(self):
+        """Normalised meridional length of the nose [--]."""
+        return 0.5 * self.ellipse_ratio * self.t_max
+
+    @property
+    def R_LE(self):
+        """Leading edge radius, normalised by meridional chord [--].
+
+        The same as the ellipse's, the square of its half thickness over its
+        length.
+        """
+        return 0.5 * self.t_max / self.ellipse_ratio
+
+    def __post_init__(self):
+        if self.t_max <= 0.0 or self.ellipse_ratio <= 0.0:
+            raise ValueError(
+                f"t_max={self.t_max} and ellipse_ratio={self.ellipse_ratio} "
+                f"must both be positive."
+            )
+        if not 0.0 < self.TE_ratio <= 1.0:
+            raise ValueError(f"TE_ratio={self.TE_ratio} must lie in (0, 1].")
+        if not self.m_nose <= self.m_taper < 1.0:
+            raise ValueError(
+                f"The nose ends at m={self.m_nose:.4g}, so m_taper="
+                f"{self.m_taper} must lie between there and 1; try a thinner "
+                f"blade, a smaller ellipse_ratio or a later m_taper."
+            )
+        self._check_round_TE(self.t_TE)
+
+    def thick(self, m):
+        """Return half-thickness at normalised meridional distance `m`.
+
+        The trailing edge thickness is the total due to both sides, so half of
+        it is returned at the trailing edge.
+        """
+        shapespace.validate_domain(m)
+
+        m_array = np.asarray(m, dtype=float)
+        s = np.clip(m_array / self.m_nose, 0.0, 1.0)
+        u = np.clip((m_array - self.m_taper) / (1.0 - self.m_taper), 0.0, 1.0)
+        nose = np.sqrt(1.0 - (1.0 - s) ** 3 * (1.0 + s))
+        taper = 1.0 - (1.0 - self.TE_ratio) * u**2
+        t = 0.5 * self.t_max * nose * taper
+
+        return float(t.item()) if np.isscalar(m) else t
 
     def ramp_TE(self, m):
         return shapespace.ramp_TE(m, self.t_TE)

@@ -86,7 +86,7 @@ from turbigen.spanwise import (
     VelocitySpline,
     VortexExpon,
 )
-from turbigen.thickness import ClarkThickness, Taylor, ThicknessDesign
+from turbigen.thickness import ClarkThickness, Impeller, Taylor, ThicknessDesign
 
 # _version.py is generated at build time by setuptools-scm (see pyproject.toml);
 # it is gitignored, so fall back to a runtime metadata lookup when running from
@@ -130,6 +130,7 @@ __all__ = [
     "FixedCount",
     "Fluid",
     "H",
+    "Impeller",
     "InletProfile",
     "Iterator",
     "Job",
