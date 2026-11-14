@@ -794,7 +794,7 @@ class OHPassage(Mesher):
     between its neighbours either side, endwalls included. See
     :func:`_straighten_mixing`."""
 
-    theta_even: bool = False
+    theta_even: bool = True
     """Blend the swept coarse blocks ahead of and behind the blade towards
     nodes even in theta across the pitch, fully where they end if the skew
     allows, none where they meet the blade's O block and the passage block.
