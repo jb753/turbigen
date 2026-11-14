@@ -1,0 +1,104 @@
+# Radial compressor
+#
+# A radial compressor rotor with axial inflow and a radial exit, at the datum
+# design of Brind (2024), J. Turbomach. 147(2). The mean line covers the rotor
+# alone; the vaneless diffuser is the annulus outlet duct.
+#
+# Meshed with the passage mesher, as the H mesher cannot cusp a trailing edge
+# that is not axial, and without a tip gap. The geometry meshes, but the solve
+# does not yet run through.
+
+fluid:
+  type: perfect
+  cp: 1005.0
+  gamma: 1.4
+  mu: 1.8e-5
+
+mean_line:
+  type: radial_compressor
+  # Duty
+  mdot: 5.0
+  Po1: 1.0e5
+  To1: 300.0
+  PR_tt: 2.0
+  # Aerodynamics
+  phi1: 0.6
+  Ma1_rel: 0.6
+  htr1: 0.5
+  DH: 1.0
+  Alpha2_rel: -60.0
+  # Guessed loss, which the mean_line iterator below replaces with what the
+  # CFD actually produces
+  Ys: 0.07
+
+annulus:
+  type: aspect_ratio
+  AR_row: [0.3]
+  AR_gap: [1.0, 0.2]
+
+blades:
+  - count:
+      type: Co
+      Co: 0.6
+    sections:
+      - spf: 0.0
+        dchi_LE: 0.0
+        dchi_TE: 0.0
+        camber: &camber
+          type: quadratic
+          aft_loading: 0.0
+        thickness: &thickness
+          type: taylor
+          R_LE: 0.04
+          t_max: 0.08
+          m_tmax: 0.3
+          kappa_max: 0.0
+          t_TE: 0.02
+          tanwedge: 0.1
+          round_TE: true
+      - spf: 0.5
+        dchi_LE: 0.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+      - spf: 1.0
+        dchi_LE: 0.0
+        dchi_TE: 0.0
+        camber: *camber
+        thickness: *thickness
+
+iterate:
+  correct:
+    - type: deviation
+      tolerance: 0.5
+    - type: incidence
+      tolerance: 2.
+    - type: mean_line
+      variables: [Ys]
+      clip: 0.01
+      tolerance: 0.02
+
+solver:
+  type: ember
+  n_step: 2000
+  n_step_avg: 500
+  n_step_log: 100
+  cfl: 4
+  n_stage: 4
+  sf_resid: 1
+  fac_mgrid: 0.2
+  n_levels: 3
+  dampin: 25.0
+
+batch:
+  bounds:
+    mean_line.PR_tt: [1.5, 3.5]
+    mean_line.phi1: [0.35, 1.0]
+    mean_line.Ma1_rel: [0.3, 0.9]
+    mean_line.htr1: [0.2, 0.8]
+    mean_line.DH: [0.6, 1.4]
+    mean_line.Alpha2_rel: [-80.0, -20.0]
+    blades[0].count.Co: [0.4, 1.0]
+mesh:
+  type: ohp
+  yplus: 30.0
