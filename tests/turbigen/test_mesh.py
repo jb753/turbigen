@@ -570,6 +570,54 @@ def test_a_tip_gap_is_the_one_patch_the_old_mesher_does_not_place(machine):
     assert not plain.patches.rotating
 
 
+@pytest.mark.parametrize("nk_tip", [0, 9])
+def test_the_tip_gap_is_the_same_in_metres_along_the_chord(nk_tip):
+    """The spanwise grid is one vector of span fractions, so left alone it
+    would put the top of the blade at a fixed fraction of the local span and
+    the gap would grow and shrink with the annulus. Gridded, the tip block's
+    height is the gap; pinched, the lowest fully pinched node is
+    `gap_contraction` of it below the casing."""
+    machine = build(blades=TIP, mesh=MESH).design()
+    row = machine.rows[1]
+    grid = H.from_dict({**MESH, "nk_tip": nk_tip}).mesh(machine)
+
+    main = grid["row1"]
+    (tip,) = [
+        p
+        for p in main.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.jst != 0 and p.kst == 0
+    ]
+    i = slice(tip.ist, tip.ien + 1)
+    if nk_tip:
+        block, j, frac = grid["row1_tip"], 0, 1.0
+        x, r = block.x[:, :, 0], block.r[:, :, 0]
+    else:
+        block, j, frac = main, tip.jst, H().gap_contraction
+        x, r = block.x[i, :, 0], block.r[i, :, 0]
+    gap = np.hypot(x[:, j] - x[:, -1], r[:, j] - r[:, -1])
+    np.testing.assert_allclose(gap, frac * row.tip_gap, rtol=5e-3)
+
+    # The annulus flares enough over the row for a fixed span fraction to miss
+    x, r = main.x[i, :, 0], main.r[i, :, 0]
+    span = np.hypot(x[:, 0] - x[:, -1], r[:, 0] - r[:, -1])
+    assert np.ptp(span) / np.mean(span) > 0.02
+
+
+def test_the_casing_warp_stretches_the_gap_and_keeps_the_hub():
+    from turbigen.hmesh import _casing_warp
+
+    d = np.linspace(0.0, 1.0, 2001)
+    band = 0.02
+    for r in (0.5, 1.0, 3.0):
+        dw = _casing_warp(d, r, band)
+        assert dw[0] == 0.0
+        assert np.isclose(dw[-1], 1.0)
+        assert (np.diff(dw) > 0.0).all()
+        near = d <= band
+        np.testing.assert_allclose(dw[near], r * d[near])
+    np.testing.assert_allclose(_casing_warp(d, 1.0, band), d, atol=1e-15)
+
+
 #
 # SERIALISATION
 #

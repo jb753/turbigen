@@ -711,6 +711,12 @@ class H(Mesher):
                 grids.cusps,
             )
 
+        # 5. A tip gap the same height in metres all along the chord
+        if row.tip_gap and tip_ref:
+            xr, theta_lim = self._warp_casing(
+                grids, row.tip_gap, tip_ref, xr, theta_lim
+            )
+
         assert np.isfinite(xr).all()
         assert np.isfinite(pitch_frac_clust).all()
         assert np.isfinite(theta_lim).all()
@@ -750,6 +756,71 @@ class H(Mesher):
             njtip=njtip,
             ite=ite,
         )
+
+    def _warp_casing(self, grids, tip_gap, tip_ref, xr, theta_lim):
+        """Move the spanwise nodes so the tip gap is uniform in metres.
+
+        The spanwise grid is one vector of span fractions, which puts the top
+        of the blade at ``1 - tip_ref`` of the local span everywhere: a gap
+        that grows and shrinks with the annulus. Here each streamwise station
+        has the distance of its nodes from the casing, as a fraction of span,
+        multiplied by ``r = tip_gap / span / tip_ref`` near the casing, so the
+        node at the top of the blade lands :attr:`~BladeDesign.tip` metres
+        from it. Below the gap and the pinch the stretch eases off, to a
+        constant that holds the hub where it was; see :func:`_casing_warp`.
+
+        Over the blade ``r`` follows the local span; up- and downstream it
+        eases back to one at the ends of the row, so a mixing plane or the
+        outlet still sees the grid's own span fractions.
+
+        The pinch, applied after this to node indices, then sits at fixed
+        multiples of the gap in metres too. Blade angles and coordinates are
+        interpolated in span fraction onto the moved nodes: the annulus is
+        linear in span fraction, so for `xr` that is exact but for the slight
+        difference in streamwise position between neighbouring nodes.
+        """
+        span_frac = grids.span_frac
+        stream_frac = grids.stream_frac
+        # Each station's span is the length of its own grid line, hub node to
+        # casing node, which the trailing edge corner warp and the cusp have
+        # moved off the nominal streamwise position
+        span = np.hypot(*(xr[:, :, -1] - xr[:, :, 0]))
+        r_blade = tip_gap / span / tip_ref
+
+        # Weight of the local ratio: one over the blade and any cusp, easing
+        # to zero at the ends of the row
+        ends = (-grids.L[0], 1.0 + grids.L[1])
+        m_LE = grids.m_edge[:, 0].min()
+        m_TE = grids.m_edge[:, 1].max()
+        if grids.ni_cusp:
+            m_TE = max(m_TE, stream_frac[grids.ite + grids.ni_cusp - 1])
+        x = np.where(
+            stream_frac < m_LE,
+            (stream_frac - ends[0]) / (m_LE - ends[0]),
+            np.where(
+                stream_frac > m_TE, (ends[1] - stream_frac) / (ends[1] - m_TE), 1.0
+            ),
+        )
+        x = np.clip(x, 0.0, 1.0)
+        w = x * x * (3.0 - 2.0 * x)
+        r = 1.0 + w * (r_blade - 1.0)
+
+        band = tip_ref * max(self.pinch_ramp, 1.0)
+        d = 1.0 - span_frac
+        xr_new = np.empty_like(xr)
+        theta_new = np.empty_like(theta_lim)
+        for i in range(len(stream_frac)):
+            spf_i = 1.0 - _casing_warp(d, r[i], band)
+            for c in range(2):
+                xr_new[c, i] = np.interp(spf_i, span_frac, xr[c, i])
+                theta_new[c, i] = np.interp(spf_i, span_frac, theta_lim[c, i])
+        # The endwalls are where they were, to the last bit
+        xr_new[:, :, (0, -1)] = xr[:, :, (0, -1)]
+        logger.debug(
+            f"Tip gap {tip_gap:.4g} m: casing band stretched by "
+            f"{r.min():.3g} to {r.max():.3g}"
+        )
+        return xr_new, theta_new
 
     def _row_block(self, machine, i_row, geom, grids, coords, n_row):
         """Assemble xrt, build patches, and return a Block."""
@@ -1490,6 +1561,36 @@ def _theta_limits(
 # tangent at any grid resolution, and stopping short of the corner, which is
 # located only to sub-sample accuracy on its own 500-point search.
 _DM_TE_SLOPE = 2e-3
+
+
+def _casing_warp(d, r, band):
+    """Return distances from the casing `d`, as fractions of span, stretched.
+
+    Within `band` of the casing every distance is multiplied by `r`. Over the
+    next four `band` of span the factor eases, on a smoothstep, to a constant
+    `c` that carries on to the hub and is chosen so that the hub stays at one.
+    The mapping is the integral of that factor, so its slope -- the ratio of
+    new to old spanwise spacing -- is continuous, and it is monotonic for
+    any positive `c`. Easing over a single `band` raised the worst spanwise
+    expansion ratio of a radial impeller from 1.19 to 1.35, the gap there
+    being stretched threefold at the trailing edge; over four it stays at
+    1.19.
+    """
+    D1, D2 = band, 5.0 * band
+    W = D2 - D1
+    c = (1.0 - r * D1 - 0.5 * r * W) / (0.5 * W + 1.0 - D2)
+    if c <= 0.0:
+        raise ValueError(
+            f"A tip gap stretched by {r:.3g} near the casing leaves no span "
+            f"for the rest of the blade; the gap is too large for its annulus."
+        )
+    d = np.asarray(d, dtype=float)
+    x = np.clip((d - D1) / W, 0.0, 1.0)
+    S_int = W * (x**3 - 0.5 * x**4)  # Integral of the smoothstep from D1
+    inner = r * np.minimum(d, D1)
+    blend = r * (np.minimum(d, D2) - D1).clip(0.0) + (c - r) * S_int
+    outer = c * (d - D2).clip(0.0)
+    return inner + blend + outer
 
 
 def _no_cusp_tip(where):
