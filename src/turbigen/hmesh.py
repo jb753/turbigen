@@ -132,6 +132,21 @@ class H(Mesher):
     AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
+    yplus_normal: bool = False
+    """Size the blade wall cell normal to the surface, not circumferentially.
+
+    The pitchwise grid is one vector of pitch fractions, so its first cell
+    off each surface is a circumferential distance, `r dtheta`, proportional
+    to the local pitch. Its distance normal to a surface at angle `chi` to
+    the meridional direction is `cos(chi)` of that. By default the fraction
+    is set so the circumferential cell meets the wall spacing at the widest
+    pitch on the hub or casing; with this, so the normal one does where
+    pitch times `cos(chi)` is largest over the hub, midspan and casing
+    sections. Every other station is then finer than the target either way,
+    and this makes the worst of them coarser by up to `1 / cos(chi)`, which
+    on a staggered row puts more of the surface near the `yplus` asked for.
+    """
+
     AR_merid: float = 1.0
     """Aspect ratio of mid-chord cells in meridional plane."""
 
@@ -195,15 +210,15 @@ class H(Mesher):
     nk_min: int = 37
     """Minimum number of pitchwise grid points per row."""
 
-    njtip_min: int = 5
+    njtip_min: int = 9
     """Minimum number of spanwise grid points across the open tip gap.
 
-    Five rather than nine, because nine is not always affordable: the count
-    sets a spacing, and a wide passage stretches the pitchwise direction
-    around it while the radial spacing stays at a tenth of a millimetre. On a
-    stage of pitch-to-chord 1.14 that gave cells up to 37:1 across the
-    clearance, and a march that failed in the tip flow at step 30 -- where the
-    same design at five ran four design iterations without trouble.
+    Nine is not always affordable: the count sets a spacing, and a wide
+    passage stretches the pitchwise direction around it while the radial
+    spacing stays at a tenth of a millimetre. On a stage of pitch-to-chord
+    1.14 that gave cells up to 37:1 across the clearance, and a march that
+    failed in the tip flow at step 30 -- where the same design at five ran
+    four design iterations without trouble. Five is the setting to try there.
 
     A minimum, not a target: where the wall spacing is already finer than the
     clearance divided by this, the clustering puts in more. The total spanwise
@@ -447,7 +462,20 @@ class H(Mesher):
         pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
         pitch_rtheta_max = np.maximum(pitch_rtheta_hub.max(), pitch_rtheta_cas.max())
 
-        drt_norm = spacing.surface[i_row] / pitch_rtheta_max
+        # The wall cell is a fraction of pitch, the same at every station, and
+        # sized so no station's exceeds the target: at the widest pitch, or
+        # where the pitch times the cosine of the surface angle is largest
+        if self.yplus_normal:
+            pitch_rtheta_wall = _pitch_normal_max(
+                machine.rows[i_row].blade, pitch_theta
+            )
+        else:
+            pitch_rtheta_wall = pitch_rtheta_max
+        drt_norm = spacing.surface[i_row] / pitch_rtheta_wall
+        logger.debug(
+            f"Row {i_row} wall cell {spacing.surface[i_row]:.4g} m on a pitch "
+            f"of {pitch_rtheta_wall:.4g} m, the widest {pitch_rtheta_max:.4g} m"
+        )
 
         span_row = np.mean(annulus.evaluate_span(np.arange(i_row * 2, i_row * 2 + 2)))
         AR_row = span_row / chord_mid[1]
@@ -1561,6 +1589,24 @@ def _theta_limits(
 # tangent at any grid resolution, and stopping short of the corner, which is
 # located only to sub-sample accuracy on its own 500-point search.
 _DM_TE_SLOPE = 2e-3
+
+
+def _pitch_normal_max(blade, pitch_theta, spf=(0.0, 0.5, 1.0)):
+    """Return the largest pitch times the cosine of the surface angle [m].
+
+    Over both surfaces of the sections at `spf`, `chi` being the surface's
+    angle to the meridional direction in the blade-to-blade plane: the most a
+    circumferential step of one pitch fraction can be normal to the wall.
+    """
+    out = 0.0
+    for s in spf:
+        for x, r, t in _by_theta(blade, s):
+            dm = np.hypot(np.diff(x), np.diff(r))
+            drt = 0.5 * (r[1:] + r[:-1]) * np.diff(t)
+            cos_chi = dm / np.hypot(dm, drt)
+            r_mid = 0.5 * (r[1:] + r[:-1])
+            out = max(out, float(np.max(pitch_theta * r_mid * cos_chi)))
+    return out
 
 
 def _casing_warp(d, r, band):
