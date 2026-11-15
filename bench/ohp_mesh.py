@@ -111,9 +111,16 @@ def _steps(d, axis):
 
 
 def _worst_corner(block):
-    rt = block.r * block.t
+    """Worst cell corner on each blade-to-blade surface, measured in 3D.
+
+    Not in the plane of `x` and `r theta`, which is the blade-to-blade plane
+    only while the annulus runs axially: where it turns radial, as through an
+    impeller, that projection collapses the meridional side of every cell
+    and reads a sound mesh as degenerate.
+    """
+    xyz = _cartesian(block.xrt)
     return min(
-        float(_cell_angles(np.stack((block.x[:, j, :], rt[:, j, :]))).min())
+        float(_cell_angles(np.moveaxis(xyz[:, j, :], -1, 0)).min())
         for j in range(block.shape[1])
     )
 
