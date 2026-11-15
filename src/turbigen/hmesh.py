@@ -84,6 +84,15 @@ class _RowGrids:
     gridded tip gap."""
     L: tuple
     tte: float
+    ni_cusp: int
+    """Streamwise points along the cusp, trailing edge and tip included, or 0."""
+    tte_span: np.ndarray
+    """Where the trailing edge closure starts at each span, as a fraction of
+    the chord between the edges."""
+    m_edge: np.ndarray
+    """Row `m` of the leading and trailing edge at each span, (nj, 2)."""
+    cusps: list
+    """The :class:`_CuspSection` at each span, or None without a cusp."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -165,12 +174,17 @@ class H(Mesher):
     `yplus` 30 comes out at 1.35 and 1.67 with a fixed `dm_LE` of 0.001.
     """
 
-    ni_TE: int = 9
-    """Number of streamwise points across trailing edge."""
+    frac_TE: float = 0.1
+    """Streamwise cell at the trailing edge, as a fraction of the mid-chord cap.
 
-    dm_TE: float = 0.05
-    """Normalised meridional length over which to cluster the TE points, 0. for
-    the true actual TE."""
+    The cap is the largest streamwise cell allowed on the blade,
+    ``dspf_mid * AR_row / AR_merid``: the midspan spanwise cell in chord
+    units, stretched by :attr:`AR_merid`. As a fraction of it, the count of
+    cells the blade grid takes to grow from the trailing edge to its cap is
+    the same whatever the spanwise resolution or row aspect ratio. The
+    trailing edge closure is filled with cells of this size, at least one,
+    and the downstream gap and any cusp grow from it at :attr:`ER_stream`.
+    """
 
     dspf_mid: float = 0.03
     """Spanwise grid spacing at midspan, as a fraction of span."""
@@ -212,24 +226,26 @@ class H(Mesher):
     of the last row (fully skewed at TE, fully axial at the domain exit).
     Only affects the downstream side of the final row."""
 
-    ni_cusp: int = 0
-    """Number of streamwise points along the trailing edge cusp, 0 for none.
+    cusp: bool = True
+    """Extend a blunt trailing edge into a cusp, False to mesh it square.
 
-    A cusp extends each blade surface straight on along its own trailing edge
-    slope, to the tip where the two meet. Its length is set by the section,
-    not by this mesher, and it needs a blunt trailing edge to be built on: a
-    blade closing to a point is refused by :meth:`_check_trailing_edges`
-    rather than meshed into crossed surfaces. Zero meshes the trailing edge
-    square; otherwise it must be at least two, the trailing edge and the tip.
+    The tip is where the two surfaces, run straight on along their own
+    trailing edge slopes, would meet, so its length is the section's. Its
+    points are the downstream gap's own, which grows from the trailing edge
+    cell at :attr:`ER_stream`, scaled together to put one on the tip at every
+    span, so they grow as fast as the grid does. Each side is a cubic matching the blade's slope and curvature where it
+    leaves it, and the tip is fixed as above; see :class:`_CuspSection`. It needs a blunt trailing edge whose surfaces
+    converge: a blade closing to a point is refused by
+    :meth:`_check_trailing_edges`, and surfaces that never meet, or whose
+    cubics would cross before the tip, by :func:`_cusp_section`.
     """
 
     ni_down_extra: int = 0
-    """Streamwise points added to each row's downstream gap, with a cusp.
+    """Streamwise points added to each row's downstream gap, past any cusp.
 
-    The downstream gap is deliberately coarsened by eight points relative to
-    what the multigrid alignment alone would give; this adds points back.
-    Must be a multiple of eight, so the alignment still holds. The points are
-    spread by re-interpolating the whole gap, so it keeps its clustering.
+    Must be a multiple of eight, so the multigrid alignment still holds. The
+    points are spread by re-interpolating that part of the gap, so it keeps
+    its clustering.
     """
 
     nk_tip: int = 0
@@ -275,13 +291,11 @@ class H(Mesher):
     """
 
     def __post_init__(self):
-        if self.ni_cusp < 0 or self.ni_cusp == 1:
+        if not 0.0 < self.frac_TE <= 1.0:
             raise ValueError(
-                f"ni_cusp={self.ni_cusp} is not a cusp: give 0 to mesh the "
-                f"trailing edge square, or 2 or more points along a cusp."
+                f"frac_TE={self.frac_TE} is a fraction of the mid-chord cell, "
+                f"so must be over zero and at most one."
             )
-        if self.ni_cusp and self.dm_TE != 0.0:
-            raise ValueError("ni_cusp requires dm_TE = 0.0")
         if self.ni_down_extra % 8:
             raise ValueError(
                 f"ni_down_extra={self.ni_down_extra} must be a "
@@ -307,7 +321,7 @@ class H(Mesher):
                     f"Row {i_row} has a round trailing edge, which the H mesher "
                     f"does not grid. Mesh it with type: ohp, or leave it blunt."
                 )
-        if self.ni_cusp:
+        if self.cusp:
             self._check_trailing_edges(machine)
         self._check_inviscid_ducts(machine.annulus)
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
@@ -367,11 +381,11 @@ class H(Mesher):
             if t_TE < TE_MIN:
                 raise ValueError(
                     f"A trailing edge cusp is built on the width of the "
-                    f"trailing edge, so ni_cusp={self.ni_cusp} needs one to "
-                    f"be there, but row {i_row} closes to t_TE/chord="
-                    f"{t_TE:.2e} at midspan, under the {TE_MIN:g} a cusp can "
-                    f"be built on. Give the blade a blunt trailing edge, or "
-                    f"mesh it square with ni_cusp = 0."
+                    f"trailing edge, so cusp: true needs one to be there, "
+                    f"but row {i_row} closes to t_TE/chord={t_TE:.2e} at "
+                    f"midspan, under the {TE_MIN:g} a cusp can be built on. "
+                    f"Give the blade a blunt trailing edge, or mesh it "
+                    f"square with cusp: false."
                 )
 
     def _normalise_spacings(self, machine, spacing):
@@ -523,28 +537,62 @@ class H(Mesher):
         else:
             L = (0.5, 0.5)
 
-        if self.dm_TE:
-            tte = 1.0 - self.dm_TE
-        else:
-            xrt_u, xrt_l = _by_theta(machine.rows[i_row].blade, 0.5)
-            tq = np.linspace(0.8, 1.0, 500)
-            _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
+        # The trailing edge closure starts at the section's corner. The grid is
+        # laid on the midspan one, and `_row_coords` moves it to each span's.
+        blade = machine.rows[i_row].blade
+        tq = np.linspace(0.8, 1.0, 500)
+        xrt_u, xrt_l = _by_theta(blade, 0.5)
+        _, _, tte = _theta_limits(tq, xrt_u, xrt_l, np.array((0, 1)))
+        tte_span = np.empty(nj)
+        for j in range(nj):
+            xrt_u_j, xrt_l_j = _by_theta(blade, span_frac[j])
+            _, _, tte_span[j] = _theta_limits(tq, xrt_u_j, xrt_l_j, np.array((0, 1)))
 
-        # The tip block spans `ile` to the cusp tip, and that cell count must be
-        # divisible by eight for multigrid. The deficit constraints already
-        # ensure this with a cusp; a square trailing edge lands one short, so
-        # ask the downstream count for one more point.
-        ni_cusp_align = self.ni_cusp + 8
-        if self.nk_tip and not self.ni_cusp:
-            ni_cusp_align += 1
+        # Where the blade's edges are at each span, in row `m`: on the
+        # stations, unless the blade is swept. The corner was found as a
+        # fraction of the chord between them.
+        m_edge = np.tile([0.0, 1.0], (nj, 1))
+        ends = (-L[0], 1.0 + L[1])
+        if blade.swept:
+            m_edge = np.array(
+                [blade.evaluate_swept_m([0.0, 1.0], s) for s in span_frac]
+            )
+            if np.any(m_edge[:, 0] <= ends[0]) or np.any(m_edge[:, 1] >= ends[1]):
+                raise ValueError(
+                    f"Row {i_row} has edges swept to m={m_edge[:, 0].min():.4g} "
+                    f"and {m_edge[:, 1].max():.4g} of the row, past the ends of "
+                    f"its mesh at {ends[0]:.4g} and {ends[1]:.4g}."
+                )
+        m_corner = m_edge[:, 0] + tte_span * np.ptp(m_edge, axis=1)
 
-        stream_frac, ile, ite = self.streamwise_grid(
+        # The cusp of every section, its side with the corner the midspan's.
+        # One node is the tip at every span, so the grid's cusp reaches the
+        # geometric mean of the shortest and longest, which scales the grid
+        # least at the worst span to put it on each one's tip.
+        cusps, L_cusp = None, 0.0
+        if self.cusp:
+            m_edge_mid = np.array((0.0, 1.0))
+            if blade.swept:
+                m_edge_mid = np.asarray(blade.evaluate_swept_m([0.0, 1.0], 0.5))
+            args = (blade, machine.annulus, geom.ist, L[1])
+            mid = _cusp_section(
+                *args, 0.5, m_edge_mid, m_edge_mid[0] + tte * np.ptp(m_edge_mid)
+            )
+            cusps = [
+                _cusp_section(*args, span_frac[j], m_edge[j], m_corner[j], mid.k)
+                for j in range(nj)
+            ]
+            L_span = [c.L_cusp for c in cusps]
+            L_cusp = float(np.sqrt(min(L_span) * max(L_span)))
+            logger.debug(f"Row {i_row} cusp length {L_cusp:.4g} of the gap chord")
+
+        stream_frac, ile, ite, ni_cusp = self.streamwise_grid(
             geom.pitch_chord_ref,
             nk_not_resampled,
             L,
             geom.AR_row,
             tte,
-            ni_cusp=ni_cusp_align,
+            L_cusp=L_cusp,
             dm_LE=geom.dm_LE,
         )
 
@@ -566,6 +614,10 @@ class H(Mesher):
             jtip=jtip,
             L=L,
             tte=tte,
+            ni_cusp=ni_cusp,
+            tte_span=tte_span,
+            m_edge=m_edge,
+            cusps=cusps,
         )
 
     def _row_coords(self, machine, i_row, geom, grids, tip_ref, n_row):
@@ -584,34 +636,12 @@ class H(Mesher):
         # Per-span TE corner alignment. The grid's TE breakpoint t = tte is fixed
         # at the midspan corner, but the true squared-TE corner fraction drifts
         # with span, so off-midspan the corner falls between streamwise nodes.
-        # Find the corner fraction at each span and warp the chord mapping so the
-        # grid knot t = tte lands on that span's corner -- keeping ite coincident
-        # with the TE corner at every span. Without this the corner is only
-        # resolved at midspan, forcing add_cusp to detect and re-square it, which
-        # is fragile and sensitive to the spanwise node count.
-        tte_span = np.full(nj, tte)
-        tq_te = np.linspace(0.8, 1.0, 500)
-        for j in range(nj):
-            xrt_u_j, xrt_l_j = _by_theta(blade, span_frac[j])
-            _, _, tte_j = _theta_limits(tq_te, xrt_u_j, xrt_l_j, np.array((0, 1)))
-            if tte_j is not None:
-                tte_span[j] = tte_j
-
-        # Where the blade's edges are at each span, in row `m`: on the
-        # stations, unless the blade is swept. The corner was found as a
-        # fraction of the chord between them.
-        m_edge = np.tile([0.0, 1.0], (nj, 1))
+        # The chord mapping is warped so the grid knot t = tte lands on each
+        # span's own corner, keeping one node on the corner at every span: that
+        # is where the cusp leaves the blade on that side.
+        tte_span = grids.tte_span
+        m_edge = grids.m_edge
         ends = (-grids.L[0], 1.0 + grids.L[1])
-        if blade.swept:
-            m_edge = np.array(
-                [blade.evaluate_swept_m([0.0, 1.0], s) for s in span_frac]
-            )
-            if np.any(m_edge[:, 0] <= ends[0]) or np.any(m_edge[:, 1] >= ends[1]):
-                raise ValueError(
-                    f"Row {i_row} has edges swept to m={m_edge[:, 0].min():.4g} "
-                    f"and {m_edge[:, 1].max():.4g} of the row, past the ends of "
-                    f"its mesh at {ends[0]:.4g} and {ends[1]:.4g}."
-                )
         tte_row = m_edge[:, 0] + tte_span * (m_edge[:, 1] - m_edge[:, 0])
 
         # 1. Meridional xr on a (ni, nj) grid
@@ -648,10 +678,6 @@ class H(Mesher):
 
         # 3. Theta limits from blade sections
         theta_lim = np.zeros((2, ni, nj))
-        # Slope d(theta)/dm' of each surface into the TE corner, from the
-        # section rather than the grid; add_cusp extrapolates the corner-side
-        # surface along it. See _DM_TE_SLOPE.
-        dtdmp_TE = np.zeros((2, nj))
         for j in range(nj):
             xrt_u, xrt_l = _by_theta(blade, span_frac[j])
             assert np.all(xrt_u[2] >= xrt_l[2])
@@ -670,25 +696,19 @@ class H(Mesher):
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
-            if self.ni_cusp:
-                sf = tte_row[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
-                theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, m_edge[j])[:2])
-                xr_sl = annulus.evaluate_xr(sf + geom.ist + 1.0, span_frac[j])
-                dmp_sl = np.hypot(*np.diff(xr_sl, axis=-1))[0] / xr_sl[1].mean()
-                dtdmp_TE[:, j] = np.diff(theta_sl, axis=-1)[:, 0] / dmp_sl
 
         # 4. Cusp insertion
-        if self.ni_cusp:
+        if grids.ni_cusp:
+            i_corner = int(np.argmin(np.abs(stream_frac - tte)))
             xr, theta_lim = add_cusp(
                 xr,
                 theta_lim,
                 stream_frac_span + geom.ist + 1.0,
                 lambda u: annulus.evaluate_xr(u, spfr),
+                i_corner,
                 ite,
-                self.ni_cusp,
-                self.ni_TE,
-                resolution_factor=self.resolution_factor,
-                dtdmp_TE=dtdmp_TE,
+                grids.ni_cusp,
+                grids.cusps,
             )
 
         assert np.isfinite(xr).all()
@@ -759,7 +779,7 @@ class H(Mesher):
         assert np.isfinite(xrt_now[2]).all()
 
         # Periodic patches and cusp indices
-        icusp = ite + self.ni_cusp - 1 if self.ni_cusp else ite
+        icusp = ite + grids.ni_cusp - 1 if grids.ni_cusp else ite
         assert ile % 8 == 0, f"upstream periodic span ile={ile} not a multiple of 8"
         patches = [
             ember.patch.PeriodicPatch(i=(0, ile), k=0),
@@ -767,7 +787,7 @@ class H(Mesher):
             ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
             ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
         ]
-        if self.ni_cusp:
+        if grids.ni_cusp:
             logger.debug(f"Adding cusps {ite, icusp}")
             # A cusp is the wake of a blade that has ended, so it stops where
             # the blade does. Over a gridded clearance the same two faces are
@@ -850,7 +870,7 @@ class H(Mesher):
         to the tolerance of a second evaluation of the same geometry.
         """
         ile, jtip = grids.ile, grids.jtip
-        icusp = coords.ite + self.ni_cusp - 1 if self.ni_cusp else coords.ite
+        icusp = coords.ite + grids.ni_cusp - 1 if grids.ni_cusp else coords.ite
         ni = icusp - ile + 1
         nj = grids.nj - jtip
         nk = self.nk_tip
@@ -1120,15 +1140,28 @@ class H(Mesher):
         nrt,
         L,
         AR_row,
-        tte=None,
+        tte,
         chord_factor=1.0,
-        ni_cusp=0,
+        L_cusp=0.0,
         dm_LE=None,
     ):
         """Evaluate streamwise grid vector for a blade row.
 
+        `tte` is where the trailing edge closure starts, as a fraction of
+        chord. The closure is filled with cells of :attr:`frac_TE` times the
+        mid-chord cap, at least one, and the blade and downstream grids meet it
+        at that size. `L_cusp` is the length of a cusp past the trailing edge,
+        normalised by the downstream gap chord, or zero for none: the tip is
+        put on the downstream node nearest it in ratio, and the rest of the gap is
+        given a multiple of eight cells so the periodic patches from the tip
+        line up with a multigrid level.
+
         `dm_LE` is the LE spacing normalised by meridional chord, defaulting
         to :attr:`dm_LE`.
+
+        Returns the grid, the indices of the leading and trailing edges, and
+        the number of points along the cusp, trailing edge and tip included,
+        or zero without one.
         """
         if dm_LE is None:
             dm_LE = self.dm_LE
@@ -1138,6 +1171,7 @@ class H(Mesher):
         assert len(pitch_chord) == 3
         assert (pitch_chord > 0.0).all()
         assert nrt > 1
+        assert 0.0 < tte < 1.0
 
         # Normalised grid spacings at endpoints (normalised by their gap chord).
         # An end is a true machine boundary when its inlet/exit length is the
@@ -1149,15 +1183,19 @@ class H(Mesher):
 
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
 
+        # The closure gets whole cells of no more than the target size, and
+        # that is the size the blade grid ends on and the downstream one starts.
+        n_te = max(1, int(np.ceil((1.0 - tte) / (self.frac_TE * dm_mid))))
+        dm_TE = (1.0 - tte) / n_te
+
         # Convert the LE/TE grid spacings from chord-normalised to gap-normalised
         dm_upstream_LE = dm_LE * pitch_chord[0] / pitch_chord[1]
-        dm_TE = (1.0 - tte) / self.ni_TE
         dm_downstream_TE = dm_TE * pitch_chord[-1] / pitch_chord[1]
 
         logger.debug(
             "streamwise_grid drivers: pitch_chord=%s L=%s AR_row=%.4f tte=%.4f "
             "chord_factor=%.4f | dm_boundary=%s dm_mid=%.4g dm_upstream_LE=%.4g "
-            "dm_TE=%.4g dm_downstream_TE=%.4g",
+            "dm_TE=%.4g dm_downstream_TE=%.4g L_cusp=%.4g",
             np.array2string(np.asarray(pitch_chord), precision=4),
             np.array2string(np.asarray(L), precision=4),
             AR_row,
@@ -1168,6 +1206,7 @@ class H(Mesher):
             dm_upstream_LE,
             dm_TE,
             dm_downstream_TE,
+            L_cusp,
         )
 
         t_upstream = 1.0 - np.flip(
@@ -1185,7 +1224,7 @@ class H(Mesher):
             dm_LE_adj, dm_TE_adj, dm_mid_adj, self.ER_stream, 0.0, tte
         )
 
-        t_te = np.linspace(tte, 1.0, self.ni_TE)
+        t_te = np.linspace(tte, 1.0, n_te + 1)
 
         try:
             t_downstream = clusterfunc.single.free(
@@ -1201,24 +1240,36 @@ class H(Mesher):
                 mult=1,
             )
 
+        # The cusp is the start of the downstream gap, up to the node at its
+        # tip; the rest of the gap is what lies beyond.
+        if L_cusp:
+            if L_cusp >= L[1]:
+                raise ValueError(
+                    f"The trailing edge cusp reaches {L_cusp:.3g} of the "
+                    f"downstream gap, which is only {L[1]:g} long."
+                )
+            # The node that scales the grid least to put it on the tip; the
+            # scaling leaves how fast the cusp grows alone, and is the step
+            # on to it from the blade.
+            ic = 1 + int(np.argmin(np.abs(np.log(t_downstream[1:-1] / L_cusp))))
+            t_cusp = util.resample(t_downstream[: ic + 1], self.resolution_factor)
+            t_rest = t_downstream[ic:]
+        else:
+            t_cusp = t_downstream[:1]
+            t_rest = t_downstream
+        t_rest = util.resample(t_rest, self.resolution_factor, mult=8)
+        n_rest = 8 * int(np.ceil((len(t_rest) - 1) / 8)) + self.ni_down_extra
+        t_rest = util.resample_to(t_rest, n_rest + 1)
+        t_downstream = np.concatenate((t_cusp, t_rest[1:]))
+        ni_cusp = len(t_cusp) if L_cusp else 0
+
         t_upstream = util.resample(t_upstream, self.resolution_factor, mult=8)
-        t_downstream = util.resample(t_downstream, self.resolution_factor, mult=8)
         t_te = util.resample(t_te, self.resolution_factor)
         t_chord = util.resample(t_chord, self.resolution_factor, mult=8)
 
-        # t_te has ni_TE points which may not be 8m+1. Adjust t_downstream
-        # to satisfy the cusp alignment requirement (len(t_downstream) -
-        # ni_cusp) % 8 == 0, then adjust t_chord to restore total ni-1
-        # divisibility by 8.
-        if ni_cusp:
-            # Less 8 further points to coarsen grids downstream of cusp a bit
-            dn_deficit = (ni_cusp - len(t_downstream)) % 8 - 8 + self.ni_down_extra
-            if dn_deficit:
-                t_downstream = np.interp(
-                    np.linspace(0.0, 1.0, len(t_downstream) + dn_deficit),
-                    np.linspace(0.0, 1.0, len(t_downstream)),
-                    t_downstream,
-                )
+        # The upstream gap and the rest of the downstream one are already in
+        # multiples of eight cells, so the blade takes up whatever the closure
+        # and the cusp leave for the total to be one too.
         ni_total = len(t_upstream) + len(t_chord) + len(t_te) + len(t_downstream) - 3
         chord_deficit = (8 - (ni_total - 1) % 8) % 8
         if chord_deficit:
@@ -1229,14 +1280,12 @@ class H(Mesher):
             )
 
         logger.debug(
-            "streamwise segments (upstream, chord, te, downstream) = %s, "
+            "streamwise segments (upstream, chord, te, cusp, downstream) = %s, "
             "chord_deficit=%d -> ni=%d",
-            (len(t_upstream), len(t_chord), len(t_te), len(t_downstream)),
+            (len(t_upstream), len(t_chord), len(t_te), ni_cusp, len(t_downstream)),
             chord_deficit,
             len(t_upstream) + len(t_chord) + len(t_te) + len(t_downstream) - 3,
         )
-        logger.debug(f"ni_TE={self.ni_TE}, tte={tte}")
-        logger.debug(f"t_te ({len(t_te)} pts): {t_te}")
 
         t = np.concatenate(
             [t_upstream - 1.0, t_chord[1:], t_te[1:], t_downstream[1:] + 1.0]
@@ -1248,7 +1297,7 @@ class H(Mesher):
         ile = len(t_upstream) - 1
         ite = ile + len(t_chord) + len(t_te) - 2
 
-        return t, ile, ite
+        return t, ile, ite, ni_cusp
 
     def pitchwise_relaxation(self, stream_frac, pitch_chord):
         """Relax clustering towards a uniform distribution at inlet and exit."""
@@ -1443,23 +1492,129 @@ def _theta_limits(
 _DM_TE_SLOPE = 2e-3
 
 
-def _blend_te_corner(theta, mp, iTE, n_blend):
-    """Blend one surface towards a straight line approaching the cusp.
+def _no_cusp_tip(where):
+    """Return the error for blade surfaces that never meet past the TE."""
+    return ValueError(
+        f"A trailing edge cusp runs each blade surface on along its own "
+        f"slope to where the two meet, but at {where} the surfaces are "
+        f"parallel or spreading apart at the trailing edge, so never meet. "
+        f"Thin the blade towards its trailing edge, or mesh it square with "
+        f"cusp: false."
+    )
 
-    On the corner side, the window [iTE-n_blend, iTE] holds the original blade
-    points upstream and the extrapolated ones downstream. Theta is blended
-    towards the line linear in `mp` between the window's ends, with a weight
-    rising quadratically from 0 to 1, so the surface leaves the blade
-    curvature-continuously and the kink at the corner is removed. The ends are
-    pinned and the meridional positions are left alone.
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _CuspSection:
+    """The cusp of one blade section, in the conformal plane.
+
+    Positions `x` are in `m'` from the trailing edge, negative upstream. Side
+    `k` has the corner and leaves the blade there; the other side leaves at
+    the trailing edge. Each side is the cubic
+    ``theta0 + s*X + kappa/2*X**2 + c*X**3`` in the distance `X` from where it
+    leaves, matching the blade's slope and curvature there and reaching the
+    tip, which is where the two sides' tangent lines meet.
     """
-    i0 = iTE - n_blend
-    if i0 < 0:
-        return
-    w = ((np.arange(n_blend + 1) / n_blend) ** 2)[:, None]
-    m, t = mp[i0 : iTE + 1], theta[i0 : iTE + 1]
-    line = t[0] + (m - m[0]) / (m[-1] - m[0]) * (t[-1] - t[0])
-    theta[i0 : iTE + 1] = (1.0 - w) * t + w * line
+
+    k: int
+    x0: np.ndarray
+    theta0: np.ndarray
+    s: np.ndarray
+    kappa: np.ndarray
+    c: np.ndarray
+    x_tip: float
+    theta_tip: float
+    L_cusp: float
+    """How far the tip is past the TE, as a fraction of the downstream gap
+    chord in the grid's streamwise coordinate."""
+
+    def theta(self, side, x):
+        """Return the angle of `side` at `x`, on the cubic."""
+        X = np.asarray(x) - self.x0[side]
+        return (
+            self.theta0[side]
+            + self.s[side] * X
+            + 0.5 * self.kappa[side] * X**2
+            + self.c[side] * X**3
+        )
+
+
+def _cusp_section(blade, annulus, ist, L_dn, spf, m_edge, m_corner, k=None):
+    """Return the :class:`_CuspSection` of `blade` at span fraction `spf`.
+
+    `m_edge` and `m_corner` are row `m` of the edges and of the TE corner, and
+    `L_dn` the length of the downstream gap. The corner side `k` is the one
+    whose slope turns most between the corner and the TE, unless given.
+
+    Each side's value, slope and second derivative are those of a quadratic
+    through three points of the section upstream of where it leaves the
+    blade, `_DM_TE_SLOPE` apart, so that none lands past a corner located only
+    to sub-sample accuracy.
+    """
+    h = _DM_TE_SLOPE * np.arange(3.0, 0.0, -1.0)
+    u = np.linspace(m_corner - 4.0 * _DM_TE_SLOPE, 1.0 + L_dn, 4001)
+    x, r = annulus.evaluate_xr(u + ist + 1.0, spf)
+    dmp = np.hypot(np.diff(x), np.diff(r)) / (0.5 * (r[1:] + r[:-1]))
+    mp = np.concatenate(((0.0,), np.cumsum(dmp)))
+    mp -= np.interp(m_edge[1], u, mp)
+    xrt_u, xrt_l = _by_theta(blade, spf)
+
+    def fit(u_end):
+        """Value, slope and second derivative of each side at `u_end`."""
+        u_fit = u_end - h
+        th = np.stack(_theta_limits(u_fit, xrt_u, xrt_l, m_edge)[:2])
+        x0 = np.interp(u_end, u, mp)
+        X = np.interp(u_fit, u, mp) - x0
+        c2, c1, c0 = np.polyfit(X, th.T, 2)
+        return x0, c0, c1, 2.0 * c2
+
+    x_c, th_c, s_c, kap_c = fit(m_corner)
+    x_t, th_t, s_t, kap_t = fit(m_edge[1])
+    if k is None:
+        k = int(np.argmax(np.abs(s_t - s_c)))
+
+    x0 = np.array((x_t, x_t))
+    th0, s, kap = th_t.copy(), s_t.copy(), kap_t.copy()
+    x0[k], th0[k], s[k], kap[k] = x_c, th_c[k], s_c[k], kap_c[k]
+
+    # The tip is where the two tangent lines meet.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x_tip = (th0[1] - th0[0] + s[0] * x0[0] - s[1] * x0[1]) / (s[0] - s[1])
+    if not np.isfinite(x_tip) or x_tip <= 0.0:
+        raise _no_cusp_tip(f"spf={spf:g}")
+    th_tip = th0[0] + s[0] * (x_tip - x0[0])
+    X = x_tip - x0
+    c = (th_tip - th0 - s * X - 0.5 * kap * X**2) / X**3
+
+    u_tip = np.interp(x_tip, mp, u)
+    frac = (u_tip - m_edge[1]) / (1.0 + L_dn - m_edge[1])
+    cusp = _CuspSection(k, x0, th0, s, kap, c, x_tip, th_tip, frac * L_dn)
+
+    # The sides must stay apart until the tip: from the corner to the TE the
+    # other side is the blade's own surface, past it its cubic.
+    xq = np.linspace(x0[k], x_tip, 401)[:-1]
+    other = 1 - k
+    th_other = cusp.theta(other, xq)
+    upstream = xq < 0.0
+    th_other[upstream] = _theta_limits(
+        np.interp(xq[upstream], mp, u), xrt_u, xrt_l, m_edge
+    )[other]
+    th_k = cusp.theta(k, xq)
+    gap = th_k - th_other if k == 0 else th_other - th_k
+    if np.any(gap <= 0.0):
+        x_bad = float(xq[np.argmax(gap <= 0.0)])
+        where = (
+            "over the trailing edge closure"
+            if x_bad < 0.0
+            else f"{x_bad / x_tip:.2f} of the way from the trailing edge to the tip"
+        )
+        raise ValueError(
+            f"The trailing edge cusp at spf={spf:g} carries each blade surface "
+            f"on with its own slope and curvature to the tip where their "
+            f"tangents meet, but the two sides cross {where}. The surfaces "
+            f"curve too sharply towards each other at the trailing edge; mesh "
+            f"it square with cusp: false."
+        )
+    return cusp
 
 
 def _meridional(xr):
@@ -1475,24 +1630,22 @@ def _meridional(xr):
     return tuple(np.concatenate((zero, np.cumsum(d, axis=0))) for d in (dm, dmp))
 
 
-def add_cusp(
-    xr,
-    theta,
-    u,
-    xr_of_u,
-    iTE,
-    ni_cusp,
-    ni_TE,
-    resolution_factor=1.0,
-    dtdmp_TE=None,
-):
+def add_cusp(xr, theta, u, xr_of_u, i_corner, iTE, ni_cusp, cusps):
     """Extend a square trailing edge into a cusp, at any exit pitch angle.
 
     `xr` (2, ni, nj) is the meridional grid, shared by both surfaces, and
     `theta` (2, ni, nj) the angle of each surface, or of the periodic line off
-    the blade. The trailing edge must be exactly at `iTE` (dm_TE = 0.0). The
-    new `xr` and `theta` are returned with the same number of streamwise
-    points: the cusp takes its `ni_cusp - 1` from the block downstream.
+    the blade. The TE corner must be exactly at `i_corner` and the trailing
+    edge at `iTE`. The new `xr` and `theta` are returned with the same number
+    of streamwise points: the cusp is the first `ni_cusp - 1` cells of the
+    downstream gap, up to the node chosen as the tip, scaled to end on it.
+    Its cells are the grid's own, scaled together to fit, so they grow as
+    fast as the grid did, and the step from the blade's last cell to the first
+    of them is the scaling. The grid beyond starts from its last cell.
+
+    `cusps` is the :class:`_CuspSection` at each station `j`. The side with
+    the corner follows its cubic from `i_corner`, over the closure, and the
+    other from `iTE`; both to the tip.
 
     Each station `j` is a line on the annulus, worked on in three coordinates.
     Slopes are taken in the conformal coordinate `m'`, from
@@ -1500,101 +1653,39 @@ def add_cusp(
     pitch angle of the annulus. Spacings are taken in arc length `m`. Every
     point is put back on the annulus through its annulus coordinate `u`
     (ni, nj), interpolated in `m` and evaluated by `xr_of_u`.
-
-    The corner search, the corner blend and the trailing-edge segment are
-    windows of streamwise points, and they change the blade's shape, not just
-    the grid on it. So they are scaled by `resolution_factor`, the mesher's, to
-    keep them the same physical length as the grid is refined.
-
-    `dtdmp_TE`, shaped [side, j], is each surface's d(theta)/dm' into the
-    corner, taken from the section. The corner-side surface is extrapolated to
-    the TE along it. Without it, the slope is the secant of the grid segment
-    into the corner, whose error goes with the streamwise grid spacing.
     """
     assert ni_cusp >= 2
-
-    # Streamwise point counts of the windows, at a resolution factor of one.
-    n_look = int(round(12 * resolution_factor))
-    n_seg = int(round(10 * resolution_factor))
-    n_blend = int(round(2 * ni_TE * resolution_factor))
-
     ni, nj = u.shape
-    theta = theta.copy()
     m, mp = _meridional(xr)
 
-    # The corner is on the side turning towards the exit angle: the lower
-    # surface for a positive exit, the upper for a negative. It is found at
-    # each station from its own profile, because it shifts in `i` with span,
-    # and that surface is extrapolated straight on to the TE.
-    k = 0 if theta[0, iTE + 1, nj // 2] > theta[0, iTE, nj // 2] else 1
-    sgn = 1.0 if k == 0 else -1.0
-    i0 = iTE - n_look
-    for j, il in enumerate(i0 + np.argmax(sgn * theta[k, i0:iTE], axis=0)):
-        if dtdmp_TE is None:
-            grad = (theta[k, il, j] - theta[k, il - 1, j]) / (mp[il, j] - mp[il - 1, j])
-        else:
-            grad = dtdmp_TE[k, j]
-        theta[k, il + 1 : iTE + 1, j] = theta[k, il, j] + grad * (
-            mp[il + 1 : iTE + 1, j] - mp[il, j]
-        )
-    _blend_te_corner(theta[k], mp, iTE, n_blend)
-
-    # Each surface's slope over its last segment, and the cell the cusp's
-    # first is to match, both taken before the TE segment is respaced.
-    s = (theta[:, iTE] - theta[:, iTE - 1]) / (mp[iTE] - mp[iTE - 1])
-    dm_end = m[iTE - 1] - m[iTE - 2]
-
-    # The tip is where the two surfaces' tangents meet, so each continues its
-    # own TE slope with no kink. Surfaces parallel or spreading apart at the
-    # TE have no such point downstream, and no length to give the cusp.
-    dth = theta[1, iTE] - theta[0, iTE]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        dmp_tip = dth / (s[0] - s[1])
-    bad = ~np.isfinite(dmp_tip) | (dmp_tip <= 0.0)
-    if bad.any():
-        raise ValueError(
-            f"A trailing edge cusp runs each blade surface on along its own "
-            f"slope to where the two meet, but at {bad.sum()} of {nj} spanwise "
-            f"stations (from j={np.flatnonzero(bad)[0]}) the surfaces are "
-            f"parallel or spreading apart at the trailing edge, so never meet. "
-            f"Thin the blade towards its trailing edge, or mesh it square "
-            f"with ni_cusp = 0."
-        )
-    th_tip = theta[0, iTE] + s[0] * dmp_tip
-
     ic = iTE + ni_cusp - 1  # Index of the tip
-    iw = slice(iTE - n_seg, iTE + 1)  # TE segment
     m_new = m.copy()
     th_new = theta.copy()
     for j in range(nj):
         mj, mpj = m[:, j], mp[:, j]
+        cusp = cusps[j]
+        k = cusp.k
 
-        # Respace the TE segment so its last cell is the one before it.
-        mw = mj[iw]
-        m_new[iw, j] = clusterfunc.double.fixed(
-            mw[1] - mw[0], dm_end[j], n_seg + 1, mw[0], mw[-1]
-        )
+        # Over the closure, the side with the corner is carried on from it.
+        x = mpj[i_corner : iTE + 1] - mpj[iTE]
+        th_new[k, i_corner : iTE + 1, j] = cusp.theta(k, x)
+
+        # The cusp, on the grid's own nodes to the one chosen as the tip,
+        # scaled in `m` to land on it.
+        m_tip = np.interp(mpj[iTE] + cusp.x_tip, mpj, mj)
+        f = (mj[iTE : ic + 1] - mj[iTE]) / (mj[ic] - mj[iTE])
+        m_new[iTE : ic + 1, j] = mj[iTE] + f * (m_tip - mj[iTE])
+        x = np.interp(m_new[iTE : ic + 1, j], mj, mpj) - mpj[iTE]
         for side in range(2):
-            th_new[side, iw, j] = np.interp(m_new[iw, j], mw, theta[side, iw, j])
-
-        # The cusp, straight in (m', theta), its first cell matching the
-        # blade's last and expanding towards the tip.
-        m_tip = np.interp(mpj[iTE] + dmp_tip[j], mpj, mj)
-        try:
-            f = clusterfunc.single.vinokur(dm_end[j] / (m_tip - mj[iTE]), ni_cusp)
-        except clusterfunc.exceptions.ClusteringException:
-            f = np.linspace(0.0, 1.0, ni_cusp)
-        m_new[iTE : ic + 1, j] = np.interp(mpj[iTE] + f * dmp_tip[j], mpj, mj)
-        th_new[:, iTE : ic + 1, j] = theta[:, iTE, j, None] + f * (
-            th_tip[j] - theta[:, iTE, j, None]
-        )
+            th_new[side, iTE : ic + 1, j] = cusp.theta(side, x)
+        th_new[:, ic, j] = cusp.theta_tip
 
         # Downstream, the periodic line is moved to start at the tip and eased
         # back by the outlet, and respaced in `m` from the cusp's last cell to
         # the grid's.
         md = mj[iTE:]
-        line = theta[0, iTE:, j] + th_tip[j] - theta[0, iTE, j]
-        dt_tip = th_tip[j] - np.interp(m_tip, md, line)
+        line = theta[0, iTE:, j] + cusp.theta_tip - theta[0, iTE, j]
+        dt_tip = cusp.theta_tip - np.interp(m_tip, md, line)
         line += np.interp(md, [m_tip, md[-1]], [dt_tip, 0.0])
         m_new[ic:, j] = clusterfunc.double.fixed(
             m_new[ic, j] - m_new[ic - 1, j], md[-1] - md[-2], ni - ic, m_tip, md[-1]

@@ -10,10 +10,10 @@ blade built from one has to count, shape and mesh like any other.
 
 import numpy as np
 import pytest
-import turbigen.blade
-import turbigen.util
 from test_blade import SPF, _all_perpendicular, blade, build
 
+import turbigen.blade
+import turbigen.util
 from turbigen import ClarkThickness, Impeller, ThicknessDesign, shapespace
 
 CLARK = {
@@ -25,7 +25,7 @@ CLARK = {
 }
 """A deliberately lopsided section: a fatter suction surface than pressure."""
 
-MESH = {"type": "h", "dm_TE": 0.05, "resolution_factor": 0.5, "dspf_mid": 0.1}
+MESH = {"type": "h", "resolution_factor": 0.5, "dspf_mid": 0.1}
 """A coarse mesh, so that meshing a blade costs about a second."""
 
 M = np.linspace(0.0, 1.0, 201)

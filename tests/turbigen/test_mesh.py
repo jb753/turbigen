@@ -15,18 +15,20 @@ from pathlib import Path
 import ember.patch
 import numpy as np
 import pytest
-import turbigen.clusterfunc
 import turbigen_ref.annulus
 import turbigen_ref.geometry
 import turbigen_ref.hmesh
 from test_blade import ANNULUS, blade, build
 
+import turbigen.clusterfunc
 from turbigen import H, Mesher, WallSpacing
 from turbigen.config import Config
 
 MESH = {
     "type": "h",
-    "dm_TE": 0.05,
+    # Square, so the tests that are not about the cusp mesh the blade they
+    # were given; see CUSP for the default.
+    "cusp": False,
     "resolution_factor": 0.5,
     "dspf_mid": 0.1,
     # Stated rather than defaulted, because the reference mesher hard-codes
@@ -44,7 +46,7 @@ MESH = {
 ATOL_REF = 1e-6
 """Agreement with the old package's mesh [m, rad]. The annulus differs from
 the old one by its outlet duct's own fit, see test_annulus.ATOL_REF."""
-CUSP = {**MESH, "dm_TE": 0.0, "ni_cusp": 8}
+CUSP = {**MESH, "cusp": True}
 TIP = [blade(), blade(dchi_LE=2.0, tip=0.02)]
 
 
@@ -121,13 +123,13 @@ def old_grid(machine, mesh, spacing):
     # setting the reference does not have -- it hard-codes nine, which is what
     # the fixture states so that both sides are asked for the same thing. A
     # key this mesher never took cannot be part of what the comparison pins.
-    unknown = {"type", "njtip_min"}
+    unknown = {"type", "njtip_min", "cusp", "frac_TE"}
     kwargs = {k: v for k, v in mesh.items() if k not in unknown}
-    # The reference switches its cusp on with a length, which this mesher
-    # takes from where the two surfaces meet instead. Any length will do: the
-    # comparison stops short of the cusp.
-    if mesh.get("ni_cusp"):
-        kwargs["AR_cusp"] = 1.0
+    # The reference switches its cusp on with a length and a count, which this
+    # mesher takes from where the two surfaces meet and from its downstream
+    # grid instead. Any length will do: the comparison stops short of the cusp.
+    if mesh.get("cusp", True):
+        kwargs.update(dm_TE=0.0, AR_cusp=1.0, ni_cusp=8)
     mesher = turbigen_ref.hmesh.H(**kwargs)
     reference = mesher.make_grid(
         None, mac, spacing.hub, spacing.casing, spacing.surface
@@ -375,6 +377,38 @@ def vinokur(monkeypatch):
     monkeypatch.setattr(cf.symmetric, "plateau_fixed", symmetric_fixed)
 
 
+def _assert_upstream_matches(block, block_ref):
+    """Compare two passage blocks from the inlet to the leading edge.
+
+    The old mesher spaces the trailing edge on a region length and a point
+    count, where this one sizes its cell on the mid-chord one, so the blade
+    and downstream grids differ in count and spacing and are not compared.
+    The upstream gap is laid by the same clustering from the same leading
+    edge cell, and is compared exactly, with the patches that lie in it.
+    """
+    assert block.shape[1:] == block_ref.shape[1:]
+    assert block.Nb == block_ref.Nb
+    ile = next(
+        p.ien
+        for p in block.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.ist == 0
+    )
+    ile_ref = next(
+        p.ien
+        for p in block_ref.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.ist == 0
+    )
+    assert ile == ile_ref
+    np.testing.assert_allclose(
+        block.xrt[: ile + 1], block_ref.xrt[: ile + 1], rtol=1e-12, atol=ATOL_REF
+    )
+
+    def upstream(patches):
+        return [repr(p) for p in patches if 0 <= p.ien <= ile]
+
+    assert upstream(block.patches) == upstream(block_ref.patches)
+
+
 @bit_exact
 def test_matches_the_turbigen_implementation(machine, vinokur):
     grid = build(mesh=MESH).mesh.mesh(machine)
@@ -386,10 +420,7 @@ def test_matches_the_turbigen_implementation(machine, vinokur):
 
     assert len(grid) == len(reference)
     for block, block_ref in zip(grid, reference):
-        assert block.shape == block_ref.shape
-        assert block.Nb == block_ref.Nb
-        np.testing.assert_allclose(block.xrt, block_ref.xrt, rtol=1e-12, atol=ATOL_REF)
-        assert [repr(p) for p in block.patches] == [repr(p) for p in block_ref.patches]
+        _assert_upstream_matches(block, block_ref)
 
 
 @bit_exact
@@ -409,18 +440,13 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades, vinok
     `test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio` pins
     what replaced it.
 
-    Nor is the cusp compared all the way down. This mesher takes the slope
-    into the trailing-edge corner from the section rather than from the grid,
-    and scales the corner windows with the resolution factor, so the trailing
-    edge it builds is deliberately not the old one. Upstream of the old
-    corner blend, which starts `2 * ni_TE` points before the cusp, nothing has
-    changed, and that part is still compared exactly.
+    Nor is the cusp compared at all, only the upstream gap it leaves alone:
+    this mesher builds its cusp from the section's slopes and curvatures and
+    lays it on its own downstream grid, so the blade and everything past it
+    are deliberately not the old ones. See :func:`_assert_upstream_matches`.
 
-    Rotating patches are compared separately, below. The old mesher places
-    none: there, rotation arrives later from `Grid.apply_rotation` at
-    boundary-condition time, which is the arrangement this deliberately
-    departs from. Filtering rather than loosening keeps every patch the old
-    mesher does make pinned exactly.
+    Rotating patches lie along the blade, past the leading edge, so are not
+    in what is compared; they are tested separately, below.
     """
     config = build(blades=blades, mesh=mesh)
     machine = config.design()
@@ -428,20 +454,9 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades, vinok
     grid = config.mesh.mesh(machine)
     reference = old_grid(machine, mesh, config.mesh.wall_spacing(machine))
 
+    assert len(grid) == len(reference)
     for block, block_ref in zip(grid, reference):
-        assert block.shape == block_ref.shape
-        ite = next(p.ist for p in block.patches if isinstance(p, ember.patch.CuspPatch))
-        i_blend = ite - 2 * config.mesh.ni_TE
-        np.testing.assert_allclose(
-            block.xrt[: i_blend + 1],
-            block_ref.xrt[: i_blend + 1],
-            rtol=1e-12,
-            atol=ATOL_REF,
-        )
-        shared = [
-            p for p in block.patches if not isinstance(p, ember.patch.RotatingPatch)
-        ]
-        assert [repr(p) for p in shared] == [repr(p) for p in block_ref.patches]
+        _assert_upstream_matches(block, block_ref)
 
 
 @pytest.mark.parametrize("njtip_min", [5, 9])
@@ -574,16 +589,30 @@ def test_mesh_defaults_are_written_out():
     assert data["ER_span"] == 1.2
 
 
-def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
-    with pytest.raises(ValueError, match="ni_cusp requires"):
-        H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
+@pytest.mark.parametrize("frac_TE", [0.0, -0.1, 1.5])
+def test_the_trailing_edge_cell_is_a_fraction_of_the_mid_chord_one(frac_TE):
+    with pytest.raises(ValueError, match="frac_TE"):
+        H.from_dict({"type": "h", "frac_TE": frac_TE})
 
 
-@pytest.mark.parametrize("ni_cusp", [-1, 1])
-def test_a_cusp_needs_two_points(ni_cusp):
-    """One point is a cusp of no length; zero is how to ask for none."""
-    with pytest.raises(ValueError, match="is not a cusp"):
-        H.from_dict({"type": "h", "ni_cusp": ni_cusp, "dm_TE": 0.0})
+def test_the_cusp_grows_no_faster_than_the_streamwise_grid():
+    """Its cells are the downstream grid's own, squeezed to end on the tip.
+
+    So they grow as the grid does, and the step on to them from the blade's
+    last cell is no bigger than one the grid takes anywhere else. At full
+    resolution, because coarsening merges cells, and merged cells grow by
+    more than `ER_stream` from one to the next everywhere in the grid.
+    """
+    config = build(mesh={**CUSP, "resolution_factor": 1.0})
+    grid = config.mesh.mesh(config.design())
+
+    ER = config.mesh.ER_stream * (1.0 + 1e-3)
+    for block in grid:
+        cusp = next(p for p in block.patches if isinstance(p, ember.patch.CuspPatch))
+        for j in range(block.shape[1]):
+            dm = np.hypot(np.diff(block.x[:, j, 0]), np.diff(block.r[:, j, 0]))
+            ratio = dm[cusp.ist - 1 : cusp.ien + 1] / dm[cusp.ist - 2 : cusp.ien]
+            assert np.all(ratio < ER) and np.all(1.0 / ratio < ER)
 
 
 def _stream_ends(grid):
@@ -651,7 +680,7 @@ def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
 
 
 def test_a_square_trailing_edge_does_not_need_one():
-    """The check is the cusp's, so `ni_cusp = 0` meshes a knife edge as before."""
+    """The check is the cusp's, so `cusp: false` meshes a knife edge as before."""
     config = build(
         blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=MESH
     )
@@ -685,8 +714,11 @@ def test_a_narrow_trailing_edge_wedge_cusps_without_crossing():
         ite = next(p.ist for p in block.patches if isinstance(p, ember.patch.CuspPatch))
         j = block.shape[1] // 2
         dm = np.hypot(np.diff(block.x[:, j, 0]), np.diff(block.r[:, j, 0]))
-        # No spacing jump where the blade's last cell meets the cusp's first.
-        assert dm[ite] == pytest.approx(dm[ite - 1], rel=0.02)
+        # No bigger step where the blade's last cell meets the cusp's first
+        # than the streamwise grid takes anywhere else.
+        step = dm[ite] / dm[ite - 1]
+        ER = config.mesh.ER_stream
+        assert 1.0 / ER <= step <= ER
 
 
 def test_a_round_trailing_edge_is_refused():

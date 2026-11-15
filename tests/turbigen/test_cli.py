@@ -436,8 +436,6 @@ mesh:
   type: h
   resolution_factor: 0.25
   dm_LE: 0.001
-  dm_TE: 0.0
-  ni_cusp: 5
 solver: {type: ember, n_step: 10, n_step_log: 10}
 """
 """A single stationary row, adapted from examples/turbine_cascade.yaml.

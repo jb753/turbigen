@@ -156,8 +156,6 @@ mean_line:
   dzeta: 0.0
 mesh:
   AR_mix: 1.0
-  dm_TE: 0.0
-  ni_cusp: 5
   njtip_min: 5
   pinch_ramp: 1.0
   type: h

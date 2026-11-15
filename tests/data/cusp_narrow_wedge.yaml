@@ -112,13 +112,10 @@ mesh:
   ER_stream: 1.2
   deswirl: false
   dm_LE: 0.001
-  dm_TE: 0.0
   dspf_mid: 0.03
   gap_contraction: 0.6
   half_span: false
   nchord_relax: 1.0
-  ni_TE: 9
-  ni_cusp: 9
   ni_down_extra: 0
   njtip_min: 9
   nk_min: 37

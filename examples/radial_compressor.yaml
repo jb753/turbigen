@@ -102,5 +102,3 @@ batch:
 mesh:
   type: h
   yplus: 30.0
-  dm_TE: 0.0
-  ni_cusp: 5
