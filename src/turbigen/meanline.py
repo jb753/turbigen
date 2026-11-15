@@ -304,6 +304,52 @@ class MeanLine(ember.block.Block):
 
         return float(eta)
 
+    def _solve_continuity(self, H, c, s, mass_flux, n_sample=400, n_bisect=60):
+        """Return the subsonic meridional velocity carrying `mass_flux`.
+
+        Mass flux ``rho(h, s) Vm`` with ``h = H - c Vm^2 / 2`` rises from
+        zero, peaks where the flow chokes, and falls again; the root wanted is
+        on the rising side. Sampled to bracket the peak, then bisected, every
+        point at once. Where the flux asked for is beyond the peak the point
+        is choked, and is put at the peak with a warning rather than failing,
+        since what is asked of a mean line along a duct is a sane state, not
+        a proof the duct passes the flow.
+        """
+        probe = type(self)(shape=H.shape)
+        probe.set_fluid(self.fluid)
+
+        def flux(Vm):
+            probe.set_h_s(H - 0.5 * c * Vm**2, s)
+            return np.asarray(probe.rho, dtype=float) * Vm
+
+        # The fastest the flow could go, with the static temperature at a
+        # twentieth of its stagnation value: far past choking in any gas.
+        probe.set_h_s(H, s)
+        probe.set_T_s(0.05 * np.asarray(probe.T, dtype=float), s)
+        Vm_top = np.sqrt(
+            np.maximum(2.0 * (H - np.asarray(probe.h, dtype=float)) / c, 0.0)
+        )
+
+        f = np.linspace(0.0, 1.0, n_sample)[:, None]
+        samples = np.stack([flux(Vm_top * fi) for fi in f[:, 0]])
+        i_peak = np.argmax(samples, axis=0)
+        peak = samples[i_peak, np.arange(H.size)]
+        choked = mass_flux > peak
+        if choked.any():
+            logger.warning(
+                f"{int(choked.sum())} point(s) along the mean line cannot pass "
+                f"the mass flow subsonically, and are put at the choking point."
+            )
+
+        lo = np.zeros_like(H)
+        hi = Vm_top * f[i_peak, 0]
+        for _ in range(n_bisect):
+            mid = 0.5 * (lo + hi)
+            below = flux(mid) < mass_flux
+            lo = np.where(below, mid, lo)
+            hi = np.where(below, hi, mid)
+        return np.where(choked, Vm_top * f[i_peak, 0], 0.5 * (lo + hi))
+
     #
     # CLASSMETHODS
     #
@@ -538,6 +584,121 @@ class MeanLine(ember.block.Block):
     #
     # OTHER PUBLIC METHODS
     #
+
+    def interpolate_to(self, annulus, m):
+        """Return the flow at annulus meridional positions `m`, conserving mass.
+
+        The stations are only at the row edges, and between and beyond them
+        the annulus area can change by as much as it likes: a radial
+        compressor's vaneless diffuser grows in radius and narrows towards a
+        nozzle. Interpolating the stations' states linearly there would carry
+        neither the mass nor the energy through. Here, at every point, the
+        meridional velocity is solved from continuity on the annulus's own
+        area, :meth:`~turbigen.annulus.Annulus.evaluate_Am`, with the rest of
+        the state from what is conserved where the point lies:
+
+        * **In a duct** --- ahead of the first row, between rows, and behind
+          the last --- no blade acts on the flow, so stagnation enthalpy,
+          angular momentum and entropy are held at the adjacent station's
+          values. Between two rows they are blended linearly in `m` from one
+          row's exit to the next one's inlet, so that both ends land on their
+          stations. The duct is stationary, ``Omega = 0``.
+        * **Inside a row** the blade does work and turns the flow, so the
+          conserved energy is rothalpy, ``I = h_0 - Omega r V_t``, and the two
+          things a mean line cannot know along the chord, the relative flow
+          angle and the entropy, are taken linear in `m` between the edges.
+
+        Mass flow is blended the same way, so a mean line whose stations
+        disagree slightly still lands on each of them.
+
+        Parameters
+        ----------
+        annulus : Annulus
+            The annulus designed from this mean line, whose stations are at
+            ``m = 1, 2, ..., 2 * n_row``.
+        m : array_like
+            Normalised meridional positions, between 0 and ``annulus.m_max``.
+
+        Returns
+        -------
+        MeanLine
+            A new mean line of shape ``(len(m),)``, with the fluid of this
+            one, its radius the root-mean-square of hub and casing and its
+            velocity along the annulus mid-span line.
+
+        """
+        m = np.atleast_1d(np.asarray(m, dtype=float))
+        if np.any(m < 0.0) or np.any(m > annulus.m_max):
+            raise ValueError(
+                f"m must lie on the annulus, between 0 and {annulus.m_max:.4g}; "
+                f"got {m.min():.4g} to {m.max():.4g}."
+            )
+
+        flat = self.flat
+        n = flat.size
+        if annulus.n_row != n // 2:
+            raise ValueError(
+                f"The annulus has {annulus.n_row} rows but this mean line has "
+                f"{n // 2}; interpolate along the annulus it was designed into."
+            )
+
+        def values(q):
+            return np.asarray(q, dtype=float).reshape(-1)
+
+        ho, s, mdot, Omega = (
+            values(q) for q in (flat.ho, flat.s, flat.mdot, flat.Omega)
+        )
+        rVt = values(flat.r) * values(flat.Vt)
+        rothalpy = ho - Omega * rVt
+        Alpha_rel = np.radians(values(flat.Alpha_rel))
+
+        # Station k of the flat mean line is at annulus m = k + 1. Each point
+        # is between stations `lo` and `hi`, a fraction `w` of the way.
+        # A row includes both its edges, so a point on a trailing edge is in
+        # the row's frame, as the station there is.
+        p = m - 1.0
+        lo = np.clip(np.floor(p).astype(int), 0, n - 1)
+        on_TE = (p == lo) & (lo % 2 == 1)
+        lo = np.where(on_TE, lo - 1, lo)
+        hi = np.minimum(lo + 1, n - 1)
+        w = np.clip(p - lo, 0.0, 1.0)
+        in_row = (p >= 0.0) & (p <= n - 1) & (lo % 2 == 0) & (hi == lo + 1)
+
+        def blend(q):
+            return (1.0 - w) * q[lo] + w * q[hi]
+
+        # Geometry from the annulus
+        xr_hub = annulus.evaluate_xr(m, 0.0)
+        xr_cas = annulus.evaluate_xr(m, 1.0)
+        r = np.sqrt(0.5 * (xr_hub[1] ** 2 + xr_cas[1] ** 2))
+        Am = annulus.evaluate_Am(m)
+        dm = 1e-4
+        xr_lo = annulus.evaluate_xr(np.clip(m - dm, 0.0, annulus.m_max), 0.5)
+        xr_hi = annulus.evaluate_xr(np.clip(m + dm, 0.0, annulus.m_max), 0.5)
+        dx, dr = (xr_hi - xr_lo) / np.hypot(*(xr_hi - xr_lo))
+
+        # Static enthalpy as a function of meridional velocity, h = H - c Vm^2/2
+        Omega_now = np.where(in_row, Omega[lo], 0.0)
+        U = Omega_now * r
+        tan_rel = np.tan(blend(Alpha_rel))
+        Vt_duct = blend(rVt) / r
+        H = np.where(in_row, blend(rothalpy) + 0.5 * U**2, blend(ho) - 0.5 * Vt_duct**2)
+        c = np.where(in_row, 1.0 + tan_rel**2, 1.0)
+        s_now = blend(s)
+        mass_flux = blend(mdot) / Am
+
+        Vm = self._solve_continuity(H, c, s_now, mass_flux)
+
+        out = type(self)(shape=m.shape)
+        out.set_fluid(self.fluid)
+        out.set_r(r)
+        out.set_Am(Am)
+        out.set_Omega(Omega_now)
+        out.set_h_s(H - 0.5 * c * Vm**2, s_now)
+        out.set_Vx(Vm * dx)
+        out.set_Vr(Vm * dr)
+        out.set_Vt(np.where(in_row, Vm * tan_rel + U, Vt_duct))
+        return out
 
     def to_dict(self):
         """Return this mean line's complete state, in streamwise order.

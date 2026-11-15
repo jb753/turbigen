@@ -208,6 +208,17 @@ def test_geometry_matches_the_mean_line_it_was_designed_from(machine):
     np.testing.assert_allclose(annulus.r_rms, flat.r, rtol=1e-6)
     np.testing.assert_allclose(span, flat.span, rtol=1e-6)
     np.testing.assert_allclose(2.0 * np.pi * annulus.r_mid * span, flat.Am, rtol=1e-6)
+    np.testing.assert_allclose(annulus.evaluate_Am(m), flat.Am, rtol=1e-6)
+
+
+def test_the_outlet_duct_area_follows_the_nozzle():
+    """The exit duct's span is set at its knots so that the area falls from
+    the last row's exit to `nozzle_ratio` of it at the outlet."""
+    for ratio in (1.0, 0.8, 1.2):
+        annulus = build(nozzle_ratio=ratio).design().annulus
+        m_TE = 2.0 * annulus.n_row
+        A = annulus.evaluate_Am(np.array([m_TE, annulus.m_max]))
+        np.testing.assert_allclose(A[1] / A[0], ratio, rtol=1e-6)
 
 
 #

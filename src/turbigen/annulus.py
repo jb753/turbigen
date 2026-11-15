@@ -679,6 +679,34 @@ class Annulus:
         xr_cas = self.evaluate_xr(m, 1.0)
         return np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
 
+    def evaluate_Am(self, m):
+        """Return the annulus area normal to the meridional flow at `m` [m^2].
+
+        The line from hub to casing at fixed `m` is straight, since
+        :meth:`evaluate_xr` is linear in span fraction, so swept round the
+        axis it is the side of a cone frustum, whose area is exactly
+        ``2 pi r_mid span``. That is the area :attr:`MeanLine.Am
+        <turbigen.meanline.MeanLine.Am>` means, ``mdot = rho Vm Am``, and the
+        two agree at the stations. It is normal to the meridional flow only
+        where that line is, as a mean line assumes.
+
+        Parameters
+        ----------
+        m : array_like
+            Normalised meridional distance.
+
+        Returns
+        -------
+        Am : ndarray
+            Annulus area at each position [m^2].
+
+        """
+        xr_hub = self.evaluate_xr(m, 0.0)
+        xr_cas = self.evaluate_xr(m, 1.0)
+        r_mid = 0.5 * (xr_hub[1] + xr_cas[1])
+        span = np.sqrt(np.sum((xr_cas - xr_hub) ** 2.0, axis=0))
+        return 2.0 * np.pi * r_mid * span
+
     def evaluate_chords(self, spf):
         """Return the meridional chord of every segment at span fraction `spf`.
 
@@ -725,7 +753,7 @@ class Annulus:
             # MeanLine.Am. A radial difference r_tip - r_hub is the span
             # projected onto the axis, shorter by cos(Beta), and
             # pi * (r_tip**2 - r_hub**2) is the area projected the same way.
-            ("Am/m2", 2.0 * np.pi * self.r_mid * span, ".4f"),
+            ("Am/m2", self.evaluate_Am(m), ".4f"),
             ("htr", self.htr, ".4f"),
             ("cx/m", cx_row, ".4f"),
             ("AR", span_row / cx_row, ".4f"),

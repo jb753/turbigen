@@ -17,13 +17,18 @@ Test cases:
 - test_state_is_dimensional_and_readable: what lands in the file
 - test_missing_state_is_reported: a truncated file names what it lacks
 - test_odd_station_count_is_rejected: two stations per row, always
+- interpolate_to: lands on the stations, conserves mass everywhere, holds
+  ho, rVt and s in a duct and rothalpy in a row, and diffuses in a radial
+  vaneless diffuser
 """
+
+from pathlib import Path
 
 import numpy as np
 import pytest
 from test_blade import build
 
-from turbigen import MeanLine, PerfectFluid
+from turbigen import Config, MeanLine, PerfectFluid
 
 FLUID = PerfectFluid(cp=1005.0, gamma=1.4, mu=1.8e-5)
 
@@ -136,9 +141,7 @@ def test_set_span_r_rms_round_trip():
 
     assert ml.span == pytest.approx(span, rel=1e-5)
     assert ml.r == pytest.approx(r_rms, rel=1e-5)
-    assert ml.r == pytest.approx(
-        np.sqrt(0.5 * (ml.r_hub**2 + ml.r_cas**2)), rel=1e-5
-    )
+    assert ml.r == pytest.approx(np.sqrt(0.5 * (ml.r_hub**2 + ml.r_cas**2)), rel=1e-5)
 
 
 def test_set_r_rms_is_an_alias_for_set_r():
@@ -176,3 +179,73 @@ def test_halfVsq_rel_is_kinetic_energy_in_the_rotating_frame():
     ml.set_Omega(500.0)
     assert ml.halfVsq_rel == pytest.approx(0.5 * ml.V_rel**2)
     assert np.all(ml.halfVsq_rel < ml.halfVsq)  # U removes co-swirl
+
+
+#
+# INTERPOLATING ALONG THE ANNULUS
+#
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+
+
+@pytest.fixture(scope="module")
+def radial():
+    return Config.from_file(EXAMPLES / "radial_compressor.yaml").design()
+
+
+@pytest.fixture(scope="module")
+def axial():
+    return build().design()
+
+
+@pytest.mark.parametrize("name", ["axial", "radial"])
+def test_interpolating_to_the_stations_gives_the_stations(name, request):
+    machine = request.getfixturevalue(name)
+    flat = machine.mean_line.flat
+    m = np.arange(1, flat.size + 1, dtype=float)
+    at = machine.mean_line.interpolate_to(machine.annulus, m)
+    for key in ("P", "T", "Vm", "Vt", "Am", "r"):
+        np.testing.assert_allclose(
+            getattr(at, key), np.ravel(getattr(flat, key)), rtol=1e-4, atol=1e-3
+        )
+
+
+@pytest.mark.parametrize("name", ["axial", "radial"])
+def test_mass_is_conserved_everywhere_along_the_annulus(name, request):
+    machine = request.getfixturevalue(name)
+    m = np.linspace(0.0, machine.annulus.m_max, 41)
+    at = machine.mean_line.interpolate_to(machine.annulus, m)
+    np.testing.assert_allclose(at.mdot, float(machine.mean_line.inlet.mdot), rtol=1e-4)
+
+
+def test_a_duct_holds_stagnation_enthalpy_angular_momentum_and_entropy(radial):
+    ml, annulus = radial.mean_line, radial.annulus
+    m = np.linspace(2.0 * annulus.n_row, annulus.m_max, 9)
+    at = ml.interpolate_to(annulus, m)
+    exit = ml.outlet
+    np.testing.assert_allclose(at.ho, float(exit.ho), rtol=1e-5)
+    np.testing.assert_allclose(at.r * at.Vt, float(exit.r * exit.Vt), rtol=1e-4)
+    np.testing.assert_allclose(at.s, float(exit.s), atol=1e-2)
+
+
+def test_a_vaneless_diffuser_raises_the_static_pressure(radial):
+    """The swirl falls as the radius grows, so the duct diffuses: the static
+    pressure at the outlet is well above the impeller exit's."""
+    ml, annulus = radial.mean_line, radial.annulus
+    m = np.linspace(2.0 * annulus.n_row, annulus.m_max, 9)
+    P = ml.interpolate_to(annulus, m).P
+    assert np.all(np.diff(P) > 0.0)
+    assert P[-1] > 1.05 * float(ml.outlet.P)
+
+
+def test_a_row_conserves_rothalpy(radial):
+    ml, annulus = radial.mean_line, radial.annulus
+    at = ml.interpolate_to(annulus, np.linspace(1.0, 2.0, 11))
+    rothalpy = at.ho - at.Omega * at.r * at.Vt
+    np.testing.assert_allclose(rothalpy, rothalpy[0], rtol=1e-5)
+
+
+@pytest.mark.parametrize("m", [-0.1, 1e3])
+def test_positions_off_the_annulus_are_refused(radial, m):
+    with pytest.raises(ValueError, match="m must lie on the annulus"):
+        radial.mean_line.interpolate_to(radial.annulus, [m])
