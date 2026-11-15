@@ -25,6 +25,7 @@ from turbigen import (
     Config,
     DiffusionFactor,
     Quadratic,
+    ReferenceLength,
     Row,
     SectionDesign,
     Taylor,
@@ -41,17 +42,6 @@ def _free_vortex(mean_line_row, spf, n=-1.0):
     r = ml.r_hub * (1.0 - spf) + ml.r_cas * spf
     Vt = ml.Vt * (r / ml.r) ** n
     return np.degrees(np.arctan((Vt - ml.Omega * r) / ml.Vm))
-
-def _by_theta(surfaces):
-    """Return a pair of surfaces with the higher-angle one first.
-
-    What the old package's `evaluate_section` orders by, and what the mesher
-    wants; this one orders by surface instead. Read off `theta` so that a test
-    comparing the two is comparing curves rather than conventions.
-    """
-    upper, lower = surfaces
-    return (upper, lower) if upper[2].mean() >= lower[2].mean() else (lower, upper)
-
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -487,23 +477,19 @@ def test_diffusion_factor_refuses_a_velocity_ratio_it_cannot_meet(machine):
         count.count(mean_line_row, machine.rows[0].blade)
 
 
-@pytest.mark.parametrize(
-    "field, expected",
-    [
-        ("tip_span", "span"),
-        ("tip_chord", "chord"),
-        ("tip_metre", "metre"),
-    ],
-)
-def test_each_tip_reference_gives_the_expected_gap(field, expected):
-    machine = build(blades=[blade(**{field: 0.02}), blade()]).design()
-    mean_line = machine.mean_line[:, 0]
+@pytest.mark.parametrize("name", ReferenceLength.LENGTHS)
+def test_each_tip_reference_gives_the_expected_gap(name):
+    row = blade(tip=0.02, reference_length={"tip": name})
+    machine = build(blades=[row, blade()]).design()
+    span = np.asarray(machine.mean_line[:, 0].span, dtype=float)
 
     reference = {
-        "span": float(np.mean(mean_line.span)),
-        "chord": machine.annulus.evaluate_chords(0.5)[1],
+        "chord_mid": machine.annulus.evaluate_chords(0.5)[1],
+        "span_avg": span.mean(),
+        "span_in": span[0],
+        "span_out": span[1],
         "metre": 1.0,
-    }[expected]
+    }[name]
 
     assert machine.rows[0].tip_gap == pytest.approx(0.02 * reference)
 
@@ -512,9 +498,15 @@ def test_no_tip_clearance_by_default(machine):
     assert machine.rows[0].tip_gap == 0.0
 
 
-def test_two_tip_references_at_once_are_rejected():
-    with pytest.raises(ValueError, match="one tip clearance"):
-        BladeDesign.from_dict(blade(tip_span=0.01, tip_chord=0.01))
+@pytest.mark.parametrize("field", ["thickness", "tip"])
+def test_an_unknown_reference_length_is_rejected(field):
+    with pytest.raises(ValueError, match=f"reference_length.{field}"):
+        BladeDesign.from_dict(blade(reference_length={field: "chord_tip"}))
+
+
+def test_a_negative_tip_clearance_is_rejected():
+    with pytest.raises(ValueError, match="must not be negative"):
+        BladeDesign.from_dict(blade(tip=-0.01))
 
 
 #
@@ -533,7 +525,8 @@ def test_blade_defaults_are_written_out():
 
     assert "vortex_exponent" not in data
     assert data["m_stack"] == 0.5
-    assert data["tip_span"] == 0.0
+    assert data["tip"] == 0.0
+    assert data["reference_length"] == {"thickness": "chord_mid", "tip": "span_avg"}
     assert data["sections"][0]["camber"]["type"] == "quadratic"
 
 
@@ -557,11 +550,11 @@ def test_a_blade_needs_a_section():
 
 @pytest.mark.parametrize("i_row, dchi_LE", [(0, -8.0), (1, 2.0)])
 def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_LE):
-    """The one test that exercises the whole port at once.
+    """Metal angles and chord agree with the old package.
 
-    Camber, thickness, recamber, stacking and the stream surface all feed
-    `evaluate_section`, so agreeing with the old package here is agreement
-    everywhere.
+    The surface coordinates and lengths no longer do, since sections are laid
+    out along their line in arc length; see
+    `test_sections_match_their_snapshot`.
 
     Compared at the section span fractions, which is everywhere the two are
     meant to agree. The old package resolves the metal angles onto the sections
@@ -569,11 +562,6 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
     flow angle as well as the recamber; here the flow angle is evaluated where
     it is asked for, which is the whole point of `evaluate_chi`. The two are
     the same design and differ by a fifth of a degree at the endwalls.
-
-    The old package orders its pair by angular coordinate and this one by
-    surface, so the comparison reorders before it compares. The reorder is by
-    `theta`, read off the arrays rather than assumed, so it says nothing about
-    which convention is right --- only that the same two curves come out.
 
     Compared with the pressure-side blend taken off, leaving the plain
     perpendicular offset the old package applies. The blend is a deliberate
@@ -585,41 +573,58 @@ def test_matches_the_turbigen_implementation(machine_perpendicular, i_row, dchi_
     new = machine.rows[i_row].blade
 
     for spf in SPF:
-        for surface_new, surface_old in zip(
-            _by_theta(new.evaluate_section(spf)),
-            old.evaluate_section(spf, nchord=turbigen.blade.N_CHORD),
-        ):
-            np.testing.assert_allclose(
-                surface_new[:3],
-                surface_old,
-                rtol=1e-12,
-                # The annulus differs from the old package's by its outlet
-                # duct's own fit, see test_annulus.ATOL_REF.
-                atol=1e-7,
-                err_msg=f"differs from the turbigen blade at spf={spf}",
-            )
-
         np.testing.assert_allclose(new.evaluate_chi(spf), old.get_chi(spf), atol=1e-7)
-        # Arc lengths the old package sums over its own ten thousand points,
-        # one fewer than these, which is a difference in discretisation of a
-        # few parts in ten thousand million; the annulus adds a few parts in
-        # ten million, see test_annulus.ATOL_REF
-        np.testing.assert_allclose(
-            new.evaluate_surface_length(spf).max(),
-            old.surface_length(spf),
-            rtol=1e-6,
-        )
+        # The annulus adds a few parts in ten million, see
+        # test_annulus.ATOL_REF
         np.testing.assert_allclose(new.evaluate_chord(spf), old.chord(spf), rtol=1e-6)
 
 
-#
-# THE CAMBER LINE
+@pytest.mark.parametrize("i_row", [0, 1])
+def test_sections_match_their_snapshot(machine_perpendicular, i_row, snapshot):
+    """The one test that exercises the whole blade at once.
+
+    Camber, thickness, recamber, stacking and the stream surface all feed
+    `evaluate_section`, so agreeing with the stored surfaces here is agreement
+    everywhere. The machine of `test_matches_the_turbigen_implementation`,
+    against stored output, since laying sections out in arc length moves them
+    off the old package's.
+    """
+    blade = machine_perpendicular.rows[i_row].blade
+    # Every tenth chordwise point, which keeps the stored file small and still
+    # spans the edges and the whole chord between
+    new = {
+        f"spf{spf}_{side}": surface[:3, ::10]
+        for spf in SPF
+        for side, surface in zip(("upper", "lower"), blade.evaluate_section(spf))
+    }
+    for spf in SPF:
+        new[f"spf{spf}_length"] = blade.evaluate_surface_length(spf)
+    stored = snapshot(f"blade_sections_row{i_row}", **new)
+    for key, value in new.items():
+        np.testing.assert_allclose(
+            value,
+            stored[key],
+            rtol=1e-12,
+            atol=1e-7,
+            err_msg=f"differs from the snapshot at {key}",
+        )
+
 #
 # The curve the surfaces are hung off. What wants it today takes the mean of
 # the two surfaces instead, which is the camber line only while both sides
 # carry the same thickness as each other -- so these check `evaluate_camber`
 # against the surfaces it produced, and record how far the mean is from it.
 #
+
+
+def _by_theta(surfaces):
+    """Return a pair of surfaces with the higher-angle one first.
+
+    This module orders its pair by surface; read off `theta` so that a test
+    nesting the camber line between them need not assume which is which.
+    """
+    upper, lower = surfaces
+    return (upper, lower) if upper[2].mean() >= lower[2].mean() else (lower, upper)
 
 
 def _xrrt(xrt):
@@ -816,6 +821,11 @@ class LopsidedThickness(ThicknessDesign):
         m = np.asarray(m, dtype=float)
         close = np.sqrt(m) * (1.0 - m)
         return self.t_upper * close, self.t_lower * close
+
+    def scaled(self, factor):
+        return dataclasses.replace(
+            self, t_upper=self.t_upper * factor, t_lower=self.t_lower * factor
+        )
 
 
 def _lopsided(machine, i_row=0):

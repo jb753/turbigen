@@ -176,7 +176,7 @@ def config(machine, p, rotor):
         "sections": [dict(section, spf=s) for s in SPF_SECTIONS],
     }
     if rotor:
-        blade["tip_span"] = TIP_SPAN
+        blade["tip"] = TIP_SPAN
     return {
         "fluid": FLUID,
         "mean_line": {

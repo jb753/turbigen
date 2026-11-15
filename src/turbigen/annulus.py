@@ -118,6 +118,10 @@ N_NEWTON = 20
 N_DUCT = 8
 """Control-point intervals along the outlet duct, on which its area is set."""
 
+N_ARC = 1024
+"""Samples per knot interval of the table relating `m` to the curves'
+parameter."""
+
 TOL_ENDS = 1e-12
 """How far, as a fraction of the whole arc-length range, the inverse map may
 place a point beyond the inlet or outlet and still count it inside, on top of
@@ -261,8 +265,12 @@ class RowAnnulus:
         """
         return self.evaluate_xr_annulus(self.m_LE + np.asarray(m, dtype=float), spf)
 
-    def _swept_line(self, spf, dm_LE, dm_TE):
-        """Return the arc-length tables that place a swept section at `spf`.
+    def section_line(self, spf, dm_LE, dm_TE):
+        """Return the arc-length tables that place a section at `spf`.
+
+        What a blade lays its sections out on, in arc length, swept or not.
+        The stations are among the line's points, so a section crossing one,
+        where the scale of ``m`` jumps, is placed with no kink there.
 
         Arc length along the constant-`spf` line at row coordinates `m_line`,
         over the row and the segment either side, which is as far as an edge
@@ -334,7 +342,7 @@ class RowAnnulus:
         m = np.asarray(m, dtype=float)
         if dm_LE == 0.0 and dm_TE == 0.0:
             return m
-        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        m_line, s_line, m_sec, s_sec = self.section_line(spf, dm_LE, dm_TE)
         length = s_sec[-1] - s_sec[0]
         s = np.interp(m, m_sec, s_sec)
         s = np.where(m < 0.0, s_sec[0] + m * length, s)
@@ -352,7 +360,7 @@ class RowAnnulus:
         m = np.asarray(m, dtype=float)
         if dm_LE == 0.0 and dm_TE == 0.0:
             return m
-        m_line, s_line, m_sec, s_sec = self._swept_line(spf, dm_LE, dm_TE)
+        m_line, s_line, m_sec, s_sec = self.section_line(spf, dm_LE, dm_TE)
         length = s_sec[-1] - s_sec[0]
         s = np.interp(m, m_line, s_line)
         m_out = np.interp(s, s_sec, m_sec)
@@ -406,8 +414,9 @@ class Annulus:
     """Normalised meridional coordinate of each control point.
 
     The stations are at the integers, and a segment may hold more control
-    points in between, as the outlet duct does to set its area. `m` is linear
-    in `s` between control points.
+    points in between, as the outlet duct does to set its area. Only the
+    stations are read from it: between them `m` follows arc length, see
+    :attr:`_m_s`.
     """
 
     curves: object = dataclasses.field(repr=False)
@@ -470,7 +479,7 @@ class Annulus:
         # The curves at `m` alone and broadcast against `spf` in the blend,
         # into the output, rather than at `m` broadcast first: a mesher calls
         # this thousands of times, and on short arrays that halves the cost.
-        sq = np.interp(m, self._m_knot, self.s)
+        sq = np.interp(m, *self._m_s)
         xhub, rhub, xcas, rcas = self._hub_casing(sq)
         xr = np.empty((2, *np.broadcast_shapes(m.shape, spf.shape)))
         w = 1.0 - spf
@@ -517,7 +526,7 @@ class Annulus:
 
         tree, m_seed = self._seed_tree
         _, i_seed = tree.query(np.ascontiguousarray(P.T, dtype=np.float32))
-        sq = np.interp(m_seed[i_seed], self._m_knot, self.s)
+        sq = np.interp(m_seed[i_seed], *self._m_s)
 
         # Newton on the cross product of the point, from the hub, with the
         # line from hub to casing, which is zero where the point lies on it.
@@ -544,7 +553,7 @@ class Annulus:
         xh, rh, xc, rc = self._hub_casing(sq)
         ax, ar = xc - xh, rc - rh
         spf = ((P[0] - xh) * ax + (P[1] - rh) * ar) / (ax**2 + ar**2)
-        m = np.interp(sq, self.s, self._m_knot)
+        m = np.interp(sq, *self._m_s[::-1])
 
         # Outside the annulus at either end, by more than the coordinates'
         # own rounding, or not placed at all
@@ -568,6 +577,32 @@ class Annulus:
         return (1.0 - weight) * self.curves(sq, nu) + weight * self.curves_merged(
             sq, nu
         )
+
+    @functools.cached_property
+    def _m_s(self):
+        """Samples of `m` and of the curves' parameter `s` at the same points,
+        between which either is interpolated from the other.
+
+        Within each segment `m` is in proportion to the arc length of the
+        mid-span line, which is what every consumer takes a step in `m` to
+        mean. The parameter `s` is arc length only at the knots: in a tight
+        bend spanned by few of them the line runs at a fifth above or below
+        its mean speed, and `m` linear in `s` would crowd one end of a row and
+        stretch the other.
+        """
+        # Clustered at every knot, where the speed changes fastest
+        u = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, N_ARC + 1)))[:-1]
+        m_tab, s_tab = [], []
+        for k in range(self.n_segment):
+            knots = self.s[(self._m_knot >= k) & (self._m_knot <= k + 1)]
+            sq = np.append((knots[:-1, None] + np.outer(np.diff(knots), u)), knots[-1])
+            xh, rh, xc, rc = self._hub_casing(sq)
+            arc = turbigen.util.cum_arc_length(0.5 * np.stack((xh + xc, rh + rc)))
+            m_tab.append(k + arc[:-1] / arc[-1])
+            s_tab.append(sq[:-1])
+        m_tab.append([float(self.n_segment)])
+        s_tab.append([self.s[-1]])
+        return np.concatenate(m_tab), np.concatenate(s_tab)
 
     @functools.cached_property
     def _seed_tree(self):

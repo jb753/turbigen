@@ -83,7 +83,7 @@ def _axial(gap):
         for section in blade["sections"]:
             section["thickness"] = dict(section["thickness"], round_TE=True)
         if not gap:
-            blade["tip_span"] = 0.0
+            blade["tip"] = 0.0
     doc["mesh"] = {"type": "ohp", "yplus": doc["mesh"]["yplus"]}
     return doc
 

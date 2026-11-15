@@ -45,7 +45,7 @@ ATOL_REF = 1e-6
 """Agreement with the old package's mesh [m, rad]. The annulus differs from
 the old one by its outlet duct's own fit, see test_annulus.ATOL_REF."""
 CUSP = {**MESH, "dm_TE": 0.0, "AR_cusp": 1.0, "ni_cusp": 8}
-TIP = [blade(), blade(dchi_LE=2.0, tip_span=0.02)]
+TIP = [blade(), blade(dchi_LE=2.0, tip=0.02)]
 
 
 @pytest.fixture(scope="module")

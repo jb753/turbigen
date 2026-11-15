@@ -26,7 +26,7 @@ batch:
     mean_line.Ma2:
     - 0.6
     - 0.8
-    # blades[1].tip_chord:
+    # blades[1].tip:
     # - 0.01
     # - 0.02
 blades:
@@ -72,7 +72,9 @@ blades:
       t_TE: 0.025
       tanwedge: 0.17665319612349722
       type: clark
-  tip_chord: 0.02
+  tip: 0.02
+  reference_length:
+    tip: chord_mid
 spanwise:
   type: vortex_expon
   n: -0.6

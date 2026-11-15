@@ -56,10 +56,10 @@ The number of blades comes from a :class:`BladeCount` rule on the design:
 * :class:`DiffusionFactor` (``DFL``) sets it from the Lieblein diffusion factor
   and the chord.
 
-A blade has one tip clearance, stated as a fraction of span
-(:attr:`~BladeDesign.tip_span`), a fraction of meridional chord
-(:attr:`~BladeDesign.tip_chord`) or an absolute length
-(:attr:`~BladeDesign.tip_metre`); giving more than one is an error.
+A blade's sizes are fractions of reference lengths, named in its
+:class:`ReferenceLength`: the thickness of every section against one, and the
+tip clearance (:attr:`~BladeDesign.tip`) against another. Each is the mid-span
+meridional chord, the mean, inlet or outlet span of the row, or a metre.
 
 Every section is stacked so that its camber line passes through the same
 angular position at the fraction :attr:`~BladeDesign.m_stack` of its chord,
@@ -542,6 +542,53 @@ class SectionDesign(Node):
     section turns the whole blade."""
 
 
+class ReferenceLength(Node):
+    """The lengths a blade's sizes are fractions of.
+
+    Each field names one of :attr:`LENGTHS`. A thickness is one length at
+    every section, so the same number means the same thickness at hub and
+    tip; the shape it is put into is laid out on each section's own length.
+    """
+
+    LENGTHS: ClassVar[tuple[str, ...]] = (
+        "chord_mid",
+        "span_avg",
+        "span_in",
+        "span_out",
+        "metre",
+    )
+    """The mid-span meridional chord of the row, the mean of its inlet and
+    outlet spans, either one alone, or a metre."""
+
+    thickness: str = "chord_mid"
+    """What every section's thickness distribution is a fraction of."""
+
+    tip: str = "span_avg"
+    """What :attr:`BladeDesign.tip` is a fraction of."""
+
+    def __post_init__(self):
+        for name in ("thickness", "tip"):
+            if getattr(self, name) not in self.LENGTHS:
+                raise ValueError(
+                    f"reference_length.{name}={getattr(self, name)!r} must be "
+                    f"one of {list(self.LENGTHS)}."
+                )
+
+    @staticmethod
+    def metres(name, mean_line_row, row_annulus):
+        """Return the reference length `name` for one row [m]."""
+        span = np.asarray(mean_line_row.span, dtype=float)
+        return float(
+            {
+                "chord_mid": row_annulus.chord,
+                "span_avg": span.mean(),
+                "span_in": span[0],
+                "span_out": span[-1],
+                "metre": 1.0,
+            }[name]
+        )
+
+
 class BladeCount(Node):
     """Base for rules setting the number of blades in a row.
 
@@ -569,14 +616,13 @@ class BladeDesign(Node):
     count: BladeCount
     """How many blades this row has."""
 
-    tip_span: float = 0.0
-    """Tip clearance as a fraction of span [--]."""
+    tip: float = 0.0
+    """Tip clearance, as a fraction of :attr:`ReferenceLength.tip` [--]."""
 
-    tip_chord: float = 0.0
-    """Tip clearance as a fraction of meridional chord [--]."""
-
-    tip_metre: float = 0.0
-    """Tip clearance as an absolute length [m]."""
+    reference_length: ReferenceLength = dataclasses.field(
+        default_factory=ReferenceLength
+    )
+    """What the thickness and the tip clearance are fractions of."""
 
     m_stack: float = 0.5
     """Normalised meridional position the sections are stacked at [--]."""
@@ -604,18 +650,8 @@ class BladeDesign(Node):
                     f"between, but the {attribute} designs are {sorted(designs)}."
                 )
 
-        # One clearance, named by which reference length it is measured
-        # against, so there is no separate reference to disagree with it.
-        tips = {
-            "tip_span": self.tip_span,
-            "tip_chord": self.tip_chord,
-            "tip_metre": self.tip_metre,
-        }
-        set_tips = sorted(name for name, value in tips.items() if value)
-        if len(set_tips) > 1:
-            raise ValueError(
-                f"A blade has one tip clearance, but {set_tips} were all given."
-            )
+        if self.tip < 0.0:
+            raise ValueError(f"Tip clearance tip={self.tip} must not be negative.")
 
     def design(self, mean_line_row, row_annulus, spanwise=None, i_row=0):
         """Return the blade this design describes.
@@ -643,15 +679,12 @@ class BladeDesign(Node):
             [(section.dchi_LE, section.dchi_TE) for section in self.sections]
         )
 
-        # Tip clearance in metres. Whichever reference length was used, the
-        # other terms are zero, which __post_init__ has already ensured.
-        span = float(np.mean(mean_line_row.span))
-        tip_gap = (
-            self.tip_span * span + self.tip_chord * row_annulus.chord + self.tip_metre
-        )
+        ref = self.reference_length
+        tip_gap = self.tip * ref.metres(ref.tip, mean_line_row, row_annulus)
 
         blade = Blade(
             row_annulus=row_annulus,
+            thickness_ref=ref.metres(ref.thickness, mean_line_row, row_annulus),
             spf=spf,
             dchi=dchi,
             mean_line_row=mean_line_row,
@@ -846,6 +879,13 @@ class Blade:
     """Edge offsets and rotation of each section, ``(dm_LE, dm_TE, dtheta)``,
     shape (n_section, 3); see :class:`SectionDesign`."""
 
+    thickness_ref: float = dataclasses.field(repr=False)
+    """Length the thickness distributions are written as fractions of [m].
+
+    One for the whole blade, so a thickness means the same length at every
+    section; see :class:`ReferenceLength`.
+    """
+
     @property
     def n_section(self):
         """Number of sections this blade was defined by."""
@@ -882,9 +922,9 @@ class Blade:
         """Return the camber line and thickness at span fraction `spf`.
 
         Interpolated between the sections, holding the end ones' values beyond
-        them.
+        them. The thickness as written, against :attr:`thickness_ref`.
         """
-        return self._at_spf(spf)[:2]
+        return self._at_spf(spf)[0], self._interpolators[1](spf)
 
     def __getstate__(self):
         """Return what pickles a blade: all but its fitted interpolants, which
@@ -1034,7 +1074,17 @@ class Blade:
 
     def _at_spf(self, spf):
         """Return the camber line, thickness and round trailing edge caps,
-        None if blunt, at span fraction `spf`.
+        None if blunt, at span fraction `spf`, and the line the section is
+        laid out on.
+
+        The section runs along its own constant-span line, and is laid out in
+        arc length along it: the line is arc length and row meridional
+        coordinate at points along it, from
+        :meth:`~turbigen.annulus.RowAnnulus.section_line`, the arc length of
+        the section's leading edge, and its length.
+        The thickness is re-expressed as fractions of that length, from the
+        blade's reference length, so that it is the length it was written as
+        and its shape is as written whatever the length of the section.
 
         Kept once worked out, as a mesher asks for the same span again and
         again, for the surfaces, their trailing edge, and the camber line;
@@ -1049,10 +1099,15 @@ class Blade:
             camber = self._interpolators[0](spf)
             thickness = self._interpolators[1](spf)
             camber = CamberLine(camber, *turbigen.util.tand(self.evaluate_chi(spf)))
+            dm_LE, dm_TE, _ = self._placement(spf)
+            m_line, s_line, _, s_sec = self.row_annulus.section_line(spf, dm_LE, dm_TE)
+            s_LE, length = s_sec[0], s_sec[-1] - s_sec[0]
+            thickness = thickness.scaled(self.thickness_ref / length)
             caps = None
             if thickness.round_TE:
                 caps = _TE_caps(thickness, camber.tanchi_TE)
-            self._by_spf[key] = (camber, thickness, caps)
+            line = (s_line, m_line, s_LE, length)
+            self._by_spf[key] = (camber, thickness, caps, line)
         return self._by_spf[key]
 
     def evaluate_chi(self, spf):
@@ -1139,14 +1194,16 @@ class Blade:
             is swept. Suction first.
         Dy : ndarray, shape (2, n)
             Thickness offset of each surface from the camber line,
-            normalised by meridional chord. Suction first, and normal to the
-            camber line on that surface only --- see :func:`normal_fraction`
-            for how much of the other's is circumferential instead.
-        chord : float
-            Meridional length of the camber line [m].
+            normalised by the section's meridional length. Suction first, and
+            normal to the camber line on that surface only --- see
+            :func:`normal_fraction` for how much of the other's is
+            circumferential instead.
+        length : float
+            Meridional length of the section, leading to trailing edge, along
+            its own constant-span line [m].
 
         """
-        camber, thickness, caps = self._at_spf(spf)
+        camber, thickness, caps, (s_line, m_line, s_LE, length) = self._at_spf(spf)
         m = CHORD_FRACTION
 
         dydm = camber.dydm(m)
@@ -1193,34 +1250,26 @@ class Blade:
         mcam_LE = np.min((ms.min(), mp.min()))
         mcam_TE = np.max((ms.max(), mp.max()))
         mcam_ptp = mcam_TE - mcam_LE
-        m_LTE = np.stack(((ms - mcam_LE) / mcam_ptp, (mp - mcam_LE) / mcam_ptp))
         mcam = (m - mcam_LE) / mcam_ptp
-        # Meridional coordinates of the camber line at mid-span, unswept, for
-        # the chord; and here, where a swept section is moved along the row
-        dm_LE, dm_TE, dtheta = self._placement(spf)
-        if dm_LE == 0.0 and dm_TE == 0.0:
-            # One evaluation of the annulus at `mcam` for both
-            xr_mid, xr = np.moveaxis(
-                self.row_annulus.evaluate_xr(mcam, np.array([[0.5], [spf]])), 1, 0
-            )
-        else:
-            xr_mid = self.row_annulus.evaluate_xr(mcam, 0.5)
-            xr = self.row_annulus.evaluate_xr(self.evaluate_swept_m(mcam, spf), spf)
-            m_LTE = self.evaluate_swept_m(m_LTE, spf)
 
-        # A swept section is longer or shorter than the row by the difference in
-        # its edge offsets, and its aerofoil, normalised by chord, stretches
-        # with it
-        chord = turbigen.util.arc_length(xr_mid) * (1.0 + dm_TE - dm_LE)
+        # Those are fractions of the section's length along its line, so the
+        # camber line and the surfaces are placed where that much of the
+        # length has been run, swept or not
+        def to_m(frac):
+            return np.interp(s_LE + frac * length, s_line, m_line)
 
-        # Project the camber angle onto the annulus
-        theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * chord)
+        m_LTE = to_m(np.stack((ms - mcam_LE, mp - mcam_LE)) / mcam_ptp)
+        xr = self.row_annulus.evaluate_xr(to_m(mcam), spf)
+
+        # Project the camber angle onto the annulus, along the true arc length,
+        # so the built angle is the camber line's at every point
+        theta = turbigen.util.cumtrapz0(dydm / xr[1], mcam * length)
 
         # Stack the sections, then turn each about the axis
         theta -= np.interp(self.m_stack, mcam, theta)
-        theta += dtheta
+        theta += self._placement(spf)[2]
 
-        return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), chord
+        return np.stack((*xr, theta)), m_LTE, np.stack((Dy_s, Dy_p)), length
 
     def evaluate_camber(self, spf, m=None):
         """Return coordinates of the camber line at `spf`.
@@ -1280,7 +1329,7 @@ class Blade:
             row.
 
         """
-        xrt, m_LTE, Dy, chord = self._section_layout(spf)
+        xrt, m_LTE, Dy, length = self._section_layout(spf)
         xr, theta = xrt[:2], xrt[2]
 
         # Meridional coordinates of both surfaces, in one evaluation
@@ -1290,7 +1339,7 @@ class Blade:
         for m_surf, Dy_surf, xr_surf in zip(m_LTE, Dy, xr_both):
             # Angular offset to it, at the mean radius between the camber line
             # and the surface
-            dt = Dy_surf * chord / xr[1]
+            dt = Dy_surf * length / xr[1]
             drt = dt * 0.5 * (xr[1] + xr_surf[1])
 
             surfaces.append(

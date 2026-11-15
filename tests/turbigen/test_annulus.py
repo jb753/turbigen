@@ -486,31 +486,22 @@ def test_aspect_ratio_defaults_are_written_out():
 
 
 @pytest.mark.parametrize("weight", [0.0, 0.3, 1.0])
-def test_aspect_ratio_matches_the_turbigen_implementation(weight):
-    machine = build_AR(merge_weight=weight).design()
-    flat = machine.mean_line.flat
+def test_aspect_ratio_matches_its_snapshot(weight, snapshot):
+    """Against stored output rather than the old package, whose `m` is linear
+    in arc length between control points where this one's follows arc length
+    between stations; see `Annulus._m_s`."""
+    annulus = build_AR(merge_weight=weight).design().annulus
 
-    AR_chord = np.array(ANNULUS_AR["AR_row"])
-    AR_gap = np.array(ANNULUS_AR["AR_gap"])
-    old = turbigen_ref.annulus.Merged(
-        {"AR_chord": AR_chord, "AR_gap": AR_gap, "merge_weight": weight}
-    )
-    old.forward(
-        np.asarray(flat.r_mid, dtype=float),
-        np.asarray(flat.span, dtype=float),
-        np.asarray(flat.Beta, dtype=float),
-        AR_chord=AR_chord,
-        AR_gap=AR_gap,
-        merge_weight=weight,
-    )
-
-    m = np.linspace(0.0, old.mmax, 37)
-    for spf in (0.0, 0.5, 1.0):
+    m = np.linspace(0.0, annulus.m_max, 37)
+    spfs = (0.0, 0.5, 1.0)
+    new = {f"spf{spf}": annulus.evaluate_xr(m, spf) for spf in spfs}
+    stored = snapshot(f"annulus_aspect_ratio_{weight}", **new)
+    for spf in spfs:
         np.testing.assert_allclose(
-            machine.annulus.evaluate_xr(m, spf),
-            old.evaluate_xr(m, spf),
+            new[f"spf{spf}"],
+            stored[f"spf{spf}"],
             atol=ATOL_REF,
-            err_msg=f"differs from the turbigen annulus at spf={spf}",
+            err_msg=f"differs from the snapshot at spf={spf}",
         )
 
 

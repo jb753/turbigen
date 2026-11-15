@@ -59,7 +59,7 @@ from turbigen import bconds
 MESH = {"type": "h", "dm_TE": 0.05, "resolution_factor": 0.5, "dspf_mid": 0.1}
 """Coarse, because none of this depends on the mesh being fine."""
 
-TIP = [blade(), blade(dchi_LE=2.0, tip_span=0.02)]
+TIP = [blade(), blade(dchi_LE=2.0, tip=0.02)]
 """A two-row machine whose rotor has tip clearance."""
 
 

@@ -114,6 +114,17 @@ class ThicknessDesign(Node):
         """
         return np.zeros_like(np.asarray(m, dtype=float))
 
+    def scaled(self, factor):
+        """Return this distribution with each of its lengths times `factor`.
+
+        Its lengths are fractions of some length, and this re-expresses them as
+        fractions of another: a blade writes them against a reference length
+        and evaluates them against the meridional length of the section they
+        are put on. Ratios, positions along the chord and angles are left
+        alone, so the shape comes out as written at any section length.
+        """
+        raise NotImplementedError(f"{type(self).__name__} must implement scaled()")
+
 
 class Taylor(ThicknessDesign):
     """Two cubic splines in shape space, after :cite:`Taylor2016`.
@@ -270,6 +281,17 @@ class Taylor(ThicknessDesign):
 
     def ramp_TE(self, m):
         return shapespace.ramp_TE(m, self.t_TE)
+
+    def scaled(self, factor):
+        # Shape space is a half-thickness over a dimensionless class function,
+        # so it is a length, and so is its curvature in `m`
+        return dataclasses.replace(
+            self,
+            R_LE=self.R_LE * factor,
+            t_max=self.t_max * factor,
+            t_TE=self.t_TE * factor,
+            kappa_max=self.kappa_max * factor,
+        )
 
 
 class ClarkThickness(ThicknessDesign):
@@ -573,6 +595,16 @@ class ClarkThickness(ThicknessDesign):
     def ramp_TE(self, m):
         return shapespace.ramp_TE(m, self.t_TE)
 
+    def scaled(self, factor):
+        # The coefficients are a perturbation in shape space, which is a length
+        return dataclasses.replace(
+            self,
+            R_LE=self.R_LE * factor,
+            R_LE_lim=tuple(lim * factor for lim in self.R_LE_lim),
+            t_TE=self.t_TE * factor,
+            coeff=tuple(tuple(c * factor for c in row) for row in self.coeff),
+        )
+
 
 class Impeller(ThicknessDesign):
     """An elliptic nose, a constant thickness, and a parabolic taper.
@@ -661,3 +693,6 @@ class Impeller(ThicknessDesign):
 
     def ramp_TE(self, m):
         return shapespace.ramp_TE(m, self.t_TE)
+
+    def scaled(self, factor):
+        return dataclasses.replace(self, t_max=self.t_max * factor)

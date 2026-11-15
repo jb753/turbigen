@@ -39,7 +39,7 @@ def machine():
     config = build(
         blades=[
             blade(section={"thickness": ROUND}),
-            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip_span=TIP),
+            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip=TIP),
         ],
         mesh=MESH,
     )
@@ -213,8 +213,8 @@ def test_the_cells_in_the_gap_are_not_badly_skewed(grid):
 def test_rows_with_different_clearances_are_refused():
     config = build(
         blades=[
-            blade(section={"thickness": ROUND}, tip_span=0.01),
-            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip_span=0.02),
+            blade(section={"thickness": ROUND}, tip=0.01),
+            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip=0.02),
         ],
         mesh=MESH,
     )
@@ -342,7 +342,7 @@ def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_th
     config = build(
         blades=[
             blade(section={"thickness": ROUND}),
-            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip_span=TIP),
+            blade(dchi_LE=2.0, section={"thickness": ROUND}, tip=TIP),
         ],
         mesh=MESH,
     )

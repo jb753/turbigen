@@ -70,7 +70,7 @@ blades:
   - count:
       type: Co
       Co: 0.6
-    tip_span: 0.01
+    tip: 0.01
     sections:
       - spf: 0.2
         dchi_LE: 6.0

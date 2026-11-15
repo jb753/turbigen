@@ -37,6 +37,7 @@ from turbigen.blade import (
     Circulation,
     DiffusionFactor,
     FixedCount,
+    ReferenceLength,
     Row,
     SectionDesign,
 )
@@ -152,6 +153,7 @@ __all__ = [
     "Post",
     "Quadratic",
     "RealFluid",
+    "ReferenceLength",
     "Result",
     "Row",
     "RowAnnulus",
