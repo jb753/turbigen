@@ -212,16 +212,16 @@ class H(Mesher):
     of the last row (fully skewed at TE, fully axial at the domain exit).
     Only affects the downstream side of the final row."""
 
-    AR_cusp: float = 0.0
-    """Length of the trailing edge cusp, as a multiple of TE thickness.
-
-    Being a multiple of that thickness, this needs a blunt trailing edge to be
-    a multiple of: a blade closing to a point is refused by
-    :meth:`_check_trailing_edges` rather than meshed into crossed surfaces.
-    """
-
     ni_cusp: int = 0
-    """Number of streamwise points along the trailing edge cusp."""
+    """Number of streamwise points along the trailing edge cusp, 0 for none.
+
+    A cusp extends each blade surface straight on along its own trailing edge
+    slope, to the tip where the two meet. Its length is set by the section,
+    not by this mesher, and it needs a blunt trailing edge to be built on: a
+    blade closing to a point is refused by :meth:`_check_trailing_edges`
+    rather than meshed into crossed surfaces. Zero meshes the trailing edge
+    square; otherwise it must be at least two, the trailing edge and the tip.
+    """
 
     ni_down_extra: int = 0
     """Streamwise points added to each row's downstream gap, with a cusp.
@@ -275,6 +275,11 @@ class H(Mesher):
     """
 
     def __post_init__(self):
+        if self.ni_cusp < 0 or self.ni_cusp == 1:
+            raise ValueError(
+                f"ni_cusp={self.ni_cusp} is not a cusp: give 0 to mesh the "
+                f"trailing edge square, or 2 or more points along a cusp."
+            )
         if self.ni_cusp and self.dm_TE != 0.0:
             raise ValueError("ni_cusp requires dm_TE = 0.0")
         if self.ni_down_extra % 8:
@@ -302,7 +307,7 @@ class H(Mesher):
                     f"Row {i_row} has a round trailing edge, which the H mesher "
                     f"does not grid. Mesh it with type: ohp, or leave it blunt."
                 )
-        if self.AR_cusp:
+        if self.ni_cusp:
             self._check_trailing_edges(machine)
         self._check_inviscid_ducts(machine.annulus)
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
@@ -336,11 +341,10 @@ class H(Mesher):
     def _check_trailing_edges(self, machine):
         """Refuse to cusp a blade whose trailing edge has no thickness.
 
-        :attr:`AR_cusp` is a multiple of the trailing edge width, and
         :func:`add_cusp` builds the cusp by extrapolating each surface's own
-        slope to a tip that far downstream. On a knife edge there is no width
-        to be a multiple of and no gap between the two surfaces to extrapolate
-        into: the sides cross, and what fails is an assertion on the pitchwise
+        slope to the tip where the two meet downstream. On a knife edge there
+        is no gap between the two surfaces to extrapolate into: the sides
+        cross, and what fails is an assertion on the pitchwise
         ordering of the block coordinates several steps later, naming nothing a
         designer wrote. Said here instead, before any of the mesh is built,
         against the trailing edge the sections actually draw rather than
@@ -363,11 +367,11 @@ class H(Mesher):
             if t_TE < TE_MIN:
                 raise ValueError(
                     f"A trailing edge cusp is built on the width of the "
-                    f"trailing edge, so AR_cusp={self.AR_cusp} needs one to "
+                    f"trailing edge, so ni_cusp={self.ni_cusp} needs one to "
                     f"be there, but row {i_row} closes to t_TE/chord="
                     f"{t_TE:.2e} at midspan, under the {TE_MIN:g} a cusp can "
                     f"be built on. Give the blade a blunt trailing edge, or "
-                    f"mesh it square with AR_cusp = 0."
+                    f"mesh it square with ni_cusp = 0."
                 )
 
     def _normalise_spacings(self, machine, spacing):
@@ -666,7 +670,7 @@ class H(Mesher):
                 Theta_max=self.skew_max,
                 deswirl_dn=self.deswirl and (i_row == n_row - 1),
             )[:2]
-            if self.AR_cusp:
+            if self.ni_cusp:
                 sf = tte_row[j] - _DM_TE_SLOPE * np.array((2.0, 1.0))
                 theta_sl = np.stack(_theta_limits(sf, xrt_u, xrt_l, m_edge[j])[:2])
                 xr_sl = annulus.evaluate_xr(sf + geom.ist + 1.0, span_frac[j])
@@ -674,14 +678,13 @@ class H(Mesher):
                 dtdmp_TE[:, j] = np.diff(theta_sl, axis=-1)[:, 0] / dmp_sl
 
         # 4. Cusp insertion
-        if self.AR_cusp:
+        if self.ni_cusp:
             xr, theta_lim = add_cusp(
                 xr,
                 theta_lim,
                 stream_frac_span + geom.ist + 1.0,
                 lambda u: annulus.evaluate_xr(u, spfr),
                 ite,
-                self.AR_cusp,
                 self.ni_cusp,
                 self.ni_TE,
                 resolution_factor=self.resolution_factor,
@@ -764,7 +767,7 @@ class H(Mesher):
             ember.patch.PeriodicPatch(i=(icusp, -1), k=0),
             ember.patch.PeriodicPatch(i=(icusp, -1), k=-1),
         ]
-        if self.AR_cusp:
+        if self.ni_cusp:
             logger.debug(f"Adding cusps {ite, icusp}")
             # A cusp is the wake of a blade that has ended, so it stops where
             # the blade does. Over a gridded clearance the same two faces are
@@ -1478,7 +1481,6 @@ def add_cusp(
     u,
     xr_of_u,
     iTE,
-    AR_cusp,
     ni_cusp,
     ni_TE,
     resolution_factor=1.0,
@@ -1509,7 +1511,7 @@ def add_cusp(
     the TE along it. Without it, the slope is the secant of the grid segment
     into the corner, whose error goes with the streamwise grid spacing.
     """
-    assert AR_cusp > 0.0
+    assert ni_cusp >= 2
 
     # Streamwise point counts of the windows, at a resolution factor of one.
     n_look = int(round(12 * resolution_factor))
@@ -1543,18 +1545,22 @@ def add_cusp(
     dm_end = m[iTE - 1] - m[iTE - 2]
 
     # The tip is where the two surfaces' tangents meet, so each continues its
-    # own TE slope with no kink. Where they do not meet downstream, the tip is
-    # AR_cusp TE widths behind the TE, along the mean slope.
+    # own TE slope with no kink. Surfaces parallel or spreading apart at the
+    # TE have no such point downstream, and no length to give the cusp.
     dth = theta[1, iTE] - theta[0, iTE]
     with np.errstate(divide="ignore", invalid="ignore"):
         dmp_tip = dth / (s[0] - s[1])
-        bad = ~np.isfinite(dmp_tip) | (dmp_tip <= 0.0)
-    dmp_tip[bad] = AR_cusp * np.abs(dth[bad])
-    th_tip = np.where(
-        bad,
-        theta[:, iTE].mean(axis=0) + s.mean(axis=0) * dmp_tip,
-        theta[0, iTE] + s[0] * dmp_tip,
-    )
+    bad = ~np.isfinite(dmp_tip) | (dmp_tip <= 0.0)
+    if bad.any():
+        raise ValueError(
+            f"A trailing edge cusp runs each blade surface on along its own "
+            f"slope to where the two meet, but at {bad.sum()} of {nj} spanwise "
+            f"stations (from j={np.flatnonzero(bad)[0]}) the surfaces are "
+            f"parallel or spreading apart at the trailing edge, so never meet. "
+            f"Thin the blade towards its trailing edge, or mesh it square "
+            f"with ni_cusp = 0."
+        )
+    th_tip = theta[0, iTE] + s[0] * dmp_tip
 
     ic = iTE + ni_cusp - 1  # Index of the tip
     iw = slice(iTE - n_seg, iTE + 1)  # TE segment

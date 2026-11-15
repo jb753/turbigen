@@ -44,7 +44,7 @@ MESH = {
 ATOL_REF = 1e-6
 """Agreement with the old package's mesh [m, rad]. The annulus differs from
 the old one by its outlet duct's own fit, see test_annulus.ATOL_REF."""
-CUSP = {**MESH, "dm_TE": 0.0, "AR_cusp": 1.0, "ni_cusp": 8}
+CUSP = {**MESH, "dm_TE": 0.0, "ni_cusp": 8}
 TIP = [blade(), blade(dchi_LE=2.0, tip=0.02)]
 
 
@@ -122,7 +122,13 @@ def old_grid(machine, mesh, spacing):
     # the fixture states so that both sides are asked for the same thing. A
     # key this mesher never took cannot be part of what the comparison pins.
     unknown = {"type", "njtip_min"}
-    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k not in unknown})
+    kwargs = {k: v for k, v in mesh.items() if k not in unknown}
+    # The reference switches its cusp on with a length, which this mesher
+    # takes from where the two surfaces meet instead. Any length will do: the
+    # comparison stops short of the cusp.
+    if mesh.get("ni_cusp"):
+        kwargs["AR_cusp"] = 1.0
+    mesher = turbigen_ref.hmesh.H(**kwargs)
     reference = mesher.make_grid(
         None, mac, spacing.hub, spacing.casing, spacing.surface
     )
@@ -573,6 +579,13 @@ def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
         H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
 
 
+@pytest.mark.parametrize("ni_cusp", [-1, 1])
+def test_a_cusp_needs_two_points(ni_cusp):
+    """One point is a cusp of no length; zero is how to ask for none."""
+    with pytest.raises(ValueError, match="is not a cusp"):
+        H.from_dict({"type": "h", "ni_cusp": ni_cusp, "dm_TE": 0.0})
+
+
 def _stream_ends(grid):
     """Return (inlet cell, exit cell) streamwise spacing of each block, midspan."""
     ends = []
@@ -621,7 +634,7 @@ def _knife_edged(blade):
 
 
 def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
-    """A knife edge has no width for `AR_cusp` to be a multiple of.
+    """A knife edge has no gap between its surfaces for a cusp to fill.
 
     Left to run, the sides cross and an assertion on the pitchwise ordering of
     the block coordinates fails several steps later, naming nothing a designer
@@ -638,7 +651,7 @@ def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
 
 
 def test_a_square_trailing_edge_does_not_need_one():
-    """The check is the cusp's, so `AR_cusp = 0` meshes a knife edge as before."""
+    """The check is the cusp's, so `ni_cusp = 0` meshes a knife edge as before."""
     config = build(
         blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=MESH
     )

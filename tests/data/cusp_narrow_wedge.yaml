@@ -103,7 +103,6 @@ spanwise:
   type: vortex_expon
   n: -0.6
 mesh:
-  AR_cusp: 2.0
   AR_merid: 1.0
   AR_mix: 1.0
   AR_passage: 1.0

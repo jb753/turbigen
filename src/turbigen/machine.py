@@ -25,8 +25,8 @@ CUT_OFFSET = 0.05
 
 Cutting exactly at a leading or trailing edge would put the plane inside the
 blade, where there is no single annulus-spanning surface to integrate over.
-Clear of the row includes the H-mesh trailing edge cusp, which runs on
-``AR_cusp`` trailing edge thicknesses past the blade: a plane through it cuts
+Clear of the row includes the H-mesh trailing edge cusp, which runs on to
+where the two blade surfaces meet past the blade: a plane through it cuts
 less than a pitch of fluid. Measured from the furthest a swept edge reaches.
 """
 

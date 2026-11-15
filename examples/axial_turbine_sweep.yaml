@@ -155,7 +155,6 @@ mean_line:
   type: axial_turbine
   dzeta: 0.0
 mesh:
-  AR_cusp: 2.0
   AR_mix: 1.0
   dm_TE: 0.0
   ni_cusp: 5
