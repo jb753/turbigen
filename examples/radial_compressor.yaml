@@ -5,7 +5,7 @@
 # alone; the annulus outlet duct is a vaneless diffuser with a nozzle.
 #
 # Meshed with the H mesher, with a blunt trailing edge cusped into the radial
-# exit, and without a tip gap.
+# exit, and a pinched tip gap.
 
 fluid:
   type: perfect
@@ -41,8 +41,11 @@ blades:
   - count:
       type: Co
       Co: 0.6
+    # Tip clearance 1% of exit span, uniform in metres along the chord
+    tip: 0.01
     reference_length:
       thickness: span_in
+      tip: span_out
     sections:
       - spf: 0.0
         dchi_LE: 0.0
@@ -52,10 +55,10 @@ blades:
           aft_loading: 0.0
         # Brind (2024): a 4:1 elliptic nose, constant thickness, then a
         # parabolic taper from 60% chord to 35% of the maximum at the trailing
-        # edge; maximum thickness 4% of inlet span
+        # edge; maximum thickness 8% of inlet span, twice the paper's
         thickness: &thickness
           type: impeller
-          t_max: 0.04
+          t_max: 0.08
           ellipse_ratio: 4.0
           m_taper: 0.6
           TE_ratio: 0.35
@@ -69,6 +72,10 @@ blades:
         dchi_TE: 0.0
         camber: *camber
         thickness: *thickness
+
+# Throttle the outlet to the design mass flow
+operating_point:
+  mdot_adjust: 0.0
 
 iterate:
   correct:
@@ -105,3 +112,10 @@ batch:
 mesh:
   type: h
   yplus: 30.0
+  # Half the default, for more streamwise points around the leading edge
+  AR_LE: 0.75
+  # Mid-passage cells twice the default pitchwise, the pitch being several
+  # spans wide over most of the impeller
+  AR_passage: 2.0
+  # Wall cell sized normal to the blade surface, not circumferentially
+  yplus_normal: true
