@@ -64,6 +64,8 @@ class _RowGeometry:
     drt_norm: float
     AR_row: float
     ist: int
+    dm_LE: float
+    """Streamwise grid spacing at LE, normalised by meridional chord."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -149,8 +151,19 @@ class H(Mesher):
     Incompatible with a tip gap, which needs the casing clustering it asks for.
     """
 
-    dm_LE: float = 0.001
-    """Streamwise grid spacing at LE, normalised by meridional chord."""
+    dm_LE: float = 0.0
+    """Streamwise grid spacing at LE, normalised by meridional chord, 0. to set
+    it from the wall spacing using :attr:`AR_LE`."""
+
+    AR_LE: float = 1.5
+    """Aspect ratio of the cell at the LE, streamwise over pitchwise, when
+    :attr:`dm_LE` is 0.
+
+    The pitchwise spacing is the surface wall spacing that `yplus` asks for,
+    so the LE resolution follows each row's Reynolds number rather than being
+    one fraction of chord for every row. The axial turbine example at
+    `yplus` 30 comes out at 1.35 and 1.67 with a fixed `dm_LE` of 0.001.
+    """
 
     ni_TE: int = 9
     """Number of streamwise points across trailing edge."""
@@ -421,6 +434,12 @@ class H(Mesher):
         span_row = np.mean(annulus.evaluate_span(np.arange(i_row * 2, i_row * 2 + 2)))
         AR_row = span_row / chord_mid[1]
 
+        if self.dm_LE:
+            dm_LE = self.dm_LE
+        else:
+            dm_LE = self.AR_LE * spacing.surface[i_row] / chord_mid[1]
+        logger.debug(f"Row {i_row} dm_LE={dm_LE:.4g}")
+
         return _RowGeometry(
             pitch_theta=pitch_theta,
             chord_mid=chord_mid,
@@ -430,6 +449,7 @@ class H(Mesher):
             drt_norm=drt_norm,
             AR_row=AR_row,
             ist=ist,
+            dm_LE=dm_LE,
         )
 
     def _row_1d_grids(
@@ -521,6 +541,7 @@ class H(Mesher):
             geom.AR_row,
             tte,
             ni_cusp=ni_cusp_align,
+            dm_LE=geom.dm_LE,
         )
 
         ni = len(stream_frac)
@@ -1099,8 +1120,17 @@ class H(Mesher):
         tte=None,
         chord_factor=1.0,
         ni_cusp=0,
+        dm_LE=None,
     ):
-        """Evaluate streamwise grid vector for a blade row."""
+        """Evaluate streamwise grid vector for a blade row.
+
+        `dm_LE` is the LE spacing normalised by meridional chord, defaulting
+        to :attr:`dm_LE`.
+        """
+        if dm_LE is None:
+            dm_LE = self.dm_LE
+        if not dm_LE > 0.0:
+            raise ValueError(f"LE grid spacing must be positive, got dm_LE={dm_LE}")
 
         assert len(pitch_chord) == 3
         assert (pitch_chord > 0.0).all()
@@ -1117,7 +1147,7 @@ class H(Mesher):
         dm_mid = self.dspf_mid * AR_row / self.AR_merid
 
         # Convert the LE/TE grid spacings from chord-normalised to gap-normalised
-        dm_upstream_LE = self.dm_LE * pitch_chord[0] / pitch_chord[1]
+        dm_upstream_LE = dm_LE * pitch_chord[0] / pitch_chord[1]
         dm_TE = (1.0 - tte) / self.ni_TE
         dm_downstream_TE = dm_TE * pitch_chord[-1] / pitch_chord[1]
 
@@ -1144,7 +1174,7 @@ class H(Mesher):
         )
 
         # Apply chord length adjustment factor
-        dm_LE_adj = self.dm_LE / chord_factor
+        dm_LE_adj = dm_LE / chord_factor
         dm_mid_adj = dm_mid / chord_factor
         dm_TE_adj = dm_TE / chord_factor
 

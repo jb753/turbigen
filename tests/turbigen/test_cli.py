@@ -435,6 +435,7 @@ blades:
 mesh:
   type: h
   resolution_factor: 0.25
+  dm_LE: 0.001
   dm_TE: 0.0
   AR_cusp: 2.0
   ni_cusp: 5

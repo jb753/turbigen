@@ -35,6 +35,9 @@ MESH = {
     # test pins is the algorithm rather than the choice of default -- which is
     # the right division, the default being ours to move and the algorithm not.
     "njtip_min": 9,
+    # Likewise the leading edge spacing, which our default now sets from the
+    # wall spacing and the reference holds at a fixed fraction of chord.
+    "dm_LE": 0.001,
 }
 """A deliberately coarse mesh, so that the tests run in about a second each."""
 
