@@ -41,6 +41,8 @@ blades:
   - count:
       type: Co
       Co: 0.6
+    reference_length:
+      thickness: span_in
     sections:
       - spf: 0.0
         dchi_LE: 0.0
@@ -48,14 +50,15 @@ blades:
         camber: &camber
           type: quadratic
           aft_loading: 0.0
+        # Brind (2024): a 4:1 elliptic nose, constant thickness, then a
+        # parabolic taper from 60% chord to 35% of the maximum at the trailing
+        # edge; maximum thickness 4% of inlet span
         thickness: &thickness
-          type: taylor
-          R_LE: 0.04
-          t_max: 0.08
-          m_tmax: 0.3
-          kappa_max: 0.0
-          t_TE: 0.02
-          tanwedge: 0.1
+          type: impeller
+          t_max: 0.04
+          ellipse_ratio: 4.0
+          m_taper: 0.6
+          TE_ratio: 0.35
       - spf: 0.5
         dchi_LE: 0.0
         dchi_TE: 0.0
