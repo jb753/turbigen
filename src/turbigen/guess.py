@@ -12,10 +12,16 @@ node from its coordinates, so it is the same field whatever the mesh topology
 and however the grid lines run:
 
 * **Thermodynamic state** from the mean line, linear in the annulus
-  meridional coordinate between its stations.
+  meridional coordinate between its stations through a row. In the ducts
+  ahead of, between and behind the rows it is the mean line carried along the
+  annulus conserving mass, stagnation enthalpy, angular momentum and entropy,
+  :meth:`~turbigen.meanline.MeanLine.interpolate_to`, so that a duct whose
+  area or radius changes, such as a vaneless diffuser, starts with the
+  pressure rise and the mass flow it should have.
 * **Meridional speed** from the :mod:`spanwise design <turbigen.spanwise>`
   at each station, linear in the same coordinate between them, along the line
   of constant span fraction through the node, so parallel to hub and casing.
+  In a duct the profile is scaled to the level continuity gives there.
 * **Swirl** from the spanwise design each blade was designed with. Through
   a row, between its edges at each span, swept or not, the relative flow
   angle turns from its inlet to its exit value in the shape of the camber line
@@ -47,6 +53,10 @@ SNAP_PITCH = 0.2
 """Distance from a blade surface, as a fraction of the pitch, over which the
 flow is turned onto the surface's angle [--]. Under half a pitch, so the two
 sides of a passage never pull on the same node."""
+
+N_DUCT_TABLE = 401
+"""Points along the whole annulus at which the mean line is carried through
+the ducts, interpolated linearly in between [--]."""
 
 M_EDGE = 0.05
 """Fraction of chord over which turning onto the surfaces fades in from the
@@ -116,6 +126,14 @@ class _Field:
         self.spanwise = machine.spanwise
         self.mu = float(np.mean(self.ml.mu))
         self.turning = [_turning(row.blade) for row in self.rows]
+        self.Vm_station = np.asarray(flat.Vm, dtype=float)
+
+        # The mean line carried along the annulus, for the ducts
+        self.m_duct = np.linspace(0.0, self.annulus.m_max, N_DUCT_TABLE)
+        duct = self.ml.interpolate_to(self.annulus, self.m_duct)
+        self.P_duct = np.asarray(duct.P, dtype=float)
+        self.T_duct = np.asarray(duct.T, dtype=float)
+        self.Vm_duct = np.asarray(duct.Vm, dtype=float)
 
     def mspf(self, x, r):
         """Annulus coordinates of meridional points, held inside the annulus."""
@@ -130,6 +148,13 @@ class _Field:
 
     def _station(self, values, m):
         return np.interp(m, self.m_station, values)
+
+    def in_duct(self, m):
+        """Whether points are outside every row, edges belonging to rows."""
+        duct = np.ones(np.shape(m), dtype=bool)
+        for i in range(len(self.rows)):
+            duct &= ~((m >= 2.0 * i + 1.0) & (m <= 2.0 * i + 2.0))
+        return duct
 
     def direction(self, m, spf):
         """Unit meridional tangent along the line of constant span fraction,
@@ -226,6 +251,15 @@ class _Field:
         P = self._station(self.P, m)
         T = self._station(self.T, m)
         Vm = self.Vm(m, spf)
+
+        duct = self.in_duct(m)
+        if duct.any():
+            m_duct = m[duct]
+            P[duct] = np.interp(m_duct, self.m_duct, self.P_duct)
+            T[duct] = np.interp(m_duct, self.m_duct, self.T_duct)
+            Vm[duct] *= np.interp(m_duct, self.m_duct, self.Vm_duct) / self._station(
+                self.Vm_station, m_duct
+            )
         (dx, dr), _ = self.direction(m, spf)
         Vt = self.rVt(m, spf) / r
         return P, T, np.stack((Vm * dx, Vm * dr, Vt), axis=-1)

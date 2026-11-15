@@ -669,7 +669,7 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
 
     """
     inlet = machine.mean_line.inlet
-    outlet = machine.mean_line.outlet
+    outlet = design_exit(machine)
 
     patches_in = grid.patches.inlet
     patches_out = grid.patches.outlet
@@ -720,11 +720,31 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     )
 
 
+def design_exit(machine):
+    """Return the design's flow at the domain exit, a scalar mean line.
+
+    Not the last station of the mean line, which is the last row's trailing
+    edge: the annulus carries on past it to the outlet, through a duct whose
+    area and radius can both change. A radial compressor's vaneless diffuser
+    raises the static pressure by a tenth on its way there, so holding the
+    trailing edge's pressure at the outlet would ask for a different machine.
+    So the flow is carried along the duct conserving mass, stagnation
+    enthalpy, angular momentum and entropy, by
+    :meth:`~turbigen.meanline.MeanLine.interpolate_to`. A constant-area,
+    constant-radius duct gives back the trailing edge's state.
+    """
+    ml, annulus = machine.mean_line, machine.annulus
+    if annulus is None:
+        return ml.outlet
+    return ml.interpolate_to(annulus, [annulus.m_max])[0]
+
+
 def exit_pressure(machine, operating_point=None):
     """Return the static pressure to hold at exit [Pa].
 
-    The design's own, moved by :attr:`OperatingPoint.DP_adjust`. Split out so
-    that where a machine is being run can be read, and tested, without a grid.
+    The design's own at the domain exit, :func:`design_exit`, moved by
+    :attr:`OperatingPoint.DP_adjust`. Split out so that where a machine is
+    being run can be read, and tested, without a grid.
 
     Parameters
     ----------
@@ -739,16 +759,15 @@ def exit_pressure(machine, operating_point=None):
 
     """
     Po_in = float(machine.mean_line.inlet.Po)
-    P_out = float(machine.mean_line.outlet.P)
+    exit = design_exit(machine)
+    P_out = float(exit.P)
 
     # Behind a choked throat the exit pressure only has to be low enough to
     # leave it choked: the isentropic one at the nozzle's exit Mach number,
     # from the inlet stagnation pressure, below the exit's at any speed a
     # compressor still raises pressure at
     if operating_point is not None and operating_point.nozzle_area is not None:
-        P_nozzle = Po_in * nozzle.p_ratio(
-            operating_point.nozzle_Ma, float(machine.mean_line.outlet.gamma)
-        )
+        P_nozzle = Po_in * nozzle.p_ratio(operating_point.nozzle_Ma, float(exit.gamma))
         logger.info(
             f"Operating point: choked nozzle, exit P={P_nozzle:.5g} Pa for "
             f"Ma={operating_point.nozzle_Ma:.3g} at exit."
@@ -936,7 +955,7 @@ def achieved(grid, machine, operating_point=None):
         return None
 
     Po_in = float(machine.mean_line.inlet.Po)
-    DP_design = Po_in - float(machine.mean_line.outlet.P)
+    DP_design = Po_in - float(design_exit(machine).P)
     DP_adjust = (Po_in - float(patch.P_throttle)) / DP_design - 1.0
 
     logger.info(

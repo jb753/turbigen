@@ -247,6 +247,8 @@ class Stub:
     def __init__(self, Po_in, P_out):
         end = lambda value: type("S", (), {"Po": value, "P": value})()
         self.mean_line = type("M", (), {"inlet": end(Po_in), "outlet": end(P_out)})()
+        # No annulus, so the exit is the last station as given
+        self.annulus = None
 
 
 def test_no_operating_point_is_the_design_point(shrouded):
