@@ -20,6 +20,11 @@ Test cases:
 - test_blend_fades_out_inside_a_thinned_blade: a tip pinch's knife edge
 - test_loading_puts_the_low_pressure_on_the_suction_side
 - test_loading_is_continuous_round_the_blade
+- test_no_relative_flow_through_the_blades: on the wall nodes
+- test_flow_into_the_blades_fades_out_away_from_them
+- test_flow_beyond_the_reach_of_the_blades_is_untouched
+- test_a_blade_corner_is_clear_of_both_walls: blade and endwall at once
+- test_the_wall_step_holds_rothalpy_and_entropy
 - test_a_grid_without_a_fluid_is_refused
 """
 
@@ -31,6 +36,9 @@ from test_blade import build
 from test_mesh import MESH
 
 from turbigen import guess
+
+F32 = float(np.finfo(np.float32).eps)
+"""Single-precision machine epsilon, the grid's storage [--]."""
 
 
 @pytest.fixture(scope="module")
@@ -140,13 +148,18 @@ def test_guess_is_independent_of_the_grid_lines(machine, grid):
     """A block with its `i` reversed gets the same field, reversed.
 
     Which a guess aligned with the grid lines would not: it would run the flow
-    upstream.
+    upstream. The patches are reversed with the coordinates, so that the walls,
+    which the guess reads off them, stay on the same nodes.
     """
     reversed_grid = copy.deepcopy(grid)
     block = reversed_grid[0]
     block.set_x(np.ascontiguousarray(block.x[::-1]))
     block.set_r(np.ascontiguousarray(block.r[::-1]))
     block.set_t(np.ascontiguousarray(block.t[::-1]))
+    ni = block.shape[0]
+    for patch in block.patches:
+        ist, ien = (int(i) for i in patch.ijk_lim_abs[0])
+        patch.set_i_lim((ni - 1 - ien, ni - 1 - ist))
 
     guess.apply(grid, machine)
     guess.apply(reversed_grid, machine)
@@ -209,9 +222,14 @@ def _Alpha_rel(block, Omega, index):
     return np.arctan2(W_t, W_m)
 
 
-def test_blend_turns_the_flow_onto_the_blade_surfaces(machine, meshed):
+def test_blend_turns_the_flow_onto_the_blade_surfaces(machine, meshed, monkeypatch):
     """Next to a surface mid-chord, the relative flow runs at the surface's own
-    angle, and the speed is what the design gives there before the blend."""
+    angle, and the speed is what the design gives there before the blend.
+
+    With the wall step off, which slows the flow into a wall after the blend,
+    so that this is the blend's own doing.
+    """
+    monkeypatch.setattr(guess, "_unblock_walls", lambda *args: None)
     blended = copy.deepcopy(meshed)
     guess.apply(blended, machine)
     field = guess._Field(machine)
@@ -268,6 +286,187 @@ def test_blend_fades_out_inside_a_thinned_blade(machine):
     passage = field.passage(1, m_row + m_LE, spf, np.ones(4), t)
 
     np.testing.assert_allclose(passage["solid"], (1.0, 1.0, 0.0, 0.5), atol=1e-6)
+
+
+@pytest.fixture
+def unblocked(machine, meshed, monkeypatch):
+    """The same grid guessed with the wall step and without it, and the
+    relative angular velocity and pitch of each block."""
+    with_step = copy.deepcopy(meshed)
+    guess.apply(with_step, machine)
+    without = copy.deepcopy(meshed)
+    monkeypatch.setattr(guess, "_unblock_walls", lambda *args: None)
+    guess.apply(without, machine)
+    rows = [
+        (Omega, 2.0 * np.pi / float(row.n_blade))
+        for Omega, row in zip(machine.mean_line.Omega[0], machine.rows)
+    ]
+    row_of = [rows[i] for i, blocks in enumerate(meshed.rows) for _ in blocks]
+    return with_step, without, row_of
+
+
+def _W(block, Omega):
+    """Relative velocity in Cartesians, (ni, nj, nk, 3)."""
+    r, t = (np.asarray(a, dtype=float) for a in (block.r, block.t))
+    Vx, Vr, Vt = (np.asarray(a, dtype=float) for a in (block.Vx, block.Vr, block.Vt))
+    Wt = Vt - Omega * r
+    c, s = np.cos(t), np.sin(t)
+    return np.stack((Vx, Vr * c - Wt * s, Vr * s + Wt * c), axis=-1)
+
+
+def _xyz(block):
+    x, r, t = (np.asarray(a, dtype=float) for a in (block.x, block.r, block.t))
+    return np.stack((x, r * np.cos(t), r * np.sin(t)), axis=-1)
+
+
+def _blade_faces(block, pitch_theta):
+    """Each blade surface of an H block, as the pitchwise faces' wall nodes.
+
+    Yields the face's `k`, the wall nodes as an (ni, nj) mask from the solver's
+    own wall mask, the unit normal into the block at each, the distance from
+    the face along the `k` lines (ni, nj, nk), counted from that face, and the
+    fade weight there.
+    """
+    xyz = _xyz(block)
+    r = np.asarray(block.r, dtype=float)
+    for key, k in (("wallk1", 0), ("wallnk", -1)):
+        wall = guess._wall_nodes(block.ijk_wall_conv[key][:, :, 0])
+        if not wall.any():
+            continue
+        line = xyz if k == 0 else xyz[:, :, ::-1]
+        r_line = r if k == 0 else r[:, :, ::-1]
+        surface = line[:, :, 0]
+        n = np.cross(guess._tangent(surface, 0), guess._tangent(surface, 1))
+        n /= np.linalg.norm(n, axis=-1, keepdims=True)
+        n *= np.sign(np.sum(n * (line[:, :, 1] - surface), axis=-1, keepdims=True))
+        step = np.linalg.norm(np.diff(line, axis=2), axis=-1)
+        dist = np.concatenate(
+            (np.zeros(wall.shape + (1,)), np.cumsum(step, axis=2)), axis=2
+        )
+        w = np.clip(1.0 - dist / (guess.WALL_PITCH * pitch_theta * r_line), 0.0, 1.0)
+        w *= wall[:, :, None]
+        if k == -1:
+            dist, w = dist[:, :, ::-1], w[:, :, ::-1]
+        yield k, wall, n, dist, w
+
+
+def test_no_relative_flow_through_the_blades(unblocked):
+    """On a blade's wall nodes, none of the relative flow goes through it, where
+    without the step it arrives round the nose at full speed."""
+    with_step, without, row_of = unblocked
+
+    worst_before = 0.0
+    for block, plain, (Omega, pitch) in zip(with_step, without, row_of):
+        W, W0 = _W(block, Omega), _W(plain, Omega)
+        for k, wall, n, *_ in _blade_faces(block, pitch):
+            through = np.sum(W[:, :, k] * n, axis=-1)[wall]
+            speed = np.linalg.norm(W[:, :, k], axis=-1)[wall]
+            assert np.all(np.abs(through) < 1e-4 * speed + 1e-3)
+            worst_before = max(
+                worst_before, np.abs(np.sum(W0[:, :, k] * n, axis=-1)[wall]).max()
+            )
+    assert worst_before > 1.0
+
+
+def test_flow_into_the_blades_fades_out_away_from_them(unblocked):
+    """Off the wall, a fraction of the flow into a blade is taken out, falling
+    linearly from all of it at the wall to none at the reach; flow away from a
+    blade is left alone."""
+    with_step, without, row_of = unblocked
+
+    checked = 0
+    for block, plain, (Omega, pitch) in zip(with_step, without, row_of):
+        W, W0 = _W(block, Omega), _W(plain, Omega)
+        for k, wall, n, dist, w in _blade_faces(block, pitch):
+            off = (w > 0.0) & (dist > 0.0)
+            normal = np.broadcast_to(n[:, :, None], W.shape)
+            before = np.sum(W0 * normal, axis=-1)[off]
+            after = np.sum(W * normal, axis=-1)[off]
+            expected = before - w[off] * np.minimum(before, 0.0)
+            speed = np.linalg.norm(W0, axis=-1)[off]
+            np.testing.assert_allclose(after, expected, atol=1e-4 * speed.max())
+            checked += np.count_nonzero(off & (np.sum(W0 * normal, axis=-1) < -1.0))
+    assert checked
+
+
+def test_flow_beyond_the_reach_of_the_blades_is_untouched(unblocked):
+    """Further than the reach from every blade, the guess is as without the
+    step, and the step reaches only a few layers off the blades.
+
+    As to single-precision rounding, not exactly: the block's state is stored
+    as conserved variables, which setting it, on every node at once, rounds
+    afresh.
+    """
+    with_step, without, row_of = unblocked
+
+    for block, plain, (Omega, pitch) in zip(with_step, without, row_of):
+        reached = np.zeros(block.shape, dtype=bool)
+        for *_, w in _blade_faces(block, pitch):
+            reached |= w > 0.0
+        assert reached.any()
+        assert reached.mean() < 0.2
+        for name in ("P", "T", "Vx", "Vr", "Vt"):
+            a, b = (np.asarray(getattr(g, name))[~reached] for g in (block, plain))
+            np.testing.assert_allclose(
+                a, b, rtol=4.0 * F32, atol=4.0 * F32 * np.abs(b).max(), err_msg=name
+            )
+
+
+def test_a_blade_corner_is_clear_of_both_walls(machine, unblocked):
+    """Where a blade meets the hub or casing, the flow neither goes through the
+    blade nor is pushed into the endwall: it runs along the annulus's line of
+    constant span fraction, as everywhere else on an endwall."""
+    with_step, _, row_of = unblocked
+    annulus = machine.annulus
+
+    for block, (Omega, pitch) in zip(with_step, row_of):
+        W = _W(block, Omega)
+        for k, wall, n, *_ in _blade_faces(block, pitch):
+            for j in (0, -1):
+                corner = wall[:, j]
+                speed = np.linalg.norm(W[corner, j, k], axis=-1)
+                through = np.sum(W[corner, j, k] * n[corner, j], axis=-1)
+                assert np.all(np.abs(through) < 1e-4 * speed + 1e-3)
+
+                x, r = block.x[corner, j, k], block.r[corner, j, k]
+                m, spf = annulus.evaluate_mspf(x, r)
+                dm = 1e-4
+                tangent = annulus.evaluate_xr(m + dm, spf) - annulus.evaluate_xr(
+                    m - dm, spf
+                )
+                tangent = tangent / np.hypot(*tangent)
+                Vx, Vr = block.Vx[corner, j, k], block.Vr[corner, j, k]
+                cross = Vx * tangent[1] - Vr * tangent[0]
+                assert np.all(np.abs(cross) < 1e-3 * speed + 1e-3)
+
+
+def test_the_wall_step_holds_rothalpy_and_entropy(unblocked):
+    """What speed is taken out goes into static enthalpy, so the slowed flow is
+    nearer its stagnation state rather than losing it."""
+    with_step, without, row_of = unblocked
+
+    for block, plain, (Omega, _) in zip(with_step, without, row_of):
+        moved = np.any(_W(block, Omega) != _W(plain, Omega), axis=-1)
+        assert moved.any()
+        rothalpy = [
+            np.asarray(b.h, dtype=float) + 0.5 * np.sum(_W(b, Omega) ** 2, axis=-1)
+            for b in (block, plain)
+        ]
+        # Rounding scales with the energy stored, not the enthalpy measured
+        # from the datum, which can be near zero
+        energy = np.max(np.asarray(plain.cp, dtype=float) * plain.T)
+        np.testing.assert_allclose(
+            rothalpy[0], rothalpy[1], rtol=0.0, atol=4.0 * F32 * energy
+        )
+        s, s0 = (np.asarray(b.s, dtype=float) for b in (block, plain))
+        np.testing.assert_allclose(
+            s, s0, rtol=0.0, atol=4.0 * F32 * energy / np.max(plain.T)
+        )
+        # Slowed, so hotter; in a corner meeting both walls at once can add a
+        # trace of speed, a few thousandths of a metre per second
+        h, h0 = (np.asarray(b.h, dtype=float)[moved] for b in (block, plain))
+        kinetic = 0.5 * np.sum(_W(plain, Omega)[moved] ** 2, axis=-1)
+        assert np.all(h >= h0 - 1e-4 * kinetic - 4.0 * F32 * energy)
 
 
 def test_a_grid_without_a_fluid_is_refused(machine):
