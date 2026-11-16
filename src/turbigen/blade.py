@@ -1467,9 +1467,34 @@ class Row:
         theta = self.blade._surface_theta(
             np.stack((np.clip(spf, 0.0, 1.0), np.clip(m, 0.0, 1.0)), axis=-1)
         )
-        upper = theta.max(axis=-1)
-        lower = theta.min(axis=-1)
+        frac = self.pitch_fraction_between(
+            theta.max(axis=-1), theta.min(axis=-1), t, snap
+        )
+        return np.where(outside, np.nan, frac)
 
+    def pitch_fraction_between(self, upper, lower, t, snap=False):
+        """Return how far across the passage points lie, given its surfaces.
+
+        As :meth:`evaluate_pitch_fraction`, for a caller that has already
+        found the blade's `upper` and `lower` surface angles at the points,
+        and with no test for the points being between the blade's edges.
+
+        Parameters
+        ----------
+        upper, lower : array_like
+            Angular coordinates of the blade's upper and lower surfaces at
+            the points [rad].
+        t : array_like
+            Angular coordinate [rad].
+        snap : bool
+            As for :meth:`evaluate_pitch_fraction`.
+
+        Returns
+        -------
+        frac : ndarray
+            Pitch fraction [--], NaN inside a blade unless `snap`.
+
+        """
         # The passage runs from the upper surface of one blade to the lower
         # surface of the next one up.
         width = self.pitch - (upper - lower)
@@ -1484,4 +1509,4 @@ class Row:
             inside = np.zeros_like(inside)
         if not self.blade.suction_is_upper:
             frac = 1.0 - frac
-        return np.where(outside | inside, np.nan, frac)
+        return np.where(inside, np.nan, frac)

@@ -124,16 +124,19 @@ def apply(grid, machine):
         x_mer, r_mer = block.x[plane], block.r[plane]
         # Placed in the grid's own precision, so that a node on an end of the
         # annulus, rounded to it, is still inside
-        m, spf = field.mspf(x_mer.reshape(-1), r_mer.reshape(-1))
-        P, T, Vxrt = field.evaluate(m, spf, np.asarray(r_mer, dtype=float).reshape(-1))
+        m_mer, spf_mer = field.mspf(x_mer.reshape(-1), r_mer.reshape(-1))
+        r_mer_flat = np.asarray(r_mer, dtype=float).reshape(-1)
+        P, T, Vxrt = field.evaluate(m_mer, spf_mer, r_mer_flat)
 
-        m, spf, P, T = (_spread(a, x_mer.shape, block.shape) for a in (m, spf, P, T))
+        P, T = (_spread(a, x_mer.shape, block.shape) for a in (P, T))
         W = _spread(Vxrt, x_mer.shape, block.shape).copy()
         W[:, 2] -= Omega * r
         for i in range(len(field.rows)):
-            passage = field.passage(i, m, spf, r, t)
-            if passage is not None:
-                _blend(W, passage)
+            section = field.section(i, m_mer, spf_mer, r_mer_flat)
+            if section is None:
+                continue
+            section = _spread_section(section, x_mer.shape, block.shape)
+            _blend(W, field.across(section, t[section["index"]]))
 
         block.set_P_T(P.reshape(block.shape), T.reshape(block.shape))
         W[:, 2] += Omega * r
@@ -178,6 +181,22 @@ def _spread(a, plane_shape, shape):
     tail = a.shape[1:]
     a = a.reshape(*plane_shape, *tail)
     return np.broadcast_to(a, (*shape, *tail)).reshape(-1, *tail)
+
+
+def _spread_section(section, plane_shape, shape):
+    """A :meth:`_Field.section` over the nodes of a plane, repeated over a
+    block of `shape`, its `index` into the block's flattened nodes."""
+    if plane_shape == tuple(shape):
+        return section
+    slot = np.full(int(np.prod(plane_shape)), -1, dtype=np.int64)
+    slot[section["index"]] = np.arange(len(section["index"]))
+    slot = _spread(slot, plane_shape, shape)
+    index = np.flatnonzero(slot >= 0)
+    pick = slot[index]
+    return {
+        key: (value[pick] if isinstance(value, np.ndarray) else value)
+        for key, value in section.items()
+    } | {"index": index}
 
 
 class _Field:
@@ -339,6 +358,19 @@ class _Field:
         none. Returned as a dict of arrays over those points, with `index`
         placing them in the inputs.
         """
+        section = self.section(i_row, m, spf, r)
+        if section is None:
+            return None
+        return self.across(section, np.asarray(t)[section["index"]])
+
+    def section(self, i_row, m, spf, r):
+        """The part of :meth:`passage` that depends on meridional position.
+
+        Everything but how far across the passage the points lie, which
+        :meth:`across` adds from their angles; split so that a grid whose
+        nodes repeat meridional positions, as an H mesh's do pitchwise, finds
+        this once for each.
+        """
         row = self.rows[i_row]
         blade = row.blade
         m_LE = 2.0 * i_row + 1.0
@@ -350,32 +382,51 @@ class _Field:
             return None
 
         index = np.flatnonzero(near)
-        m_row, m_sec, spf, r, t = (v[index] for v in (m_row, m_sec, spf, r, t))
+        m_row, m_sec, spf, r = (v[index] for v in (m_row, m_sec, spf, r))
         _, dl_dm = self.direction(m_row + m_LE, spf)
         m_clip = np.clip(m_sec, 0.0, 1.0)
         spf_clip = np.clip(spf, 0.0, 1.0)
-        table = blade._surface_theta
-
-        def theta_at(m_now):
-            return table(np.stack((spf_clip, np.clip(m_now, 0.0, 1.0)), axis=-1))
-
-        theta = theta_at(m_clip)
         lo, hi = m_clip - DM_DERIVATIVE, m_clip + DM_DERIVATIVE
         lo, hi = np.clip(lo, 0.0, 1.0), np.clip(hi, 0.0, 1.0)
+        # The surfaces at the points and a step either side, in one call
+        theta, theta_lo, theta_hi = blade._surface_theta(
+            np.stack(
+                (np.broadcast_to(spf_clip, (3, spf_clip.size)), (m_clip, lo, hi)),
+                axis=-1,
+            )
+        )
         # Distance along the line per step along the section, which a swept
         # section stretches or shrinks
         if blade.swept:
             dm_row = blade.interpolate_swept_m(np.stack((lo, hi)), spf)
             dl_dm = dl_dm * (dm_row[1] - dm_row[0]) / (hi - lo)
-        dtheta_dl = (theta_at(hi) - theta_at(lo)) / (hi - lo)[:, None] / dl_dm[:, None]
+        dtheta_dl = (theta_hi - theta_lo) / (hi - lo)[:, None] / dl_dm[:, None]
 
-        frac = row.evaluate_pitch_fraction(m_row, spf, t, snap=True)
+        return {
+            "index": index,
+            "m_row": m_row,
+            "m_sec": m_sec,
+            "spf": spf,
+            "r": r,
+            "upper": theta.max(axis=-1),
+            "lower": theta.min(axis=-1),
+            "width": row.pitch - np.abs(theta[:, 0] - theta[:, 1]),
+            "Alpha_surface": np.arctan(r[:, None] * dtheta_dl),
+            "row": row,
+        }
+
+    @staticmethod
+    def across(section, t):
+        """Complete a :meth:`section` with the points' angles `t` into a
+        :meth:`passage`, a new dict."""
+        row = section["row"]
+        upper, lower = section["upper"], section["lower"]
+        frac = row.pitch_fraction_between(upper, lower, t, snap=True)
 
         # How far into the designed blade a node lies, as a fraction of half
         # its thickness. A mesh that thins the blade, as a tip pinch does, puts
         # nodes there; snapped to opposite surfaces, two nodes a whisker apart
         # would be turned the full difference between the surfaces' angles.
-        upper, lower = theta.max(axis=-1), theta.min(axis=-1)
         thick = upper - lower
         across = np.mod(t - upper, row.pitch)
         depth = np.where(
@@ -385,18 +436,7 @@ class _Field:
         )
         solid = np.clip(1.0 - 2.0 * depth / np.maximum(thick, 1e-12), 0.0, 1.0)
 
-        return {
-            "index": index,
-            "m_row": m_row,
-            "m_sec": m_sec,
-            "spf": spf,
-            "r": r,
-            "frac": frac,
-            "width": row.pitch - np.abs(theta[:, 0] - theta[:, 1]),
-            "solid": solid,
-            "Alpha_surface": np.arctan(r[:, None] * dtheta_dl),
-            "row": row,
-        }
+        return {**section, "frac": frac, "solid": solid}
 
 
 def _turning(blade):
