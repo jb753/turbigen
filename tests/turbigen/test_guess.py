@@ -24,7 +24,7 @@ Test cases:
 - test_flow_into_the_blades_fades_out_away_from_them
 - test_flow_beyond_the_reach_of_the_blades_is_untouched
 - test_a_blade_corner_is_clear_of_both_walls: blade and endwall at once
-- test_the_wall_step_holds_rothalpy_and_entropy
+- test_the_wall_step_holds_pressure_and_temperature
 - test_a_grid_without_a_fluid_is_refused
 """
 
@@ -440,33 +440,18 @@ def test_a_blade_corner_is_clear_of_both_walls(machine, unblocked):
                 assert np.all(np.abs(cross) < 1e-3 * speed + 1e-3)
 
 
-def test_the_wall_step_holds_rothalpy_and_entropy(unblocked):
-    """What speed is taken out goes into static enthalpy, so the slowed flow is
-    nearer its stagnation state rather than losing it."""
+def test_the_wall_step_holds_pressure_and_temperature(unblocked):
+    """Only the velocity changes: raised towards stagnation in a layer this
+    thin, the pressure would have nothing to hold it up, and the solver would
+    release it as a pulse round the nose."""
     with_step, without, row_of = unblocked
 
     for block, plain, (Omega, _) in zip(with_step, without, row_of):
         moved = np.any(_W(block, Omega) != _W(plain, Omega), axis=-1)
         assert moved.any()
-        rothalpy = [
-            np.asarray(b.h, dtype=float) + 0.5 * np.sum(_W(b, Omega) ** 2, axis=-1)
-            for b in (block, plain)
-        ]
-        # Rounding scales with the energy stored, not the enthalpy measured
-        # from the datum, which can be near zero
-        energy = np.max(np.asarray(plain.cp, dtype=float) * plain.T)
-        np.testing.assert_allclose(
-            rothalpy[0], rothalpy[1], rtol=0.0, atol=4.0 * F32 * energy
-        )
-        s, s0 = (np.asarray(b.s, dtype=float) for b in (block, plain))
-        np.testing.assert_allclose(
-            s, s0, rtol=0.0, atol=4.0 * F32 * energy / np.max(plain.T)
-        )
-        # Slowed, so hotter; in a corner meeting both walls at once can add a
-        # trace of speed, a few thousandths of a metre per second
-        h, h0 = (np.asarray(b.h, dtype=float)[moved] for b in (block, plain))
-        kinetic = 0.5 * np.sum(_W(plain, Omega)[moved] ** 2, axis=-1)
-        assert np.all(h >= h0 - 1e-4 * kinetic - 4.0 * F32 * energy)
+        for name in ("P", "T"):
+            a, b = (np.asarray(getattr(g, name), dtype=float) for g in (block, plain))
+            np.testing.assert_allclose(a, b, rtol=4.0 * F32, err_msg=name)
 
 
 def test_a_grid_without_a_fluid_is_refused(machine):

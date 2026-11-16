@@ -38,8 +38,11 @@ and however the grid lines run:
   there, the solver stops it dead at the first step, which sends a pressure
   pulse round the nose; on a sharp, fast inducer nose it expands to vacuum. So
   near every wall the component of relative velocity into it is taken out,
-  fading to nothing :data:`WALL_PITCH` of the local pitch away, holding
-  rothalpy and entropy so the slowed flow is nearer its stagnation state.
+  fading to nothing :data:`WALL_PITCH` of the local pitch away. Pressure and
+  temperature are left as they were: held at its rothalpy, the slowed flow
+  rises towards stagnation in a layer a few millimetres thick, with nothing
+  in the velocity field to hold that pressure difference up, and the solver
+  releases it as the same pulse round the nose.
 
 It is deliberately crude --- it exists to give the solver a sane start, not to
 be right.
@@ -588,8 +591,9 @@ def _unblock_walls(block, Omega, pitch_theta, field):
     off normal. A node near two walls, in a corner, is corrected against each.
 
     In the row's frame, which is the blade's; an endwall's normal has no
-    circumferential part, so the frame makes no difference there. Rothalpy and
-    entropy are held, so what speed is taken out goes into static enthalpy.
+    circumferential part, so the frame makes no difference there. Pressure and
+    temperature are held, so the speed taken out is lost, not turned into
+    pressure.
     """
     walls = block.ijk_wall_conv
     x, r, t = (np.asarray(a, dtype=float) for a in (block.x, block.r, block.t))
@@ -703,7 +707,6 @@ def _unblock_walls(block, Omega, pitch_theta, field):
     )
     Wt = Vt - Omega * r_near
     W = np.stack((Vx, Vr * c - Wt * s, Vr * s + Wt * c), axis=-1)
-    Wsq_before = np.sum(W**2, axis=-1)
 
     # What each wall in reach asks of the normal component through it: on the
     # wall, all of it gone; off it, a fraction `w` of the part into it gone.
@@ -733,16 +736,11 @@ def _unblock_walls(block, Omega, pitch_theta, field):
     G += WALL_REGULARISE * np.eye(n_most)
     W += np.einsum("nk,nkd->nd", np.linalg.solve(G, target[..., None])[..., 0], N)
 
-    # Velocity read before the state is reset, which may move it with density
+    # Velocity alone: setting it keeps density and internal energy, and with
+    # them pressure and temperature
     Vxrt = np.stack(
         [np.array(a, dtype=float) for a in (block.Vx, block.Vr, block.Vt)], axis=-1
     )
-
-    # Rothalpy and entropy held: h + W^2/2 is unchanged at fixed radius
-    h = np.array(block.h, dtype=float)
-    h[ijk] += 0.5 * (Wsq_before - np.sum(W**2, axis=-1))
-    block.set_h_s(h, np.asarray(block.s, dtype=float))
-
     Vxrt[ijk] = np.stack(
         (
             W[:, 0],
