@@ -92,6 +92,10 @@ DTYPE = np.float32
 finished grid is stored in single precision, and the sweeps run faster in
 it. Only their geometry is worked out in double before."""
 
+THETA_BISECT = 10
+"""Halvings :func:`_theta_even` finds each station's weight by, to a 2^10th
+of the range it searches."""
+
 
 class ConformalMap:
     """Conformal coordinates on one surface of constant span fraction.
@@ -3380,17 +3384,18 @@ def _theta_even(xy, pitch, skew_min, dw_max, side, cap=None, weights=False):
     cap = np.ones(ni) if cap is None else np.asarray(cap, dtype=float)
     # Each station's line, and the floor of the cells between it and the one
     # after, nearer the blade
-    stations, floors = [None] * ni, [None] * ni
+    stations = [None] * ni
 
     def holds(k, a, b):
         """Whether the cells between lines `a` at station k and `b` at k + 1
         keep to their floor."""
         return np.all(_strip_angles(b)(a) >= floors[k] - 1e-9)
 
+    # The floors of every strip of the band as it was, at once
+    floors = list(np.minimum(_strip_angles(band[:, 1:])(band[:, :-1]), skew_min))
     for i in range(ni - 2, -1, -1):
         angles = _strip_angles(new[:, i + 1])
-        floor = np.minimum(_strip_angles(band[:, i + 1])(band[:, i]), skew_min)
-        floors[i] = floor
+        floor = floors[i]
         hi = min(1.0, w[i + 1] + dw_max, cap[i])
         lo = min(w[i + 1], hi)
         line, s, s_even = stations[i] = station(i)
@@ -3399,14 +3404,17 @@ def _theta_even(xy, pitch, skew_min, dw_max, side, cap=None, weights=False):
         def ok(wi):
             return np.all(angles(blended(line, s, s_even, wi)) >= floor - 1e-9)
 
-        if ok(hi):
+        # Whether the line put at this station is known to keep to the floor
+        # against the one after, by the same test `holds` would make
+        kept = ok(hi)
+        if kept:
             lo = hi
         else:
             if not ok(lo):
                 # Holding the weight of the station before would break the
                 # floor too: the most below it that does not, or none
                 lo, hi = 0.0, lo
-            for _ in range(20):
+            for _ in range(THETA_BISECT):
                 mid = 0.5 * (lo + hi)
                 lo, hi = (mid, hi) if ok(mid) else (lo, mid)
         w[i] = lo
@@ -3416,7 +3424,11 @@ def _theta_even(xy, pitch, skew_min, dw_max, side, cap=None, weights=False):
         # the cells either side of it, until the floor holds. All of them at
         # none is the band as it was, which does.
         k = i
-        while not holds(k, new[:, k], new[:, k + 1]) and k + 1 < ni - 1:
+        while (
+            not (kept and k == i)
+            and not holds(k, new[:, k], new[:, k + 1])
+            and k + 1 < ni - 1
+        ):
             m = k + 1
 
             def both(wm):
@@ -3424,7 +3436,7 @@ def _theta_even(xy, pitch, skew_min, dw_max, side, cap=None, weights=False):
                 return holds(k, new[:, k], line_m) and holds(m, line_m, new[:, m + 1])
 
             lo, hi = 0.0, w[m]
-            for _ in range(20):
+            for _ in range(THETA_BISECT):
                 mid = 0.5 * (lo + hi)
                 lo, hi = (mid, hi) if both(mid) else (lo, mid)
             w[m] = lo
@@ -4590,25 +4602,22 @@ def _strip_angles(b):
 
     # The cell's corners a_k, b_k, b_k+1, a_k+1 in turn, each between the
     # edges to the corner after it and before it
+    # Either line may carry axes between its first and last, for several
+    # lines at once
     bx, by = b[0], b[1]
-    b1x, b1y = bx[1:] - bx[:-1], by[1:] - by[:-1]
-    b2x, b2y = bx[:-1] - bx[1:], by[:-1] - by[1:]
-    n_b1, n_b2 = norm(b1x, b1y), norm(b2x, b2y)
+    b0x, b0y, bkx, bky = bx[..., :-1], by[..., :-1], bx[..., 1:], by[..., 1:]
+    b1x, b1y = bkx - b0x, bky - b0y
+    b2x, b2y = b0x - bkx, b0y - bky
 
     def angles(a):
         ax, ay = a[0], a[1]
-        u0x, u0y = bx[:-1] - ax[:-1], by[:-1] - ay[:-1]
-        v0x, v0y = ax[1:] - ax[:-1], ay[1:] - ay[:-1]
-        v1x, v1y = ax[:-1] - bx[:-1], ay[:-1] - by[:-1]
-        u2x, u2y = ax[1:] - bx[1:], ay[1:] - by[1:]
-        u3x, u3y = ax[:-1] - ax[1:], ay[:-1] - ay[1:]
-        v3x, v3y = bx[1:] - ax[1:], by[1:] - ay[1:]
-        out = corner(u0x, u0y, norm(u0x, u0y), v0x, v0y, norm(v0x, v0y))
-        out = np.minimum(out, corner(b1x, b1y, n_b1, v1x, v1y, norm(v1x, v1y)))
-        out = np.minimum(out, corner(u2x, u2y, norm(u2x, u2y), b2x, b2y, n_b2))
-        out = np.minimum(
-            out, corner(u3x, u3y, norm(u3x, u3y), v3x, v3y, norm(v3x, v3y))
-        )
+        a0x, a0y, a1x, a1y = ax[..., :-1], ay[..., :-1], ax[..., 1:], ay[..., 1:]
+        # The four corners' edges stacked, so each step is done once for all
+        ux = np.stack(np.broadcast_arrays(b0x - a0x, b1x, a1x - bkx, a0x - a1x))
+        uy = np.stack(np.broadcast_arrays(b0y - a0y, b1y, a1y - bky, a0y - a1y))
+        vx = np.stack(np.broadcast_arrays(a1x - a0x, a0x - b0x, b2x, bkx - a1x))
+        vy = np.stack(np.broadcast_arrays(a1y - a0y, a0y - b0y, b2y, bky - a1y))
+        out = corner(ux, uy, norm(ux, uy), vx, vy, norm(vx, vy)).min(axis=0)
         return np.minimum(90.0, out)
 
     return angles
