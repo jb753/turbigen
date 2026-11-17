@@ -35,7 +35,6 @@ from turbigen.config import Config
 from turbigen.ohpmesh import OHPassage, _cell_angles, _Tune
 
 HERE = Path(__file__).resolve().parent
-EXAMPLES = HERE.parent / "examples"
 BASELINE = HERE / "ohp_mesh_baseline.json"
 
 SECTIONS = ("mean_line", "annulus", "blades", "fluid", "inlet_profile", "mesh")
@@ -78,7 +77,7 @@ def _load(path):
 def _axial(gap):
     """The axial turbine example, by the passage mesher, which needs round
     trailing edges; with its rotor's clearance or without."""
-    doc = _load(EXAMPLES / "axial_turbine.yaml")
+    doc = _load(HERE / "cases" / "axial_turbine.yaml")
     for blade in doc["blades"]:
         for section in blade["sections"]:
             section["thickness"] = dict(section["thickness"], round_TE=True)
@@ -91,7 +90,7 @@ def _axial(gap):
 CASES = {
     "axial": lambda: _axial(gap=False),
     "axial_gap": lambda: _axial(gap=True),
-    "cascade": lambda: _load(EXAMPLES / "turbine_cascade_ohp.yaml"),
+    "cascade": lambda: _load(HERE / "cases" / "turbine_cascade_ohp.yaml"),
     "sweep3_0001": lambda: _load(HERE / "cases" / "sweep3_0001.yaml"),
     "sweep3_0004": lambda: _load(HERE / "cases" / "sweep3_0004.yaml"),
 }

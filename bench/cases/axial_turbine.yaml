@@ -1,9 +1,8 @@
 # Axial turbine
 #
 # A repeating-stage axial turbine: a stator and a rotor, with a tip gap over
-# the rotor. Where the cascade example has one row and one blade section, this
-# has two rows separated by a mixing plane and three sections stacked up the
-# span, so it exercises the parts of the pipeline a single row cannot.
+# the rotor, two rows separated by a mixing plane and three sections stacked
+# up the span. The mesh bench's axial and axial_gap cases are built from it.
 
 fluid:
   type: perfect
