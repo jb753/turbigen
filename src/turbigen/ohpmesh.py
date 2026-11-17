@@ -342,6 +342,16 @@ class _Tune(Node):
     t_O: float = 0.1
     """Thickness of the O block, as a fraction of pitch, before smoothing."""
 
+    o_hold: float = 0.3
+    """Least length of each coarse cell along each O block line through the
+    sweeps, as a fraction of its length on the algebraic plane they start
+    from, so the block keeps its thickness round the edges, where the sweeps
+    draw its outer face in. Zero for no floor."""
+
+    o_coarse_factor: float = 2.0
+    """Coarse cells across the O block, as a multiple of what the free stream
+    size gives across its thickness: more hold more of it through the sweeps."""
+
     cut_mixing: float = 0.3
     """Distance from a blade's edge on the side of a mixing plane at which
     the block ahead of or behind it ends, in meridional chords of that row;
@@ -629,7 +639,7 @@ class _Tune(Node):
     the one round the front or rear there. Zero refines the face as the
     blade. See :meth:`_face_u`."""
 
-    passage_end_cells: float = 0.0
+    passage_end_cells: float = 0.33
     """Fraction of the cells across the passage over which its first cells
     ahead of and behind the blade are scaled to those of the blocks round
     the leading and trailing edges they meet. Zero leaves them as laid out.
@@ -1349,7 +1359,7 @@ class OHPassage(Mesher):
             f_wall=f_wall,
             corners=corners,
             i_wall=i_C,
-            n_O=max(2, round(2.0 * t_O / Hc)),
+            n_O=max(2, round(self.tune.o_coarse_factor * t_O / Hc)),
             n_P=n_P,
             n_in=n_in,
             n_out=n_out,
@@ -1773,11 +1783,12 @@ class OHPassage(Mesher):
         nodes held as far as :meth:`_freeze_weight` says: slid, held where they
         are, or slid, moved back that far towards where they started, and
         swept again held there."""
+        floors = self._O_floors(topo, X)
         w = self._freeze_weight(topo, plane)
         if self.tune.freeze_le > 0.0:
             w = np.maximum(w, self._freeze_LE(topo, X, plane))
         if np.all(w <= 0.0):
-            return self._sweeps_once(topo, X, n_sweep, plane, False)
+            return self._sweeps_once(topo, X, n_sweep, plane, False, floors)
         if np.any(w < 1.0):
             # Slid, moved back that far towards where they started, and the
             # plane swept again held there
@@ -1786,9 +1797,22 @@ class OHPassage(Mesher):
                 n_slide = max(1, round(self.tune.slide_share * n_sweep))
                 n_sweep = max(1, n_sweep - n_slide)
             X0 = X
-            X = self._sweeps_once(topo, X, n_slide, plane, False)
+            X = self._sweeps_once(topo, X, n_slide, plane, False, floors)
             X = self._blade_toward(topo, X, X0, plane, w)
-        return self._sweeps_once(topo, X, n_sweep, plane, True)
+        return self._sweeps_once(topo, X, n_sweep, plane, True, floors)
+
+    def _O_floors(self, topo, X):
+        """Return the least length of each cell of each O block line, from
+        the blade out, `o_hold` of what it is on plane `X`, the algebraic
+        plane the sweeps start from: the first cells (n_wall,) and the rest
+        (n_wall, K - 1), for :func:`ember.elliptic.winslow_sweeps`; None
+        without `o_hold`."""
+        if not self.tune.o_hold:
+            return None
+        gid, shift = topo.gid[0], topo.shift[0]
+        P = topo._values(np.asarray(X, dtype=float), gid, shift)  # (n_wall, nk, 2)
+        L = self.tune.o_hold * np.linalg.norm(np.diff(P, axis=1), axis=-1)
+        return L[:, 0], L[:, 1:]
 
     @staticmethod
     def _blade_toward(topo, X, X0, plane, w):
@@ -1804,7 +1828,7 @@ class OHPassage(Mesher):
         xy[0][:, :, 0] = _at_arc(wall, np.mod(s, S)).astype(xy[0].dtype)
         return topo.gather(xy)
 
-    def _sweeps_once(self, topo, X, n_sweep, plane, frozen):
+    def _sweeps_once(self, topo, X, n_sweep, plane, frozen, floors=None):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
@@ -1851,12 +1875,17 @@ class OHPassage(Mesher):
         lines = {}
         if self.tune.orth_taper:
             K = gid.shape[1] - 1
-            k = np.arange(2, K)
+            # With floors, out to the outer face too, which is drawn square
+            # by none, so the floors hold the whole line
+            end = K + 1 if floors is not None else K
+            k = np.arange(2, end)
             lines["orth_lines"] = (
-                gid[:, 2:K],
-                shift[:, 2:K],
+                gid[:, 2:end],
+                shift[:, 2:end],
                 (1.0 - (k - 1) / (K - 1)) ** self.tune.orth_taper,
             )
+            if floors is not None:
+                lines["floors"] = floors
         X, _, _ = ember.elliptic.winslow_sweeps(
             *args,
             (
@@ -2568,20 +2597,28 @@ class OHPassage(Mesher):
             k1 = 1 if k0 == 0 else -2
             return np.linalg.norm(B[:, :, k1] - B[:, :, k0], axis=0)
 
-        def factor(edge, passage, k_edge, k_passage):
+        def factor(edge, passage, k_edge, k_passage, near_blade):
+            """In the geometric mean over the quarter of the face nearest
+            the blade, or nearest the far end."""
             r = np.log(first(edge, k_edge)) - np.log(first(passage, k_passage))
-            return float(np.clip(np.exp(np.mean(r[1:-1])), 1.0 / c, c))
+            r = r[1:-1]
+            n = max(1, len(r) // 4)
+            # Ahead of the blade, i runs towards it; behind, away
+            r = r[-n:] if near_blade else r[:n]
+            return float(np.clip(np.exp(np.mean(r)), 1.0 / c, c))
 
         u = dict(lay.u)
         n_fade = self.tune.passage_end_cells * (len(u["P"]) - 1)
         for name, edge, passage in (("P_in", LE, Pin), ("P_out", TE, Pout)):
-            # The passage's k = 0 meets the edge block's k = -1, and its
-            # k = -1 the edge block's k = 0
-            F0 = factor(edge, passage, -1, 0)
-            F1 = factor(edge, passage, 0, -1)
-            v = _scale_end(np.asarray(u["P"], float), F0, n_fade, at_end=False)
-            u[name] = _scale_end(v, F1, n_fade, at_end=True)
-            logger.debug(f"{name} ends scaled by {F0:.2f} and {F1:.2f}")
+            for far, suffix in ((False, ""), (True, "_far")):
+                near_blade = (name == "P_in") != far
+                # The passage's k = 0 meets the edge block's k = -1, and its
+                # k = -1 the edge block's k = 0
+                F0 = factor(edge, passage, -1, 0, near_blade)
+                F1 = factor(edge, passage, 0, -1, near_blade)
+                v = _scale_end(np.asarray(u["P"], float), F0, n_fade, at_end=False)
+                u[name + suffix] = _scale_end(v, F1, n_fade, at_end=True)
+                logger.debug(f"{name}{suffix} ends scaled by {F0:.2f} and {F1:.2f}")
         return dataclasses.replace(lay, u=u)
 
     def _ends_u(self, lay, mid):
@@ -2722,6 +2759,10 @@ class OHPassage(Mesher):
         # edges; the passage block blends from one to the other along `i`
         across_in = [(0, n_P, u.get("P_in", u["P"]))]
         across_out = [(0, n_P, u.get("P_out", u["P"]))]
+        # At the far ends of the blocks ahead of and behind the blade, which
+        # each blends to from its own next to the blade
+        across_in_far = [(0, n_P, u.get("P_in_far", u.get("P_in", u["P"])))]
+        across_out_far = [(0, n_P, u.get("P_out_far", u.get("P_out", u["P"])))]
         front = [(0, n_fr, u["front"])]
         rear = [
             (0, n_rl, _reverse(u["rl"], n_rl)),
@@ -2738,10 +2779,10 @@ class OHPassage(Mesher):
             "Pin": ([(0, lay.n_in, u["in"])], across_in),
             "TE": ([(0, lay.n_out, u["out"])], rear),
             "Pout": ([(0, lay.n_out, u["out"])], across_out),
-            "up": (None, across_in + shifted(front, n_P)),
+            "up": (None, across_in_far + shifted(front, n_P)),
             "dn": (
                 [(0, lay.n_dn, u["dn"])] if "dn" in u else None,
-                across_out + shifted(rear, n_P),
+                across_out_far + shifted(rear, n_P),
             ),
         }
         refine = {
@@ -2753,6 +2794,8 @@ class OHPassage(Mesher):
         }
         refine["P_lo"] = _refine_matrix(n_sd + 1, side_lo, xy[1].dtype)
         refine["P_out"] = _refine_matrix(n_P + 1, across_out, xy[1].dtype)
+        refine["Pin_far"] = _refine_matrix(n_P + 1, across_in_far, xy[1].dtype)
+        refine["Pout_far"] = _refine_matrix(n_P + 1, across_out_far, xy[1].dtype)
         refine["O_face"] = _refine_matrix(
             xy[0].shape[1], self._wall_pieces(_face_lay(lay)), xy[0].dtype
         )
@@ -2806,6 +2849,17 @@ class OHPassage(Mesher):
                 t = (t * t * (3.0 - 2.0 * t)).astype(B.dtype)[:, None]
                 B = (B @ R_k.T) * (1.0 - t) + (B @ refine["P_out"].T) * t
                 out.append(B)
+                continue
+            if name in ("Pin", "Pout"):
+                # Across, from as next to the blade to as at the far end,
+                # smoothly along `i`: ahead of the blade, i = -1 is next to
+                # it; behind, i = 0
+                B = R_i @ B
+                t = np.linspace(0.0, 1.0, B.shape[1])
+                t = t * t * (3.0 - 2.0 * t)
+                t = (1.0 - t if name == "Pin" else t).astype(B.dtype)[:, None]
+                far = refine[f"{name}_far"]
+                out.append((B @ R_k.T) * (1.0 - t) + (B @ far.T) * t)
                 continue
             elif name == "O":
                 # Along the blade as the blade nodes are spaced, blended
