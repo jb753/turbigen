@@ -413,7 +413,9 @@ class MeshPlot(Post):
     its radius is large, and the grid reads directly against a contour map.
     The meridional view is drawn to scale. Every grid line, for one passage of
     each row. Then, for each row, the same blade-to-blade view closed in on
-    its leading and trailing edges on that plane. A mesh of any other type draws
+    its leading and trailing edges on that plane, and for each row with a
+    gridded tip gap, the same close-ups on the plane half way across the gap,
+    where the gap's own blocks are drawn too. A mesh of any other type draws
     nothing.
     """
 
@@ -473,13 +475,52 @@ class MeshPlot(Post):
                     for surf in row
                 ],
             )
-        # The constant-`j` plane of each block nearest mid-span, and the
-        # conformal coordinate measured along the annulus line at that plane's
-        # own span fraction, through the whole machine as the contour maps
-        # do. Along mid-span's line instead, the nodes of a plane off it would
-        # be projected onto the line's vertices and the grid drawn kinked.
         annulus = result.machine.annulus
-        planes = [self._plane_nearest(annulus, block, 0.5) for block in blocks]
+        spf, xr_curve, slices = self._blade_to_blade(annulus, blocks, 0.5)
+        where = f"spf={spf:.2f}"
+        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices)
+        figures = [meridional, blade_to_blade]
+        if self.closeup <= 0.0:
+            return figures
+
+        def closeups(i_row, row, spf, xr_curve, slices, prefix):
+            where = f"spf={spf:.3f}"
+            for name, centre, half in self._edges(
+                result.machine, i_row, row, spf, xr_curve, slices
+            ):
+                fig = draw(f"Row {i_row} {prefix}{name}, {where}", slices)
+                ax = fig.axes[0]
+                ax.set_xlim(centre[0] - half, centre[0] + half)
+                ax.set_ylim(centre[1] - half, centre[1] + half)
+                figures.append(fig)
+
+        for i_row, row in enumerate(result.machine.rows):
+            closeups(i_row, row, spf, xr_curve, slices, "")
+        # Each row with a gridded tip gap again, on the plane through the
+        # middle of the gap: there every block is cut, the gap's own as well
+        # as those round it, so the close-ups show how the gap's blocks meet
+        # the O block over the blade's outline at either end.
+        for i_row, row in enumerate(result.machine.rows):
+            tip = [b for b in result.grid if b.label.startswith(f"row{i_row}_tip")]
+            if not tip:
+                continue
+            spf_gap = self._mid_gap(annulus, tip[0])
+            spf_g, xr_g, slices_g = self._blade_to_blade(
+                annulus, list(result.grid), spf_gap
+            )
+            closeups(i_row, row, spf_g, xr_g, slices_g, "Tip Gap ")
+        return figures
+
+    def _blade_to_blade(self, annulus, blocks, spf):
+        """Return the span fraction, annulus line and `(m', theta)` slices of
+        the constant-`j` plane of each of `blocks` nearest span fraction `spf`.
+
+        The conformal coordinate is measured along the annulus line at the
+        planes' own span fraction, through the whole machine as the contour
+        maps do. Along mid-span's line instead, the nodes of a plane off it
+        would be projected onto the line's vertices and the grid drawn kinked.
+        """
+        planes = [self._plane_nearest(annulus, block, spf) for block in blocks]
         spf = float(np.median([spf_j for _, spf_j in planes]))
         m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
         xr_curve = annulus.evaluate_xr(m, spf).T
@@ -490,20 +531,15 @@ class MeshPlot(Post):
             )
             for block, (j, _) in zip(blocks, planes)
         ]
-        where = f"spf={spf:.2f}"
-        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices)
-        figures = [meridional, blade_to_blade]
-        if self.closeup > 0.0:
-            for i_row, row in enumerate(result.machine.rows):
-                for name, centre, half in self._edges(
-                    result.machine, i_row, row, spf, xr_curve, slices
-                ):
-                    fig = draw(f"Row {i_row} {name}, {where}", slices)
-                    ax = fig.axes[0]
-                    ax.set_xlim(centre[0] - half, centre[0] + half)
-                    ax.set_ylim(centre[1] - half, centre[1] + half)
-                    figures.append(fig)
-        return figures
+        return spf, xr_curve, slices
+
+    @staticmethod
+    def _mid_gap(annulus, block):
+        """Return the span fraction half way through the tip gap `block`
+        spans, from its blade tip at ``j = 0`` to the casing, at its middle."""
+        i, k = block.shape[0] // 2, block.shape[2] // 2
+        x, r = (np.asarray(v[i, [0, -1], k], dtype=float) for v in (block.x, block.r))
+        return float(np.mean(annulus.evaluate_mspf(x, r)[1]))
 
     @staticmethod
     def _plane_nearest(annulus, block, spf):
