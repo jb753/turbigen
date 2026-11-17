@@ -58,10 +58,11 @@ blades:
       - spf: 0.1
         # Leading edge a few degrees more tangential than the mean line's,
         # from the incidence a run measured. Trailing edge
-        # 10 degrees less backswept, against about 10 degrees of deviation
-        # measured, to recover the turning lost to slip
+        # 15 degrees less backswept, against the slip of seven blades: at +10
+        # the exit flow was 6.9 degrees under-turned, and each degree more
+        # recovers only about a quarter of one
         dchi_LE: -3.0
-        dchi_TE: 10.0
+        dchi_TE: 15.0
         camber: &camber
           type: quadratic
           aft_loading: 0.0
@@ -77,12 +78,12 @@ blades:
           round_TE: true
       - spf: 0.5
         dchi_LE: -3.0
-        dchi_TE: 10.0
+        dchi_TE: 15.0
         camber: *camber
         thickness: *thickness
       - spf: 0.9
         dchi_LE: -2.0
-        dchi_TE: 10.0
+        dchi_TE: 15.0
         camber: *camber
         thickness: *thickness
 
