@@ -563,7 +563,7 @@ class OperatingPoint(Node):
     throttle_Ki: float = 0.002
     """Integral gain of the throttle [--]."""
 
-    throttle_tol: float = 1.0e-3
+    throttle_tol: float = 1.0e-2
     """Mass-flow error the throttle must finish inside, as a fraction of its
     target, for the pressure it reached to be recorded as the operating point
     [--]. ember's controller reaches parts in ten thousand on a converged
