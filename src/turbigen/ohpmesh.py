@@ -394,9 +394,11 @@ class _Tune(Node):
     polished again, with `polish_below`; the polish of the swept plane
     leaves most above 30. None if zero."""
 
-    nk_tip_O: int = 17
-    """Nodes across the O block of a tip gap, from the H block to the outline
-    of the blade, one more than a multiple of eight."""
+    nk_tip_O_min: int = 9
+    """Least number of nodes across the O block of a tip gap, from the H block
+    to the outline of the blade, one more than a multiple of eight. The count
+    is otherwise as many as grow from the wall spacing at `ER_O` across the
+    block's thickness, :func:`_gap_O_count`."""
 
     t_tip_O: float = 0.2
     """Thickness of the O block of a tip gap, as a fraction of the blade's
@@ -732,7 +734,7 @@ class _Tune(Node):
             v = getattr(self, name)
             if not ok(v):
                 raise ValueError(f"{name}={v!r} must be {text}.")
-        _check_count("nk_tip_O", self.nk_tip_O)
+        _check_count("nk_tip_O_min", self.nk_tip_O_min)
 
 
 def _check_count(name, n):
@@ -2828,7 +2830,7 @@ class OHPassage(Mesher):
         # Sides of the H block meeting the O block node for node: 1 the
         # lower, 3 both
         match = 3 if layout.symmetric else 1
-        corners = k_cut = None
+        corners = k_cut = nk_O = None
         gap = []
         for W, plane in zip(walls, planes):
             cmap = plane["cmap"]
@@ -2876,7 +2878,11 @@ class OHPassage(Mesher):
             )
             O = _gap_O_lines(inner, W, self.tune.tip_O_square, tune=self.tune)
             d_wall = layout.d_wall / cmap.xr_from_mp(W[0])[1]
-            O = _respace_gap_O(O, d_wall, self.tune.nk_tip_O)
+            if nk_O is None:
+                # Counted once, at the tip of the blade, as the corners are:
+                # a block has one count on every plane
+                nk_O = _gap_O_count(O, d_wall, self.tune)
+            O = _respace_gap_O(O, d_wall, nk_O)
             O = O.astype(DTYPE)
             O[:, :, -1] = W
             gap.append([O, H.astype(DTYPE)])
@@ -4030,6 +4036,26 @@ def _gap_O_lines(inner, W, square, n=129, *, tune):
         + h01 * W[..., None]
         + h11 * end[..., None]
     )
+
+
+def _gap_O_count(O, d_wall, tune):
+    """Return the nodes across the O block of a tip gap, lines `O` (2, ni, m).
+
+    As many cells as grow from the wall spacing `d_wall` (ni,) at the outline
+    at `ER_O` to fill a line, in the median over the lines, as the O block
+    round the blade is laid out: a geometric series from `d` at ratio `r`
+    fills `L` in `ln(1 + (r - 1) L / d) / ln(r)` cells. Rounded up to a count
+    a multigrid level can halve, and no fewer than `nk_tip_O_min`. The block
+    is a fixed fraction of the blade's thickness, so this follows the wall
+    spacing: a few times it thick takes the least count, and a finer
+    spacing more.
+    """
+    L = np.linalg.norm(np.diff(O, axis=2), axis=0).sum(axis=1)
+    ER = tune.ER_O
+    n = float(np.median(np.log1p((ER - 1.0) * L / d_wall))) / np.log(ER)
+    nk = max(_up8(int(np.ceil(n))) + 1, tune.nk_tip_O_min)
+    logger.debug(f"Tip gap O block: {nk} nodes across, {n:.1f} cells to grow")
+    return nk
 
 
 def _respace_gap_O(O, d_wall, nk=None):

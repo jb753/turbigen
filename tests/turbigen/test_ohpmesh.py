@@ -224,7 +224,7 @@ def test_rows_with_different_clearances_are_refused():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"tune": {"nk_tip_O": 5}},
+        {"tune": {"nk_tip_O_min": 5}},
         {"njtip_min": 4},
         {"tune": {"t_tip_O": 0.5}},
         {"tune": {"tip_match": 3}},
