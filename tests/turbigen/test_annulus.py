@@ -15,7 +15,7 @@ import pytest
 import yaml
 import turbigen_ref.annulus
 
-from turbigen import Annulus, Config, FixedAxialChord, Machine
+from turbigen import Annulus, AspectRatio, Config, FixedAxialChord, ImpellerAnnulus, Machine
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -223,58 +223,15 @@ def test_the_outlet_duct_area_follows_the_nozzle():
         np.testing.assert_allclose(A[1] / A[0], ratio, rtol=1e-6)
 
 
-@pytest.mark.parametrize("fraction", [0.0, 0.25, 0.5, 1.0])
-@pytest.mark.parametrize("ratio", [0.8, 1.2])
-def test_the_nozzle_area_holds_whichever_line_moves(fraction, ratio):
-    """Moving the mid-line changes its radius on an axial duct, so the span is
-    solved for the area rather than scaled for it."""
-    annulus = build(nozzle_ratio=ratio, nozzle_hub_fraction=fraction).design().annulus
-    m_TE = 2.0 * annulus.n_row
-    A = annulus.evaluate_Am(np.array([m_TE, annulus.m_max]))
-    np.testing.assert_allclose(A[1] / A[0], ratio, rtol=1e-6)
-
-
-def _off_line(annulus, line, m, spf):
-    """Distance of `annulus`'s points at `m`, `spf` from `line`'s curve at
-    `spf` over the outlet duct [m]. As curves: `m` runs along the mid-span
-    line, which moves with the nozzle, so it lands elsewhere along a line
-    that does not."""
-    m_dense = np.linspace(2.0 * line.n_row - 0.2, line.m_max, 20001)
-    x, r = line.evaluate_xr(m_dense, spf)
-    px, pr = annulus.evaluate_xr(m, spf)
-    return np.min(np.hypot(px[:, None] - x, pr[:, None] - r), axis=1)
-
-
-@pytest.mark.parametrize(("fraction", "kept"), [(0.0, 0.0), (1.0, 1.0)])
-def test_a_nozzle_hub_fraction_of_zero_or_one_keeps_one_line(fraction, kept):
-    """At 0 the hub line runs on as at constant area and only the casing
-    moves; at 1 the other way round. The whole outlet duct, not just its end."""
-    plain = build(nozzle_ratio=1.0).design().annulus
-    nozzle = build(nozzle_ratio=0.8, nozzle_hub_fraction=fraction).design().annulus
-    m = np.linspace(2.0 * plain.n_row, plain.m_max, 9)
-    span = float(plain.evaluate_span(plain.m_max))
-    # On the line to within the curve fit between its knots
-    assert _off_line(nozzle, plain, m, kept).max() < 1e-4 * span
-    # The other line takes all of the change in span
-    assert _off_line(nozzle, plain, m[-1:], 1.0 - kept)[0] > 0.05 * span
-
-
-def test_a_half_nozzle_hub_fraction_is_the_symmetric_nozzle():
-    """The default moves both lines alike about the duct's straight mid-line."""
-    default = build(nozzle_ratio=0.8).design().annulus
-    half = build(nozzle_ratio=0.8, nozzle_hub_fraction=0.5).design().annulus
+def test_the_nozzle_keeps_the_straight_mid_line():
+    """The nozzle moves the hub and casing alike about the constant-area
+    duct's straight mid-line."""
+    nozzle = build(nozzle_ratio=0.8).design().annulus
     plain = build(nozzle_ratio=1.0).design().annulus
     m = np.linspace(2.0 * plain.n_row, plain.m_max, 9)
-    np.testing.assert_allclose(half.evaluate_xr(m, 0.5), default.evaluate_xr(m, 0.5))
     np.testing.assert_allclose(
-        half.evaluate_xr(m, 0.5), plain.evaluate_xr(m, 0.5), atol=1e-9
+        nozzle.evaluate_xr(m, 0.5), plain.evaluate_xr(m, 0.5), atol=1e-9
     )
-
-
-@pytest.mark.parametrize("fraction", [-0.1, 1.1])
-def test_nozzle_hub_fraction_outside_the_unit_interval_is_rejected(fraction):
-    with pytest.raises(ValueError, match=r"nozzle_hub_fraction.*\[0, 1\]"):
-        build(nozzle_hub_fraction=fraction).design()
 
 
 #
@@ -320,21 +277,29 @@ def test_an_absent_annulus_round_trips():
 RADIAL = Path(__file__).resolve().parents[2] / "examples" / "radial_compressor.yaml"
 
 
-def radial(**annulus):
-    """The radial compressor example's machine, with its annulus overridden."""
+def radial(annulus_type=ImpellerAnnulus, **annulus):
+    """The radial compressor example's machine, its annulus made an
+    `annulus_type` from the example's aspect ratios and nozzle, overridden as
+    asked."""
     config = Config.from_dict(yaml.safe_load(RADIAL.read_text()))
+    ex = config.annulus
+    kwargs = dict(AR_row=ex.AR_row, AR_gap=ex.AR_gap, nozzle_ratio=ex.nozzle_ratio)
+    if annulus_type is AspectRatio:
+        kwargs["nozzle_start"] = 0.0
     return dataclasses.replace(
-        config, annulus=dataclasses.replace(config.annulus, **annulus)
+        config, annulus=annulus_type(**{**kwargs, **annulus})
     ).design()
 
 
-def test_a_radius_row_area_is_linear_in_radius_through_an_impeller():
-    """With `row_area: radius` the impeller's area falls from its leading
-    edge's to its trailing edge's in step with the mid-line radius, and the
-    stations and the ducts are where the plain fit puts them."""
-    plain = radial().annulus
-    annulus = radial(row_area="radius").annulus
+def test_the_example_uses_an_impeller_annulus():
+    config = Config.from_dict(yaml.safe_load(RADIAL.read_text()))
+    assert isinstance(config.annulus, ImpellerAnnulus)
 
+
+def test_an_impeller_area_is_linear_in_radius_through_the_row():
+    """The impeller's area falls from its leading edge's to its trailing
+    edge's in step with the mid-line radius."""
+    annulus = radial().annulus
     m = np.linspace(1.0, 2.0, 41)
     r = annulus.evaluate_xr(m, 0.5)[1]
     A = annulus.evaluate_Am(m)
@@ -343,32 +308,87 @@ def test_a_radius_row_area_is_linear_in_radius_through_an_impeller():
     # PCHIP between the added points can wobble, but by little
     assert np.max(np.diff(A)) < 5e-3 * A[0]
 
-    m_out = np.r_[0.0, 1.0, 2.0, 2.5, plain.m_max]
-    np.testing.assert_allclose(
-        annulus.evaluate_xr(m_out, 0.0), plain.evaluate_xr(m_out, 0.0), atol=1e-6
-    )
+
+def test_an_impeller_keeps_the_stations_and_the_inlet_duct():
+    """Hub and casing at the stations, and along the straight inlet duct, are
+    where the plain aspect-ratio fit puts them."""
+    plain = radial(AspectRatio).annulus
+    annulus = radial().annulus
+    for spf in (0.0, 1.0):
+        np.testing.assert_allclose(
+            annulus.evaluate_xr(np.r_[0.0, 1.0, 2.0], spf),
+            plain.evaluate_xr(np.r_[0.0, 1.0, 2.0], spf),
+            atol=1e-6,
+        )
     np.testing.assert_allclose(
         annulus.evaluate_Am(np.linspace(0.0, 1.0, 11)), plain.evaluate_Am(0.0),
         rtol=1e-3,
     )
 
 
-def test_a_radius_row_area_leaves_an_axial_row_as_fitted():
-    """An axial row hardly changes radius, so `row_area: radius` has no law
-    to impose there and the annulus is the plain fit's, inlet duct apart,
-    which is still the same straight duct."""
-    plain = build().design().annulus
-    annulus = build(row_area="radius").design().annulus
-    m = np.linspace(0.0, plain.m_max, 61)
-    for spf in (0.0, 1.0):
-        np.testing.assert_allclose(
-            annulus.evaluate_xr(m, spf), plain.evaluate_xr(m, spf), atol=1e-6
-        )
+def test_an_impeller_outlet_hub_is_straight():
+    """The outlet duct's hub lies on the straight line from the trailing
+    edge's hub to the outlet's, all along."""
+    annulus = radial().annulus
+    m = np.linspace(2.0, annulus.m_max, 41)
+    x, r = annulus.evaluate_xr(m, 0.0)
+    t = np.array([x[-1] - x[0], r[-1] - r[0]])
+    t /= np.linalg.norm(t)
+    off = np.abs((x - x[0]) * t[1] - (r - r[0]) * t[0])
+    assert off.max() < 1e-6 * float(annulus.evaluate_span(2.0))
+    # The casing does move off its own straight line, to make the nozzle
+    xc, rc = annulus.evaluate_xr(m, 1.0)
+    tc = np.array([xc[-1] - xc[0], rc[-1] - rc[0]])
+    tc /= np.linalg.norm(tc)
+    offc = np.abs((xc - xc[0]) * tc[1] - (rc - rc[0]) * tc[0])
+    assert offc.max() > 1e-3 * float(annulus.evaluate_span(2.0))
 
 
-def test_an_unknown_row_area_is_rejected():
-    with pytest.raises(ValueError, match="row_area"):
-        build(row_area="linear").design()
+def test_an_impeller_nozzle_contracts_from_the_trailing_edge():
+    """The outlet area falls to `nozzle_ratio` of the exit's, starting at
+    the trailing edge by default and where `nozzle_start` says otherwise."""
+    annulus = radial(nozzle_ratio=0.8).annulus
+    A = annulus.evaluate_Am(np.array([2.0, 2.25, annulus.m_max]))
+    np.testing.assert_allclose(A[-1] / A[0], 0.8, rtol=1e-6)
+    assert A[1] < 0.999 * A[0]
+    later = radial(nozzle_ratio=0.8, nozzle_start=0.5).annulus
+    A = later.evaluate_Am(np.array([2.0, 2.25, later.m_max]))
+    np.testing.assert_allclose(A[1], A[0], rtol=1e-3)
+    np.testing.assert_allclose(A[-1] / A[0], 0.8, rtol=1e-6)
+
+
+def test_only_an_impeller_outlet_hub_stands_still_by_default():
+    assert radial().annulus.stationary_hub_out
+    assert not radial(AspectRatio).annulus.stationary_hub_out
+
+
+def test_an_impeller_annulus_refuses_a_merge_weight():
+    with pytest.raises(ValueError, match="merge_weight"):
+        ImpellerAnnulus(AR_row=[0.3], AR_gap=[1.0, 0.3], merge_weight=0.5)
+
+
+def test_an_impeller_annulus_refuses_more_than_one_row():
+    with pytest.raises(ValueError, match="one row"):
+        ImpellerAnnulus(AR_row=[0.3, 0.3], AR_gap=[1.0, 1.0, 0.3])
+    with pytest.raises(ValueError, match="one row"):
+        build_impeller().design()
+
+
+def build_impeller():
+    """The two-row axial config, with a one-row impeller annulus."""
+    return Config.from_dict(
+        {
+            "fluid": FLUID,
+            "mean_line": MEAN_LINE,
+            "annulus": {"type": "impeller", "AR_row": [1.6], "AR_gap": [1.0, 0.8]},
+        }
+    )
+
+
+def test_an_impeller_annulus_refuses_an_axial_exit():
+    annulus = ImpellerAnnulus(AR_row=[1.6], AR_gap=[1.0, 0.8])
+    with pytest.raises(ValueError, match="radial exit"):
+        annulus._check_mean_line(np.array([0.0, 0.0]), 1)
 
 
 def test_annulus_defaults_are_written_out():

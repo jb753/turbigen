@@ -19,9 +19,9 @@ against is documented at :doc:`/meanline`.
 Built-in annulus shapes
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-The two annulus shapes that ship with :program:`turbigen` both define the
+The annulus shapes that ship with :program:`turbigen` all define the
 annulus lines using cubic splines in arc-length space, as subclasses of
-:class:`PchipAnnulus`, and differ only in how the meridional length of each row
+:class:`PchipAnnulus`, and differ in how the meridional length of each row
 and gap is stated. Both lay their values out over the segments, which alternate
 gap, row, gap, row, ..., so there are ``2 * n_row + 1`` of them and the gaps
 include the inlet and outlet ducts.
@@ -35,11 +35,14 @@ include the inlet and outlet ducts.
   respect to the mean of inlet and outlet spans for each segment. No limit is placed on
   the pitch angle, so this method works for radial machines.
 
+* :class:`ImpellerAnnulus` is an aspect-ratio annulus for a single radial
+  impeller: the area through the row is linear in radius, the outlet duct's
+  hub is straight and stands still, and the casing makes the nozzle.
+
 Two more parameters are configurable:
 
 * :attr:`~PchipAnnulus.nozzle_ratio` scales the exit span to achieve a desired
-  nozzle area, and :attr:`~PchipAnnulus.nozzle_hub_fraction` says how much of
-  that change comes from the hub line and how much from the casing;
+  nozzle area;
 * :attr:`~PchipAnnulus.merge_weight` blends the annulus lines towards a curve
   through the machine inlet and outlet stations alone, instead of constraining
   the internal stations, to smooth curvature across the machine.
@@ -170,17 +173,13 @@ def _interleave(row, gap, n_segment, name_row, name_gap):
     return values
 
 
-ROW_AREA_LAWS = ("none", "radius")
-"""The values :attr:`PchipAnnulus.row_area` takes."""
-
-RADIAL_ROW = 0.5
-"""Change of mid-line radius over a row, in leading-edge spans, below which
-:attr:`PchipAnnulus.row_area` leaves the row as fitted [--]."""
-
 N_ROW_AREA = 16
-"""Intervals each row is split into by :attr:`PchipAnnulus.row_area`. The
-inlet duct, straight and of constant area, is split as finely, so that the
-row's added points do not bow its hub and casing."""
+"""Intervals an :class:`ImpellerAnnulus` splits its row into to set the area
+through it. The inlet duct, straight and of constant area, is split as
+finely, so that the row's added points do not bow its hub and casing."""
+
+BETA_RADIAL = 45.0
+"""Least pitch angle at the exit of an :class:`ImpellerAnnulus` [deg]."""
 
 
 def _row_area_points(plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid):
@@ -225,12 +224,7 @@ def _row_area_points(plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid):
 
         A_le = 2.0 * np.pi * r_mid[k] * span[k]
         A_te = 2.0 * np.pi * r_mid[k + 1] * span[k + 1]
-        dr_row = r_mid[k + 1] - r_mid[k]
-        if abs(dr_row) < RADIAL_ROW * span[k]:
-            # Not a radial row: no law to impose, leave it as fitted
-            Ds_new.append(Ds[k])
-            continue
-        g = (r_new - r_mid[k]) / dr_row
+        g = (r_new - r_mid[k]) / (r_mid[k + 1] - r_mid[k])
         span_new = (A_le + g * (A_te - A_le)) / (2.0 * np.pi * r_new)
 
         new = (
@@ -512,6 +506,12 @@ class Annulus:
 
     n_row: int
     """Number of blade rows."""
+
+    stationary_hub_out: bool = dataclasses.field(default=False, repr=False)
+    """Whether the outlet duct's hub stands still unless the mesh says
+    otherwise, as a vaneless diffuser's behind an impeller does. A mesher
+    reads it when :attr:`turbigen.mesh.Mesher.endwalls` gives the outlet hub
+    no stretch of its own."""
 
     #
     # STRUCTURE
@@ -872,17 +872,6 @@ class PchipAnnulus(AnnulusDesign):
     nozzle_start: float = 0.5
     """Fraction of the outlet duct's length at constant area [--]."""
 
-    nozzle_hub_fraction: float = 0.5
-    """Fraction of the outlet duct's change in span made by moving the hub
-    line [--].
-
-    At 0 the hub line runs on as a duct of constant area would and the casing
-    alone moves; at 1 the casing line does and the hub alone moves; at 0.5 both
-    move alike about the duct's mid-line. The span is set so the area is
-    :attr:`nozzle_ratio` of the exit's whichever line moves, allowing for the
-    mid-line's change of radius.
-    """
-
     merge_weight: float = 0.0
     """Blend towards a curve fitted through the endpoints only [--].
 
@@ -890,21 +879,6 @@ class PchipAnnulus(AnnulusDesign):
     curve fitted through the first and last segments alone, which smooths
     curvature across the rows at the cost of missing the intermediate
     stations. Values between blend the two.
-    """
-
-    row_area: str = "none"
-    """How the annulus area runs through each row, from its leading edge to
-    its trailing edge [--].
-
-    ``"none"`` places control points at the stations alone, so the area in a
-    row is whatever the hub and casing curves give between them; through a
-    radial impeller's bend that holds the area and then takes the whole change
-    in a short stretch. ``"radius"`` adds control points inside each row,
-    keeping the mid-line of the plain fit but setting the span so that the
-    area is linear in the mid-line's radius: it changes only as the passage
-    moves out, as a rotor's relative flow capacity does. A row whose radius
-    changes by less than half its leading-edge span, an axial one, is left as
-    fitted.
     """
 
     def segment_lengths(self, span_avg, cos_Beta_avg):
@@ -950,14 +924,7 @@ class PchipAnnulus(AnnulusDesign):
             raise ValueError(f"merge_weight={self.merge_weight} must lie in [0, 1].")
         if not 0.0 <= self.nozzle_start < 1.0:
             raise ValueError(f"nozzle_start={self.nozzle_start} must lie in [0, 1).")
-        if not 0.0 <= self.nozzle_hub_fraction <= 1.0:
-            raise ValueError(
-                f"nozzle_hub_fraction={self.nozzle_hub_fraction} must lie in [0, 1]."
-            )
-        if self.row_area not in ROW_AREA_LAWS:
-            raise ValueError(
-                f"row_area={self.row_area!r} must be one of {ROW_AREA_LAWS}."
-            )
+        self._check_mean_line(Beta, n_row)
 
         # Ask the design how long each segment is, and take the axial length
         # from the pitch angle rather than the other way round.
@@ -984,7 +951,12 @@ class PchipAnnulus(AnnulusDesign):
         r_duct = r_mid[-1] + f * Ds[-1] * sin_Beta_out
         A_duct = self._nozzle_area(f)
         x_duct, r_duct, span_duct = self._nozzle_lines(
-            x_mid[-2] + f * Dx[-1], r_duct, span[-1] * r_mid[-1], A_duct, Beta[-1]
+            x_mid[-2] + f * Dx[-1],
+            r_duct,
+            span[-1] * r_mid[-1],
+            A_duct,
+            Beta[-1],
+            span[-1],
         )
         x_mid = np.concatenate((x_mid[:-1], x_duct))
         r_mid_ext = np.concatenate(([r_mid[0] - Ds[0] * sin_Beta_in], r_mid, r_duct))
@@ -1004,11 +976,14 @@ class PchipAnnulus(AnnulusDesign):
         s_init = turbigen.util.cumsum0(Ds)
         s, curves = _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds)
 
-        if self.row_area == "radius":
-            plain = Annulus(s, m_knot, curves, curves, 0.0, n_row)
-            xhub, rhub, xcas, rcas, Ds, m_knot = _row_area_points(
-                plain, xhub, rhub, xcas, rcas, Ds, m_knot, span_ext, r_mid_ext
-            )
+        # A design that sets the lines inside its rows adds points there,
+        # placed against this first fit, and the curves are fitted again
+        plain = Annulus(s, m_knot, curves, curves, 0.0, n_row)
+        added = self._row_points(
+            plain, xhub, rhub, xcas, rcas, Ds, m_knot, span_ext, r_mid_ext
+        )
+        if added is not None:
+            xhub, rhub, xcas, rcas, Ds, m_knot = added
             s_init = turbigen.util.cumsum0(Ds)
             s, curves = _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds)
 
@@ -1028,30 +1003,40 @@ class PchipAnnulus(AnnulusDesign):
         else:
             curves_merged = curves
 
-        return Annulus(s, m_knot, curves, curves_merged, self.merge_weight, n_row)
+        return Annulus(
+            s,
+            m_knot,
+            curves,
+            curves_merged,
+            self.merge_weight,
+            n_row,
+            self._stationary_hub_out,
+        )
 
-    def _nozzle_lines(self, x, r, rs_exit, A, Beta):
+    _stationary_hub_out: ClassVar[bool] = False
+    """What the designed :attr:`Annulus.stationary_hub_out` is."""
+
+    def _check_mean_line(self, Beta, n_row):
+        """Refuse a mean line this design cannot make an annulus round, given
+        the pitch angle at every station [deg] and the number of rows."""
+
+    def _row_points(self, plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid):
+        """Return control points and segment lengths with points added inside
+        the rows, or None to keep the stations' alone; see
+        :func:`_row_area_points` for the arguments."""
+        return None
+
+    def _nozzle_lines(self, x, r, rs_exit, A, Beta, span_exit):
         """Return the outlet duct's mid-line `x`, `r` and span at its knots.
 
         `x`, `r` are the straight mid-line the duct would have at constant
         area, `rs_exit` the product of radius and span at the last row's exit,
-        `A` the area at the knots over the exit's, and `Beta` the duct's pitch
-        angle [deg]. The span change from constant area is taken
-        :attr:`nozzle_hub_fraction` from the hub side, which moves the mid-line
-        towards the casing by that less a half of it; the span is the root of
-        ``(r + c (s_full - s)) s = A rs_exit`` for the radius it moves to.
+        `A` the area at the knots over the exit's, `Beta` the duct's pitch
+        angle [deg] and `span_exit` the span at the last row's exit [m]. Here
+        the mid-line stays straight and the hub and casing move alike about
+        it, so the span is ``A rs_exit / r``.
         """
-        e = np.array([-np.sin(np.radians(Beta)), np.cos(np.radians(Beta))])
-        s_full = rs_exit / r
-        shift = self.nozzle_hub_fraction - 0.5
-        c = shift * e[1]
-        K = A * rs_exit
-        b = r + c * s_full
-        # The root that is K / r when the mid-line keeps its radius, in the
-        # form without cancellation
-        s = 2.0 * K / (b + np.sqrt(b**2 - 4.0 * c * K))
-        d = shift * (s_full - s)
-        return x + d * e[0], r + d * e[1], s
+        return x, r, A * rs_exit / r
 
     def _nozzle_area(self, f):
         """Return the outlet duct's area at fractions `f` of its length, over
@@ -1107,3 +1092,77 @@ class AspectRatio(PchipAnnulus):
     def segment_lengths(self, span_avg, cos_Beta_avg):
         AR = _interleave(self.AR_row, self.AR_gap, len(span_avg), "AR_row", "AR_gap")
         return span_avg / AR
+
+
+class ImpellerAnnulus(AspectRatio):
+    """Annulus of a single radial impeller and the vaneless diffuser behind it.
+
+    Lengths are set by aspect ratio, as :class:`AspectRatio`'s. Two things are
+    fixed rather than left to the fit:
+
+    * Through the impeller the area is linear in the mid-line radius, from
+      the leading edge's to the trailing edge's: it changes only as the
+      passage moves out, as the relative flow's capacity does. Fitted through
+      the stations alone, an impeller holds its area through the inducer and
+      takes the whole change in a short stretch round the bend.
+    * The outlet duct's hub runs straight on from the trailing edge at the
+      exit pitch angle, a flat diffuser wall for a radial exit, and the
+      casing makes the whole of the nozzle's change of area.
+
+    The outlet duct's hub also stands still unless the mesh says otherwise;
+    see :attr:`Annulus.stationary_hub_out`. The nozzle contracts from the
+    trailing edge unless :attr:`nozzle_start` says otherwise. There is no
+    merge blend, since it would move the points that set the area.
+    """
+
+    type: ClassVar[str] = "impeller"
+
+    _stationary_hub_out: ClassVar[bool] = True
+
+    nozzle_start: float = 0.0
+    """Fraction of the outlet duct's length at constant area [--]."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.merge_weight != 0.0:
+            raise ValueError(
+                f"merge_weight={self.merge_weight}: an impeller annulus has no "
+                "merge blend, which would move the points that set its area."
+            )
+        if len(self.AR_row) != 1:
+            raise ValueError(
+                f"AR_row={list(self.AR_row)}: an impeller annulus has one row."
+            )
+
+    def _check_mean_line(self, Beta, n_row):
+        if n_row != 1:
+            raise ValueError(
+                f"An impeller annulus has one row, but the mean line has {n_row}."
+            )
+        if not abs(Beta[-1]) > BETA_RADIAL:
+            raise ValueError(
+                f"An impeller annulus needs a radial exit, but the exit pitch "
+                f"angle is {Beta[-1]:.3g} degrees, not over {BETA_RADIAL:g}."
+            )
+
+    def _row_points(self, plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid):
+        return _row_area_points(plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid)
+
+    def _nozzle_lines(self, x, r, rs_exit, A, Beta, span_exit):
+        """Return the outlet duct's mid-line `x`, `r` and span at its knots,
+        the hub held on the straight line from the trailing edge's.
+
+        The hub is the constant-area duct's mid-line less half the exit span
+        along the normal `e`, so the mid-line is that plus half the span,
+        ``r + (s - span_exit) e_r / 2``, and the span is the root of
+        ``(r + (s - span_exit) e_r / 2) s = A rs_exit``.
+        """
+        e = np.array([-np.sin(np.radians(Beta)), np.cos(np.radians(Beta))])
+        c = 0.5 * e[1]
+        K = A * rs_exit
+        b = r - c * span_exit
+        # The root that is K / r when the radius does not change across the
+        # duct, in the form without cancellation
+        s = 2.0 * K / (b + np.sqrt(b**2 + 4.0 * c * K))
+        d = 0.5 * (s - span_exit)
+        return x + d * e[0], r + d * e[1], s

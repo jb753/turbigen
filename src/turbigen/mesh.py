@@ -295,20 +295,33 @@ class Mesher(Node):
         that nearest each outlet stretch's to the outlet. The lines must lie
         inside the blocks, and no further in than `i_le` and `i_te`.
 
+        An annulus whose outlet hub stands still by default
+        (:attr:`~turbigen.annulus.Annulus.stationary_hub_out`) gets a
+        stationary stretch there, from the grid line nearest the row that the
+        block allows, unless :attr:`endwalls` sets that wall itself or
+        :attr:`inviscid_endwalls` makes it a slip wall.
+
         Returns the range of `i` the casing of each block, by `id`, has no
         stretch over, for the patch a tip gap's casing takes.
         """
         annulus = machine.annulus
         last = len(machine.rows) - 1
         rest = {}
-        for inlet, j, wall, stretch in self.endwalls.stretches():
+        stretches = [(*st, False) for st in self.endwalls.stretches()]
+        if (
+            getattr(annulus, "stationary_hub_out", False)
+            and not self.inviscid_endwalls
+            and not any(not inlet and j == 0 for inlet, j, *_ in stretches)
+        ):
+            stretches.append((False, 0, "hub", StationaryStretch(m=1.0), True))
+        for inlet, j, wall, stretch, nearest in stretches:
             if not (i_row == 0 if inlet else i_row == last):
                 continue
             blk = up if inlet else dn
-            i = _i_at_m(blk, annulus, j, stretch.m)
             ni = blk.shape[0]
             lo = 1 if inlet or i_te is None else i_te
             hi = ni - 2 if not inlet or i_le is None else i_le
+            i = lo if nearest else _i_at_m(blk, annulus, j, stretch.m)
             duct = "inlet" if inlet else "outlet"
             if not lo <= i <= hi:
                 raise ValueError(

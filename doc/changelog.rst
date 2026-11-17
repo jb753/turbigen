@@ -11,9 +11,9 @@ v4.0.0
   thickness distribution
 * One-dimensional initial guesses can use annulus data to make them
   conserve mass better
-* Set the outlet duct area along its length, split its change of span between
-  hub and casing with ``nozzle_hub_fraction``, and optionally make a row's
-  area linear in radius with ``row_area: radius``
+* Set the outlet duct area along its length, and add an ``impeller`` annulus
+  for a radial impeller: area linear in radius through the row, and a
+  straight, stationary diffuser hub
 * Unify blade tip clearance and thickness scaling
 * Simplify the cusp to work at any pitch angle, switched by a single ``cusp``
   flag with ``frac_TE`` spacing, replacing the ``dm_TE``, ``ni_TE`` and

@@ -414,3 +414,32 @@ def test_the_periodic_surface_runs_unbroken_from_inlet_to_outlet(grid):
         # From the row's inlet to its outlet, on the bottom of the passage
         np.testing.assert_allclose(surface.xrt[0], blocks["up"][0, :, 0].xrt)
         np.testing.assert_allclose(surface.xrt[-1], blocks["dn"][-1, :, 0].xrt)
+
+
+def test_an_impeller_diffuser_hub_stands_still_by_default():
+    """Behind an impeller annulus the outlet duct's hub stands still from the
+    first grid line of the outlet block to the outlet, with no
+    `mesh.endwalls` to say so, and a stretch the mesh does set replaces it."""
+    from pathlib import Path
+
+    import yaml
+
+    from turbigen.config import Config
+
+    example = Path(__file__).resolve().parents[2] / "examples/radial_compressor.yaml"
+    config = Config.from_dict(yaml.safe_load(example.read_text()))
+    machine = config.design()
+    grid = config.mesh.mesh(machine)
+    dn = grid["row0_dn"]
+    rotating = {p.label: p for p in dn.patches if type(p).__name__ == "RotatingPatch"}
+    hub = rotating["stationary_hub_out"]
+    assert (hub.jst, hub.jen) == (0, 0)
+    assert hub.ist == 1
+    assert hub.ien in (-1, dn.shape[0] - 1)
+
+    mesh = config.mesh.to_dict()
+    mesh["endwalls"] = {"outlet": {"hub": {"type": "inviscid", "m": 2.9}}}
+    grid = OHPassage.from_dict(mesh).mesh(machine)
+    labels = {p.label for p in grid["row0_dn"].patches}
+    assert "stationary_hub_out" not in labels
+    assert "inviscid_hub_out" in labels

@@ -18,6 +18,7 @@ from turbigen.annulus import (
     AnnulusDesign,
     AspectRatio,
     FixedAxialChord,
+    ImpellerAnnulus,
     PchipAnnulus,
     RowAnnulus,
 )
@@ -128,6 +129,7 @@ __all__ = [
     "DiffusionFactor",
     "Ember",
     "FixedAxialChord",
+    "ImpellerAnnulus",
     "FixedCount",
     "Fluid",
     "H",
