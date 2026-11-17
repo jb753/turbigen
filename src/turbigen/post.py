@@ -34,6 +34,7 @@ import ember.average
 import ember.block_util
 import ember.util
 import numpy as np
+import scipy.spatial
 
 import turbigen.blade
 import turbigen.util
@@ -397,6 +398,82 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
     ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
 
 
+def _spacing_steps(slices, pitches):
+    """Return each cell's spacing step on planes `slices` of blocks, (x, y)
+    each (ni, nk), with periods `pitches` in `y`: the largest ratio, either
+    way, of its length to a neighbour's along `i` or along `k`, its length the
+    mean of its two edges that way; at a face where it meets another block,
+    of its first cell normal to the face to the other block's there. None for
+    a slice that is not a plane of cells."""
+    faces = []  # (slice, node index on the face, face node xy, normal length)
+    out = []
+    for n, (x, y) in enumerate(slices):
+        if np.ndim(x) != 2 or min(np.shape(x)) < 2:
+            out.append(None)
+            continue
+        P = np.stack((x, y)).astype(float)
+        di = np.linalg.norm(np.diff(P, axis=1), axis=0)
+        dk = np.linalg.norm(np.diff(P, axis=2), axis=0)
+        lengths = (0.5 * (di[:, 1:] + di[:, :-1]), 0.5 * (dk[1:] + dk[:-1]))
+        log_step = np.zeros_like(lengths[0])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            for ax, L in enumerate(lengths):
+                r = np.abs(np.diff(np.log(L), axis=ax))
+                before = [(0, 0), (0, 0)]
+                before[ax] = (1, 0)
+                after = [(0, 0), (0, 0)]
+                after[ax] = (0, 1)
+                log_step = np.fmax(
+                    log_step, np.fmax(np.pad(r, before), np.pad(r, after))
+                )
+        out.append(np.nan_to_num(log_step, nan=0.0, posinf=0.0))
+        # Each face's nodes but its ends, and the first edge in from each
+        for side, nodes, normal in (
+            ("i0", P[:, 0, 1:-1], di[0, 1:-1]),
+            ("i1", P[:, -1, 1:-1], di[-1, 1:-1]),
+            ("k0", P[:, 1:-1, 0], dk[1:-1, 0]),
+            ("k1", P[:, 1:-1, -1], dk[1:-1, -1]),
+        ):
+            faces.append((n, side, nodes.T, normal))
+    if faces:
+        pts = np.concatenate([f[2] for f in faces])
+        owner = np.concatenate([np.full(len(f[2]), q) for q, f in enumerate(faces)])
+        normal = np.concatenate([f[3] for f in faces])
+        face_slice = np.array([f[0] for f in faces])
+        tol = 1e-6 * float(np.ptp(pts, axis=0).max())
+        tree = scipy.spatial.cKDTree(pts)
+        for q, (n, side, nodes, own) in enumerate(faces):
+            if not len(nodes):
+                continue
+            other = np.full(len(nodes), np.nan)
+            pitch = float(pitches[n] or 0.0)
+            for shift in {0.0, pitch, -pitch}:
+                # The nearest few, as the block's own face nodes and those of
+                # its neighbours coincide
+                d, hit = tree.query(nodes + [0.0, shift], k=4, distance_upper_bound=tol)
+                for c in range(d.shape[1]):
+                    ok = np.isfinite(d[:, c]) & np.isnan(other)
+                    ok[ok] &= face_slice[owner[hit[ok, c]]] != n
+                    other[ok] = normal[hit[ok, c]]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                across = np.abs(np.log(own / other))
+            across = np.nan_to_num(across, nan=0.0, posinf=0.0)
+            # Each face cell takes the larger of its two face nodes', the
+            # ends of the face not matched
+            node = np.concatenate(([0.0], across, [0.0]))
+            cell = np.fmax(node[1:], node[:-1])
+            step = out[n]
+            if side == "i0":
+                step[0] = np.fmax(step[0], cell)
+            elif side == "i1":
+                step[-1] = np.fmax(step[-1], cell)
+            elif side == "k0":
+                step[:, 0] = np.fmax(step[:, 0], cell)
+            else:
+                step[:, -1] = np.fmax(step[:, -1], cell)
+    return [None if step is None else np.exp(step) for step in out]
+
+
 class MeshPlot(Post):
     """Grid lines of an H or OHP mesh, meridional and blade-to-blade.
 
@@ -429,6 +506,16 @@ class MeshPlot(Post):
     fraction of the row's mid-span chord in conformal coordinates; zero for
     no close-ups [--]."""
 
+    debug: bool = False
+    """On the blade-to-blade views, fill each cell by its spacing step, the
+    largest ratio of its length to its neighbour's along `i` or `k`, across
+    the faces between blocks too, from white for none to full at
+    `step_max`; and label each block."""
+
+    step_max: float = 1.4
+    """Spacing step `debug` shades a cell fully at and above; white is one,
+    no step [--]."""
+
     def report(self, config, result):
         if result.grid is None:
             logger.info("No grid, skipping the mesh plot.")
@@ -437,18 +524,56 @@ class MeshPlot(Post):
             logger.info("Not an H or OHP mesh, skipping the mesh plot.")
             return []
 
+        import matplotlib.colors
         import matplotlib.pyplot as plt
 
         # The passage blocks only: a gridded tip block spans only a sliver of
         # span, so has no mid-span slice and adds nothing seen meridionally.
         blocks = [block for block in result.grid if "_tip" not in block.label]
 
-        def draw(title, slices):
+        def draw(title, slices, cut=None):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_aspect("equal")
             ax.axis("off")
             ax.set_title(title)
             style = {"color": "k", "linewidth": self.linewidth}
+            if self.debug and cut is not None:
+                # White at one, shaded to full at `step_max` and held there
+                norm = matplotlib.colors.Normalize(1.0, self.step_max)
+                cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                    "step", ["white", "tab:red"]
+                )
+                steps = _spacing_steps(slices, [block.pitch for block in cut])
+                for (x, y), block, step in zip(slices, cut, steps):
+                    if step is None:
+                        continue
+                    label = block.label
+                    mesh = ax.pcolormesh(
+                        x,
+                        y,
+                        step,
+                        norm=norm,
+                        cmap=cmap,
+                        shading="flat",
+                        rasterized=True,
+                    )
+                    i, k = x.shape[0] // 2, x.shape[1] // 2
+                    ax.text(
+                        x[i, k],
+                        y[i, k],
+                        label.split("_", 1)[-1],
+                        color="tab:blue",
+                        fontsize=6,
+                        ha="center",
+                        va="center",
+                        clip_on=True,
+                    )
+                cbar = fig.colorbar(
+                    mesh, ax=ax, shrink=0.6, label="Spacing step", extend="max"
+                )
+                ticks = np.linspace(1.0, self.step_max, 6)
+                cbar.set_ticks(ticks, labels=[f"{t:g}" for t in ticks])
+                cbar.minorticks_off()
             for x, y in slices:
                 # Columns are lines, so this draws both families
                 ax.plot(x, y, **style)
@@ -478,24 +603,24 @@ class MeshPlot(Post):
         annulus = result.machine.annulus
         spf, xr_curve, slices = self._blade_to_blade(annulus, blocks, 0.5)
         where = f"spf={spf:.2f}"
-        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices)
+        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices, blocks)
         figures = [meridional, blade_to_blade]
         if self.closeup <= 0.0:
             return figures
 
-        def closeups(i_row, row, spf, xr_curve, slices, prefix):
+        def closeups(i_row, row, spf, xr_curve, slices, prefix, cut):
             where = f"spf={spf:.3f}"
             for name, centre, half in self._edges(
                 result.machine, i_row, row, spf, xr_curve, slices
             ):
-                fig = draw(f"Row {i_row} {prefix}{name}, {where}", slices)
+                fig = draw(f"Row {i_row} {prefix}{name}, {where}", slices, cut)
                 ax = fig.axes[0]
                 ax.set_xlim(centre[0] - half, centre[0] + half)
                 ax.set_ylim(centre[1] - half, centre[1] + half)
                 figures.append(fig)
 
         for i_row, row in enumerate(result.machine.rows):
-            closeups(i_row, row, spf, xr_curve, slices, "")
+            closeups(i_row, row, spf, xr_curve, slices, "", blocks)
         # Each row with a gridded tip gap again, on the plane through the
         # middle of the gap: there every block is cut, the gap's own as well
         # as those round it, so the close-ups show how the gap's blocks meet
@@ -508,7 +633,15 @@ class MeshPlot(Post):
             spf_g, xr_g, slices_g = self._blade_to_blade(
                 annulus, list(result.grid), spf_gap
             )
-            closeups(i_row, row, spf_g, xr_g, slices_g, "Tip Gap ")
+            closeups(
+                i_row,
+                row,
+                spf_g,
+                xr_g,
+                slices_g,
+                "Tip Gap ",
+                list(result.grid),
+            )
         return figures
 
     def _blade_to_blade(self, annulus, blocks, spf):

@@ -578,6 +578,11 @@ class _Tune(Node):
     polish_fine_rings: int = 3
     """How many cells out from each poor cell of the refined plane are polished."""
 
+    polish_taper: float = 30.0
+    """Weight of the polish's penalty on how far each node moves, growing to
+    this at the edge of the polished region, so the spacing along the grid
+    lines does not step where it stops. See :func:`elliptic.polish`."""
+
     hold_fine: int = 3
     """Layers of cells off the blade the polish of the refined plane leaves be."""
 
@@ -613,6 +618,24 @@ class _Tune(Node):
     cell is drawn, within `geometric_O_match`, to the geometric mean of the
     first cells of the other lines out of the corner. Zero leaves it as
     smoothed."""
+
+    side_corner_cells: float = 0.0
+    """Fraction of the cells along each side of the blade over which the
+    first cell along the O block's outer face at each corner is scaled to
+    the one round the front or rear there. Zero refines the face as the
+    blade. See :meth:`_face_u`."""
+
+    passage_end_cells: float = 0.0
+    """Fraction of the cells across the passage over which its first cells
+    ahead of and behind the blade are scaled to those of the blocks round
+    the leading and trailing edges they meet. Zero leaves them as laid out.
+    See :meth:`_passage_u`."""
+
+    extrude_match_cells: float = 0.33
+    """Fraction of the stations of an extruded inlet or outlet block over
+    which each line's first cell, matched to the last inside the cut on the
+    line it continues, fades back to the median's. Zero spaces every line
+    alike. See :meth:`OHPassage._extrude_fractions`."""
 
     end_corner_cells: float = 0.33
     """Fraction of the cells along the blocks ahead of and behind the blade
@@ -2073,6 +2096,14 @@ class OHPassage(Mesher):
         lay = self._wall_u(lay, planes[j_mid], xy_mid)
         refine = self._refine_matrices(lay, planes[j_mid]["xy"])
         mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+        if self.tune.side_corner_cells > 0.0:
+            lay = self._face_u(lay, mid)
+            refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+        if self.tune.passage_end_cells > 0.0:
+            lay = self._passage_u(lay, mid)
+            refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
         if self.tune.end_corner_cells > 0.0:
             lay = self._ends_u(lay, mid)
             refine = self._refine_matrices(lay, planes[j_mid]["xy"])
@@ -2210,7 +2241,9 @@ class OHPassage(Mesher):
         the extruded block's stations lie at, on refined plane `xy`.
 
         From the size of the cells inside the cut, growing at `ER_stream`
-        to the free stream size, in a count a multigrid level can halve.
+        to the free stream size, in a count a multigrid level can halve: one
+        set (n,) for every line, or with `extrude_match_cells`, one for each
+        line across the face (n, nk), its first cell its own.
         """
         face, inner = self._cut_face(xy, inlet)
         mp_end = plane["cmap"].mp_from_m(lay.m_in if inlet else lay.m_out)
@@ -2227,7 +2260,18 @@ class OHPassage(Mesher):
             f = _single(h0 / D, h1 / D, self.tune.ER_stream)
         except clusterfunc.exceptions.ClusteringException:
             f = _uniform(min(h0, h1) / D)
-        return _mult(to_mp(f), 8)
+        f = _mult(to_mp(f), 8)
+        if self.tune.extrude_match_cells <= 0.0:
+            return f
+        # Each line's first cell, along `m'`, as long as the last inside the
+        # cut on the line it continues, the median's faded back in over
+        # `extrude_match_cells` of the stations; the blocks inside the cut
+        # are spaced alike along every line no more than the median is
+        c = self.tune.geometric_O_match
+        own = np.abs(face[0] - inner[0]) / np.abs(mp_end - face[0])
+        F = np.clip(own / f[1], 1.0 / c, c)
+        n_fade = self.tune.extrude_match_cells * (len(f) - 1)
+        return np.stack([_scale_end(f, Fk, n_fade, at_end=False) for Fk in F], axis=1)
 
     def _extrude(self, xy, plane, lay, inlet, f):
         """Replace the inlet or outlet block of refined plane `xy` by its cut
@@ -2246,7 +2290,8 @@ class OHPassage(Mesher):
         mp_end = plane["cmap"].mp_from_m(lay.m_in if inlet else lay.m_out)
         chord = float(np.ptp(plane["wall"][0]))
         slope = (face[1] - inner[1]) / (face[0] - inner[0])
-        mp = face[0][None] + f[:, None] * (mp_end - face[0])[None]
+        f = f if np.ndim(f) == 2 else f[:, None]
+        mp = face[0][None] + f * (mp_end - face[0])[None]
         d = np.abs(mp - face[0][None])
         sense = np.sign(mp_end - face[0])[None]
         # Every line turns as the pitch-mean slope does, straightening over
@@ -2474,6 +2519,67 @@ class OHPassage(Mesher):
         u["ru"] = along(d_eff, 4, m["ru"])
         return dataclasses.replace(lay, u=u)
 
+    def _face_u(self, lay, mid):
+        """Return `lay` with the sides of the blade refined apart along the
+        O block's outer face, `u["side_lo_face"]` and `u["side_up_face"]`:
+        each side's first cell along the face at each corner scaled to the
+        first cell of the piece round the front or rear there, as refined
+        plane `mid` has them, within `geometric_O_match` either way, and
+        faded to none over `side_corner_cells` of the way along the side.
+        The passage block is refined along the sides so, and the O block
+        blended across from the spacing along the blade to it."""
+        c = self.tune.geometric_O_match
+        n_sd = lay.n_wall[1]
+        spokes = dict(_corner_spokes(mid, lay, mid[0][:, :, -1]))
+        i3, i4, i1, i2 = lay.i_corners()
+        u = dict(lay.u)
+        # In the O block's direction, the lower side from C3 to C4 and the
+        # upper from C1 to C2; the side is after C3 and C1, before C4 and C2
+        lo = _reverse(np.asarray(u["side_lo"], float), n_sd)
+        up = np.asarray(u["side_up"], float)
+        for name, v, (a, b) in (("side_lo", lo, (i3, i4)), ("side_up", up, (i1, i2))):
+            n_fade = self.tune.side_corner_cells * (len(v) - 1)
+            Fa = np.clip(spokes[a]["face-"] / spokes[a]["face+"], 1.0 / c, c)
+            Fb = np.clip(spokes[b]["face+"] / spokes[b]["face-"], 1.0 / c, c)
+            v = _scale_end(v, Fa, n_fade, at_end=False)
+            v = _scale_end(v, Fb, n_fade, at_end=True)
+            u[name + "_face"] = _reverse(v, n_sd) if name == "side_lo" else v
+            logger.debug(f"{name} along the face scaled {Fa:.2f} and {Fb:.2f}")
+        return dataclasses.replace(lay, u=u)
+
+    def _passage_u(self, lay, mid):
+        """Return `lay` with the refinement across the passage ahead of and
+        behind the blade set apart, `u["P_in"]` and `u["P_out"]`, each end
+        scaled so the first cells across the passage block ahead of (behind)
+        the blade are, in the geometric mean along each face it shares with
+        the block round the leading (trailing) edge, as long as that block's
+        first cells there, as refined plane `mid` has them; within
+        `geometric_O_match` either way, and faded to none over
+        `passage_end_cells` of the way across."""
+        c = self.tune.geometric_O_match
+        LE, Pin, TE, Pout = (np.asarray(mid[b], float) for b in (2, 3, 4, 5))
+
+        def first(B, k0):
+            """First cells along `k` from face `k0` (0 or -1), each `i`."""
+            k1 = 1 if k0 == 0 else -2
+            return np.linalg.norm(B[:, :, k1] - B[:, :, k0], axis=0)
+
+        def factor(edge, passage, k_edge, k_passage):
+            r = np.log(first(edge, k_edge)) - np.log(first(passage, k_passage))
+            return float(np.clip(np.exp(np.mean(r[1:-1])), 1.0 / c, c))
+
+        u = dict(lay.u)
+        n_fade = self.tune.passage_end_cells * (len(u["P"]) - 1)
+        for name, edge, passage in (("P_in", LE, Pin), ("P_out", TE, Pout)):
+            # The passage's k = 0 meets the edge block's k = -1, and its
+            # k = -1 the edge block's k = 0
+            F0 = factor(edge, passage, -1, 0)
+            F1 = factor(edge, passage, 0, -1)
+            v = _scale_end(np.asarray(u["P"], float), F0, n_fade, at_end=False)
+            u[name] = _scale_end(v, F1, n_fade, at_end=True)
+            logger.debug(f"{name} ends scaled by {F0:.2f} and {F1:.2f}")
+        return dataclasses.replace(lay, u=u)
+
     def _ends_u(self, lay, mid):
         """Return `lay` with the refinement along the blocks ahead of and
         behind the blade, `u["in"]` and `u["out"]`, scaled at the blade so
@@ -2603,9 +2709,15 @@ class OHPassage(Mesher):
         n_rl, _, n_fr, _, n_ru = lay.n_wall
         n_sd = lay.n_wall[1]
         n_P = lay.n_P
-        side = [(0, n_sd, u["side_up"])]
-        side_lo = [(0, n_sd, u["side_lo"])]
-        across = [(0, n_P, u["P"])]
+        # The sides as along the O block's outer face, which the passage
+        # block meets, if `_face_u` set them apart from along the blade
+        side = [(0, n_sd, u.get("side_up_face", u["side_up"]))]
+        side_lo = [(0, n_sd, u.get("side_lo_face", u["side_lo"]))]
+        # Across the passage ahead of and behind the blade, if `_passage_u`
+        # set them apart to meet the blocks round the leading and trailing
+        # edges; the passage block blends from one to the other along `i`
+        across_in = [(0, n_P, u.get("P_in", u["P"]))]
+        across_out = [(0, n_P, u.get("P_out", u["P"]))]
         front = [(0, n_fr, u["front"])]
         rear = [
             (0, n_rl, _reverse(u["rl"], n_rl)),
@@ -2617,15 +2729,15 @@ class OHPassage(Mesher):
 
         plan = {
             "O": (self._wall_pieces(lay), None),
-            "P": (side, across),
+            "P": (side, across_in),
             "LE": ([(0, lay.n_in, u["in"])], front),
-            "Pin": ([(0, lay.n_in, u["in"])], across),
+            "Pin": ([(0, lay.n_in, u["in"])], across_in),
             "TE": ([(0, lay.n_out, u["out"])], rear),
-            "Pout": ([(0, lay.n_out, u["out"])], across),
-            "up": (None, across + shifted(front, n_P)),
+            "Pout": ([(0, lay.n_out, u["out"])], across_out),
+            "up": (None, across_in + shifted(front, n_P)),
             "dn": (
                 [(0, lay.n_dn, u["dn"])] if "dn" in u else None,
-                across + shifted(rear, n_P),
+                across_out + shifted(rear, n_P),
             ),
         }
         refine = {
@@ -2636,6 +2748,10 @@ class OHPassage(Mesher):
             for name, B in zip(LABELS, xy)
         }
         refine["P_lo"] = _refine_matrix(n_sd + 1, side_lo, xy[1].dtype)
+        refine["P_out"] = _refine_matrix(n_P + 1, across_out, xy[1].dtype)
+        refine["O_face"] = _refine_matrix(
+            xy[0].shape[1], self._wall_pieces(_face_lay(lay)), xy[0].dtype
+        )
         return refine
 
     def _refined(self, xy, plane, lay, refine, respace_dn=True):
@@ -2680,6 +2796,20 @@ class OHPassage(Mesher):
                 # blended linearly across.
                 w = np.linspace(0.0, 1.0, B.shape[2], dtype=B.dtype)
                 B = (R_i @ B) * (1.0 - w) + (refine["P_lo"] @ B) * w
+                # Across, from as ahead of the blade at i = 0 to as behind
+                # it at i = -1, smoothly
+                t = np.linspace(0.0, 1.0, B.shape[1])
+                t = (t * t * (3.0 - 2.0 * t)).astype(B.dtype)[:, None]
+                B = (B @ R_k.T) * (1.0 - t) + (B @ refine["P_out"].T) * t
+                out.append(B)
+                continue
+            elif name == "O":
+                # Along the blade as the blade nodes are spaced, blended
+                # across the block to the outer face as the passage block
+                # beyond it is
+                w = np.linspace(0.0, 1.0, B.shape[2])
+                w = (w * w * (3.0 - 2.0 * w)).astype(B.dtype)
+                B = (R_i @ B) * (1.0 - w) + (refine["O_face"] @ B) * w
             elif R_i is not None:
                 B = R_i @ B
             if R_k is not None:
@@ -2801,6 +2931,7 @@ class OHPassage(Mesher):
             rings=rings,
             power=self.tune.polish_power,
             hold=hold,
+            taper=self.tune.polish_taper,
         )
         return polished - X
 
@@ -3454,6 +3585,17 @@ def _wall_counts(need, tip_gap):
 def _up8(n):
     """Return `n` rounded up to a multiple of eight, at least eight."""
     return max(8, 8 * int(np.ceil(n / 8)))
+
+
+def _face_lay(lay):
+    """Return `lay` with the sides of the blade refined as along the O
+    block's outer face, if :meth:`_face_u` has set them apart, rather than
+    as along the blade."""
+    u = dict(lay.u)
+    for name in ("side_lo", "side_up"):
+        if name + "_face" in u:
+            u[name] = u[name + "_face"]
+    return dataclasses.replace(lay, u=u)
 
 
 def _corner_spokes(out, lay, face):

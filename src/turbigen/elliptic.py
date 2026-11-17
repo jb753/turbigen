@@ -406,6 +406,7 @@ def polish(
     power=1.0,
     hold=None,
     smooth=0,
+    taper=0.0,
 ):
     """Return `X` with the nodes near `centres` moved to square up their cells.
 
@@ -457,6 +458,12 @@ def polish(
         a straight line in the logarithm, passes unchanged; so the size term
         draws a step out into a gradual change, and leaves the clustering the
         mesh was built with.
+    taper : float
+        Weight of a penalty on how far each node moves, in the shortest edge
+        of its cells,
+        growing as the square of its rings from the centres: none at them,
+        `taper` at the last ring, so the moves die away towards the edge of
+        the region rather than stop at it. None if zero.
 
     Returns
     -------
@@ -484,8 +491,12 @@ def polish(
     # Nodes within `rings` cells of a centre, by growing through the cells.
     near = np.zeros(topo.n_node, dtype=bool)
     near[np.asarray(centres, dtype=int)] = True
-    for _ in range(rings):
-        near[ids[near[ids].any(axis=1)].ravel()] = True
+    ring = np.zeros(topo.n_node)
+    for r in range(1, rings + 1):
+        grown = np.zeros(topo.n_node, dtype=bool)
+        grown[ids[near[ids].any(axis=1)].ravel()] = True
+        ring[grown & ~near] = r
+        near |= grown
     free = np.zeros((topo.n_node, 2), dtype=bool)
     free[near] = True
     free[topo.fixed] = False
@@ -524,13 +535,29 @@ def polish(
     # precision whatever the mesh is held in.
     X64 = X.astype(float)
 
+    z0 = X0[free] / scale
+    # Each node's move measured against the shortest target edge of the
+    # cells round it, so a move small in a large cell is not free in a small
+    h = np.full(topo.n_node, np.inf)
+    np.minimum.at(h, ids, np.minimum(la, lb)[:, None])
+    h = np.where(np.isfinite(h), h, scale)
+    W = np.broadcast_to(
+        (taper * (ring / max(rings, 1)) ** 2 * (scale / h) ** 2)[:, None],
+        (topo.n_node, 2),
+    )[free]
+
     def fun(z):
         Xc = X64.copy()
         Xc[free] = z * scale
         f, g = ember.elliptic.polish_cost(
             Xc, ids, shifts, la, lb, POLISH_EPS, power, w_size
         )
-        return f / n_corner, g[free] * scale / n_corner
+        f, g = f / n_corner, g[free] * scale / n_corner
+        if taper:
+            dz = z - z0
+            f += np.sum(W * dz * dz) / n_corner
+            g = g + 2.0 * W * dz / n_corner
+        return f, g
 
     res = scipy.optimize.minimize(
         fun,
