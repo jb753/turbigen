@@ -170,6 +170,82 @@ def _interleave(row, gap, n_segment, name_row, name_gap):
     return values
 
 
+ROW_AREA_LAWS = ("none", "radius")
+"""The values :attr:`PchipAnnulus.row_area` takes."""
+
+RADIAL_ROW = 0.5
+"""Change of mid-line radius over a row, in leading-edge spans, below which
+:attr:`PchipAnnulus.row_area` leaves the row as fitted [--]."""
+
+N_ROW_AREA = 16
+"""Intervals each row is split into by :attr:`PchipAnnulus.row_area`. The
+inlet duct, straight and of constant area, is split as finely, so that the
+row's added points do not bow its hub and casing."""
+
+
+def _row_area_points(plain, xhub, rhub, xcas, rcas, Ds, m_knot, span, r_mid):
+    """Return the control points and segment lengths with points added inside
+    each row, at the plain fit's mid-line, spanned so the area is linear in
+    radius from the leading edge's to the trailing edge's.
+
+    `plain` is the annulus fitted through the stations alone; the other
+    arguments are its control points, segment lengths, the `m` of each point,
+    and the span and mid-line radius at each. Each new point sits on the plain
+    fit's mid-line, its hub and casing either side along the normal to it, as
+    the stations' are.
+    """
+    f = np.linspace(0.0, 1.0, N_ROW_AREA + 1)[1:-1]
+    pts = [np.asarray(q, dtype=float) for q in (xhub, rhub, xcas, rcas, m_knot)]
+    Ds_new = []
+    for k in range(len(Ds)):
+        m_le = float(m_knot[k])
+        is_row = m_le % 2 == 1.0 and float(m_knot[k + 1]) == m_le + 1.0
+        if k == 0:
+            # The inlet duct is straight at constant span, so its points lie
+            # on the lines between its ends
+            new = [q[0] + f * (q[1] - q[0]) for q in (xhub, rhub, xcas, rcas)]
+            pts = [np.insert(q, 1, v) for q, v in zip(pts, (*new, f * m_knot[1]))]
+            Ds_new.extend(np.full(N_ROW_AREA, Ds[0] / N_ROW_AREA))
+            continue
+        if not is_row:
+            Ds_new.append(Ds[k])
+            continue
+        # Mid-line of the plain fit through the row, finely, for arc length
+        # and the normal at each new point
+        m_fine = m_le + np.linspace(0.0, 1.0, 201)
+        xr = plain.evaluate_xr(m_fine, 0.5)
+        ds = np.hypot(*np.diff(xr, axis=1))
+        s_fine = turbigen.util.cumsum0(ds)
+        s_new = f * s_fine[-1]
+        x_new = np.interp(s_new, s_fine, xr[0])
+        r_new = np.interp(s_new, s_fine, xr[1])
+        dx = np.interp(s_new, s_fine, np.gradient(xr[0], s_fine))
+        dr = np.interp(s_new, s_fine, np.gradient(xr[1], s_fine))
+        Beta = np.arctan2(dr, dx)
+
+        A_le = 2.0 * np.pi * r_mid[k] * span[k]
+        A_te = 2.0 * np.pi * r_mid[k + 1] * span[k + 1]
+        dr_row = r_mid[k + 1] - r_mid[k]
+        if abs(dr_row) < RADIAL_ROW * span[k]:
+            # Not a radial row: no law to impose, leave it as fitted
+            Ds_new.append(Ds[k])
+            continue
+        g = (r_new - r_mid[k]) / dr_row
+        span_new = (A_le + g * (A_te - A_le)) / (2.0 * np.pi * r_new)
+
+        new = (
+            x_new + 0.5 * span_new * np.sin(Beta),
+            r_new - 0.5 * span_new * np.cos(Beta),
+            x_new - 0.5 * span_new * np.sin(Beta),
+            r_new + 0.5 * span_new * np.cos(Beta),
+            m_le + f,
+        )
+        i_ins = int(np.flatnonzero(pts[4] == m_le)[0]) + 1
+        pts = [np.insert(q, i_ins, v) for q, v in zip(pts, new)]
+        Ds_new.extend(np.diff(np.r_[0.0, s_new, s_fine[-1]]) / s_fine[-1] * Ds[k])
+    return (*pts[:4], np.asarray(Ds_new), pts[4])
+
+
 def _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds_target, rtol=1e-6, max_iter=20):
     """Fit PCHIP curves through control points, iterating on arc length.
 
@@ -816,6 +892,21 @@ class PchipAnnulus(AnnulusDesign):
     stations. Values between blend the two.
     """
 
+    row_area: str = "none"
+    """How the annulus area runs through each row, from its leading edge to
+    its trailing edge [--].
+
+    ``"none"`` places control points at the stations alone, so the area in a
+    row is whatever the hub and casing curves give between them; through a
+    radial impeller's bend that holds the area and then takes the whole change
+    in a short stretch. ``"radius"`` adds control points inside each row,
+    keeping the mid-line of the plain fit but setting the span so that the
+    area is linear in the mid-line's radius: it changes only as the passage
+    moves out, as a rotor's relative flow capacity does. A row whose radius
+    changes by less than half its leading-edge span, an axial one, is left as
+    fitted.
+    """
+
     def segment_lengths(self, span_avg, cos_Beta_avg):
         """Return the meridional arc length of each segment [m].
 
@@ -863,6 +954,10 @@ class PchipAnnulus(AnnulusDesign):
             raise ValueError(
                 f"nozzle_hub_fraction={self.nozzle_hub_fraction} must lie in [0, 1]."
             )
+        if self.row_area not in ROW_AREA_LAWS:
+            raise ValueError(
+                f"row_area={self.row_area!r} must be one of {ROW_AREA_LAWS}."
+            )
 
         # Ask the design how long each segment is, and take the axial length
         # from the pitch angle rather than the other way round.
@@ -909,10 +1004,18 @@ class PchipAnnulus(AnnulusDesign):
         s_init = turbigen.util.cumsum0(Ds)
         s, curves = _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds)
 
+        if self.row_area == "radius":
+            plain = Annulus(s, m_knot, curves, curves, 0.0, n_row)
+            xhub, rhub, xcas, rcas, Ds, m_knot = _row_area_points(
+                plain, xhub, rhub, xcas, rcas, Ds, m_knot, span_ext, r_mid_ext
+            )
+            s_init = turbigen.util.cumsum0(Ds)
+            s, curves = _fit_pchips(s_init, xhub, rhub, xcas, rcas, Ds)
+
         # A second fit through the endpoints only, for the merged blend. When
         # the weight is zero it is never evaluated, so do not pay for it.
         if self.merge_weight > 0.0:
-            ends = np.r_[0, 1, n_segment - 1 : len(m_knot)]
+            ends = np.flatnonzero((m_knot <= 1.0) | (m_knot >= n_segment - 1))
             s_ends = s_init[ends]
             _, curves_merged = _fit_pchips(
                 s_ends,

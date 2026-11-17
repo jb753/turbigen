@@ -8,9 +8,11 @@ designs a mean line alone.
 """
 
 import dataclasses
+from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 import turbigen_ref.annulus
 
 from turbigen import Annulus, Config, FixedAxialChord, Machine
@@ -313,6 +315,60 @@ def test_an_absent_annulus_round_trips():
 
     assert config.annulus is None
     assert Config.from_dict(config.to_dict()) == config
+
+
+RADIAL = Path(__file__).resolve().parents[2] / "examples" / "radial_compressor.yaml"
+
+
+def radial(**annulus):
+    """The radial compressor example's machine, with its annulus overridden."""
+    config = Config.from_dict(yaml.safe_load(RADIAL.read_text()))
+    return dataclasses.replace(
+        config, annulus=dataclasses.replace(config.annulus, **annulus)
+    ).design()
+
+
+def test_a_radius_row_area_is_linear_in_radius_through_an_impeller():
+    """With `row_area: radius` the impeller's area falls from its leading
+    edge's to its trailing edge's in step with the mid-line radius, and the
+    stations and the ducts are where the plain fit puts them."""
+    plain = radial().annulus
+    annulus = radial(row_area="radius").annulus
+
+    m = np.linspace(1.0, 2.0, 41)
+    r = annulus.evaluate_xr(m, 0.5)[1]
+    A = annulus.evaluate_Am(m)
+    target = A[0] + (A[-1] - A[0]) * (r - r[0]) / (r[-1] - r[0])
+    np.testing.assert_allclose(A, target, rtol=0.01)
+    # PCHIP between the added points can wobble, but by little
+    assert np.max(np.diff(A)) < 5e-3 * A[0]
+
+    m_out = np.r_[0.0, 1.0, 2.0, 2.5, plain.m_max]
+    np.testing.assert_allclose(
+        annulus.evaluate_xr(m_out, 0.0), plain.evaluate_xr(m_out, 0.0), atol=1e-6
+    )
+    np.testing.assert_allclose(
+        annulus.evaluate_Am(np.linspace(0.0, 1.0, 11)), plain.evaluate_Am(0.0),
+        rtol=1e-3,
+    )
+
+
+def test_a_radius_row_area_leaves_an_axial_row_as_fitted():
+    """An axial row hardly changes radius, so `row_area: radius` has no law
+    to impose there and the annulus is the plain fit's, inlet duct apart,
+    which is still the same straight duct."""
+    plain = build().design().annulus
+    annulus = build(row_area="radius").design().annulus
+    m = np.linspace(0.0, plain.m_max, 61)
+    for spf in (0.0, 1.0):
+        np.testing.assert_allclose(
+            annulus.evaluate_xr(m, spf), plain.evaluate_xr(m, spf), atol=1e-6
+        )
+
+
+def test_an_unknown_row_area_is_rejected():
+    with pytest.raises(ValueError, match="row_area"):
+        build(row_area="linear").design()
 
 
 def test_annulus_defaults_are_written_out():
