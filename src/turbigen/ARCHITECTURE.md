@@ -527,11 +527,13 @@ clearance runs against a casing that does not turn with it, so `hmesh` places a
 `RotatingPatch` on `j=-1` exactly when there is a gap under it. The rule
 consults no speed at all: a stator with clearance gets the patch too, where it
 is a no-op because the block is stationary anyway, and that is the point ---
-whether a row turns is not the mesher's business.
+whether a row turns is not the mesher's business. A `stationary` stretch of a
+duct's endwall (`mesh.endwalls`, such as a vaneless diffuser's hub behind an
+impeller) is placed the same way.
 
 **How fast everything turns** is the operating point, so `bconds` sets it: the
 block angular velocity per row, and every rotating patch to
-`OMEGA_CASING = 0`. This is what makes a speedline cost no re-mesh, which is
+`OMEGA_STATIONARY = 0`. This is what makes a speedline cost no re-mesh, which is
 what `bconds` exists for.
 
 Two pieces of ember's semantics decide the shape, and neither is what its

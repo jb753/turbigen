@@ -404,16 +404,28 @@ class MeshPlot(Post):
     pitchwise in every block, the meridional view is the constant-`k` slice at
     mid-pitch. An OHP mesh has no such common index, so its meridional view is
     the periodic surface instead, :func:`turbigen.util.cut_periodic`, which
-    runs unbroken from inlet to outlet. The blade-to-blade view
-    is the constant-`j` slice at mid-span of every block, unrolled to
-    ``(x, r theta)``. Both are drawn to scale, every grid line, for one passage
-    of each row. A mesh of any other type draws nothing.
+    runs unbroken from inlet to outlet. The blade-to-blade view is the
+    constant-`j` plane of every block nearest mid-span, its span fraction in
+    the title, in the conformal coordinates ``(m', theta)`` that
+    :class:`ContourPlot` draws, along the annulus line at that span fraction
+    through the whole machine: a cell keeps its shape on the
+    stream surface at any radius, so a radial row is not stretched out where
+    its radius is large, and the grid reads directly against a contour map.
+    The meridional view is drawn to scale. Every grid line, for one passage of
+    each row. Then, for each row, the same blade-to-blade view closed in on
+    its leading and trailing edges on that plane. A mesh of any other type draws
+    nothing.
     """
 
     type: ClassVar[str] = "mesh"
 
     linewidth: float = 0.05
     """Width of the grid lines [pt]."""
+
+    closeup: float = 0.03
+    """Half-width of the square round each leading and trailing edge, as a
+    fraction of the row's mid-span chord in conformal coordinates; zero for
+    no close-ups [--]."""
 
     def report(self, config, result):
         if result.grid is None:
@@ -461,17 +473,67 @@ class MeshPlot(Post):
                     for surf in row
                 ],
             )
-        blade_to_blade = draw(
-            "Blade-to-Blade Grid, Mid-Span",
-            [
-                (
-                    block.x[:, block.shape[1] // 2, :],
-                    block.rt[:, block.shape[1] // 2, :],
-                )
-                for block in blocks
-            ],
-        )
-        return [meridional, blade_to_blade]
+        # The constant-`j` plane of each block nearest mid-span, and the
+        # conformal coordinate measured along the annulus line at that plane's
+        # own span fraction, through the whole machine as the contour maps
+        # do. Along mid-span's line instead, the nodes of a plane off it would
+        # be projected onto the line's vertices and the grid drawn kinked.
+        annulus = result.machine.annulus
+        planes = [self._plane_nearest(annulus, block, 0.5) for block in blocks]
+        spf = float(np.median([spf_j for _, spf_j in planes]))
+        m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
+        xr_curve = annulus.evaluate_xr(m, spf).T
+        slices = [
+            (
+                ember.util.unwrap_meridional(xr_curve, block.xrt[:, j, :, :2]),
+                np.asarray(block.t[:, j, :]),
+            )
+            for block, (j, _) in zip(blocks, planes)
+        ]
+        where = f"spf={spf:.2f}"
+        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices)
+        figures = [meridional, blade_to_blade]
+        if self.closeup > 0.0:
+            for i_row, row in enumerate(result.machine.rows):
+                for name, centre, half in self._edges(
+                    result.machine, i_row, row, spf, xr_curve, slices
+                ):
+                    fig = draw(f"Row {i_row} {name}, {where}", slices)
+                    ax = fig.axes[0]
+                    ax.set_xlim(centre[0] - half, centre[0] + half)
+                    ax.set_ylim(centre[1] - half, centre[1] + half)
+                    figures.append(fig)
+        return figures
+
+    @staticmethod
+    def _plane_nearest(annulus, block, spf):
+        """Return the index of the constant-`j` plane of `block` nearest span
+        fraction `spf`, and that plane's span fraction, at its middle node."""
+        i, k = block.shape[0] // 2, block.shape[2] // 2
+        x, r = (np.asarray(v[i, :, k], dtype=float) for v in (block.x, block.r))
+        spf_j = annulus.evaluate_mspf(x, r)[1]
+        j = int(np.nanargmin(np.abs(spf_j - spf)))
+        return j, float(spf_j[j])
+
+    def _edges(self, machine, i_row, row, spf, xr_curve, slices):
+        """Return the name, centre `(m', theta)` and half-width of the square
+        round each edge of `row` at span fraction `spf`, on the slices drawn."""
+        blade = row.blade
+        m_edges = 2.0 * i_row + 1.0 + blade.evaluate_swept_m([0.0, 1.0], spf)
+        xr = machine.annulus.evaluate_xr(m_edges, spf).T
+        mp = ember.util.unwrap_meridional(xr_curve, xr)
+        theta = blade._surface_theta(np.array([[spf, 0.0], [spf, 1.0]])).mean(axis=-1)
+        half = self.closeup * abs(float(mp[1] - mp[0]))
+        out = []
+        for name, mp_e, theta_e in zip(("Leading Edge", "Trailing Edge"), mp, theta):
+            # The blade's own angle is one pitch or another from the passage
+            # drawn; shifted by whole pitches onto the nodes near it
+            near = [t[np.abs(x - mp_e) < half] for x, t in slices if np.ndim(x) == 2]
+            near = np.concatenate([t.ravel() for t in near]) if near else []
+            if len(near):
+                theta_e += row.pitch * np.round((np.median(near) - theta_e) / row.pitch)
+            out.append((name, (float(mp_e), float(theta_e)), half))
+        return out
 
 
 def _plot_reference(ax, path):
@@ -1562,11 +1624,20 @@ class SpanwisePlot(Post):
         return fig
 
 
+def _station_plane(r, x, dt, radial):
+    """Return where nodes at `r`, `x`, `dt` from the middle of the passages
+    drawn lie on a station contour: looking along the axis, or for a `radial`
+    cut, from outside it unrolled, arc length across and `x` up."""
+    if radial:
+        return r * dt, x
+    return r * np.sin(dt), r * np.cos(dt)
+
+
 class StationContourPlot(Post):
     """Contours of a flow variable over a cut plane at a design station.
 
     Looking along the machine axis at the plane the mean line is reduced
-    across, so where a row's loss sits --- a tip leakage vortex, a hub corner,
+    across, or radially in at one facing out across a radial exit, so where a row's loss sits --- a tip leakage vortex, a hub corner,
     a wake --- is seen over the whole passage at once, rather than as the
     pitch average :class:`SpanwisePlot` draws or one span at a time as in
     :class:`ContourPlot`. The cut is the one the spanwise iterators take,
@@ -1648,6 +1719,7 @@ class StationContourPlot(Post):
             values = self._values(cut, result.actual, i_row)
             r = np.asarray(cut.r)
             t = np.asarray(cut.t)
+            x = np.asarray(cut.x)
             # The row's pitch in theta, 2 pi / Nb: each pitchwise line of the
             # cut spans one pitch less any solid it meets, so no line's own
             # extent is the period to repeat by.
@@ -1676,27 +1748,37 @@ class StationContourPlot(Post):
                 )
                 vj = np.concatenate([values[:, :-1]] * n + [values[:, -1:]], axis=1)
                 # Constant along a pitchwise line, so one column serves all
-                tiles = [(np.broadcast_to(r[:, :1], tj.shape), tj, vj)]
+                tiles = [
+                    (
+                        np.broadcast_to(r[:, :1], tj.shape),
+                        np.broadcast_to(x[:, :1], tj.shape),
+                        tj,
+                        vj,
+                    )
+                ]
             else:
-                tiles = [(r, t + i * pitch, values) for i in range(n)]
+                tiles = [(r, x, t + i * pitch, values) for i in range(n)]
 
             cmap = matplotlib.colors.ListedColormap(
                 plt.get_cmap(self.cmap)(np.linspace(self.cmap_start, 1.0, 256))
             )
 
-            # Looking along the machine axis in Cartesian y and z, so the
-            # passages are the sectors of the annulus they are, turned so the
-            # middle of those drawn is upright.
+            # A cut facing along the axis is seen along it, in Cartesian y and
+            # z, so the passages are the sectors of the annulus they are,
+            # turned so the middle of those drawn is upright. One facing out
+            # across a radial exit is a cylinder, which seen that way is a
+            # sliver of arc: it is seen from outside instead, unrolled, arc
+            # length across and axial position up, to scale.
             t_mid = 0.5 * (
-                min(ti.min() for _, ti, _ in tiles)
-                + max(ti.max() for _, ti, _ in tiles)
+                min(ti.min() for _, _, ti, _ in tiles)
+                + max(ti.max() for _, _, ti, _ in tiles)
             )
+            radial = np.ptp(r) < np.ptp(x)
 
             fig, ax = plt.subplots(layout="constrained")
-            for ri, ti, vi in tiles:
+            for ri, xi, ti, vi in tiles:
                 filled = ax.contourf(
-                    ri * np.sin(ti - t_mid),
-                    ri * np.cos(ti - t_mid),
+                    *_station_plane(ri, xi, ti - t_mid, radial),
                     vi,
                     levels=levels,
                     cmap=cmap,

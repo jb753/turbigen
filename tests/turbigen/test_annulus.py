@@ -221,6 +221,60 @@ def test_the_outlet_duct_area_follows_the_nozzle():
         np.testing.assert_allclose(A[1] / A[0], ratio, rtol=1e-6)
 
 
+@pytest.mark.parametrize("fraction", [0.0, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("ratio", [0.8, 1.2])
+def test_the_nozzle_area_holds_whichever_line_moves(fraction, ratio):
+    """Moving the mid-line changes its radius on an axial duct, so the span is
+    solved for the area rather than scaled for it."""
+    annulus = build(nozzle_ratio=ratio, nozzle_hub_fraction=fraction).design().annulus
+    m_TE = 2.0 * annulus.n_row
+    A = annulus.evaluate_Am(np.array([m_TE, annulus.m_max]))
+    np.testing.assert_allclose(A[1] / A[0], ratio, rtol=1e-6)
+
+
+def _off_line(annulus, line, m, spf):
+    """Distance of `annulus`'s points at `m`, `spf` from `line`'s curve at
+    `spf` over the outlet duct [m]. As curves: `m` runs along the mid-span
+    line, which moves with the nozzle, so it lands elsewhere along a line
+    that does not."""
+    m_dense = np.linspace(2.0 * line.n_row - 0.2, line.m_max, 20001)
+    x, r = line.evaluate_xr(m_dense, spf)
+    px, pr = annulus.evaluate_xr(m, spf)
+    return np.min(np.hypot(px[:, None] - x, pr[:, None] - r), axis=1)
+
+
+@pytest.mark.parametrize(("fraction", "kept"), [(0.0, 0.0), (1.0, 1.0)])
+def test_a_nozzle_hub_fraction_of_zero_or_one_keeps_one_line(fraction, kept):
+    """At 0 the hub line runs on as at constant area and only the casing
+    moves; at 1 the other way round. The whole outlet duct, not just its end."""
+    plain = build(nozzle_ratio=1.0).design().annulus
+    nozzle = build(nozzle_ratio=0.8, nozzle_hub_fraction=fraction).design().annulus
+    m = np.linspace(2.0 * plain.n_row, plain.m_max, 9)
+    span = float(plain.evaluate_span(plain.m_max))
+    # On the line to within the curve fit between its knots
+    assert _off_line(nozzle, plain, m, kept).max() < 1e-4 * span
+    # The other line takes all of the change in span
+    assert _off_line(nozzle, plain, m[-1:], 1.0 - kept)[0] > 0.05 * span
+
+
+def test_a_half_nozzle_hub_fraction_is_the_symmetric_nozzle():
+    """The default moves both lines alike about the duct's straight mid-line."""
+    default = build(nozzle_ratio=0.8).design().annulus
+    half = build(nozzle_ratio=0.8, nozzle_hub_fraction=0.5).design().annulus
+    plain = build(nozzle_ratio=1.0).design().annulus
+    m = np.linspace(2.0 * plain.n_row, plain.m_max, 9)
+    np.testing.assert_allclose(half.evaluate_xr(m, 0.5), default.evaluate_xr(m, 0.5))
+    np.testing.assert_allclose(
+        half.evaluate_xr(m, 0.5), plain.evaluate_xr(m, 0.5), atol=1e-9
+    )
+
+
+@pytest.mark.parametrize("fraction", [-0.1, 1.1])
+def test_nozzle_hub_fraction_outside_the_unit_interval_is_rejected(fraction):
+    with pytest.raises(ValueError, match=r"nozzle_hub_fraction.*\[0, 1\]"):
+        build(nozzle_hub_fraction=fraction).design()
+
+
 #
 # VALIDATION
 #

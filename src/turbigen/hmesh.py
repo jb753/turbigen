@@ -338,7 +338,7 @@ class H(Mesher):
                 )
         if self.cusp:
             self._check_trailing_edges(machine)
-        self._check_inviscid_ducts(machine.annulus)
+        self._check_endwalls()
         dspf_hub, dspf_casing, tip_ref = self._normalise_spacings(machine, spacing)
 
         blocks = []
@@ -937,15 +937,15 @@ class H(Mesher):
         block.set_t(xrt_now[2])
         block.patches.extend(patches)
 
-        # Slip walls in the ducts ahead of the leading edge and behind the
-        # trailing edge, from the annulus
-        casing = self._inviscid_ducts(machine, i_row, block, block, ile, ite)
+        # Slip or still stretches of the endwalls in the ducts ahead of the
+        # leading edge and behind the trailing edge, from `endwalls`
+        casing = self._duct_endwalls(machine, i_row, block, block, ile, ite)
         if njtip:
             # Walls turn with their block unless a `RotatingPatch` overrides
             # them, so a casing over a tip gap needs one. The mesher only places
             # it, at `j=-1` by this mesher's convention; `bconds` sets its speed,
             # so changing speed needs no re-mesh. On a stator it has no effect.
-            # Not over an inviscid stretch of the casing, which it would overlap.
+            # Not over a stretch of the casing in a duct, which it would overlap.
             i_rot = casing.get(id(block), (0, -1))
             block.patches.append(
                 ember.patch.RotatingPatch(i=i_rot, j=-1, label="casing")

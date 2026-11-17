@@ -12,7 +12,6 @@ main blocks, and a guessed flow turned the wrong way in the blocks whose `i`
 does not run downstream.
 """
 
-import dataclasses
 
 import ember.patch
 import numpy as np
@@ -336,9 +335,10 @@ def test_outlet_relaxation_moves_every_block_past_it_alike(machine, grid):
 
 
 def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
-    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet and
-    to the outlet, each to its nearest grid line, and the casing over the
-    rotor with a clearance turns only where the casing is not slip."""
+    """Inviscid stretches of `mesh.endwalls` make the endwalls slip walls from
+    the inlet and to the outlet, each to its nearest grid line, and the casing
+    over the rotor with a clearance stands still only where the casing is not
+    slip."""
     config = build(
         blades=[
             blade(section={"thickness": ROUND}),
@@ -346,10 +346,16 @@ def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_th
         ],
         mesh=MESH,
     )
-    m_inviscid = (0.5, 0.6, 4.4, 4.5)
-    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
-    machine = dataclasses.replace(config, annulus=annulus).design()
-    grid = OHPassage.from_dict(MESH).mesh(machine)
+    m_stretch = (0.5, 0.6, 4.4, 4.5)
+    endwalls = {
+        duct: {
+            wall: {"type": "inviscid", "m": m}
+            for wall, m in zip(("hub", "casing"), pair)
+        }
+        for duct, pair in (("inlet", m_stretch[:2]), ("outlet", m_stretch[2:]))
+    }
+    machine = config.design()
+    grid = OHPassage.from_dict({**MESH, "endwalls": endwalls}).mesh(machine)
 
     def patches(block, kind):
         return {p.label: p for p in block.patches if type(p).__name__ == kind}
@@ -359,10 +365,10 @@ def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_th
     assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
     assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
     for block, patch, m, j in (
-        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
-        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
-        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
-        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+        (up, inlet["inviscid_hub_in"], m_stretch[0], 0),
+        (up, inlet["inviscid_casing_in"], m_stretch[1], -1),
+        (dn, outlet["inviscid_hub_out"], m_stretch[2], 0),
+        (dn, outlet["inviscid_casing_out"], m_stretch[3], -1),
     ):
         i = patch.ien if patch.ist == 0 else patch.ist
         m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
@@ -372,8 +378,10 @@ def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_th
     assert casing.ien == outlet["inviscid_casing_out"].ist
     assert not patches(up, "RotatingPatch")
 
-    with pytest.raises(ValueError, match="m_inviscid"):
-        OHPassage.from_dict({**MESH, "inviscid_endwalls": True}).mesh(machine)
+    with pytest.raises(ValueError, match="endwalls"):
+        OHPassage.from_dict(
+            {**MESH, "endwalls": endwalls, "inviscid_endwalls": True}
+        ).mesh(machine)
 
 
 def test_the_conformal_map_is_exact_across_the_joins_of_the_annulus(machine):

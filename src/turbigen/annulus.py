@@ -38,7 +38,8 @@ include the inlet and outlet ducts.
 Two more parameters are configurable:
 
 * :attr:`~PchipAnnulus.nozzle_ratio` scales the exit span to achieve a desired
-  nozzle area;
+  nozzle area, and :attr:`~PchipAnnulus.nozzle_hub_fraction` says how much of
+  that change comes from the hub line and how much from the casing;
 * :attr:`~PchipAnnulus.merge_weight` blends the annulus lines towards a curve
   through the machine inlet and outlet stations alone, instead of constraining
   the internal stations, to smooth curvature across the machine.
@@ -436,10 +437,6 @@ class Annulus:
     n_row: int
     """Number of blade rows."""
 
-    m_inviscid: tuple = dataclasses.field(default=(0.0, 0.0, 0.0, 0.0), repr=False)
-    """Where the inviscid stretches of the endwalls end, as the design that made
-    this annulus asks: see :attr:`AnnulusDesign.m_inviscid`."""
-
     #
     # STRUCTURE
     #
@@ -768,14 +765,6 @@ class AnnulusDesign(Node):
     :program:`turbigen` and how a design is run.
     """
 
-    m_inviscid: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0)
-    """Where the endwalls stop being inviscid, slip walls, in normalised
-    meridional coordinate `m`: on the hub and the casing from the inlet, then
-    on the hub and the casing to the outlet. Inviscid from the inlet to the
-    first two, and from the last two to the outlet, so that the duct ahead
-    of and behind the machine grows no boundary layer; 0 for none on that
-    wall. Both meshers put each at its nearest grid line."""
-
     def design(self, mean_line) -> Annulus:
         """Return the annulus this design describes for `mean_line`."""
         raise NotImplementedError(
@@ -806,6 +795,17 @@ class PchipAnnulus(AnnulusDesign):
 
     nozzle_start: float = 0.5
     """Fraction of the outlet duct's length at constant area [--]."""
+
+    nozzle_hub_fraction: float = 0.5
+    """Fraction of the outlet duct's change in span made by moving the hub
+    line [--].
+
+    At 0 the hub line runs on as a duct of constant area would and the casing
+    alone moves; at 1 the casing line does and the hub alone moves; at 0.5 both
+    move alike about the duct's mid-line. The span is set so the area is
+    :attr:`nozzle_ratio` of the exit's whichever line moves, allowing for the
+    mid-line's change of radius.
+    """
 
     merge_weight: float = 0.0
     """Blend towards a curve fitted through the endpoints only [--].
@@ -859,6 +859,10 @@ class PchipAnnulus(AnnulusDesign):
             raise ValueError(f"merge_weight={self.merge_weight} must lie in [0, 1].")
         if not 0.0 <= self.nozzle_start < 1.0:
             raise ValueError(f"nozzle_start={self.nozzle_start} must lie in [0, 1).")
+        if not 0.0 <= self.nozzle_hub_fraction <= 1.0:
+            raise ValueError(
+                f"nozzle_hub_fraction={self.nozzle_hub_fraction} must lie in [0, 1]."
+            )
 
         # Ask the design how long each segment is, and take the axial length
         # from the pitch angle rather than the other way round.
@@ -884,11 +888,12 @@ class PchipAnnulus(AnnulusDesign):
         sin_Beta_in, sin_Beta_out = np.sin(np.radians(Beta[[0, -1]]))
         r_duct = r_mid[-1] + f * Ds[-1] * sin_Beta_out
         A_duct = self._nozzle_area(f)
-        x_mid = np.concatenate((x_mid[:-1], x_mid[-2] + f * Dx[-1]))
-        r_mid_ext = np.concatenate(([r_mid[0] - Ds[0] * sin_Beta_in], r_mid, r_duct))
-        span_ext = np.concatenate(
-            ([span[0]], span, span[-1] * A_duct * r_mid[-1] / r_duct)
+        x_duct, r_duct, span_duct = self._nozzle_lines(
+            x_mid[-2] + f * Dx[-1], r_duct, span[-1] * r_mid[-1], A_duct, Beta[-1]
         )
+        x_mid = np.concatenate((x_mid[:-1], x_duct))
+        r_mid_ext = np.concatenate(([r_mid[0] - Ds[0] * sin_Beta_in], r_mid, r_duct))
+        span_ext = np.concatenate(([span[0]], span, span_duct))
         Beta_ext = np.concatenate(([Beta[0]], Beta, np.full(N_DUCT, Beta[-1])))
         Ds = np.concatenate((Ds[:-1], np.full(N_DUCT, Ds[-1] / N_DUCT)))
         m_knot = np.concatenate((np.arange(n_segment, dtype=float), n_segment - 1 + f))
@@ -921,6 +926,29 @@ class PchipAnnulus(AnnulusDesign):
             curves_merged = curves
 
         return Annulus(s, m_knot, curves, curves_merged, self.merge_weight, n_row)
+
+    def _nozzle_lines(self, x, r, rs_exit, A, Beta):
+        """Return the outlet duct's mid-line `x`, `r` and span at its knots.
+
+        `x`, `r` are the straight mid-line the duct would have at constant
+        area, `rs_exit` the product of radius and span at the last row's exit,
+        `A` the area at the knots over the exit's, and `Beta` the duct's pitch
+        angle [deg]. The span change from constant area is taken
+        :attr:`nozzle_hub_fraction` from the hub side, which moves the mid-line
+        towards the casing by that less a half of it; the span is the root of
+        ``(r + c (s_full - s)) s = A rs_exit`` for the radius it moves to.
+        """
+        e = np.array([-np.sin(np.radians(Beta)), np.cos(np.radians(Beta))])
+        s_full = rs_exit / r
+        shift = self.nozzle_hub_fraction - 0.5
+        c = shift * e[1]
+        K = A * rs_exit
+        b = r + c * s_full
+        # The root that is K / r when the mid-line keeps its radius, in the
+        # form without cancellation
+        s = 2.0 * K / (b + np.sqrt(b**2 - 4.0 * c * K))
+        d = shift * (s_full - s)
+        return x + d * e[0], r + d * e[1], s
 
     def _nozzle_area(self, f):
         """Return the outlet duct's area at fractions `f` of its length, over

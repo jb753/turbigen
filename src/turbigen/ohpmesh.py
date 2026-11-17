@@ -246,6 +246,13 @@ class _Layout:
     H_coarse: float = 0.0
     """Cell size of the coarse mesh in the free stream, in conformal units."""
 
+    r_free: float = 1.0
+    """Radius at which :attr:`H` and :attr:`H_coarse` hold [m]: the least on
+    the row's mid-span surface. Along the blocks ahead of and behind the blade,
+    and the ducts beyond, a free stream cell is that many metres long, so
+    shorter in conformal units, by the ratio of radii, wherever the radius is
+    larger."""
+
     extrude_in: bool = False
     extrude_out: bool = False
     """Whether the inlet block ahead of the first row, and the outlet block
@@ -828,7 +835,7 @@ class OHPassage(Mesher):
                     f"the {type(self).__name__} mesher grids casing clearances only."
                 )
 
-        self._check_inviscid_ducts(machine.annulus)
+        self._check_endwalls()
         spf, jtip = self._span_grid(machine, spacing)
 
         blocks = []
@@ -1243,8 +1250,16 @@ class OHPassage(Mesher):
         L_P = max(
             np.linalg.norm(C4 - C1 + pitch * _J), np.linalg.norm(C3 - C2 + pitch * _J)
         )
-        L_in = (min(C1[0], C4[0]) - mp_Zin) * stretch_in
-        L_out = (mp_Zout - max(C2[0], C3[0])) * stretch_out
+        # Streamwise, in conformal lengths at `r_free`, so free stream cells
+        # are as long in metres at any radius; across the passage, where the
+        # count per pitch is fixed, in conformal units as they are.
+        r_free = float(cmap.xr[1].min())
+        k_in, to_mp_in, w_in = _radius_metric(cmap, min(C1[0], C4[0]), mp_Zin, r_free)
+        k_out, to_mp_out, w_out = _radius_metric(
+            cmap, max(C2[0], C3[0]), mp_Zout, r_free
+        )
+        L_in = (min(C1[0], C4[0]) - mp_Zin) * stretch_in * k_in
+        L_out = (mp_Zout - max(C2[0], C3[0])) * stretch_out * k_out
         n_P, n_in, n_out = (max(2, round(L / Hc)) for L in (L_P, L_in, L_out))
         # The blocks ahead of and behind the blade finer along them still,
         # so the corners of the O block there have room to open out.
@@ -1256,12 +1271,25 @@ class OHPassage(Mesher):
         # Ahead of and behind the blade, ends_factor times the cells each
         # way, the clustering kept.
         k = self.tune.ends_factor
-        f_in = _mult(_single(h / L_in, H / L_in, self.tune.ER_stream), 8)
-        f_out = _mult(_single(h / L_out, H / L_out, self.tune.ER_stream), 8)
+        # From the O block, where a cell is `h` in conformal units there,
+        # out to the free stream size in metres; laid out in the weighted
+        # length and put back at the conformal fractions it lands at.
+        f_in = _mult(
+            to_mp_in(_single(h * w_in / L_in, H / L_in, self.tune.ER_stream)), 8
+        )
+        f_out = _mult(
+            to_mp_out(_single(h * w_out / L_out, H / L_out, self.tune.ER_stream)), 8
+        )
         f_in = 1.0 - np.flip(util.resample_to(f_in, k * (len(f_in) - 1) + 1))
         f_out = util.resample_to(f_out, k * (len(f_out) - 1) + 1)
 
-        n_dn = 1 if extrude_out else _up8(round((mp_out - mp_Zout) * stretch_out / Hc))
+        k_dn = _radius_metric(cmap, mp_Zout, mp_out, r_free)[0]
+        k_up = _radius_metric(cmap, mp_Zin, mp_in, r_free)[0]
+        n_dn = (
+            1
+            if extrude_out
+            else _up8(round((mp_out - mp_Zout) * stretch_out * k_dn / Hc))
+        )
 
         dw = float(spacing.surface[i_row]) / r_ref
         f_O = clusterfunc.single.free(dw / t_O, max(h, dw) / t_O, self.tune.ER_O)
@@ -1284,11 +1312,14 @@ class OHPassage(Mesher):
             n_P=n_P,
             n_in=n_in,
             n_out=n_out,
-            n_up=1 if extrude_in else _up8(round((mp_Zin - mp_in) * stretch_in / Hc)),
+            n_up=1
+            if extrude_in
+            else _up8(round((mp_Zin - mp_in) * stretch_in * k_up / Hc)),
             n_dn=n_dn,
             nk_O=len(_mult(f_O, 8)),
             H=H,
             H_coarse=Hc,
+            r_free=r_free,
             extrude_in=extrude_in,
             extrude_out=extrude_out,
             wall_density=(s / S, S / fine),
@@ -1521,9 +1552,11 @@ class OHPassage(Mesher):
         # stream cell of the coarse mesh long through them, its outer face
         # sliding as theirs do.
         if layout.extrude_in:
-            mp_in = mp_Zin - layout.H_coarse
+            r_cut = float(cmap.xr_from_mp(mp_Zin)[1])
+            mp_in = mp_Zin - layout.H_coarse * layout.r_free / r_cut
         if layout.extrude_out:
-            mp_out = mp_Zout + layout.H_coarse
+            r_cut = float(cmap.xr_from_mp(mp_Zout)[1])
+            mp_out = mp_Zout + layout.H_coarse * layout.r_free / r_cut
         Z_in = np.concatenate((Pin[:, 0, :], LE[:, 0, 1:]), axis=1)
         T_in = np.array([mp_in, Q_top[1]])
         f_up = uniform(layout.n_up)
@@ -2163,8 +2196,12 @@ class OHPassage(Mesher):
         """
         face, inner = self._cut_face(xy, inlet)
         mp_end = plane["cmap"].mp_from_m(lay.m_in if inlet else lay.m_out)
-        D = float(np.median(np.abs(mp_end - face[0])))
-        h0 = float(np.median(np.linalg.norm(face - inner, axis=0)))
+        mp_cut = float(np.median(face[0]))
+        # In conformal lengths at `r_free`, as the blocks inside the cut, so
+        # the free stream cell is as long in metres out to the end
+        k, to_mp, w = _radius_metric(plane["cmap"], mp_cut, float(mp_end), lay.r_free)
+        D = float(np.median(np.abs(mp_end - face[0]))) * k
+        h0 = float(np.median(np.linalg.norm(face - inner, axis=0))) * w
         # No cell longer than half the way, which may be short where the
         # inlet or outlet lies not far beyond the cut.
         h1 = min(max(lay.H, h0), 0.5 * D)
@@ -2172,7 +2209,7 @@ class OHPassage(Mesher):
             f = _single(h0 / D, h1 / D, self.tune.ER_stream)
         except clusterfunc.exceptions.ClusteringException:
             f = _uniform(min(h0, h1) / D)
-        return _mult(f, 8)
+        return _mult(to_mp(f), 8)
 
     def _extrude(self, xy, plane, lay, inlet, f):
         """Replace the inlet or outlet block of refined plane `xy` by its cut
@@ -2934,7 +2971,7 @@ class OHPassage(Mesher):
         )
         for blk in blocks:
             blk.patches.extend(self._endwall_patches())
-        casing = self._inviscid_ducts(machine, i_row, up, dn)
+        casing = self._duct_endwalls(machine, i_row, up, dn)
         if jtip is None:
             return blocks
 
@@ -2986,7 +3023,7 @@ class OHPassage(Mesher):
         # sets its speed. The j = 0 faces of the gap's blocks are the tip of
         # the blade, a wall turning with the row, which is what an unpatched
         # face already means.
-        # Not over an inviscid stretch of the casing, which a rotating patch
+        # Not over a stretch of the casing in a duct, which a rotating patch
         # would overlap.
         blocks += [tO, tH]
         for blk in blocks:
@@ -4699,6 +4736,31 @@ def _mult(x, mult):
     """Return `x` resampled up to a number of intervals divisible by `mult`."""
     n_cell = len(x) - 1
     return util.resample_to(x, n_cell + (-n_cell) % mult + 1)
+
+
+def _radius_metric(cmap, mp_a, mp_b, r_free, n=401):
+    """Lengths from `mp_a` to `mp_b` on the surface of `cmap`, in conformal
+    units at radius `r_free`: `r / r_free` times the conformal length.
+
+    Returns the ratio of that length to the conformal one, a function taking
+    fractions of it from `mp_a` to the fractions of the conformal length they
+    land at, and `r / r_free` at `mp_a`. Either way round, `mp_b` upstream of
+    `mp_a` or downstream.
+    """
+    mp = np.linspace(mp_a, mp_b, n)
+    w = cmap.xr_from_mp(mp)[1] / r_free
+    d = np.abs(np.diff(mp))
+    q = np.concatenate(([0.0], np.cumsum(0.5 * (w[1:] + w[:-1]) * d)))
+    p = np.concatenate(([0.0], np.cumsum(d)))
+    if not p[-1] > 0.0:
+        return 1.0, lambda f: np.asarray(f), float(w[0])
+
+    def to_mp(f):
+        out = np.interp(f, q / q[-1], p / p[-1])
+        out[0], out[-1] = 0.0, 1.0
+        return out
+
+    return float(q[-1] / p[-1]), to_mp, float(w[0])
 
 
 def _uniform(d):

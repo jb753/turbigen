@@ -4,8 +4,8 @@
 # design of Brind (2024), J. Turbomach. 147(2). The mean line covers the rotor
 # alone; the annulus outlet duct is a vaneless diffuser with a nozzle.
 #
-# Meshed with the H mesher, with a blunt trailing edge cusped into the radial
-# exit, and a pinched tip gap.
+# Meshed with the OH passage mesher, with a tip gap, a thin blade with a round
+# trailing edge, and the solver settings that run it through from the guess.
 
 fluid:
   type: perfect
@@ -22,7 +22,7 @@ mean_line:
   PR_tt: 2.0
   # Aerodynamics
   phi1: 0.6
-  Ma1_rel: 0.6
+  Ma1_rel: 0.55
   htr1: 0.5
   DH: 1.0
   Alpha2_rel: -60.0
@@ -33,45 +33,57 @@ mean_line:
 annulus:
   type: aspect_ratio
   AR_row: [0.3]
-  AR_gap: [1.0, 0.2]
-  # Outlet duct at constant area for half its length, then contracting
+  AR_gap: [0.4771, 0.2]
+  # Outlet duct contracting along its whole length, the hub line held
   nozzle_ratio: 0.9
+  nozzle_start: 0.0
+  nozzle_hub_fraction: 0.0
 
 blades:
   - count:
       type: Co
-      Co: 0.6
+      Co: 0.7
     # Tip clearance 1% of exit span, uniform in metres along the chord
     tip: 0.01
     reference_length:
       thickness: span_in
       tip: span_out
     sections:
-      - spf: 0.0
-        dchi_LE: 0.0
-        dchi_TE: 0.0
+      - spf: 0.1
+        # Leading edge recambered 5 degrees more tangential than the mean
+        # line's, uniformly along the span. Trailing edge recambered 5 degrees
+        # less backswept, about half the 9.6 degrees of deviation a single run
+        # measured off design, to recover some of the turning lost to slip
+        dchi_LE: -5.0
+        dchi_TE: 5.0
         camber: &camber
           type: quadratic
           aft_loading: 0.0
         # Brind (2024): a 4:1 elliptic nose, constant thickness, then a
-        # parabolic taper from 60% chord to 35% of the maximum at the trailing
-        # edge; maximum thickness 8% of inlet span, twice the paper's
+        # parabolic taper from 60% chord to 35% of the maximum at a round
+        # trailing edge; maximum thickness 5% of inlet span
         thickness: &thickness
           type: impeller
-          t_max: 0.08
+          t_max: 0.05
           ellipse_ratio: 4.0
           m_taper: 0.6
           TE_ratio: 0.35
+          round_TE: true
       - spf: 0.5
-        dchi_LE: 0.0
-        dchi_TE: 0.0
+        dchi_LE: -5.0
+        dchi_TE: 5.0
         camber: *camber
         thickness: *thickness
-      - spf: 1.0
-        dchi_LE: 0.0
-        dchi_TE: 0.0
+      - spf: 0.9
+        dchi_LE: -5.0
+        dchi_TE: 5.0
         camber: *camber
         thickness: *thickness
+
+# Loss over the cut at the rotor exit, the station the deviation iterator
+# measures, as well as the standard plots
+post_process:
+  - type: station_contour
 
 # Throttle the outlet to the design mass flow
 operating_point:
@@ -81,8 +93,6 @@ iterate:
   correct:
     - type: deviation
       tolerance: 0.5
-    - type: incidence
-      tolerance: 2.
     - type: mean_line
       variables: [Ys]
       clip: 0.01
@@ -93,12 +103,16 @@ solver:
   n_step: 2000
   n_step_avg: 500
   n_step_log: 100
-  cfl: 4
+  cfl: 3
   n_stage: 4
   sf_resid: 1
   fac_mgrid: 0.2
   n_levels: 3
-  dampin: 25.0
+  dampin: 10.0
+  adaptive_smoothing: true
+  sf2: 0.5
+  sf4: 0.005
+  rf_inlet: 0.1
 
 batch:
   bounds:
@@ -110,12 +124,12 @@ batch:
     mean_line.Alpha2_rel: [-80.0, -20.0]
     blades[0].count.Co: [0.4, 1.0]
 mesh:
-  type: h
+  type: ohp
   yplus: 30.0
-  # Half the default, for more streamwise points around the leading edge
-  AR_LE: 0.75
-  # Mid-passage cells twice the default pitchwise, the pitch being several
-  # spans wide over most of the impeller
-  AR_passage: 2.0
-  # Wall cell sized normal to the blade surface, not circumferentially
-  yplus_normal: true
+  # Half the default cell size along the blade at the leading edge
+  ds_LE: 0.005
+  # The vaneless diffuser's hub stands still, from the first grid line of the
+  # outlet block beyond the cut 0.3 chords behind the trailing edge
+  endwalls:
+    outlet:
+      hub: {type: stationary, m: 2.56}

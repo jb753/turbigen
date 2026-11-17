@@ -30,13 +30,15 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
-OMEGA_CASING = 0.0
+OMEGA_STATIONARY = 0.0
 """Angular velocity of a wall a `RotatingPatch` marks off [rad/s].
 
-Zero, because the only such wall is a casing over a tip gap and a casing does
-not turn. It is named rather than written in place because it is the value a
-contra-rotating casing would change, and because zero here means "stationary in
-the absolute frame" rather than "no rotation configured".
+Zero, because every such wall a mesher places stands still: a casing over a
+tip gap, and a `stationary` stretch of a duct's endwall
+(:class:`turbigen.mesh.StationaryStretch`). It is named rather than written in
+place because it is the value a contra-rotating wall would change, and because
+zero here means "stationary in the absolute frame" rather than "no rotation
+configured".
 """
 
 RF_RADIAL_EQUILIBRIUM = 0.1
@@ -972,8 +974,9 @@ def apply_rotation(grid, Omega):
     A block's angular velocity is the frame its row is solved in, and every
     wall of that block turns with it unless a `RotatingPatch` says otherwise.
     So a shrouded row needs only the block speed, and the patches the mesher
-    placed over tip gaps are set to :data:`OMEGA_CASING` --- the two halves of
-    the same statement, made together so they cannot disagree.
+    placed over tip gaps and on stationary stretches of a duct's endwalls are
+    set to :data:`OMEGA_STATIONARY` --- the two halves of the same statement,
+    made together so they cannot disagree.
 
     Parameters
     ----------
@@ -996,7 +999,7 @@ def apply_rotation(grid, Omega):
         for block in blocks:
             block.set_Omega(float(Omega_now))
             for patch in block.patches.rotating:
-                patch.set_Omega(OMEGA_CASING)
+                patch.set_Omega(OMEGA_STATIONARY)
 
         logger.debug(f"Row {i_row}: Omega={float(Omega_now):.5g} rad/s")
 

@@ -7,7 +7,6 @@ wall distance on the way out. The package this replaces leaves all of that to
 the caller, so these check the framework as well as the mesh.
 """
 
-import dataclasses
 import itertools
 import sys
 from pathlib import Path
@@ -23,6 +22,7 @@ from test_blade import ANNULUS, blade, build
 import turbigen.clusterfunc
 from turbigen import H, Mesher, WallSpacing
 from turbigen.config import Config
+from turbigen.mesh import InviscidStretch, StationaryStretch
 
 MESH = {
     "type": "h",
@@ -812,48 +812,124 @@ def test_outlet_relaxation_outside_the_last_gap_is_refused(machine, dm):
         H.from_dict(mesh).mesh(machine)
 
 
-def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
-    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet to
-    their nearest grid lines, and from theirs to the outlet, and the casing
-    over the rotor with a clearance turns only where the casing is not slip."""
-    config = build(blades=TIP, mesh=MESH)
-    m_inviscid = (0.5, 0.6, 4.4, 4.5)
-    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
-    machine = dataclasses.replace(config, annulus=annulus).design()
-    grid = H.from_dict(MESH).mesh(machine)
+ENDWALLS = {
+    "inlet": {
+        "hub": {"type": "inviscid", "m": 0.5},
+        "casing": {"type": "inviscid", "m": 0.6},
+    },
+    "outlet": {
+        "hub": {"type": "inviscid", "m": 4.4},
+        "casing": {"type": "inviscid", "m": 4.5},
+    },
+}
 
-    def patches(block, kind):
-        return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+def _patches(block, kind):
+    return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+
+def _at_m(machine, block, patch, j, m):
+    """Whether the end of `patch` away from the inlet or outlet lies at the
+    grid line along endwall `j` nearest `m`."""
+    i = patch.ien if patch.ist == 0 else patch.ist
+    m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
+    m_all, _ = machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])
+    return abs(np.median(m_line) - m) < np.ptp(m_all) / (block.shape[0] - 1)
+
+
+def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
+    """Inviscid stretches of `mesh.endwalls` make the endwalls slip walls from
+    the inlet to their nearest grid lines, and from theirs to the outlet, and
+    the casing over the rotor with a clearance stands still only where the
+    casing is not slip."""
+    machine = build(blades=TIP, mesh=MESH).design()
+    grid = H.from_dict({**MESH, "endwalls": ENDWALLS}).mesh(machine)
 
     up, dn = grid["row0"], grid["row1"]
-    inlet, outlet = patches(up, "InviscidPatch"), patches(dn, "InviscidPatch")
+    inlet, outlet = _patches(up, "InviscidPatch"), _patches(dn, "InviscidPatch")
     assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
     assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
     for block, patch, m, j in (
-        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
-        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
-        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
-        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+        (up, inlet["inviscid_hub_in"], 0.5, 0),
+        (up, inlet["inviscid_casing_in"], 0.6, -1),
+        (dn, outlet["inviscid_hub_out"], 4.4, 0),
+        (dn, outlet["inviscid_casing_out"], 4.5, -1),
     ):
-        i = patch.ien if patch.ist == 0 else patch.ist
-        m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
-        m_all, _ = machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])
-        assert abs(np.median(m_line) - m) < np.ptp(m_all) / (block.shape[0] - 1)
-    (casing,) = patches(dn, "RotatingPatch").values()
+        assert _at_m(machine, block, patch, j, m)
+    (casing,) = _patches(dn, "RotatingPatch").values()
     assert casing.ist == 0
     assert casing.ien == outlet["inviscid_casing_out"].ist
-    assert not patches(up, "RotatingPatch")
+    assert not _patches(up, "RotatingPatch")
+
+
+def test_a_stationary_stretch_stands_still_where_its_row_turns():
+    """A stationary stretch of the outlet duct's hub is a wall that `bconds`
+    sets still, from the grid line nearest its `m` to the outlet, beside an
+    inviscid stretch of the casing on the same duct."""
+    from turbigen import bconds
+
+    machine = build(blades=TIP, mesh=MESH).design()
+    endwalls = {
+        "outlet": {
+            "hub": {"type": "stationary", "m": 4.4},
+            "casing": {"type": "inviscid", "m": 4.5},
+        }
+    }
+    mesher = H.from_dict({**MESH, "endwalls": endwalls})
+    assert isinstance(mesher.endwalls.outlet.hub, StationaryStretch)
+    assert isinstance(mesher.endwalls.outlet.casing, InviscidStretch)
+    grid = mesher.mesh(machine)
+
+    dn = grid["row1"]
+    rotating = _patches(dn, "RotatingPatch")
+    hub = rotating["stationary_hub_out"]
+    assert (hub.jst, hub.jen) == (0, 0)
+    assert hub.ien == dn.shape[0] - 1 or hub.ien == -1
+    assert _at_m(machine, dn, hub, 0, 4.4)
+    # The tip gap's casing patch stops at the inviscid casing, not the hub's
+    assert (
+        rotating["casing"].ien
+        == _patches(dn, "InviscidPatch")["inviscid_casing_out"].ist
+    )
+
+    bconds.apply_rotation(grid, [1000.0, 1000.0])
+    assert dn.Omega == 1000.0
+    assert hub.Omega == 0.0
 
 
 @pytest.mark.parametrize(
-    "m_inviscid, mesh",
-    [((1.5, 0.0, 0.0, 0.0), {}), ((0.5, 0.0, 0.0, 0.0), {"inviscid_endwalls": True})],
+    "endwalls, mesh",
+    [
+        ({"inlet": {"hub": {"type": "inviscid", "m": 1.5}}}, {}),
+        ({"outlet": {"hub": {"type": "stationary", "m": 3.5}}}, {}),
+        (
+            {"inlet": {"hub": {"type": "inviscid", "m": 0.5}}},
+            {"inviscid_endwalls": True},
+        ),
+    ],
 )
-def test_inviscid_ducts_past_a_blade_or_under_inviscid_endwalls_are_refused(
-    m_inviscid, mesh
+def test_duct_stretches_past_a_blade_or_under_inviscid_endwalls_are_refused(
+    endwalls, mesh
 ):
-    config = build(mesh=MESH)
-    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
-    machine = dataclasses.replace(config, annulus=annulus).design()
-    with pytest.raises(ValueError, match="m_inviscid"):
-        H.from_dict({**MESH, **mesh}).mesh(machine)
+    machine = build(mesh=MESH).design()
+    with pytest.raises(ValueError, match="endwalls"):
+        H.from_dict({**MESH, **mesh, "endwalls": endwalls}).mesh(machine)
+
+
+def test_endwalls_go_through_a_config_and_back():
+    mesher = H.from_dict({**MESH, "endwalls": ENDWALLS})
+    assert H.from_dict(mesher.to_dict()) == mesher
+    assert mesher.endwalls.outlet.casing.m == 4.5
+    assert H.from_dict(MESH).endwalls.stretches() == []
+
+
+@pytest.mark.parametrize(
+    "stretch, match",
+    [
+        ({"type": "inviscid", "m": 0.0}, "m > 0"),
+        ({"type": "porous", "m": 0.5}, "porous"),
+    ],
+)
+def test_a_bad_endwall_stretch_is_refused(stretch, match):
+    with pytest.raises(ValueError, match=match):
+        H.from_dict({**MESH, "endwalls": {"inlet": {"hub": stretch}}})
