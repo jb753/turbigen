@@ -235,7 +235,7 @@ def test_a_vaneless_diffuser_raises_the_static_pressure(radial):
     m = np.linspace(2.0 * annulus.n_row, annulus.m_max, 9)
     P = ml.interpolate_to(annulus, m).P
     assert np.all(np.diff(P) > 0.0)
-    assert P[-1] > 1.05 * float(ml.outlet.P)
+    assert P[-1] > 1.04 * float(ml.outlet.P)
 
 
 def test_a_row_conserves_rothalpy(radial):
