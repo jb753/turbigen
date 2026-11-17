@@ -608,6 +608,18 @@ class _Tune(Node):
     """Lines round the blade over which `geometric_O_match` smooths how far the
     O block's outer cells move, the deviation of a Gaussian."""
 
+    o_corner_width: float = 4.0
+    """Lines either side of each corner of the O block over which its outer
+    cell is drawn, within `geometric_O_match`, to the geometric mean of the
+    first cells of the other lines out of the corner. Zero leaves it as
+    smoothed."""
+
+    end_corner_cells: float = 0.33
+    """Fraction of the cells along the blocks ahead of and behind the blade
+    over which their first cell at the blade is scaled to the geometric
+    mean of the other first cells at the corners there. Zero leaves it as
+    laid out. See :meth:`_ends_u`."""
+
     extrude_gap: float = 0.3
     """Most a line of an extruded inlet or outlet block departs from the turn of
     the pitch-mean line, as a fraction of the gap to its nearer neighbour."""
@@ -2061,6 +2073,10 @@ class OHPassage(Mesher):
         lay = self._wall_u(lay, planes[j_mid], xy_mid)
         refine = self._refine_matrices(lay, planes[j_mid]["xy"])
         mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+        if self.tune.end_corner_cells > 0.0:
+            lay = self._ends_u(lay, mid)
+            refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
         lay = self._O_count(lay, planes[j_mid], mid[0], _beyond_O(mid, lay))
         if not lay.extrude_out:
             lay = self._dn_u(lay, mid)
@@ -2458,6 +2474,30 @@ class OHPassage(Mesher):
         u["ru"] = along(d_eff, 4, m["ru"])
         return dataclasses.replace(lay, u=u)
 
+    def _ends_u(self, lay, mid):
+        """Return `lay` with the refinement along the blocks ahead of and
+        behind the blade, `u["in"]` and `u["out"]`, scaled at the blade so
+        their first cells there are, in the geometric mean over the two
+        corners each meets, the geometric mean of the first cells along the
+        O block's outer face and into the passage block at those corners, as
+        refined plane `mid` has them; within `geometric_O_match` either way,
+        and faded to none over `end_corner_cells` of the way along."""
+        c = self.tune.geometric_O_match
+        spokes = _corner_spokes(mid, lay, mid[0][:, :, -1])
+        u = dict(lay.u)
+        for name, key, at_end in (("in", "LE", True), ("out", "TE", False)):
+            r = [
+                np.mean(np.log([cells["face-"], cells["face+"], cells["P"]]))
+                - np.log(cells[key])
+                for _, cells in spokes
+                if key in cells
+            ]
+            F = float(np.clip(np.exp(np.mean(r)), 1.0 / c, c))
+            n = len(u[name]) - 1
+            u[name] = _scale_end(u[name], F, self.tune.end_corner_cells * n, at_end)
+            logger.debug(f"First cells {name} at the blade scaled by {F:.2f}")
+        return dataclasses.replace(lay, u=u)
+
     def _dn_u(self, lay, mid):
         """Return `lay` with the refinement along the block from behind the
         blade to the mixing plane, from mid-span's refined plane `mid`.
@@ -2704,6 +2744,19 @@ class OHPassage(Mesher):
             q = np.convolve(
                 np.concatenate((q[-len(w) :], q, q[: len(w)])), w / w.sum(), "same"
             )[len(w) : -len(w)]
+            if self.tune.o_corner_width > 0.0:
+                # At each corner the outer cell to the geometric mean of the
+                # first cells of the other four lines there, the smoothed
+                # factor corrected over `o_corner_width` lines either side
+                n_ring = len(q)
+                i_ring = np.arange(n_ring)
+                for i_c, cells in _corner_spokes(out, lay, O[:, :, -1]):
+                    target = np.exp(np.mean(np.log(list(cells.values()))))
+                    dq = np.clip(np.log(target / L[i_c] / g1[i_c]), -c, c) - q[i_c]
+                    t = np.abs((i_ring - i_c + n_ring // 2) % n_ring - n_ring // 2)
+                    t = np.clip(t / self.tune.o_corner_width, 0.0, 1.0)
+                    q = q + dq * (1.0 - t * t * (3.0 - 2.0 * t))
+                q = np.clip(q, -c, c)
             f1 = g1 * np.exp(np.append(q, q[0]))
             T = clusterfunc.double.smooth_many(f0, f1, nk)
         T = L[:, None] * T
@@ -3401,6 +3454,79 @@ def _wall_counts(need, tip_gap):
 def _up8(n):
     """Return `n` rounded up to a multiple of eight, at least eight."""
     return max(8, 8 * int(np.ceil(n / 8)))
+
+
+def _corner_spokes(out, lay, face):
+    """Return, for each corner of the O block of refined blocks `out`, its
+    `i` and the first cells of the lines out of it but the O block's own
+    line in: along the O block's outer face `face` (2, ni) either way, into
+    the passage block, and into the block ahead of or behind the blade,
+    keyed "face-", "face+", "P" and "LE" or "TE"."""
+    P, LE, TE = out[1], out[2], out[4]
+    i3, i4, i1, i2 = lay.i_corners()
+
+    def cell(a, b):
+        return float(np.linalg.norm(np.asarray(b, float) - np.asarray(a, float)))
+
+    def along(i):
+        return {
+            "face-": cell(face[:, i - 1], face[:, i]),
+            "face+": cell(face[:, i], face[:, i + 1]),
+        }
+
+    return [
+        (
+            i1,
+            {
+                **along(i1),
+                "P": cell(P[:, 0, 0], P[:, 0, 1]),
+                "LE": cell(LE[:, -1, -1], LE[:, -2, -1]),
+            },
+        ),
+        (
+            i2,
+            {
+                **along(i2),
+                "P": cell(P[:, -1, 0], P[:, -1, 1]),
+                "TE": cell(TE[:, 0, -1], TE[:, 1, -1]),
+            },
+        ),
+        (
+            i4,
+            {
+                **along(i4),
+                "P": cell(P[:, 0, -1], P[:, 0, -2]),
+                "LE": cell(LE[:, -1, 0], LE[:, -2, 0]),
+            },
+        ),
+        (
+            i3,
+            {
+                **along(i3),
+                "P": cell(P[:, -1, -1], P[:, -1, -2]),
+                "TE": cell(TE[:, 0, 0], TE[:, 1, 0]),
+            },
+        ),
+    ]
+
+
+def _scale_end(u, F, n_fade, at_end):
+    """Return refined fractions `u` with the step at one end scaled by `F`,
+    the scaling faded smoothly to none over `n_fade` steps and the other
+    steps scaled alike to keep the total: at the last step if `at_end`,
+    else the first."""
+    du = np.diff(np.asarray(u, dtype=float))
+    if at_end:
+        du = du[::-1]
+    j = np.arange(len(du))
+    t = np.clip(j / max(n_fade, 1.0), 0.0, 1.0)
+    F = min(F, 0.5 * du.sum() / du[0])
+    du = du * F ** (1.0 - t * t * (3.0 - 2.0 * t))
+    rest = du[1:].sum()
+    du[1:] *= (u[-1] - u[0] - du[0]) / rest
+    if at_end:
+        du = du[::-1]
+    return u[0] + np.concatenate(([0.0], np.cumsum(du)))
 
 
 def _beyond_O(out, lay):
