@@ -132,21 +132,6 @@ class H(Mesher):
     AR_passage: float = 1.0
     """Nominal aspect ratio in blade-to-blade plane of mid-passage cells."""
 
-    yplus_normal: bool = False
-    """Size the blade wall cell normal to the surface, not circumferentially.
-
-    The pitchwise grid is one vector of pitch fractions, so its first cell
-    off each surface is a circumferential distance, `r dtheta`, proportional
-    to the local pitch. Its distance normal to a surface at angle `chi` to
-    the meridional direction is `cos(chi)` of that. By default the fraction
-    is set so the circumferential cell meets the wall spacing at the widest
-    pitch on the hub or casing; with this, so the normal one does where
-    pitch times `cos(chi)` is largest over the hub, midspan and casing
-    sections. Every other station is then finer than the target either way,
-    and this makes the worst of them coarser by up to `1 / cos(chi)`, which
-    on a staggered row puts more of the surface near the `yplus` asked for.
-    """
-
     AR_merid: float = 1.0
     """Aspect ratio of mid-chord cells in meridional plane."""
 
@@ -462,15 +447,14 @@ class H(Mesher):
         pitch_chord_max = np.maximum(pitch_chord_hub.max(), pitch_chord_cas.max())
         pitch_rtheta_max = np.maximum(pitch_rtheta_hub.max(), pitch_rtheta_cas.max())
 
-        # The wall cell is a fraction of pitch, the same at every station, and
-        # sized so no station's exceeds the target: at the widest pitch, or
-        # where the pitch times the cosine of the surface angle is largest
-        if self.yplus_normal:
-            pitch_rtheta_wall = _pitch_normal_max(
-                machine.rows[i_row].blade, pitch_theta
-            )
-        else:
-            pitch_rtheta_wall = pitch_rtheta_max
+        # The wall cell is a fraction of pitch, the same at every station, so
+        # its first cell off each surface is a circumferential distance
+        # proportional to the local pitch, and `cos(chi)` of that normal to a
+        # surface at angle `chi` to the meridional direction. It is sized so
+        # the normal cell meets the wall spacing where pitch times `cos(chi)`
+        # is largest over the hub, midspan and casing sections; every other
+        # station is finer than the target.
+        pitch_rtheta_wall = _pitch_normal_max(machine.rows[i_row].blade, pitch_theta)
         drt_norm = spacing.surface[i_row] / pitch_rtheta_wall
         logger.debug(
             f"Row {i_row} wall cell {spacing.surface[i_row]:.4g} m on a pitch "

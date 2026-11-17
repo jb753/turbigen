@@ -130,18 +130,28 @@ def old_grid(machine, mesh, spacing):
     # grid instead. Any length will do: the comparison stops short of the cusp.
     if mesh.get("cusp", True):
         kwargs.update(dm_TE=0.0, AR_cusp=1.0, ni_cusp=8)
-    mesher = turbigen_ref.hmesh.H(**kwargs)
-    reference = mesher.make_grid(
-        None, mac, spacing.hub, spacing.casing, spacing.surface
+    # The reference sizes the blade wall cell circumferentially at the widest
+    # pitch, this mesher normal to the surface where pitch times the cosine of
+    # the surface angle is largest. Hand the reference the circumferential
+    # spacing that lands on the same fraction of pitch, so the grids agree.
+    ours = H(**{k: v for k, v in mesh.items() if k != "type"})
+    surface = np.array(
+        [
+            g.drt_norm * g.pitch_rtheta_max
+            for g in (
+                ours._row_geometry(machine, i_row, spacing)
+                for i_row in range(len(machine.rows))
+            )
+        ]
     )
+    mesher = turbigen_ref.hmesh.H(**kwargs)
+    reference = mesher.make_grid(None, mac, spacing.hub, spacing.casing, surface)
 
     # Old turbigen sets a reference length on the grid too, at config.py:709.
     # Without it the reference would skip a float32 rescale of the coordinates
     # that turbigen's mesher performs, and the two would differ by an epsilon
     # that has nothing to do with the mesh mathematics being compared.
-    reference.set_L_ref(
-        H(**{k: v for k, v in mesh.items() if k != "type"}).L_ref(machine)
-    )
+    reference.set_L_ref(ours.L_ref(machine))
 
     return reference
 
