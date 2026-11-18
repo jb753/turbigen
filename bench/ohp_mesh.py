@@ -140,7 +140,9 @@ def _wall_step(O):
 
 def _outer_face_steps(O, row):
     """Ratio of the O block's last cell off the blade to the cell beyond it in
-    the next block, at each node of its outer face that another block shares.
+    the next block, at each node of its outer face that another block shares:
+    along the edge out of the node most nearly along the O block's line,
+    if within 45 degrees of it.
 
     A node two blocks share lies on a face of each, so each block is searched
     by a tree of only its faces' nodes, built once and searched from the
@@ -154,6 +156,7 @@ def _outer_face_steps(O, row):
     face_xrt = O.xrt[:, :, -1].reshape(-1, 3).astype(float)
     tol = 1e-7 * np.abs(p).max()
     out = np.full(len(p), np.nan)
+    best = np.full(len(p), 0.7)
     for block in row:
         if block is O:
             continue
@@ -186,8 +189,13 @@ def _outer_face_steps(O, row):
                     cos = np.sum(v * av, 1) / (
                         np.linalg.norm(v, axis=1) * np.linalg.norm(av, axis=1)
                     )
-                    along = cos > 0.7
-                    out[hit[ok][along]] = np.linalg.norm(
+                    # The edge most nearly along the O block's line, not
+                    # the last near enough: where its cells are skewed at the
+                    # face, an edge along the face can pass too
+                    nodes = hit[ok]
+                    along = cos > best[nodes]
+                    best[nodes[along]] = cos[along]
+                    out[nodes[along]] = np.linalg.norm(
                         v[along], axis=1
                     ) / np.linalg.norm(av[along], axis=1)
     r = np.maximum(out, 1.0 / out)
