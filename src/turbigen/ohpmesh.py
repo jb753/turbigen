@@ -355,6 +355,14 @@ class _Tune(Node):
     """Least factor each correction must reduce the strain by, while it is
     above `correct_refactor`, to keep its map."""
 
+    slide_warm: int | None = 500
+    """With `warm_span`, the sliding sweeps of each control plane after the
+    first started from the plane next to it in span, as its sliding sweeps
+    moved it, and this many of them; None for every control plane slid from
+    its algebraic plane for as many as `slide_share` gives. The slide never
+    comes to rest, so this does not slide the blade nodes to just where the
+    full count from the algebraic plane would."""
+
     warm_span: bool = True
     """With `correct_every`, the held sweeps of each control plane after the
     first started from the plane next to it in span, as its held sweeps moved
@@ -1827,7 +1835,8 @@ class OHPassage(Mesher):
         nodes held as far as :meth:`_freeze_weight` says: slid, held where they
         are, or slid, moved back that far towards where they started, and
         swept again held there, the held sweeps started from `warm`, a dict
-        they leave for the next plane to start from."""
+        they leave for the next plane to start from; and, with `slide_warm`,
+        the sliding sweeps too."""
         floors = self._O_floors(topo, X)
         w = self._freeze_weight(topo, plane)
         if self.tune.freeze_le > 0.0:
@@ -1842,7 +1851,16 @@ class OHPassage(Mesher):
                 n_slide = max(1, round(self.tune.slide_share * n_sweep))
                 n_sweep = max(1, n_sweep - n_slide)
             X0 = X
+            # Slid from where the plane before slid to, as far from its own
+            # algebraic plane, for fewer sweeps: the slide has not come to
+            # rest by the end, so this moves where it ends a little
+            slide_warm = self.tune.slide_warm if self.tune.warm_span else None
+            if slide_warm and warm and warm.get("slid") is not None:
+                X = (np.asarray(X, dtype=float) + warm["slid"]).astype(X.dtype)
+                n_slide = slide_warm
             X = self._sweeps_once(topo, X, n_slide, plane, False, floors)
+            if warm is not None and slide_warm:
+                warm["slid"] = np.asarray(X, dtype=float) - np.asarray(X0, dtype=float)
             X = self._blade_toward(topo, X, X0, plane, w)
         if self.tune.n_sweep_held is not None:
             n_sweep = self.tune.n_sweep_held
