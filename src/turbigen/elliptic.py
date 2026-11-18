@@ -625,7 +625,7 @@ def _smoothed_targets(topo, X, n_pass):
 
 def winslow_correction(topo, X, held):
     """Return a function that corrects plane `X` for the error in it that the
-    Winslow sweeps take longest to remove.
+    Winslow sweeps take longest to remove, and says how far it moved it.
 
     Point-Jacobi sweeps remove the error that varies from node to node in a
     few sweeps, and the smooth error over thousands: an H block ahead of or
@@ -641,8 +641,14 @@ def winslow_correction(topo, X, held):
     it is has no residual, and so no correction: the sweeps converge to the
     same plane with corrections as without, in far fewer of them.
 
-    The map is factorised once, here; it serves as long as the coefficients
-    are not far from those at `X`, which lose it speed, not accuracy.
+    The map is factorised once, here, and the function returns with each
+    correction the most it strains the plane: the change it makes to any
+    regular node's differences across its stencil, in `i` or `k`, over their
+    lengths at `X`. Strained much, the coefficients are no longer those the
+    map was frozen at, and a correction by it can overshoot further than the
+    sweeps after it take back: the caller should then make a new one. A
+    correction that moves a block bodily, as the drift it is for does,
+    strains it little.
     """
     X = np.asarray(X, dtype=float)
     n = topo.n_node
@@ -654,6 +660,9 @@ def winslow_correction(topo, X, held):
     b = np.sum(xi * eta, axis=1)
     c = np.sum(xi * xi, axis=1)
     r = 1.0 / (2.0 * (a + c))
+    # Lengths of the differences across each stencil, in i and k
+    L_xi = np.maximum(np.sqrt(c), 1e-300)
+    L_eta = np.maximum(np.sqrt(a), 1e-300)
     # Weights of E, NE, N, NW, W, SW, S, SE, as the sweeps take them
     W = np.stack([a * r, -0.5 * b * r, c * r, 0.5 * b * r] * 2, axis=1)
 
@@ -681,7 +690,8 @@ def winslow_correction(topo, X, held):
         )
         # Rows not corrected are the identity, their right-hand side zero
         A = scipy.sparse.identity(n, format="csr") - M
-        return scipy.sparse.linalg.splu(A.tocsc()), free
+        # Ordered as for a symmetric matrix, which it nearly is: less fill
+        return scipy.sparse.linalg.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A"), free
 
     lu_x, free_x = factor(rows, cols, vals)
     lu_y, free_y = factor(
@@ -690,12 +700,18 @@ def winslow_correction(topo, X, held):
 
     def correct(R):
         R = np.asarray(R, dtype=float)
-        return np.stack(
+        d = np.stack(
             (
                 lu_x.solve(np.where(free_x, R[:, 0], 0.0)),
                 lu_y.solve(np.where(free_y, R[:, 1], 0.0)),
             ),
             axis=1,
         )
+        D = d[sg]  # pitch shifts drop out of a correction
+        strain = np.maximum(
+            np.linalg.norm(0.5 * (D[:, 1] - D[:, 5]), axis=1) / L_xi,
+            np.linalg.norm(0.5 * (D[:, 3] - D[:, 7]), axis=1) / L_eta,
+        )
+        return d, float(strain.max(initial=0.0))
 
     return correct

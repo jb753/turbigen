@@ -341,6 +341,20 @@ class _Tune(Node):
     while the blade nodes slide: how far they slide is set by how many
     sweeps they slide for."""
 
+    correct_refactor: float = 0.1
+    """Strain of the plane by a correction, as a fraction of the lengths of
+    its cells when its map was made, below which the map is kept whatever:
+    the plane is then near enough converged that the map no longer matters.
+    Above it, the map is made again for the next correction unless this one
+    strained the plane less than `correct_contract` of the last. From a
+    plane far from smooth, the coefficients change as it is corrected, and a
+    map made early stops converging it and then overshoots, by more than the
+    sweeps take back."""
+
+    correct_contract: float = 0.8
+    """Least factor each correction must reduce the strain by, while it is
+    above `correct_refactor`, to keep its map."""
+
     n_sweep_held: int | None = None
     """Sweeps once the blade nodes are held, if they slide first; None for
     what `slide_share` leaves of `n_sweep`."""
@@ -789,6 +803,8 @@ class _Tune(Node):
             "tip_tail_outline": (fraction, "in [0, 1]"),
             "tip_blend": (lambda v: v >= 0.0, "zero or more"),
             "correct_every": (lambda v: v >= 0, "zero or more"),
+            "correct_refactor": (positive, "positive"),
+            "correct_contract": (lambda v: 0.0 < v < 1.0, "in (0, 1)"),
         }
         for name in ("t_O", "cut_mixing", "tip_match_drift", "tip_end", "tip_end_rear"):
             checks[name] = (positive, "positive")
@@ -1936,6 +1952,7 @@ class OHPassage(Mesher):
         # sweeps set by sliding and drawing square, held.
         held = np.concatenate((gid[:, 0], gid[:, 1]))
         correct = None
+        last = np.inf
         done = 0
         while done < n_sweep:
             n = min(every, n_sweep - done)
@@ -1947,7 +1964,16 @@ class OHPassage(Mesher):
             if correct is None:
                 correct = elliptic.winslow_correction(topo, X, held)
             R = sweep(X, 1, seg, 1.0)[0].astype(float) - X
-            X = (X + correct(R)).astype(X.dtype)
+            d, strain = correct(R)
+            X = (X + d).astype(X.dtype)
+            # Still straining the plane, and by not much less than the last:
+            # the map no longer fits it, so a new one for the next
+            if strain > self.tune.correct_refactor and (
+                strain > self.tune.correct_contract * last
+            ):
+                correct = None
+                strain = np.inf
+            last = strain
         return X
 
     def _slide_factors(self, plane, line, s_line, tree, w0):
