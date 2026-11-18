@@ -27,6 +27,7 @@ import numpy as np
 import scipy.optimize
 import scipy.sparse
 import scipy.sparse.csgraph
+import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 logger = logging.getLogger("turbigen")
@@ -620,3 +621,81 @@ def _smoothed_targets(topo, X, n_pass):
         la.append((0.5 * (Li[:, :-1] + Li[:, 1:])).ravel())
         lb.append((0.5 * (Lk[:-1, :] + Lk[1:, :])).ravel())
     return np.concatenate(la), np.concatenate(lb)
+
+
+def winslow_correction(topo, X, held):
+    """Return a function that corrects plane `X` for the error in it that the
+    Winslow sweeps take longest to remove.
+
+    Point-Jacobi sweeps remove the error that varies from node to node in a
+    few sweeps, and the smooth error over thousands: an H block ahead of or
+    behind a blade, periodic across the pitch and held in `y` only through
+    the blade, drifts in `y` long after the cells round the blade have
+    settled. The returned function takes the residual of one plain sweep,
+    where it would move each node, and returns the correction that removes
+    it all at once were the sweep a linear map: the solution of
+    ``(I - M) d = r``, `M` the sweep with the Winslow coefficients frozen at
+    `X`, its singular points and the `y` of its sliding nodes as the sweeps
+    move them, and the nodes `held`, the fixed nodes and those the sweeps
+    have not moved by the map, not corrected. A plane the sweeps leave where
+    it is has no residual, and so no correction: the sweeps converge to the
+    same plane with corrections as without, in far fewer of them.
+
+    The map is factorised once, here; it serves as long as the coefficients
+    are not far from those at `X`, which lose it speed, not accuracy.
+    """
+    X = np.asarray(X, dtype=float)
+    n = topo.n_node
+    sg, ss = topo.stencil_g, topo.stencil_s
+    P = topo._values(X, sg, ss)  # (n_reg, 9, 2)
+    xi = 0.5 * (P[:, 1] - P[:, 5])
+    eta = 0.5 * (P[:, 3] - P[:, 7])
+    a = np.sum(eta * eta, axis=1)
+    b = np.sum(xi * eta, axis=1)
+    c = np.sum(xi * xi, axis=1)
+    r = 1.0 / (2.0 * (a + c))
+    # Weights of E, NE, N, NW, W, SW, S, SE, as the sweeps take them
+    W = np.stack([a * r, -0.5 * b * r, c * r, 0.5 * b * r] * 2, axis=1)
+
+    hold = np.zeros(n, dtype=bool)
+    hold[topo.fixed] = True
+    hold[np.asarray(held, dtype=int)] = True
+
+    rows = [np.repeat(sg[:, 0], 8)]
+    cols = [sg[:, 1:].ravel()]
+    vals = [W.ravel()]
+    W_irr = topo.sweep_irr[0].tocoo()
+    rows.append(topo.irregular[W_irr.row])
+    cols.append(W_irr.col)
+    vals.append(W_irr.data)
+    W_sl = topo.sweep_slide[0].tocoo()
+
+    def factor(rows, cols, vals):
+        rows, cols, vals = map(np.concatenate, (rows, cols, vals))
+        moved = np.zeros(n, dtype=bool)
+        moved[rows] = True
+        free = moved & ~hold
+        keep = free[rows]
+        M = scipy.sparse.csr_matrix(
+            (vals[keep], (rows[keep], cols[keep])), shape=(n, n)
+        )
+        # Rows not corrected are the identity, their right-hand side zero
+        A = scipy.sparse.identity(n, format="csr") - M
+        return scipy.sparse.linalg.splu(A.tocsc()), free
+
+    lu_x, free_x = factor(rows, cols, vals)
+    lu_y, free_y = factor(
+        rows + [topo.slide[W_sl.row]], cols + [W_sl.col], vals + [W_sl.data]
+    )
+
+    def correct(R):
+        R = np.asarray(R, dtype=float)
+        return np.stack(
+            (
+                lu_x.solve(np.where(free_x, R[:, 0], 0.0)),
+                lu_y.solve(np.where(free_y, R[:, 1], 0.0)),
+            ),
+            axis=1,
+        )
+
+    return correct

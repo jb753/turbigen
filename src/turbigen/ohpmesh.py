@@ -333,6 +333,18 @@ class _Tune(Node):
     oscillation it leaves where the coarse mesh is skewed, and converges to
     the same mesh more slowly."""
 
+    correct_every: int = 0
+    """Sweeps between corrections of the smooth error the sweeps are slow to
+    remove, by :func:`elliptic.winslow_correction`, once the blade nodes are
+    held; zero for none. The held sweeps converge to the same mesh either
+    way, in far fewer with them, so `n_sweep_held` can be cut with it. Not
+    while the blade nodes slide: how far they slide is set by how many
+    sweeps they slide for."""
+
+    n_sweep_held: int | None = None
+    """Sweeps once the blade nodes are held, if they slide first; None for
+    what `slide_share` leaves of `n_sweep`."""
+
     orth_taper: float = 8.0
     """With it, the sweeps draw square to the blade not only the first line
     of the O block off it, by `orth`, but every line `k` out after, from the
@@ -776,6 +788,7 @@ class _Tune(Node):
             "tip_nose_outline": (fraction, "in [0, 1]"),
             "tip_tail_outline": (fraction, "in [0, 1]"),
             "tip_blend": (lambda v: v >= 0.0, "zero or more"),
+            "correct_every": (lambda v: v >= 0, "zero or more"),
         }
         for name in ("t_O", "cut_mixing", "tip_match_drift", "tip_end", "tip_end_rear"):
             checks[name] = (positive, "positive")
@@ -1799,6 +1812,8 @@ class OHPassage(Mesher):
             X0 = X
             X = self._sweeps_once(topo, X, n_slide, plane, False, floors)
             X = self._blade_toward(topo, X, X0, plane, w)
+        if self.tune.n_sweep_held is not None:
+            n_sweep = self.tune.n_sweep_held
         return self._sweeps_once(topo, X, n_sweep, plane, True, floors)
 
     def _O_floors(self, topo, X):
@@ -1886,25 +1901,53 @@ class OHPassage(Mesher):
             )
             if floors is not None:
                 lines["floors"] = floors
-        X, _, _ = ember.elliptic.winslow_sweeps(
-            *args,
-            (
-                gid[:, 0],
-                gid[:, 1],
-                shift[:, 0],
-                shift[:, 1],
-                line,
-                s_line,
-                floor,
-                tree.query(w0)[1],
-                tree.query(w1)[1],
-            ),
-            n_sweep,
-            self.tune.orth,
-            0.0 if frozen else self._slide_factors(plane, line, s_line, tree, w0),
-            relax=self.tune.relax,
-            **lines,
-        )
+        slide = 0.0 if frozen else self._slide_factors(plane, line, s_line, tree, w0)
+
+        def sweep(X, n, seg, relax):
+            return ember.elliptic.winslow_sweeps(
+                X,
+                *args[1:],
+                (
+                    gid[:, 0],
+                    gid[:, 1],
+                    shift[:, 0],
+                    shift[:, 1],
+                    line,
+                    s_line,
+                    floor,
+                    *seg,
+                ),
+                n,
+                self.tune.orth,
+                slide,
+                relax=relax,
+                **lines,
+            )
+
+        seg = (tree.query(w0)[1], tree.query(w1)[1])
+        # Only once the blade nodes are held: how far they slide is set by
+        # how many sweeps they slide for
+        every = self.tune.correct_every if frozen else 0
+        if not every:
+            return sweep(X, n_sweep, seg, self.tune.relax)[0]
+
+        # In chunks, each followed by a correction from the residual of one
+        # plain sweep, the blade nodes and those outside them, which the
+        # sweeps set by sliding and drawing square, held.
+        held = np.concatenate((gid[:, 0], gid[:, 1]))
+        correct = None
+        done = 0
+        while done < n_sweep:
+            n = min(every, n_sweep - done)
+            X, *seg = sweep(X, n, seg, self.tune.relax)
+            done += n
+            # Ended on sweeps, which leave the projections as they want them
+            if done >= n_sweep:
+                break
+            if correct is None:
+                correct = elliptic.winslow_correction(topo, X, held)
+            R = sweep(X, 1, seg, 1.0)[0].astype(float) - X
+            X = (X + correct(R)).astype(X.dtype)
         return X
 
     def _slide_factors(self, plane, line, s_line, tree, w0):
