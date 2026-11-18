@@ -403,6 +403,7 @@ def polish(
     rings=4,
     w_size=1.0,
     max_iter=500,
+    gtol=1e-10,
     X_target=None,
     power=1.0,
     hold=None,
@@ -441,6 +442,9 @@ def polish(
         Weight of the size term against the shape term.
     max_iter : int
         Most iterations of the optimiser.
+    gtol : float
+        The optimiser stops once no component of the projected gradient of
+        the cost exceeds this.
     X_target : ndarray, optional
         Mesh to read the target edge lengths off, shape (n_node, 2); `X` if
         not given.
@@ -565,7 +569,7 @@ def polish(
         X0[free] / scale,
         jac=True,
         method="L-BFGS-B",
-        options={"maxiter": max_iter, "gtol": 1e-10, "ftol": 0.0},
+        options={"maxiter": max_iter, "gtol": gtol, "ftol": 0.0},
     )
     out = X0.copy()
     out[free] = res.x * scale

@@ -370,7 +370,7 @@ class _Tune(Node):
     fewer from that one; the control planes are swept out from mid-span,
     each from the one before."""
 
-    correct_tol: float = 5e-3
+    correct_tol: float = 1e-2
     """With `correct_every`, the held sweeps stop, a chunk after the
     correction that finds it, once a correction moves no node more than this
     fraction of the shorter cell length round it: the plane is then that near
@@ -651,6 +651,13 @@ class _Tune(Node):
     this at the edge of the polished region, so the spacing along the grid
     lines does not step where it stops. See :func:`elliptic.polish`."""
 
+    polish_max_iter: int = 250
+    """Most iterations of each polish's optimiser. See :func:`elliptic.polish`."""
+
+    polish_gtol: float = 1e-4
+    """Each polish stops once no component of the gradient of its cost, over
+    its nodes scaled by the cells' size, is above this."""
+
     hold_fine: int = 3
     """Layers of cells off the blade the polish of the refined plane leaves be."""
 
@@ -834,6 +841,8 @@ class _Tune(Node):
             "correct_refactor": (positive, "positive"),
             "correct_contract": (lambda v: 0.0 < v < 1.0, "in (0, 1)"),
             "correct_tol": (positive, "positive"),
+            "polish_max_iter": (lambda v: v >= 1, "at least one"),
+            "polish_gtol": (positive, "positive"),
         }
         for name in ("t_O", "cut_mixing", "tip_match_drift", "tip_end", "tip_end_rear"):
             checks[name] = (positive, "positive")
@@ -3150,6 +3159,8 @@ class OHPassage(Mesher):
             power=self.tune.polish_power,
             hold=hold,
             taper=self.tune.polish_taper,
+            max_iter=self.tune.polish_max_iter,
+            gtol=self.tune.polish_gtol,
         )
         return polished - X
 
