@@ -1983,8 +1983,15 @@ class OHPassage(Mesher):
 
         # In chunks, each followed by a correction from the residual of one
         # plain sweep, the blade nodes and those outside them, which the
-        # sweeps set by sliding and drawing square, held.
+        # sweeps set by sliding and drawing square, held; and with floors,
+        # the whole O block. Where a floor holds a line out, it does so every
+        # sweep, the residual there is that push, and the correction, which
+        # knows nothing of floors, undoes it, more each time, until the plane
+        # blows up. The O block is a few lines thick, which the sweeps
+        # converge alone; the drift the corrections are for is beyond it.
         held = np.concatenate((gid[:, 0], gid[:, 1]))
+        if floors is not None:
+            held = gid.ravel()
         warm = {} if warm is None else warm
         # Started from a plane near this one as its held sweeps moved it, on
         # the nodes they move, and with its map: these converge to where the
