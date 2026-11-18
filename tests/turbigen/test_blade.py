@@ -937,10 +937,19 @@ def _plane(blade, spf=0.5):
 
 
 def _plane_perpendicular(blade, monkeypatch):
-    """:func:`_plane` with the blend taken off for the one evaluation."""
+    """:func:`_plane` with the blend taken off for the one evaluation.
+
+    The blade keeps the sections it has worked out, which designing it
+    already has, so it forgets them before and after: what it keeps was
+    worked out with the blend.
+    """
     with monkeypatch.context() as patch:
         patch.setattr(turbigen.blade, "normal_fraction", _all_perpendicular)
-        return _plane(blade)
+        blade.__dict__.pop("_layout_by_spf", None)
+        try:
+            return _plane(blade)
+        finally:
+            blade.__dict__.pop("_layout_by_spf", None)
 
 
 def _thick_blade(t_max=0.30):

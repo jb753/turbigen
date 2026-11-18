@@ -1170,9 +1170,18 @@ class Blade:
             return True
         return chi_TE < chi_LE
 
+    @functools.cached_property
+    def _layout_by_spf(self):
+        """What :meth:`_section_layout` has worked out, by span fraction."""
+        return {}
+
     def _section_layout(self, spf):
         """Return the camber line at `spf`, and what hangs the surfaces off it,
         at the chordwise positions :data:`CHORD_FRACTION`.
+
+        Kept once worked out, as :meth:`_at_spf` is and for the same reasons:
+        a mesher asks for the surfaces and the camber line at every span it
+        meshes, which are both this. Each caller gets its own copies.
 
         The one place the camber line is built, so :meth:`evaluate_camber` and
         :meth:`evaluate_section` cannot answer with different curves, and the
@@ -1203,6 +1212,16 @@ class Blade:
             its own constant-span line [m].
 
         """
+        key = (np.asarray(spf).dtype.str, float(spf))
+        if key not in self._layout_by_spf:
+            if len(self._layout_by_spf) >= N_SPF_KEPT:
+                self._layout_by_spf.clear()
+            self._layout_by_spf[key] = self._lay_out(spf)
+        xrt, m_LTE, Dy, length = self._layout_by_spf[key]
+        return xrt.copy(), m_LTE.copy(), Dy.copy(), length
+
+    def _lay_out(self, spf):
+        """Work out what :meth:`_section_layout` returns at `spf`."""
         camber, thickness, caps, (s_line, m_line, s_LE, length) = self._at_spf(spf)
         m = CHORD_FRACTION
 
