@@ -140,21 +140,42 @@ def _wall_step(O):
 
 def _outer_face_steps(O, row):
     """Ratio of the O block's last cell off the blade to the cell beyond it in
-    the next block, at each node of its outer face that another block shares."""
+    the next block, at each node of its outer face that another block shares.
+
+    A node two blocks share lies on a face of each, so each block is searched
+    by a tree of only its faces' nodes, built once and searched from the
+    outer face turned back by each pitch shift in turn rather than the block
+    turned on by it; and only as far as a match, as a search for the nearest
+    node to a point far from the block is slow.
+    """
     P = _cartesian(O.xrt)
     p = P[:, :, -1].reshape(-1, 3)
     a = (P[:, :, -1] - P[:, :, -2]).reshape(-1, 3)
+    face_xrt = O.xrt[:, :, -1].reshape(-1, 3).astype(float)
+    tol = 1e-7 * np.abs(p).max()
     out = np.full(len(p), np.nan)
     for block in row:
         if block is O:
             continue
+        xrt = block.xrt.astype(float)
+        shape = xrt.shape[:3]
+        on_face = np.zeros(shape, dtype=bool)
+        for axis in range(3):
+            for end in (0, -1):
+                np.moveaxis(on_face, axis, 0)[end] = True
+        flat = np.flatnonzero(on_face)
+        tree = cKDTree(_cartesian(xrt).reshape(-1, 3)[flat])
         for shift in (-1, 0, 1):
-            xrt = block.xrt.astype(float).copy()
-            xrt[..., 2] += shift * O.pitch
-            C = _cartesian(xrt)
-            dist, idx = cKDTree(C.reshape(-1, 3)).query(p)
-            hit = np.nonzero(dist < 1e-7 * np.abs(p).max())[0]
-            ijk = np.stack(np.unravel_index(idx[hit], C.shape[:3]), axis=1)
+            q_xrt = face_xrt.copy()
+            q_xrt[:, 2] -= shift * O.pitch
+            dist, idx = tree.query(_cartesian(q_xrt), distance_upper_bound=tol)
+            hit = np.nonzero(dist < tol)[0]
+            if not len(hit):
+                continue
+            ijk = np.stack(np.unravel_index(flat[idx[hit]], shape), axis=1)
+            xrt_s = xrt.copy()
+            xrt_s[..., 2] += shift * O.pitch
+            C = _cartesian(xrt_s)
             for axis in range(3):
                 for step in (-1, 1):
                     q = ijk.copy()
