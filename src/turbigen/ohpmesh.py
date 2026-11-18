@@ -355,9 +355,16 @@ class _Tune(Node):
     """Least factor each correction must reduce the strain by, while it is
     above `correct_refactor`, to keep its map."""
 
+    correct_tol: float = 5e-3
+    """With `correct_every`, the held sweeps stop, a chunk after the
+    correction that finds it, once a correction moves no node more than this
+    fraction of the shorter cell length round it: the plane is then that near
+    converged. They stop at `n_sweep_held` regardless."""
+
     n_sweep_held: int | None = None
-    """Sweeps once the blade nodes are held, if they slide first; None for
-    what `slide_share` leaves of `n_sweep`."""
+    """Sweeps once the blade nodes are held, if they slide first, or the most
+    with `correct_every`, which stops sooner at `correct_tol`; None for what
+    `slide_share` leaves of `n_sweep`."""
 
     orth_taper: float = 8.0
     """With it, the sweeps draw square to the blade not only the first line
@@ -805,6 +812,7 @@ class _Tune(Node):
             "correct_every": (lambda v: v >= 0, "zero or more"),
             "correct_refactor": (positive, "positive"),
             "correct_contract": (lambda v: 0.0 < v < 1.0, "in (0, 1)"),
+            "correct_tol": (positive, "positive"),
         }
         for name in ("t_O", "cut_mixing", "tip_match_drift", "tip_end", "tip_end_rear"):
             checks[name] = (positive, "positive")
@@ -1954,18 +1962,23 @@ class OHPassage(Mesher):
         correct = None
         last = np.inf
         done = 0
+        converged = False
+        move = np.inf
         while done < n_sweep:
             n = min(every, n_sweep - done)
             X, *seg = sweep(X, n, seg, self.tune.relax)
             done += n
-            # Ended on sweeps, which leave the projections as they want them
-            if done >= n_sweep:
+            # Ended on sweeps, which leave the projections as they want them:
+            # a chunk after the correction that found the plane converged,
+            # or the last of n_sweep
+            if converged or done >= n_sweep:
                 break
             if correct is None:
                 correct = elliptic.winslow_correction(topo, X, held)
             R = sweep(X, 1, seg, 1.0)[0].astype(float) - X
-            d, strain = correct(R)
+            d, strain, move = correct(R)
             X = (X + d).astype(X.dtype)
+            converged = move < self.tune.correct_tol
             # Still straining the plane, and by not much less than the last:
             # the map no longer fits it, so a new one for the next
             if strain > self.tune.correct_refactor and (
@@ -1974,6 +1987,11 @@ class OHPassage(Mesher):
                 correct = None
                 strain = np.inf
             last = strain
+        if not converged:
+            logger.debug(
+                f"Held sweeps not converged in {n_sweep}: last correction "
+                f"moved a node {move:.1e} of its cell"
+            )
         return X
 
     def _slide_factors(self, plane, line, s_line, tree, w0):

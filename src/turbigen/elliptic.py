@@ -648,7 +648,9 @@ def winslow_correction(topo, X, held):
     map was frozen at, and a correction by it can overshoot further than the
     sweeps after it take back: the caller should then make a new one. A
     correction that moves a block bodily, as the drift it is for does,
-    strains it little.
+    strains it little; so it returns too the most it moves any regular
+    node, over the shorter of its lengths, which is how far the plane is
+    from converged.
     """
     X = np.asarray(X, dtype=float)
     n = topo.n_node
@@ -712,6 +714,7 @@ def winslow_correction(topo, X, held):
             np.linalg.norm(0.5 * (D[:, 1] - D[:, 5]), axis=1) / L_xi,
             np.linalg.norm(0.5 * (D[:, 3] - D[:, 7]), axis=1) / L_eta,
         )
-        return d, float(strain.max(initial=0.0))
+        move = np.linalg.norm(D[:, 0], axis=1) / np.minimum(L_xi, L_eta)
+        return d, float(strain.max(initial=0.0)), float(move.max(initial=0.0))
 
     return correct
