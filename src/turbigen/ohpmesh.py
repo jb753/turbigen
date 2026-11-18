@@ -551,6 +551,12 @@ class _Tune(Node):
     one station to the next towards where the blocks end, so the shear is
     spread along them."""
 
+    theta_even: bool = False
+    """Blend the blocks ahead of and behind the blade on each control plane
+    towards nodes even in theta across the pitch, by :func:`_theta_even`,
+    held in step up the span by `theta_lean`; without, the planes are kept
+    as swept."""
+
     theta_lean: float = 10.0
     """With it, the blend of :func:`_theta_even` found on every control plane
     first, and each station's weight then held, plane to plane up the span,
@@ -2147,6 +2153,10 @@ class OHPassage(Mesher):
                 X += self._polish_shift(
                     topo, hold, topo.scatter(X), self.tune.polish_coarse_rings
                 )
+            if not self.tune.theta_even:
+                keep(j, X)
+                logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
+                return
             if self.tune.theta_lean:
                 swept[j] = X
                 logger.debug(f"Row {i_row} spf={spf[j]:.3f} swept")
@@ -2177,7 +2187,7 @@ class OHPassage(Mesher):
         def finish():
             """With `theta_lean`, blend every control plane as swept, the
             weights held in step up the span, and keep each."""
-            if not self.tune.theta_lean:
+            if not self.tune.theta_lean or not self.tune.theta_even:
                 return
             xy = self._theta_even_span(
                 [topo.scatter(swept[j]) for j in j_ctrl],
