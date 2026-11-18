@@ -572,6 +572,27 @@ class _Tune(Node):
     the line then double-sided stretched between the two. One, purely
     geometric."""
 
+    beyond_O_match: float = 4.0
+    """How far the first cell of each line of the blocks round the O block,
+    off its outer face, may be scaled to the O block's outer cell where the
+    line leaves it: within this factor either way. The O block's lines are
+    clustered from the wall at one count all round the blade, and where the
+    block is thin its outer cells are shorter than the free stream's, by
+    more than `geometric_O_match` takes up. One for none. See
+    :meth:`OHPassage._match_beyond_O`."""
+
+    beyond_O_smooth: float = 2.0
+    """Lines over which the factors `beyond_O_match` scales each line's
+    first cell by are smoothed, the deviation of a Gaussian, so that
+    neighbouring lines move alike: where they fan out, round an edge, the
+    cells between them are far shorter than along them. Zero for none."""
+
+    beyond_O_cells: float = 0.33
+    """Fraction of the cells along each line off the O block's outer face
+    over which `beyond_O_match` scales them, faded to none, and the
+    fraction of a neighbouring block's lines across which it fades the
+    scaling of the line the two share."""
+
     tip_rear_multiple: int = 4
     """What the cells round a tip gap's tail, the H
     block's count across, are a multiple of."""
@@ -653,6 +674,11 @@ class _Tune(Node):
 
     polish_max_iter: int = 250
     """Most iterations of each polish's optimiser. See :func:`elliptic.polish`."""
+
+    polish_smooth: int = 2
+    """Passes of smoothing of the cell lengths each polish aims for, along
+    each grid line, so it squares cells without keeping the steps in
+    spacing round them. See :func:`elliptic.polish`. None if zero."""
 
     polish_gtol: float = 1e-4
     """Each polish stops once no component of the gradient of its cost, over
@@ -843,6 +869,10 @@ class _Tune(Node):
             "correct_tol": (positive, "positive"),
             "polish_max_iter": (lambda v: v >= 1, "at least one"),
             "polish_gtol": (positive, "positive"),
+            "polish_smooth": (lambda v: v >= 0, "zero or more"),
+            "beyond_O_match": (lambda v: v >= 1.0, "one or more"),
+            "beyond_O_cells": (lambda v: 0.0 < v <= 1.0, "in (0, 1]"),
+            "beyond_O_smooth": (lambda v: v >= 0.0, "zero or more"),
         }
         for name in ("t_O", "cut_mixing", "tip_match_drift", "tip_end", "tip_end_rear"):
             checks[name] = (positive, "positive")
@@ -2297,19 +2327,19 @@ class OHPassage(Mesher):
         )
         lay = self._wall_u(lay, planes[j_mid], xy_mid)
         refine = self._refine_matrices(lay, planes[j_mid]["xy"])
-        mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+        mid = self._refined(xy_mid, planes[j_mid], lay, refine, match=False)
         if self.tune.side_corner_cells > 0.0:
             lay = self._face_u(lay, mid)
             refine = self._refine_matrices(lay, planes[j_mid]["xy"])
-            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine, match=False)
         if self.tune.passage_end_cells > 0.0:
             lay = self._passage_u(lay, mid)
             refine = self._refine_matrices(lay, planes[j_mid]["xy"])
-            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine, match=False)
         if self.tune.end_corner_cells > 0.0:
             lay = self._ends_u(lay, mid)
             refine = self._refine_matrices(lay, planes[j_mid]["xy"])
-            mid = self._refined(xy_mid, planes[j_mid], lay, refine)
+            mid = self._refined(xy_mid, planes[j_mid], lay, refine, match=False)
         lay = self._O_count(lay, planes[j_mid], mid[0], _beyond_O(mid, lay))
         if not lay.extrude_out:
             lay = self._dn_u(lay, mid)
@@ -2970,7 +3000,7 @@ class OHPassage(Mesher):
         )
         return refine
 
-    def _refined(self, xy, plane, lay, refine, respace_dn=True):
+    def _refined(self, xy, plane, lay, refine, respace_dn=True, match=True):
         """Return the blocks of a smoothed coarse plane, refined.
 
         Each block refined along each of its directions on cubic splines
@@ -2979,7 +3009,11 @@ class OHPassage(Mesher):
         blade; each line off it respaced along a cubic spline through its
         coarse nodes, leaving the blade along its normal, from the wall
         spacing at the blade to the first cell of the block beyond it, by
-        double-sided stretching whose expansion ratio varies linearly.
+        double-sided stretching whose expansion ratio varies linearly. Then,
+        if `match`, the first cells of the blocks beyond it scaled to its
+        outer cells by :meth:`_match_beyond_O`; not on the plane the counts
+        and spacings of the layout are read off, which want the free stream
+        beyond it.
         """
         # The O block's blade nodes refined through where they lie along the
         # blade, monotonically, so they stay on it and in order round it.
@@ -3130,8 +3164,122 @@ class OHPassage(Mesher):
         lo = np.take_along_axis(O, q[None], axis=2)
         hi = np.take_along_axis(O, q[None] + 1, axis=2)
         out[0] = (lo + w[None] * (hi - lo)).astype(dtype)
+        if match and self.tune.beyond_O_match > 1.0:
+            out = self._match_beyond_O(out, lay)
         if "dn" in lay.u and respace_dn:
             out[7] = _dn_lines(out[7], out[4], out[5], self.tune.ER_mix).astype(dtype)
+        return out
+
+    def _match_beyond_O(self, out, lay):
+        """Return refined blocks `out` with the first cell of each line off
+        the O block's outer face drawn to the O block's outer cell there.
+
+        Each line's factor, the O block's outer cell over the line's first,
+        within `beyond_O_match` either way and smoothed over neighbouring
+        lines by `beyond_O_smooth`. The passage block's lines across the
+        pitch, both ends on the O block, double-sided stretched afresh
+        between their scaled end cells; the lines of the blocks round the
+        leading and trailing edges away from the blade scaled over only the
+        first `beyond_O_cells` of each, by :func:`_respace_lines`, so the
+        nodes beyond do not move.
+
+        A line two blocks share is respaced alike in both, and the change
+        faded across the block that does not meet the O block there, each
+        of its lines drawn by its fraction towards the cell the shared line
+        is drawn to: ahead of and behind the blade, along from the sides
+        they share with the edge block, and across from the line they share
+        with the passage block, blended back to as refined away from the
+        blade. The ends of every line stay put, so the blocks still meet
+        node for node.
+        """
+        cap = np.log(self.tune.beyond_O_match)
+        frac = self.tune.beyond_O_cells
+        sigma = self.tune.beyond_O_smooth
+        dtype = out[0].dtype
+        O, P, LE, Pin, TE, Pout = (np.asarray(b, dtype=float) for b in out[:6])
+        a = np.linalg.norm(O[:, :, -1] - O[:, :, -2], axis=0)
+        i3, i4, i1, i2 = lay.i_corners()
+        n = O.shape[1]
+        rear = np.concatenate((np.arange(i3, -1, -1), np.arange(n - 2, i2 - 1, -1)))
+
+        def first(X, end):
+            """Each line's cell at its start, or at its end if `end`."""
+            k0, k1 = (-1, -2) if end else (0, 1)
+            return np.linalg.norm(X[:, :, k0] - X[:, :, k1], axis=0)
+
+        def target(cell, X, end):
+            """Each line's end cell drawn to `cell`, within the cap and
+            smoothed over the lines."""
+            g = np.clip(np.log(cell / np.maximum(first(X, end), 1e-300)), -cap, cap)
+            if sigma > 0.0 and len(g) > 1:
+                g = scipy.ndimage.gaussian_filter1d(g, sigma, mode="nearest")
+            return first(X, end) * np.exp(g)
+
+        def toward(cell, X, end, w):
+            """Log factor taking each line's end cell `w` of the way to
+            `cell`."""
+            g = np.log(cell / np.maximum(first(X, end), 1e-300))
+            return w * np.clip(g, -cap, cap)
+
+        def fade(m, nf):
+            """Weight, one to none, `m` lines in over `nf`."""
+            t = np.clip(np.asarray(m, dtype=float) / max(nf, 1.0), 0.0, 1.0)
+            return 1.0 - t * t * (3.0 - 2.0 * t)
+
+        # Passage block, across the pitch: k = 0 on the upper side, k = -1
+        # on the lower, round the blade the other way
+        t0 = target(a[i1 : i2 + 1], P, False)
+        t1 = target(a[np.arange(i4, i3 - 1, -1)], P, True)
+        # Edge blocks, away from the blade: round the front LE's i = -1 on
+        # the O block, round the rear TE's i = 0
+        LE_t = LE.transpose(0, 2, 1)
+        TE_t = TE.transpose(0, 2, 1)
+        t_LE = target(a[i4 : i1 + 1], LE_t, True)
+        t_TE = target(a[rear], TE_t, False)
+
+        def along(B, cells, at_end):
+            """Lines along `B` away from the blade, drawn at the blade, at
+            its last `i` if `at_end`, towards `cells`, those its k = 0 and
+            k = -1 sides are drawn to, faded in across."""
+            Bt = B.transpose(0, 2, 1)
+            k = np.arange(Bt.shape[1])
+            nf = frac * (Bt.shape[1] - 1)
+            g = toward(cells[0], Bt, at_end, fade(k, nf)) + toward(
+                cells[1], Bt, at_end, fade(k[::-1], nf)
+            )
+            nf_i = frac * (Bt.shape[2] - 1)
+            Bt = _respace_lines(Bt, None if at_end else g, g if at_end else None, nf_i)
+            return Bt.transpose(0, 2, 1)
+
+        def across(B, cells, blade_last):
+            """Lines across `B` stretched afresh to the passage block's end
+            line's `cells`, blended back to as refined away from the blade,
+            which is at its last `i` if `blade_last`, else its first."""
+            i = np.arange(B.shape[1])
+            w = fade(i[::-1] if blade_last else i, frac * (B.shape[1] - 1))
+            return _restretch_lines(
+                B,
+                first(B, False) * np.exp(toward(cells[0], B, False, 1.0)),
+                first(B, True) * np.exp(toward(cells[1], B, True, 1.0)),
+                w,
+            )
+
+        # The sides of the blocks ahead of and behind the blade are the edge
+        # block's, k = 0 its k = -1 and k = -1 its k = 0
+        Pin = along(Pin, (t_LE[-1], t_LE[0]), at_end=True)
+        Pout = along(Pout, (t_TE[-1], t_TE[0]), at_end=False)
+        Pin = across(Pin, (t0[0], t1[0]), blade_last=True)
+        Pout = across(Pout, (t0[-1], t1[-1]), blade_last=False)
+        P = _restretch_lines(P, t0, t1, np.ones(P.shape[1]))
+        LE = _respace_lines(
+            LE_t, None, np.log(t_LE / first(LE_t, True)), frac * (LE.shape[1] - 1)
+        ).transpose(0, 2, 1)
+        TE = _respace_lines(
+            TE_t, np.log(t_TE / first(TE_t, False)), None, frac * (TE.shape[1] - 1)
+        ).transpose(0, 2, 1)
+        out = list(out)
+        for idx, B in zip((1, 2, 3, 4, 5), (P, LE, Pin, TE, Pout)):
+            out[idx] = B.astype(dtype)
         return out
 
     def _polish_shift(self, topo, hold, xy, rings):
@@ -3161,6 +3309,7 @@ class OHPassage(Mesher):
             taper=self.tune.polish_taper,
             max_iter=self.tune.polish_max_iter,
             gtol=self.tune.polish_gtol,
+            smooth=self.tune.polish_smooth,
         )
         return polished - X
 
@@ -3906,6 +4055,94 @@ def _scale_end(u, F, n_fade, at_end):
     if at_end:
         du = du[::-1]
     return u[0] + np.concatenate(([0.0], np.cumsum(du)))
+
+
+def _respace_lines(X, g0, g1, n_fade):
+    """Return lines `X` (2, n_line, n) with their nodes moved along them so
+    the cell at the start of each is scaled by `exp(g0)` and the cell at the
+    end by `exp(g1)`, per line, either None for none.
+
+    Only the cells within `n_fade` of the end change: each scaled by the
+    factor faded smoothly to none across them, and by a smooth bump, nought
+    at the end cell and at the last of them, found so they keep their
+    length. The nodes beyond do not move. An end cell held to no more than
+    half the length it is scaled within. The nodes are placed along the
+    line as it was, linearly between its old nodes.
+    """
+    X = np.asarray(X, dtype=float)
+    d = np.maximum(np.linalg.norm(np.diff(X, axis=2), axis=0), 1e-300)
+    n_line, n = d.shape
+    s = np.zeros((n_line, n + 1))
+    np.cumsum(d, axis=1, out=s[:, 1:])
+    m = int(min(max(np.ceil(n_fade), 2), n // 2))
+    t = np.arange(m) / m
+    shape = 1.0 - t * t * (3.0 - 2.0 * t)
+    bump = 4.0 * t * (1.0 - t)
+    dn = d.copy()
+    for g, sl in ((g0, slice(0, m)), (g1, slice(n - 1, n - 1 - m, -1))):
+        if g is None:
+            continue
+        D = d[:, sl]
+        total = D.sum(axis=1)
+        g = np.minimum(np.asarray(g, dtype=float), np.log(0.5 * total / D[:, 0]))
+        base = D * np.exp(g[:, None] * shape[None])
+
+        def excess(beta):
+            return np.log(
+                (base * np.exp(beta[:, None] * bump[None])).sum(axis=1) / total
+            )
+
+        lo = np.full(n_line, -30.0)
+        hi = np.full(n_line, 30.0)
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            over = excess(mid) > 0.0
+            hi = np.where(over, mid, hi)
+            lo = np.where(over, lo, mid)
+        beta = 0.5 * (lo + hi)
+        dn[:, sl] = base * np.exp(beta[:, None] * bump[None])
+    # Each changed stretch to just its old length, the nodes beyond exactly
+    # where they were
+    T = s.copy()
+    if g0 is not None:
+        c = np.cumsum(dn[:, :m], axis=1)
+        T[:, 1 : m + 1] = s[:, :1] + c * ((s[:, m] - s[:, 0]) / c[:, -1])[:, None]
+    if g1 is not None:
+        c = np.cumsum(dn[:, n - m :], axis=1)
+        T[:, n - m + 1 :] = (
+            s[:, n - m : n - m + 1] + c * ((s[:, n] - s[:, n - m]) / c[:, -1])[:, None]
+        )
+    return _along(X, s, T)
+
+
+def _restretch_lines(X, c0, c1, w):
+    """Return lines `X` (2, n_line, n) with their nodes moved along them to
+    double-sided stretching, its expansion ratio varying linearly, between
+    end cells `c0` and `c1`, per line; blended with the nodes as they were
+    by `w`, per line, one wholly stretched, none as they were. The end
+    cells held to no more than a third of the line each."""
+    X = np.asarray(X, dtype=float)
+    d = np.maximum(np.linalg.norm(np.diff(X, axis=2), axis=0), 1e-300)
+    s = np.zeros((d.shape[0], d.shape[1] + 1))
+    np.cumsum(d, axis=1, out=s[:, 1:])
+    L = s[:, -1:]
+    f0 = np.minimum(np.asarray(c0, dtype=float) / L[:, 0], 1.0 / 3.0)
+    f1 = np.minimum(np.asarray(c1, dtype=float) / L[:, 0], 1.0 / 3.0)
+    T = L * clusterfunc.double.smooth_many(f0, f1, s.shape[1])
+    w = np.asarray(w, dtype=float)[:, None]
+    T = (1.0 - w) * s + w * T
+    T[:, 0], T[:, -1] = s[:, 0], s[:, -1]
+    return _along(X, s, T)
+
+
+def _along(X, s, T):
+    """Return lines `X` (2, n_line, n), at arc lengths `s` along them, with
+    their nodes moved to arc lengths `T`, linearly between the old ones."""
+    out = np.empty_like(X)
+    for c in range(X.shape[0]):
+        for m in range(X.shape[1]):
+            out[c, m] = np.interp(T[m], s[m], X[c, m])
+    return out
 
 
 def _beyond_O(out, lay):
