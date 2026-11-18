@@ -333,12 +333,12 @@ class _Tune(Node):
     oscillation it leaves where the coarse mesh is skewed, and converges to
     the same mesh more slowly."""
 
-    correct_every: int = 0
+    correct_every: int = 30
     """Sweeps between corrections of the smooth error the sweeps are slow to
     remove, by :func:`elliptic.winslow_correction`, once the blade nodes are
     held; zero for none. The held sweeps converge to the same mesh either
-    way, in far fewer with them, so `n_sweep_held` can be cut with it. Not
-    while the blade nodes slide: how far they slide is set by how many
+    way, in far fewer with them, and stop once they have, by `correct_tol`.
+    Not while the blade nodes slide: how far they slide is set by how many
     sweeps they slide for."""
 
     correct_refactor: float = 0.1
