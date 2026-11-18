@@ -481,22 +481,26 @@ class MeshPlot(Post):
     pitchwise in every block, the meridional view is the constant-`k` slice at
     mid-pitch. An OHP mesh has no such common index, so its meridional view is
     the periodic surface instead, :func:`turbigen.util.cut_periodic`, which
-    runs unbroken from inlet to outlet. The blade-to-blade view is the
-    constant-`j` plane of every block nearest mid-span, its span fraction in
-    the title, in the conformal coordinates ``(m', theta)`` that
-    :class:`ContourPlot` draws, along the annulus line at that span fraction
-    through the whole machine: a cell keeps its shape on the
+    runs unbroken from inlet to outlet. Each blade-to-blade view is the
+    constant-`j` plane of every block nearest one of `spf`, mid-span unless
+    set, its span fraction in the title, in the conformal coordinates
+    ``(m', theta)`` that :class:`ContourPlot` draws, along the annulus line
+    at that span fraction through the whole machine: a cell keeps its shape on the
     stream surface at any radius, so a radial row is not stretched out where
     its radius is large, and the grid reads directly against a contour map.
     The meridional view is drawn to scale. Every grid line, for one passage of
     each row. Then, for each row, the same blade-to-blade view closed in on
-    its leading and trailing edges on that plane, and for each row with a
+    its leading and trailing edges on each plane, and for each row with a
     gridded tip gap, the same close-ups on the plane half way across the gap,
     where the gap's own blocks are drawn too. A mesh of any other type draws
     nothing.
     """
 
     type: ClassVar[str] = "mesh"
+
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions of the blade-to-blade views, each drawn on the
+    constant-`j` planes nearest it, with its close-ups [--]."""
 
     linewidth: float = 0.05
     """Width of the grid lines [pt]."""
@@ -516,6 +520,12 @@ class MeshPlot(Post):
     """Spacing step `debug` shades a cell fully at and above; white is one,
     no step [--]."""
 
+    wall_line: float = 0.9
+    """With `debug`, the fraction of the way from leading to trailing edge
+    at which the O block's line off the blade, on either side, is marked on
+    the blade-to-blade views, and its arc length from the wall drawn against
+    `k` on a page of its own after each; zero for none [--]."""
+
     def report(self, config, result):
         if result.grid is None:
             logger.info("No grid, skipping the mesh plot.")
@@ -531,7 +541,7 @@ class MeshPlot(Post):
         # span, so has no mid-span slice and adds nothing seen meridionally.
         blocks = [block for block in result.grid if "_tip" not in block.label]
 
-        def draw(title, slices, cut=None):
+        def draw(title, slices, cut=None, marks=()):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_aspect("equal")
             ax.axis("off")
@@ -578,6 +588,8 @@ class MeshPlot(Post):
                 # Columns are lines, so this draws both families
                 ax.plot(x, y, **style)
                 ax.plot(x.T, y.T, **style)
+            for mark in marks:
+                ax.plot(*mark["xy"], color="tab:blue", linewidth=1.0)
             return fig
 
         if config.mesh.type == "h":
@@ -601,26 +613,37 @@ class MeshPlot(Post):
                 ],
             )
         annulus = result.machine.annulus
-        spf, xr_curve, slices = self._blade_to_blade(annulus, blocks, 0.5)
-        where = f"spf={spf:.2f}"
-        blade_to_blade = draw(f"Blade-to-Blade Grid, {where}", slices, blocks)
-        figures = [meridional, blade_to_blade]
+        figures = [meridional]
+        planes = []
+        for spf_ask in self.spf:
+            spf, xr_curve, slices = self._blade_to_blade(annulus, blocks, spf_ask)
+            where = f"spf={spf:.2f}"
+            marks = []
+            if self.debug and self.wall_line > 0.0 and config.mesh.type == "ohp":
+                marks = self._wall_lines(
+                    result.machine, blocks, spf_ask, spf, xr_curve, slices
+                )
+            figures.append(draw(f"Blade-to-Blade Grid, {where}", slices, blocks, marks))
+            figures += self._wall_line_figures(plt, marks, spf)
+            planes.append((spf, xr_curve, slices, marks))
         if self.closeup <= 0.0:
             return figures
 
-        def closeups(i_row, row, spf, xr_curve, slices, prefix, cut):
+        def closeups(i_row, row, spf, xr_curve, slices, prefix, cut, marks=()):
             where = f"spf={spf:.3f}"
             for name, centre, half in self._edges(
                 result.machine, i_row, row, spf, xr_curve, slices
             ):
-                fig = draw(f"Row {i_row} {prefix}{name}, {where}", slices, cut)
+                title = f"Row {i_row} {prefix}{name}, {where}"
+                fig = draw(title, slices, cut, marks)
                 ax = fig.axes[0]
                 ax.set_xlim(centre[0] - half, centre[0] + half)
                 ax.set_ylim(centre[1] - half, centre[1] + half)
                 figures.append(fig)
 
-        for i_row, row in enumerate(result.machine.rows):
-            closeups(i_row, row, spf, xr_curve, slices, "", blocks)
+        for spf, xr_curve, slices, marks in planes:
+            for i_row, row in enumerate(result.machine.rows):
+                closeups(i_row, row, spf, xr_curve, slices, "", blocks, marks)
         # Each row with a gridded tip gap again, on the plane through the
         # middle of the gap: there every block is cut, the gap's own as well
         # as those round it, so the close-ups show how the gap's blocks meet
@@ -644,6 +667,89 @@ class MeshPlot(Post):
             )
         return figures
 
+    def _wall_lines(self, machine, blocks, spf_ask, spf, xr_curve, slices):
+        """Return the O block's lines off the blade at `wall_line` of the way
+        from each row's leading to trailing edge, either side, on the
+        blade-to-blade plane nearest `spf_ask`, at span fraction `spf`.
+
+        Each a dict of its row, its side, the one further to +theta of the
+        line from edge to edge than the other or not, its `i`, its nodes as drawn, `xy` (2, nk), and its
+        arc length from the wall in metres at each node, `s`. Where the
+        blade's wall nodes cross that fraction of the line from edge to edge,
+        the nearer node of each crossing.
+        """
+        out = []
+        for i_row, row in enumerate(machine.rows):
+            label = f"row{i_row}_O"
+            n = [b for b, block in enumerate(blocks) if block.label == label]
+            if not n:
+                continue
+            block, (x, y) = blocks[n[0]], slices[n[0]]
+            (_, LE, _), (_, TE, _) = self._edges(
+                machine, i_row, row, spf, xr_curve, slices
+            )
+            LE, TE = np.asarray(LE), np.asarray(TE)
+            chord = TE - LE
+            wall = np.stack((x[:, 0], y[:, 0]), axis=1).astype(float) - LE
+            f = wall @ chord / (chord @ chord) - self.wall_line
+            j, _ = self._plane_nearest(machine.annulus, block, spf_ask)
+            xrt = np.asarray(block.xrt[:, j, :], dtype=float)
+            xyz = np.stack(
+                (
+                    xrt[..., 0],
+                    xrt[..., 1] * np.cos(xrt[..., 2]),
+                    xrt[..., 1] * np.sin(xrt[..., 2]),
+                ),
+                axis=-1,
+            )
+            found = []
+            for i in np.nonzero(np.sign(f[:-1]) != np.sign(f[1:]))[0]:
+                i = int(i if abs(f[i]) <= abs(f[i + 1]) else i + 1)
+                d = np.linalg.norm(np.diff(xyz[i], axis=0), axis=-1)
+                found.append(
+                    {
+                        "row": i_row,
+                        "i": i,
+                        "xy": (x[i], y[i]),
+                        "s": np.concatenate(([0.0], np.cumsum(d))),
+                        # How far to +theta of the line from edge to edge
+                        "above": chord[0] * wall[i, 1] - chord[1] * wall[i, 0],
+                    }
+                )
+            # A cambered blade can lie wholly to one side of the line from
+            # edge to edge, so each side named against the other
+            top = max((line["above"] for line in found), default=0.0)
+            for line in found:
+                line["side"] = "+theta" if line["above"] == top else "-theta"
+            out += found
+        return out
+
+    def _wall_line_figures(self, plt, marks, spf):
+        """Return a page for each row of the lines `marks` off the blade:
+        arc length from the wall against `k`, and each cell's length."""
+        figures = []
+        for i_row in sorted({mark["row"] for mark in marks}):
+            fig, (ax0, ax1) = plt.subplots(1, 2, layout="constrained")
+            fig.suptitle(
+                f"Row {i_row} O Block Lines at {self.wall_line:.0%} Chord, "
+                f"spf={spf:.2f}"
+            )
+            for mark in marks:
+                if mark["row"] != i_row:
+                    continue
+                s = mark["s"]
+                k = np.arange(len(s))
+                name = f"{mark['side']} side, i={mark['i']}"
+                ax0.plot(k, 1e3 * s, ".-", label=name)
+                ax1.semilogy(k[1:] - 0.5, 1e3 * np.diff(s), ".-", label=name)
+            ax0.set_xlabel("k")
+            ax0.set_ylabel("Arc length from wall [mm]")
+            ax1.set_xlabel("k")
+            ax1.set_ylabel("Cell length [mm]")
+            ax0.legend()
+            figures.append(fig)
+        return figures
+
     def _blade_to_blade(self, annulus, blocks, spf):
         """Return the span fraction, annulus line and `(m', theta)` slices of
         the constant-`j` plane of each of `blocks` nearest span fraction `spf`.
@@ -654,7 +760,8 @@ class MeshPlot(Post):
         would be projected onto the line's vertices and the grid drawn kinked.
         """
         planes = [self._plane_nearest(annulus, block, spf) for block in blocks]
-        spf = float(np.median([spf_j for _, spf_j in planes]))
+        # Held to 0 to 1: a plane on an endwall can measure a hair beyond
+        spf = float(np.clip(np.median([spf_j for _, spf_j in planes]), 0.0, 1.0))
         m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
         xr_curve = annulus.evaluate_xr(m, spf).T
         slices = [
@@ -686,7 +793,10 @@ class MeshPlot(Post):
 
     def _edges(self, machine, i_row, row, spf, xr_curve, slices):
         """Return the name, centre `(m', theta)` and half-width of the square
-        round each edge of `row` at span fraction `spf`, on the slices drawn."""
+        round each edge of `row` at span fraction `spf`, on the slices drawn.
+        On the blade's span, `spf` held to 0 to 1: a plane on an endwall can
+        measure a hair beyond it."""
+        spf = float(np.clip(spf, 0.0, 1.0))
         blade = row.blade
         m_edges = 2.0 * i_row + 1.0 + blade.evaluate_swept_m([0.0, 1.0], spf)
         xr = machine.annulus.evaluate_xr(m_edges, spf).T
