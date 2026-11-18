@@ -1032,11 +1032,19 @@ class OHPassage(Mesher):
         # spread evenly over its least count
         dspf_even = tip / (self.njtip_min - 1)
         dspf_tip = min(dspf_casing, dspf_even)
-        try:
-            spf_tip = clusterfunc.double.free(
-                dspf_tip, dspf_tip, dspf_even, self.tune.ER_span, L_main, 1.0
-            )
-        except clusterfunc.exceptions.ClusteringException:
+        # With the casing spacing no finer than even, the ends are already as
+        # coarse as any cell may be: the search for a count could only fail,
+        # and take its thousand tries to, as its ends land within a tolerance
+        # either side of what is asked
+        spf_tip = None
+        if dspf_casing < dspf_even:
+            try:
+                spf_tip = clusterfunc.double.free(
+                    dspf_tip, dspf_tip, dspf_even, self.tune.ER_span, L_main, 1.0
+                )
+            except clusterfunc.exceptions.ClusteringException:
+                pass
+        if spf_tip is None:
             spf_tip = clusterfunc.double.fixed(
                 dspf_tip, dspf_tip, self.njtip_min, L_main, 1.0
             )
