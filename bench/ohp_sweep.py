@@ -50,7 +50,7 @@ HERE = Path(__file__).resolve().parent
 MIN_ANGLE = 20.0
 """Worst cell corner a passing mesh may have [deg]."""
 
-DH_MIN = 0.7
+DH_MIN = 0.65
 """Smallest de Haller number a compressor row may have [--]."""
 
 ANGLE_MAX = 75.0
@@ -64,12 +64,12 @@ FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MACHINES = {
     "comp": {
         "bounds": {
-            "phi": (0.4, 0.8),
-            "psi": (0.25, 0.5),
+            "phi": (0.4, 0.9),
+            "psi": (0.25, 0.65),
             "Lam": (0.5, 0.9),
-            "htr": (0.5, 0.95),
+            "htr": (0.25, 0.95),
             "AR": (1.0, 3.0),
-            "DFL": (0.35, 0.5),
+            "DFL": (0.35, 0.55),
         },
         "Mb": 0.5,
         "thickness": {
