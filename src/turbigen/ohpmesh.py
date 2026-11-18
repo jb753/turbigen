@@ -355,6 +355,13 @@ class _Tune(Node):
     """Least factor each correction must reduce the strain by, while it is
     above `correct_refactor`, to keep its map."""
 
+    warm_span: bool = True
+    """With `correct_every`, the held sweeps of each control plane after the
+    first started from the plane next to it in span, as its held sweeps moved
+    it, and with its map. They converge to the same plane from any start, in
+    fewer from that one; the control planes are swept out from mid-span,
+    each from the one before."""
+
     correct_tol: float = 5e-3
     """With `correct_every`, the held sweeps stop, a chunk after the
     correction that finds it, once a correction moves no node more than this
@@ -1815,11 +1822,12 @@ class OHPassage(Mesher):
             (d - self.tune.freeze_le) / max(self.tune.freeze_le_ramp, 1e-12)
         )
 
-    def _sweeps(self, topo, X, n_sweep, plane):
+    def _sweeps(self, topo, X, n_sweep, plane, warm=None):
         """Return `X` after `n_sweep` sweeps by :meth:`_sweeps_once`, its blade
         nodes held as far as :meth:`_freeze_weight` says: slid, held where they
         are, or slid, moved back that far towards where they started, and
-        swept again held there."""
+        swept again held there, the held sweeps started from `warm`, a dict
+        they leave for the next plane to start from."""
         floors = self._O_floors(topo, X)
         w = self._freeze_weight(topo, plane)
         if self.tune.freeze_le > 0.0:
@@ -1838,7 +1846,7 @@ class OHPassage(Mesher):
             X = self._blade_toward(topo, X, X0, plane, w)
         if self.tune.n_sweep_held is not None:
             n_sweep = self.tune.n_sweep_held
-        return self._sweeps_once(topo, X, n_sweep, plane, True, floors)
+        return self._sweeps_once(topo, X, n_sweep, plane, True, floors, warm)
 
     def _O_floors(self, topo, X):
         """Return the least length of each cell of each O block line, from
@@ -1867,7 +1875,7 @@ class OHPassage(Mesher):
         xy[0][:, :, 0] = _at_arc(wall, np.mod(s, S)).astype(xy[0].dtype)
         return topo.gather(xy)
 
-    def _sweeps_once(self, topo, X, n_sweep, plane, frozen, floors=None):
+    def _sweeps_once(self, topo, X, n_sweep, plane, frozen, floors=None, warm=None):
         """Return `X` after `n_sweep` point-Jacobi sweeps of Winslow's equations.
 
         By :func:`ember.elliptic.winslow_sweeps`: each sweep the regular and
@@ -1959,7 +1967,18 @@ class OHPassage(Mesher):
         # plain sweep, the blade nodes and those outside them, which the
         # sweeps set by sliding and drawing square, held.
         held = np.concatenate((gid[:, 0], gid[:, 1]))
-        correct = None
+        warm = {} if warm is None else warm
+        # Started from a plane near this one as its held sweeps moved it, on
+        # the nodes they move, and with its map: these converge to where the
+        # blade nodes are held whatever they start from, so the start saves
+        # only the sweeps
+        X_in = np.asarray(X, dtype=float)
+        if warm.get("move") is not None:
+            free = np.ones(topo.n_node, dtype=bool)
+            free[held] = False
+            free[topo.fixed] = False
+            X = (X_in + warm["move"] * free[:, None]).astype(X.dtype)
+        correct = warm.get("map")
         last = np.inf
         done = 0
         converged = False
@@ -1992,6 +2011,9 @@ class OHPassage(Mesher):
                 f"Held sweeps not converged in {n_sweep}: last correction "
                 f"moved a node {move:.1e} of its cell"
             )
+        if self.tune.warm_span:
+            warm["map"] = correct
+            warm["move"] = np.asarray(X, dtype=float) - X_in
         return X
 
     def _slide_factors(self, plane, line, s_line, tree, w0):
@@ -2085,13 +2107,14 @@ class OHPassage(Mesher):
         offsets = [None] * len(spf)
         swept = [None] * len(spf)
 
-        def control(j):
+        def control(j, warm):
             """Sweep plane j, keeping its correction, blade fractions and O
             block offsets to carry to the planes between, or, with
-            `theta_lean`, the plane as swept for :func:`finish`."""
+            `theta_lean`, the plane as swept for :func:`finish`; its held
+            sweeps started from `warm`, which they leave for the next."""
             # Started from the algebraic plane as it is: the sweeps unfold
             # what folds in it without untangling first.
-            X = self._sweeps(topo, X_alg[j], self.tune.n_sweep, planes[j])
+            X = self._sweeps(topo, X_alg[j], self.tune.n_sweep, planes[j], warm)
             # Polished before it is refined too: what the refined plane's
             # polish is then left to do steps the spacing less across the O
             # block's outer face.
@@ -2202,8 +2225,15 @@ class OHPassage(Mesher):
                 for j, X in enumerate(X_smooth)
             ]
 
-        for j in j_ctrl:
-            control(j)
+        # Out from mid-span either way, each plane's held sweeps started from
+        # the one before, the nearest swept
+        k_mid = int(np.searchsorted(j_ctrl, j_mid))
+        warm_mid = {}
+        control(j_mid, warm_mid)
+        for run in (j_ctrl[k_mid + 1 :], j_ctrl[:k_mid][::-1]):
+            warm = dict(warm_mid)
+            for j in run:
+                control(j, warm)
         finish()
         X_smooth = carry()
         # The refined cells along each piece of the blade counted again
