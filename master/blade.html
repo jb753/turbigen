@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Blade shapes &#8212; turbigen 3.0.1.dev207+g5313f63b3 documentation</title>
+    <title>Blade shapes &#8212; turbigen 3.0.1.dev286+gfb524c500 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f8cd1ce8"></script>
+    <script src="_static/documentation_options.js?v=d9ea3977"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -34,7 +34,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev207+g5313f63b3</p>
+<p class="blurb">Version 3.0.1.dev286+gfb524c500</p>
 
 
 
@@ -93,6 +93,13 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.SectionDesign.dtheta"><code class="docutils literal notranslate"><span class="pre">dtheta</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.ReferenceLength"><code class="docutils literal notranslate"><span class="pre">ReferenceLength</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.ReferenceLength.LENGTHS"><code class="docutils literal notranslate"><span class="pre">LENGTHS</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.ReferenceLength.thickness"><code class="docutils literal notranslate"><span class="pre">thickness</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.ReferenceLength.tip"><code class="docutils literal notranslate"><span class="pre">tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.ReferenceLength.metres"><code class="docutils literal notranslate"><span class="pre">metres()</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.BladeCount"><code class="docutils literal notranslate"><span class="pre">BladeCount</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeCount.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
 </ul>
@@ -100,10 +107,11 @@
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.blade.BladeDesign"><code class="docutils literal notranslate"><span class="pre">BladeDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.sections"><code class="docutils literal notranslate"><span class="pre">sections</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.count"><code class="docutils literal notranslate"><span class="pre">count</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.tip_span"><code class="docutils literal notranslate"><span class="pre">tip_span</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.tip_chord"><code class="docutils literal notranslate"><span class="pre">tip_chord</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.tip_metre"><code class="docutils literal notranslate"><span class="pre">tip_metre</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.tip"><code class="docutils literal notranslate"><span class="pre">tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.reference_length"><code class="docutils literal notranslate"><span class="pre">reference_length</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_section"><code class="docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_sweep"><code class="docutils literal notranslate"><span class="pre">extrapolate_sweep</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.BladeDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
 </ul>
 </li>
@@ -138,6 +146,9 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.thicknesses"><code class="docutils literal notranslate"><span class="pre">thicknesses</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.placement"><code class="docutils literal notranslate"><span class="pre">placement</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.thickness_ref"><code class="docutils literal notranslate"><span class="pre">thickness_ref</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.extrapolate_section"><code class="docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.extrapolate_sweep"><code class="docutils literal notranslate"><span class="pre">extrapolate_sweep</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.n_section"><code class="docutils literal notranslate"><span class="pre">n_section</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.swept"><code class="docutils literal notranslate"><span class="pre">swept</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Blade.round_TE"><code class="docutils literal notranslate"><span class="pre">round_TE</span></code></a></li>
@@ -161,6 +172,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Row.tip_gap"><code class="docutils literal notranslate"><span class="pre">tip_gap</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Row.pitch"><code class="docutils literal notranslate"><span class="pre">pitch</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Row.evaluate_pitch_fraction"><code class="docutils literal notranslate"><span class="pre">evaluate_pitch_fraction()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.blade.Row.pitch_fraction_between"><code class="docutils literal notranslate"><span class="pre">pitch_fraction_between()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#camber-lines">Camber lines</a></li>
@@ -208,6 +220,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ThicknessDesign.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.Taylor"><code class="docutils literal notranslate"><span class="pre">Taylor</span></code></a><ul>
@@ -222,6 +235,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Taylor.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.ClarkThickness"><code class="docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a><ul>
@@ -239,6 +253,21 @@
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.ClarkThickness.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#turbigen.thickness.Impeller"><code class="docutils literal notranslate"><span class="pre">Impeller</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.t_max"><code class="docutils literal notranslate"><span class="pre">t_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.ellipse_ratio"><code class="docutils literal notranslate"><span class="pre">ellipse_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.m_taper"><code class="docutils literal notranslate"><span class="pre">m_taper</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.TE_ratio"><code class="docutils literal notranslate"><span class="pre">TE_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.t_TE"><code class="docutils literal notranslate"><span class="pre">t_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.m_nose"><code class="docutils literal notranslate"><span class="pre">m_nose</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.R_LE"><code class="docutils literal notranslate"><span class="pre">R_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#turbigen.thickness.Impeller.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -382,10 +411,10 @@ surface length;</p></li>
 <li><p><a class="reference internal" href="#turbigen.blade.DiffusionFactor" title="turbigen.blade.DiffusionFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">DiffusionFactor</span></code></a> (<code class="docutils literal notranslate"><span class="pre">DFL</span></code>) sets it from the Lieblein diffusion factor
 and the chord.</p></li>
 </ul>
-<p>A blade has one tip clearance, stated as a fraction of span
-(<a class="reference internal" href="#turbigen.blade.BladeDesign.tip_span" title="turbigen.blade.BladeDesign.tip_span"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tip_span</span></code></a>), a fraction of meridional chord
-(<a class="reference internal" href="#turbigen.blade.BladeDesign.tip_chord" title="turbigen.blade.BladeDesign.tip_chord"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tip_chord</span></code></a>) or an absolute length
-(<a class="reference internal" href="#turbigen.blade.BladeDesign.tip_metre" title="turbigen.blade.BladeDesign.tip_metre"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tip_metre</span></code></a>); giving more than one is an error.</p>
+<p>A blade’s sizes are fractions of reference lengths, named in its
+<a class="reference internal" href="#turbigen.blade.ReferenceLength" title="turbigen.blade.ReferenceLength"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReferenceLength</span></code></a>: the thickness of every section against one, and the
+tip clearance (<a class="reference internal" href="#turbigen.blade.BladeDesign.tip" title="turbigen.blade.BladeDesign.tip"><code class="xref py py-attr docutils literal notranslate"><span class="pre">tip</span></code></a>) against another. Each is the mid-span
+meridional chord, the mean, inlet or outlet span of the row, or a metre.</p>
 <p>Every section is stacked so that its camber line passes through the same
 angular position at the fraction <a class="reference internal" href="#turbigen.blade.BladeDesign.m_stack" title="turbigen.blade.BladeDesign.m_stack"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_stack</span></code></a> of its chord,
 whatever the recambers do to it. On top of that, each section may be placed:</p>
@@ -426,9 +455,12 @@ number of blades.</p></li>
 <span id="blade-evaluate"></span><h2>Evaluating a blade<a class="headerlink" href="#evaluating-a-blade" title="Link to this heading">¶</a></h2>
 <p>A <a class="reference internal" href="#turbigen.blade.Blade" title="turbigen.blade.Blade"><code class="xref py py-class docutils literal notranslate"><span class="pre">Blade</span></code></a> is addressed by span fraction, and every geometric quantity is
 read off it with an <code class="docutils literal notranslate"><span class="pre">evaluate_</span></code> method that interpolates the section designs
-field by field, holding the end sections’ values beyond them. The metal angles are the
-exception: only the recamber is interpolated, and the flow angle it is added to
-is evaluated at the span fraction asked for.
+field by field, and beyond the outermost sections holds their values, continues
+their slopes or continues their end cubics, as
+<a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_section" title="turbigen.blade.BladeDesign.extrapolate_section"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BladeDesign.extrapolate_section</span></code></a> says, or for the placement
+<a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_sweep" title="turbigen.blade.BladeDesign.extrapolate_sweep"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BladeDesign.extrapolate_sweep</span></code></a>. The metal angles are the exception: only
+the recamber is interpolated, and the flow angle it is added to is evaluated at
+the span fraction asked for.
 <a class="reference internal" href="#turbigen.blade.Blade.evaluate_section" title="turbigen.blade.Blade.evaluate_section"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_section()</span></code></a> gives the axial, radial and angular coordinates
 of the two surfaces and <a class="reference internal" href="#turbigen.blade.Blade.evaluate_camber" title="turbigen.blade.Blade.evaluate_camber"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_camber()</span></code></a> those of the camber line
 they are hung off; <a class="reference internal" href="#turbigen.blade.Blade.evaluate_chi" title="turbigen.blade.Blade.evaluate_chi"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_chi()</span></code></a> the leading and trailing metal
@@ -675,6 +707,41 @@ section turns the whole blade.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="turbigen.blade.ReferenceLength">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">ReferenceLength</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">thickness</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'chord_mid'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'span_avg'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.ReferenceLength" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
+<p>The lengths a blade’s sizes are fractions of.</p>
+<p>Each field names one of <a class="reference internal" href="#turbigen.blade.ReferenceLength.LENGTHS" title="turbigen.blade.ReferenceLength.LENGTHS"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LENGTHS</span></code></a>. A thickness is one length at
+every section, so the same number means the same thickness at hub and
+tip; the shape it is put into is laid out on each section’s own length.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.ReferenceLength.LENGTHS">
+<span class="sig-name descname"><span class="pre">LENGTHS</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.15)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">('chord_mid',</span> <span class="pre">'span_avg',</span> <span class="pre">'span_in',</span> <span class="pre">'span_out',</span> <span class="pre">'metre')</span></span><a class="headerlink" href="#turbigen.blade.ReferenceLength.LENGTHS" title="Link to this definition">¶</a></dt>
+<dd><p>The mid-span meridional chord of the row, the mean of its inlet and
+outlet spans, either one alone, or a metre.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.ReferenceLength.thickness">
+<span class="sig-name descname"><span class="pre">thickness</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'chord_mid'</span></span><a class="headerlink" href="#turbigen.blade.ReferenceLength.thickness" title="Link to this definition">¶</a></dt>
+<dd><p>What every section’s thickness distribution is a fraction of.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.ReferenceLength.tip">
+<span class="sig-name descname"><span class="pre">tip</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'span_avg'</span></span><a class="headerlink" href="#turbigen.blade.ReferenceLength.tip" title="Link to this definition">¶</a></dt>
+<dd><p>What <a class="reference internal" href="#turbigen.blade.BladeDesign.tip" title="turbigen.blade.BladeDesign.tip"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BladeDesign.tip</span></code></a> is a fraction of.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.blade.ReferenceLength.metres">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">metres</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean_line_row</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">row_annulus</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.ReferenceLength.metres" title="Link to this definition">¶</a></dt>
+<dd><p>Return the reference length <cite>name</cite> for one row [m].</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="turbigen.blade.BladeCount">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">BladeCount</span></span><a class="headerlink" href="#turbigen.blade.BladeCount" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
@@ -691,7 +758,7 @@ finished <a class="reference internal" href="#turbigen.blade.Blade" title="turbi
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.blade.BladeDesign">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">BladeDesign</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">sections</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#turbigen.blade.SectionDesign" title="turbigen.blade.SectionDesign"><span class="pre">SectionDesign</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">count</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#turbigen.blade.BladeCount" title="turbigen.blade.BladeCount"><span class="pre">BladeCount</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tip_span</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tip_chord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tip_metre</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.BladeDesign" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">BladeDesign</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">*,</span> <span class="pre">sections:</span> <span class="pre">tuple[~turbigen.blade.SectionDesign,</span> <span class="pre">...],</span> <span class="pre">count:</span> <span class="pre">~turbigen.blade.BladeCount,</span> <span class="pre">tip:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.0,</span> <span class="pre">reference_length:</span> <span class="pre">~turbigen.blade.ReferenceLength</span> <span class="pre">=</span> <span class="pre">&lt;factory&gt;,</span> <span class="pre">m_stack:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.5,</span> <span class="pre">extrapolate_section:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'const',</span> <span class="pre">extrapolate_sweep:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.BladeDesign" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Node</span></code></p>
 <p>Design variables for one blade row.</p>
 <p>The <a class="reference internal" href="#"><span class="doc">Blade shapes</span></a> page covers how the sections, count and clearance become
@@ -709,27 +776,45 @@ a shape.</p>
 </dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.tip_span">
-<span class="sig-name descname"><span class="pre">tip_span</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.tip_span" title="Link to this definition">¶</a></dt>
-<dd><p>Tip clearance as a fraction of span [–].</p>
+<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.tip">
+<span class="sig-name descname"><span class="pre">tip</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.tip" title="Link to this definition">¶</a></dt>
+<dd><p>Tip clearance, as a fraction of <a class="reference internal" href="#turbigen.blade.ReferenceLength.tip" title="turbigen.blade.ReferenceLength.tip"><code class="xref py py-attr docutils literal notranslate"><span class="pre">ReferenceLength.tip</span></code></a> [–].</p>
 </dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.tip_chord">
-<span class="sig-name descname"><span class="pre">tip_chord</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.tip_chord" title="Link to this definition">¶</a></dt>
-<dd><p>Tip clearance as a fraction of meridional chord [–].</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.tip_metre">
-<span class="sig-name descname"><span class="pre">tip_metre</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.0</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.tip_metre" title="Link to this definition">¶</a></dt>
-<dd><p>Tip clearance as an absolute length [m].</p>
+<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.reference_length">
+<span class="sig-name descname"><span class="pre">reference_length</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#turbigen.blade.ReferenceLength" title="turbigen.blade.ReferenceLength"><span class="pre">ReferenceLength</span></a></span><a class="headerlink" href="#turbigen.blade.BladeDesign.reference_length" title="Link to this definition">¶</a></dt>
+<dd><p>What the thickness and the tip clearance are fractions of.</p>
 </dd></dl>
 
 <dl class="py attribute">
 <dt class="sig sig-object py" id="turbigen.blade.BladeDesign.m_stack">
 <span class="sig-name descname"><span class="pre">m_stack</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.5</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.m_stack" title="Link to this definition">¶</a></dt>
 <dd><p>Normalised meridional position the sections are stacked at [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.extrapolate_section">
+<span class="sig-name descname"><span class="pre">extrapolate_section</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'const'</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.extrapolate_section" title="Link to this definition">¶</a></dt>
+<dd><p>How the sections’ parameters carry beyond the outermost sections,
+towards the endwalls: camber, thickness, recambers and edge positions
+alike. <code class="docutils literal notranslate"><span class="pre">&quot;const&quot;</span></code> holds the end sections’ values, <code class="docutils literal notranslate"><span class="pre">&quot;linear&quot;</span></code> continues
+their slopes across the span, and <code class="docutils literal notranslate"><span class="pre">&quot;cubic&quot;</span></code> continues the end cubics of
+the spline through them. Between the sections it is the same natural
+cubic whichever is chosen.</p>
+<p>Only <code class="docutils literal notranslate"><span class="pre">&quot;const&quot;</span></code> keeps every parameter inside what some section said.
+Carried on, a thickness can fall to zero or below at an endwall; the nose
+radius alone is clamped to its bounds, and nothing else is pulled back.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.BladeDesign.extrapolate_sweep">
+<span class="sig-name descname"><span class="pre">extrapolate_sweep</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#turbigen.blade.BladeDesign.extrapolate_sweep" title="Link to this definition">¶</a></dt>
+<dd><p>How what places a section alone, its edge offsets
+<a class="reference internal" href="#turbigen.blade.SectionDesign.dm_LE" title="turbigen.blade.SectionDesign.dm_LE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dm_LE</span></code></a> and <a class="reference internal" href="#turbigen.blade.SectionDesign.dm_TE" title="turbigen.blade.SectionDesign.dm_TE"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dm_TE</span></code></a> and its
+rotation <a class="reference internal" href="#turbigen.blade.SectionDesign.dtheta" title="turbigen.blade.SectionDesign.dtheta"><code class="xref py py-attr docutils literal notranslate"><span class="pre">dtheta</span></code></a>, carries beyond the outermost
+sections, in the same terms; null for as <a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_section" title="turbigen.blade.BladeDesign.extrapolate_section"><code class="xref py py-attr docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a> says. A swept
+edge held constant towards an endwall stays swept all the way to it.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -848,7 +933,7 @@ separates above about 0.6.</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.blade.Blade">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">Blade</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus" title="turbigen.annulus.RowAnnulus"><span class="pre">RowAnnulus</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean_line_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spanwise</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="spanwise.html#turbigen.spanwise.SpanwiseDesign" title="turbigen.spanwise.SpanwiseDesign"><span class="pre">SpanwiseDesign</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">i_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cambers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thicknesses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">placement</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade" title="Link to this definition">¶</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.blade.</span></span><span class="sig-name descname"><span class="pre">Blade</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">row_annulus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus" title="turbigen.annulus.RowAnnulus"><span class="pre">RowAnnulus</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dchi</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean_line_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine" title="turbigen.meanline.MeanLine"><span class="pre">MeanLine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">spanwise</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="spanwise.html#turbigen.spanwise.SpanwiseDesign" title="turbigen.spanwise.SpanwiseDesign"><span class="pre">SpanwiseDesign</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">i_row</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cambers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thicknesses</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_stack</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">placement</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">thickness_ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">extrapolate_section</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">extrapolate_sweep</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Blade" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>The shape of one blade.</p>
 <p>Frozen, like every other result: it is what the design produced against a
@@ -918,6 +1003,28 @@ are <a class="reference internal" href="#turbigen.blade.Blade.spf" title="turbig
 <span class="sig-name descname"><span class="pre">placement</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.placement" title="Link to this definition">¶</a></dt>
 <dd><p>Edge offsets and rotation of each section, <code class="docutils literal notranslate"><span class="pre">(dm_LE,</span> <span class="pre">dm_TE,</span> <span class="pre">dtheta)</span></code>,
 shape (n_section, 3); see <a class="reference internal" href="#turbigen.blade.SectionDesign" title="turbigen.blade.SectionDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SectionDesign</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.thickness_ref">
+<span class="sig-name descname"><span class="pre">thickness_ref</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.thickness_ref" title="Link to this definition">¶</a></dt>
+<dd><p>Length the thickness distributions are written as fractions of [m].</p>
+<p>One for the whole blade, so a thickness means the same length at every
+section; see <a class="reference internal" href="#turbigen.blade.ReferenceLength" title="turbigen.blade.ReferenceLength"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReferenceLength</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.extrapolate_section">
+<span class="sig-name descname"><span class="pre">extrapolate_section</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.extrapolate_section" title="Link to this definition">¶</a></dt>
+<dd><p>How the sections’ parameters carry beyond the outermost sections; see
+<a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_section" title="turbigen.blade.BladeDesign.extrapolate_section"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BladeDesign.extrapolate_section</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.blade.Blade.extrapolate_sweep">
+<span class="sig-name descname"><span class="pre">extrapolate_sweep</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><a class="headerlink" href="#turbigen.blade.Blade.extrapolate_sweep" title="Link to this definition">¶</a></dt>
+<dd><p>How the edge offsets and rotation carry beyond them, null for as
+<a class="reference internal" href="#turbigen.blade.Blade.extrapolate_section" title="turbigen.blade.Blade.extrapolate_section"><code class="xref py py-attr docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a> says; see <a class="reference internal" href="#turbigen.blade.BladeDesign.extrapolate_sweep" title="turbigen.blade.BladeDesign.extrapolate_sweep"><code class="xref py py-attr docutils literal notranslate"><span class="pre">BladeDesign.extrapolate_sweep</span></code></a>.</p>
 </dd></dl>
 
 <dl class="py property">
@@ -1187,6 +1294,33 @@ wants the surface’s.</p></li>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p><strong>frac</strong> – Pitch fraction [–], the broadcast shape of the inputs.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.blade.Row.pitch_fraction_between">
+<span class="sig-name descname"><span class="pre">pitch_fraction_between</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">upper</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lower</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">snap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.blade.Row.pitch_fraction_between" title="Link to this definition">¶</a></dt>
+<dd><p>Return how far across the passage points lie, given its surfaces.</p>
+<p>As <a class="reference internal" href="#turbigen.blade.Row.evaluate_pitch_fraction" title="turbigen.blade.Row.evaluate_pitch_fraction"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_pitch_fraction()</span></code></a>, for a caller that has already
+found the blade’s <cite>upper</cite> and <cite>lower</cite> surface angles at the points,
+and with no test for the points being between the blade’s edges.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>upper</strong> (<em>array_like</em>) – Angular coordinates of the blade’s upper and lower surfaces at
+the points [rad].</p></li>
+<li><p><strong>lower</strong> (<em>array_like</em>) – Angular coordinates of the blade’s upper and lower surfaces at
+the points [rad].</p></li>
+<li><p><strong>t</strong> (<em>array_like</em>) – Angular coordinate [rad].</p></li>
+<li><p><strong>snap</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a>) – As for <a class="reference internal" href="#turbigen.blade.Row.evaluate_pitch_fraction" title="turbigen.blade.Row.evaluate_pitch_fraction"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate_pitch_fraction()</span></code></a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>frac</strong> – Pitch fraction [–], NaN inside a blade unless <cite>snap</cite>.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>ndarray</p>
@@ -1490,6 +1624,9 @@ Bernstein polynomial in shape space per surface, so the aerofoil need not be
 symmetric about its camber line. A distribution answers with a half-thickness
 for each surface, suction first, and one that says nothing about sides gives
 the same number twice.</p>
+<p><a class="reference internal" href="#turbigen.thickness.Impeller" title="turbigen.thickness.Impeller"><code class="xref py py-class docutils literal notranslate"><span class="pre">Impeller</span></code></a> (<code class="docutils literal notranslate"><span class="pre">impeller</span></code>) is the radial compressor blade of
+<span class="bibtex-citation" id="id8">[<a class="reference internal" href="references.html#id10" title="J. Brind. Data-Driven Radial Compressor Design Space Mapping. J. Turbomach., 2024. doi:10.1115/1.4066229.">Brind, 2024</a>]</span>: an elliptic nose, constant thickness, and a parabolic taper
+to a blunt trailing edge.</p>
 </section>
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.thickness.ThicknessDesign">
@@ -1552,13 +1689,24 @@ has all of its thickness blended, which is still perpendicular at both
 ends.</p>
 </dd></dl>
 
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ThicknessDesign.scaled">
+<span class="sig-name descname"><span class="pre">scaled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">factor</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ThicknessDesign.scaled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this distribution with each of its lengths times <cite>factor</cite>.</p>
+<p>Its lengths are fractions of some length, and this re-expresses them as
+fractions of another: a blade writes them against a reference length
+and evaluates them against the meridional length of the section they
+are put on. Ratios, positions along the chord and angles are left
+alone, so the shape comes out as written at any section length.</p>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="turbigen.thickness.Taylor">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.thickness.</span></span><span class="sig-name descname"><span class="pre">Taylor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">round_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">R_LE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_max</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_tmax</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa_max</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tanwedge</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Taylor" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a></p>
-<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id8">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
+<p>Two cubic splines in shape space, after <span class="bibtex-citation" id="id9">[<a class="reference internal" href="references.html#id2" title="J. V. Taylor and R. J. Miller. Competing Three-Dimensional Mechanisms in Compressor Flows. J. Turbomach., 2016. doi:10.1115/1.4034685.">Taylor and Miller, 2016</a>]</span>.</p>
 <p>The splines meet at the point of maximum thickness, where the value, slope
 and curvature are all continuous.</p>
 <dl class="py attribute">
@@ -1656,6 +1804,17 @@ them.</p>
 <p>Zero unless a distribution says otherwise: one with no ramp of its own
 has all of its thickness blended, which is still perpendicular at both
 ends.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.Taylor.scaled">
+<span class="sig-name descname"><span class="pre">scaled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">factor</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Taylor.scaled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this distribution with each of its lengths times <cite>factor</cite>.</p>
+<p>Its lengths are fractions of some length, and this re-expresses them as
+fractions of another: a blade writes them against a reference length
+and evaluates them against the meridional length of the section they
+are put on. Ratios, positions along the chord and angles are left
+alone, so the shape comes out as written at any section length.</p>
 </dd></dl>
 
 </dd></dl>
@@ -1866,6 +2025,119 @@ them.</p>
 <p>Zero unless a distribution says otherwise: one with no ramp of its own
 has all of its thickness blended, which is still perpendicular at both
 ends.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.ClarkThickness.scaled">
+<span class="sig-name descname"><span class="pre">scaled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">factor</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.ClarkThickness.scaled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this distribution with each of its lengths times <cite>factor</cite>.</p>
+<p>Its lengths are fractions of some length, and this re-expresses them as
+fractions of another: a blade writes them against a reference length
+and evaluates them against the meridional length of the section they
+are put on. Ratios, positions along the chord and angles are left
+alone, so the shape comes out as written at any section length.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">turbigen.thickness.</span></span><span class="sig-name descname"><span class="pre">Impeller</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">round_TE</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_max</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ellipse_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m_taper</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">TE_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.35</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Impeller" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#turbigen.thickness.ThicknessDesign" title="turbigen.thickness.ThicknessDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThicknessDesign</span></code></a></p>
+<p>An elliptic nose, a constant thickness, and a parabolic taper.</p>
+<p>The shape of a radial compressor impeller blade, after
+<span class="bibtex-citation" id="id10">[<a class="reference internal" href="references.html#id10" title="J. Brind. Data-Driven Radial Compressor Design Space Mapping. J. Turbomach., 2024. doi:10.1115/1.4066229.">Brind, 2024</a>]</span>: a nose approximating an ellipse of the stated axis
+ratio, then the maximum thickness held constant, then a parabola down to
+a blunt trailing edge from <a class="reference internal" href="#turbigen.thickness.Impeller.m_taper" title="turbigen.thickness.Impeller.m_taper"><code class="xref py py-attr docutils literal notranslate"><span class="pre">m_taper</span></code></a> of chord.</p>
+<p>The nose is <code class="docutils literal notranslate"><span class="pre">sqrt(1</span> <span class="pre">-</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">s)^3</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">s))</span></code> over its length <code class="docutils literal notranslate"><span class="pre">s</span></code> from 0
+to 1. Against a true ellipse, <code class="docutils literal notranslate"><span class="pre">sqrt(1</span> <span class="pre">-</span> <span class="pre">(1</span> <span class="pre">-</span> <span class="pre">s)^2)</span></code>, it has the same
+length and the same leading edge radius, but its slope and curvature both
+fall to zero where it meets the constant thickness, rather than leaving a
+step in curvature there. It thickens monotonically all the way.</p>
+<p>The parabola leaves the constant thickness with zero slope, as the paper
+states it, so curvature steps there rather than at the nose.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.type">
+<span class="sig-name descname"><span class="pre">type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.ClassVar" title="(in Python v3.15)"><span class="pre">ClassVar</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'impeller'</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.type" title="Link to this definition">¶</a></dt>
+<dd><p>Name this class is selected by.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.t_max">
+<span class="sig-name descname"><span class="pre">t_max</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><a class="headerlink" href="#turbigen.thickness.Impeller.t_max" title="Link to this definition">¶</a></dt>
+<dd><p>Maximum thickness, normalised by meridional chord [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.ellipse_ratio">
+<span class="sig-name descname"><span class="pre">ellipse_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">4.0</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.ellipse_ratio" title="Link to this definition">¶</a></dt>
+<dd><p>Length of the nose over its half thickness, being the axis ratio of
+the ellipse it approximates [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.m_taper">
+<span class="sig-name descname"><span class="pre">m_taper</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.6</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.m_taper" title="Link to this definition">¶</a></dt>
+<dd><p>Normalised meridional position the thickness starts to fall [–].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.TE_ratio">
+<span class="sig-name descname"><span class="pre">TE_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.35</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.TE_ratio" title="Link to this definition">¶</a></dt>
+<dd><p>Trailing edge thickness as a fraction of <a class="reference internal" href="#turbigen.thickness.Impeller.t_max" title="turbigen.thickness.Impeller.t_max"><code class="xref py py-attr docutils literal notranslate"><span class="pre">t_max</span></code></a> [–].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.t_TE">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">t_TE</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.t_TE" title="Link to this definition">¶</a></dt>
+<dd><p>Trailing edge thickness, the total due to both sides [–].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.m_nose">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">m_nose</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.m_nose" title="Link to this definition">¶</a></dt>
+<dd><p>Normalised meridional length of the nose [–].</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.R_LE">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">R_LE</span></span><a class="headerlink" href="#turbigen.thickness.Impeller.R_LE" title="Link to this definition">¶</a></dt>
+<dd><p>Leading edge radius, normalised by meridional chord [–].</p>
+<p>The same as the ellipse’s, the square of its half thickness over its
+length.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.thick">
+<span class="sig-name descname"><span class="pre">thick</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Impeller.thick" title="Link to this definition">¶</a></dt>
+<dd><p>Return half-thickness at normalised meridional distance <cite>m</cite>.</p>
+<p>The trailing edge thickness is the total due to both sides, so half of
+it is returned at the trailing edge.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.ramp_TE">
+<span class="sig-name descname"><span class="pre">ramp_TE</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Impeller.ramp_TE" title="Link to this definition">¶</a></dt>
+<dd><p>Return the trailing edge ramp within each surface’s half-thickness.</p>
+<p>The part of <code class="xref py py-meth docutils literal notranslate"><span class="pre">thick_both()</span></code> that a blade always hangs perpendicular
+to the camber line, the rest being blended toward circumferential on
+the pressure surface — see <a class="reference internal" href="#module-turbigen.blade" title="turbigen.blade"><code class="xref py py-mod docutils literal notranslate"><span class="pre">turbigen.blade</span></code></a>. The same on both
+surfaces, since a trailing edge thickness is split evenly between
+them.</p>
+<p>Zero unless a distribution says otherwise: one with no ramp of its own
+has all of its thickness blended, which is still perpendicular at both
+ends.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="turbigen.thickness.Impeller.scaled">
+<span class="sig-name descname"><span class="pre">scaled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">factor</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#turbigen.thickness.Impeller.scaled" title="Link to this definition">¶</a></dt>
+<dd><p>Return this distribution with each of its lengths times <cite>factor</cite>.</p>
+<p>Its lengths are fractions of some length, and this re-expresses them as
+fractions of another: a blade writes them against a reference length
+and evaluates them against the meridional length of the section they
+are put on. Ratios, positions along the chord and angles are left
+alone, so the shape comes out as written at any section length.</p>
 </dd></dl>
 
 </dd></dl>

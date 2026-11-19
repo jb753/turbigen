@@ -48,11 +48,15 @@ command typed at the shell is not. That tells apart the three names that are
 both, so ``iterate:`` is what the file holds and :ref:`iterate <usage-iterate>`
 is what runs it.
 
-Two more top-level keys are not phases of the design: ``include:``, described
-below, and ``result:``, which a finished run writes. Under ``result:`` sit the
-mixed-out mean line the CFD achieved, the entropy rise the mixing-out itself
-introduced at each station under ``Ds_mix:``, the error each iterator last
-measured, and, when the config asks for them under
+Three more top-level keys are not phases of the design: ``include:``,
+described below; ``notes:``, a mapping of free text read by nothing and
+carried into every config :program:`turbigen` writes, for recording where a
+case came from where a YAML comment would be lost; and ``result:``, which a
+finished run writes. Under ``result:`` sit what ran it under ``run:`` --- the
+turbigen and ember versions as installed, the host, and the start, finish and
+elapsed wall time --- the mixed-out mean line the CFD achieved, the entropy
+rise the mixing-out itself introduced at each station under ``Ds_mix:``, the
+error each iterator last measured, and, when the config asks for them under
 :ref:`metrics: <config-metrics>`, any
 quantities measured from the solved field --- a surface integral, a plane
 average, a loss breakdown. Each :ref:`metrics: <config-metrics>` entry is

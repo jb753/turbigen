@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>User manual &#8212; turbigen 3.0.1.dev207+g5313f63b3 documentation</title>
+    <title>User manual &#8212; turbigen 3.0.1.dev286+gfb524c500 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=f6a572b4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=900ee36f" />
-    <script src="_static/documentation_options.js?v=f8cd1ce8"></script>
+    <script src="_static/documentation_options.js?v=d9ea3977"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <link rel="index" title="Index" href="genindex.html" />
@@ -32,7 +32,7 @@
 
 
 
-<p class="blurb">Version 3.0.1.dev207+g5313f63b3</p>
+<p class="blurb">Version 3.0.1.dev286+gfb524c500</p>
 
 
 
@@ -259,6 +259,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.set_span_r_rms"><code class="docutils literal notranslate"><span class="pre">set_span_r_rms()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.get_characteristic_station"><code class="docutils literal notranslate"><span class="pre">get_characteristic_station()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.get_referenced_fluid"><code class="docutils literal notranslate"><span class="pre">get_referenced_fluid()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.interpolate_to"><code class="docutils literal notranslate"><span class="pre">interpolate_to()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.to_dict"><code class="docutils literal notranslate"><span class="pre">to_dict()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="meanline.html#turbigen.meanline.MeanLine.Am"><code class="docutils literal notranslate"><span class="pre">Am</span></code></a></li>
@@ -314,14 +315,19 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_SEED_M"><code class="docutils literal notranslate"><span class="pre">N_SEED_M</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_SEED_SPF"><code class="docutils literal notranslate"><span class="pre">N_SEED_SPF</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_NEWTON"><code class="docutils literal notranslate"><span class="pre">N_NEWTON</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_DUCT"><code class="docutils literal notranslate"><span class="pre">N_DUCT</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_ARC"><code class="docutils literal notranslate"><span class="pre">N_ARC</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.TOL_ENDS"><code class="docutils literal notranslate"><span class="pre">TOL_ENDS</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.ULP_ENDS"><code class="docutils literal notranslate"><span class="pre">ULP_ENDS</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.N_ROW_AREA"><code class="docutils literal notranslate"><span class="pre">N_ROW_AREA</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.BETA_RADIAL"><code class="docutils literal notranslate"><span class="pre">BETA_RADIAL</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus"><code class="docutils literal notranslate"><span class="pre">RowAnnulus</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_xr_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.m_LE"><code class="docutils literal notranslate"><span class="pre">m_LE</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.chord"><code class="docutils literal notranslate"><span class="pre">chord</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_mspf_annulus"><code class="docutils literal notranslate"><span class="pre">evaluate_mspf_annulus</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.section_line"><code class="docutils literal notranslate"><span class="pre">section_line()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_swept_m"><code class="docutils literal notranslate"><span class="pre">evaluate_swept_m()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_unswept_m"><code class="docutils literal notranslate"><span class="pre">evaluate_unswept_m()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.RowAnnulus.evaluate_mspf"><code class="docutils literal notranslate"><span class="pre">evaluate_mspf()</span></code></a></li>
@@ -333,7 +339,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.curves_merged"><code class="docutils literal notranslate"><span class="pre">curves_merged</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.n_row"><code class="docutils literal notranslate"><span class="pre">n_row</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.m_inviscid"><code class="docutils literal notranslate"><span class="pre">m_inviscid</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.stationary_hub_out"><code class="docutils literal notranslate"><span class="pre">stationary_hub_out</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.n_segment"><code class="docutils literal notranslate"><span class="pre">n_segment</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.m_max"><code class="docutils literal notranslate"><span class="pre">m_max</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_xr"><code class="docutils literal notranslate"><span class="pre">evaluate_xr()</span></code></a></li>
@@ -344,18 +350,19 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.r_rms"><code class="docutils literal notranslate"><span class="pre">r_rms</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.htr"><code class="docutils literal notranslate"><span class="pre">htr</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_span"><code class="docutils literal notranslate"><span class="pre">evaluate_span()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_Am"><code class="docutils literal notranslate"><span class="pre">evaluate_Am()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.evaluate_chords"><code class="docutils literal notranslate"><span class="pre">evaluate_chords()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.extract_row"><code class="docutils literal notranslate"><span class="pre">extract_row()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.Annulus.to_string"><code class="docutils literal notranslate"><span class="pre">to_string()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.AnnulusDesign"><code class="docutils literal notranslate"><span class="pre">AnnulusDesign</span></code></a><ul>
-<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AnnulusDesign.m_inviscid"><code class="docutils literal notranslate"><span class="pre">m_inviscid</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AnnulusDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus"><code class="docutils literal notranslate"><span class="pre">PchipAnnulus</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.nozzle_ratio"><code class="docutils literal notranslate"><span class="pre">nozzle_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.nozzle_start"><code class="docutils literal notranslate"><span class="pre">nozzle_start</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.merge_weight"><code class="docutils literal notranslate"><span class="pre">merge_weight</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.PchipAnnulus.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
@@ -373,6 +380,11 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.AR_row"><code class="docutils literal notranslate"><span class="pre">AR_row</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.AR_gap"><code class="docutils literal notranslate"><span class="pre">AR_gap</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.AspectRatio.segment_lengths"><code class="docutils literal notranslate"><span class="pre">segment_lengths()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="annulus.html#turbigen.annulus.ImpellerAnnulus"><code class="docutils literal notranslate"><span class="pre">ImpellerAnnulus</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.ImpellerAnnulus.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="annulus.html#turbigen.annulus.ImpellerAnnulus.nozzle_start"><code class="docutils literal notranslate"><span class="pre">nozzle_start</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -444,6 +456,13 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.SectionDesign.dtheta"><code class="docutils literal notranslate"><span class="pre">dtheta</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.ReferenceLength"><code class="docutils literal notranslate"><span class="pre">ReferenceLength</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.ReferenceLength.LENGTHS"><code class="docutils literal notranslate"><span class="pre">LENGTHS</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.ReferenceLength.thickness"><code class="docutils literal notranslate"><span class="pre">thickness</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.ReferenceLength.tip"><code class="docutils literal notranslate"><span class="pre">tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.ReferenceLength.metres"><code class="docutils literal notranslate"><span class="pre">metres()</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.BladeCount"><code class="docutils literal notranslate"><span class="pre">BladeCount</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeCount.count"><code class="docutils literal notranslate"><span class="pre">count()</span></code></a></li>
 </ul>
@@ -451,10 +470,11 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign"><code class="docutils literal notranslate"><span class="pre">BladeDesign</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.sections"><code class="docutils literal notranslate"><span class="pre">sections</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.count"><code class="docutils literal notranslate"><span class="pre">count</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_span"><code class="docutils literal notranslate"><span class="pre">tip_span</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_chord"><code class="docutils literal notranslate"><span class="pre">tip_chord</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip_metre"><code class="docutils literal notranslate"><span class="pre">tip_metre</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.tip"><code class="docutils literal notranslate"><span class="pre">tip</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.reference_length"><code class="docutils literal notranslate"><span class="pre">reference_length</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.extrapolate_section"><code class="docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.extrapolate_sweep"><code class="docutils literal notranslate"><span class="pre">extrapolate_sweep</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.BladeDesign.design"><code class="docutils literal notranslate"><span class="pre">design()</span></code></a></li>
 </ul>
 </li>
@@ -489,6 +509,9 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.thicknesses"><code class="docutils literal notranslate"><span class="pre">thicknesses</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.m_stack"><code class="docutils literal notranslate"><span class="pre">m_stack</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.placement"><code class="docutils literal notranslate"><span class="pre">placement</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.thickness_ref"><code class="docutils literal notranslate"><span class="pre">thickness_ref</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.extrapolate_section"><code class="docutils literal notranslate"><span class="pre">extrapolate_section</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.extrapolate_sweep"><code class="docutils literal notranslate"><span class="pre">extrapolate_sweep</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.n_section"><code class="docutils literal notranslate"><span class="pre">n_section</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.swept"><code class="docutils literal notranslate"><span class="pre">swept</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Blade.round_TE"><code class="docutils literal notranslate"><span class="pre">round_TE</span></code></a></li>
@@ -512,6 +535,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.tip_gap"><code class="docutils literal notranslate"><span class="pre">tip_gap</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.pitch"><code class="docutils literal notranslate"><span class="pre">pitch</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.evaluate_pitch_fraction"><code class="docutils literal notranslate"><span class="pre">evaluate_pitch_fraction()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.blade.Row.pitch_fraction_between"><code class="docutils literal notranslate"><span class="pre">pitch_fraction_between()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#camber-lines">Camber lines</a></li>
@@ -559,6 +583,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ThicknessDesign.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor"><code class="docutils literal notranslate"><span class="pre">Taylor</span></code></a><ul>
@@ -573,6 +598,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Taylor.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness"><code class="docutils literal notranslate"><span class="pre">ClarkThickness</span></code></a><ul>
@@ -590,6 +616,21 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.tau"><code class="docutils literal notranslate"><span class="pre">tau()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.thick_both"><code class="docutils literal notranslate"><span class="pre">thick_both()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.ClarkThickness.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller"><code class="docutils literal notranslate"><span class="pre">Impeller</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.type"><code class="docutils literal notranslate"><span class="pre">type</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.t_max"><code class="docutils literal notranslate"><span class="pre">t_max</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.ellipse_ratio"><code class="docutils literal notranslate"><span class="pre">ellipse_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.m_taper"><code class="docutils literal notranslate"><span class="pre">m_taper</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.TE_ratio"><code class="docutils literal notranslate"><span class="pre">TE_ratio</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.t_TE"><code class="docutils literal notranslate"><span class="pre">t_TE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.m_nose"><code class="docutils literal notranslate"><span class="pre">m_nose</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.R_LE"><code class="docutils literal notranslate"><span class="pre">R_LE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.thick"><code class="docutils literal notranslate"><span class="pre">thick()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.ramp_TE"><code class="docutils literal notranslate"><span class="pre">ramp_TE()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="blade.html#turbigen.thickness.Impeller.scaled"><code class="docutils literal notranslate"><span class="pre">scaled()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -599,7 +640,7 @@ usage instructions, descriptions of the theory involved, and listings of configu
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="changelog.html#v3-1-0">v3.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="changelog.html#v4-0-0">v4.0.0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="changelog.html#v3-0-0">v3.0.0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="changelog.html#v2-6-0">v2.6.0</a></li>
 <li class="toctree-l2"><a class="reference internal" href="changelog.html#v2-5-0">v2.5.0</a></li>

@@ -1,26 +1,69 @@
 Changelog
 =========
 
-v3.1.0
+v4.0.0
 ^^^^^^
 
-* Add a ``spanwise:`` key for the flow the blades are designed against, a power-law vortex or splines of meridional velocity and swirl through the blade sections, with ``spanwise_inflow``, ``spanwise_work`` and ``spanwise_swirl`` iterators and a ``spanwise_targets`` plot; blades lose ``vortex_exponent``, now ``spanwise: {type: vortex_expon, n: ...}``
-* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades, meshed by both the H and the passage meshers; blades lose ``theta_offset``, now ``dtheta`` on every section
-* Cut planes belong to the machine and clear the furthest a swept edge reaches; a design with no room for them between two rows fails
-* The initial guess turns the flow between a blade's swept edges at each span, and bridges the gaps from them
-* Evaluate every blade section at one fixed set of chordwise points, so a point's position no longer depends on what else was asked for; ``evaluate_section`` returns each point's annulus meridional coordinate as a fourth row and loses ``nchord`` and ``m``, and ``evaluate_camber(m=...)`` interpolates the full curve
-* Share pressure-side thickness between the camber normal and the circumferential direction, after Clark (2019), so thick sections do not fold
-* Step every iterator on its declared gain, and drop the Broyden update, which no iterator used
-* Let ``clark_profile`` recamber the leading edge against the difference in nose loading, in place of an ``incidence`` iterator
-* Improve H-meshing in pinched tips, and add experimental gridded tip
+* Add an elliptic smoothed OH mesh option
+* Replace ``annulus.m_inviscid`` with ``mesh.endwalls``, inviscid or
+  stationary stretches of the inlet and outlet duct walls
+* Add a radial compressor mean-line design and example, with an impeller
+  thickness distribution
+* One-dimensional initial guesses can use annulus data to make them
+  conserve mass better
+* Set the outlet duct area along its length, and add an ``impeller`` annulus
+  for a radial impeller: area linear in radius through the row, and a
+  straight, stationary diffuser hub
+* Unify blade tip clearance and thickness scaling
+* Simplify the cusp to work at any pitch angle, switched by a single ``cusp``
+  flag with ``frac_TE`` spacing, replacing the ``dm_TE``, ``ni_TE`` and
+  ``ni_cusp`` options
+* H mesh tip gap uniform in metres along the chord, and blade wall cell sized
+  normal to the surface rather than circumferentially
+* Faster and more robust initial guess near walls and leading edges
+* Replace the ``--restart`` flag with a ``restart:`` key in the config file, to
+  keep reproducible
+* Add TS3 solver back again
+* Run characteristics into stall using a choked exit nozzle
+* Sweep one speedline per ``chic`` run at ``chic.speed``, solving only points
+  on the characteristic
+* ``chic.solve_datum: false`` takes the design point from a converged
+  ``restart:`` field instead of solving it again
+* Throttled runs start from the exit pressure the last iteration settled at,
+  or that the run beside ``restart:`` reached
+* Chain queued jobs with ``--after``, and print each submitted job's id and
+  run directory with ``--parsable``
+* Free-text ``notes:`` on a case, carried into every config written from it
+* Each result records the versions, host and timings of the solve
+* Optionally keep the whole grid of every solve with ``--grid``, not only one
+  that diverged
+* Plotters for yplus, shape factor, mesh, blade thickness, pitch-averaged
+  profiles, traverse contours
+* Add rounded trailing edge option, only compatible with OH meshes
+* Factor out spanwise flow as a separate object, defaulting to old vortex
+  exponent but also allowing iteration of spanwise work and swirl
+* Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades,
+  dropping ``theta_offset``
+* Blades extrapolate beyond their outermost sections held, linear or cubic,
+  by ``extrapolate_section``, and their sweep and lean separately by
+  ``extrapolate_sweep``
+* Cut planes belong to the machine and clear swept LE or TE
+* Initial guess turns the flow between a blade's swept edges at each span
+* Evaluate every blade section at one fixed set of chordwise points, so caller
+  cannot specify different ones
+* Share pressure-side thickness between the camber normal and the
+  circumferential directions to prevent folding
+* Drop Broyden updates and keep Jacobian diagonal with assumed gain
+* Improve H-meshing in pinched tips, and add gridded tip
 * Add H-mesh setting to control aspect ratio at mixing planes
-* Add Bernstein and circluar-arc, camber lines
+* Add Bernstein and circular-arc camber lines
 * Add Clark camber and thickness distributions with inverse design iterator
 * Repeating inlet profiles now support a proper orthogonal basis
 * Add ``metrics:`` key for extra measurements of the 3D flow field
-* Record mixing loss next to the mixed-out mean line data
+* Record mixing loss with the mixed-out mean line data
 * Allow for soft starts, and retrying a diverged run with soft settings
 * Fix incidence iterator to recamber all sections
+* Fix bug with restart file paths on Windows
 
 v3.0.0
 ^^^^^^
@@ -54,7 +97,7 @@ v2.5.0
 * Scripts to automate rebuilding the compiled Fortran code
 * Save config to iteration directories before running the solver
 * Split long Fortran routines into smaller subroutines
-* Write out metdata for TS3 probes into a yaml file
+* Write out metadata for TS3 probes into a yaml file
 * Allow per block overrides of block variables in TS3
 * Implement general unsteady inlet boundary condition
 * Functions for post-processing TS3 unsteady probes and wave separation
@@ -165,7 +208,7 @@ v1.9.0
 * Put rotational speeds in AutoGrid geomTurbo file when OH meshing
 * Support TS3 cooling patches
 * Method to allow trimming of grid blocks in pre-processing
-* Compatability fixes for numpy 2 and pin dependency versions
+* Compatibility fixes for numpy 2 and pin dependency versions
 * Add TS4 halo_implementation setting
 * Fix bug with zero wall distance on non-matching patches
 * Check patch indices are consistent with block size before writing TS3 input
@@ -178,7 +221,7 @@ v1.8.0
 * Overhaul post processing with separate functions for all plots
 * Rewrite LE incidence calculation to work generally for axial and radial
 * Allow off-design operation with rpm_adjust and mass_adjust settings
-* Setting for inviscid boudary condition on zero-radius rod
+* Setting for inviscid boundary condition on zero-radius rod
 * When running installed turbomachine, reuse installed initial guess
 * Allow install function to return inverse design variables to mean line
 * Add rounded trailing edge and fillet options to autogrid meshing
@@ -216,7 +259,8 @@ v1.6.0
 * Use improved clustering functions for H-meshing
 * Plot pressure distributions
 * Implement loading mean-line, annulus, and installation modules from file
-* Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to change body force)
+* Allow arbitrary external monitoring scripts in TS4 simulations (e.g. to
+  change body force)
 * Configuration option for maximum H-mesh free stream skew
 * Fix AutoGrid patch matching bug
 * Fix bug with TS4 cfl_ramp_en not set
