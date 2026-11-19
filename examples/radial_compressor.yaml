@@ -30,9 +30,9 @@ mean_line:
   htr1: 0.5
   DH: 1.0
   Alpha2_rel: -60.0
-  # Guessed loss, which the mean_line iterator below replaces with what the
-  # CFD actually produces
-  Ys: 0.07
+  # Loss the CFD produced at this design; the mean_line iterator below keeps
+  # it in step with the solution
+  Ys: 0.0305
 
 annulus:
   # Area through the impeller linear in mid-line radius, rather than held
@@ -58,11 +58,11 @@ blades:
       - spf: 0.1
         # Leading edge a few degrees more tangential than the mean line's,
         # from the incidence a run measured. Trailing edge
-        # 15 degrees less backswept, against the slip of seven blades: at +10
-        # the exit flow was 6.9 degrees under-turned, and each degree more
-        # recovers only about a quarter of one
+        # 20 degrees less backswept, against the slip of seven blades: each
+        # degree of recamber recovers only about a quarter of one at the exit,
+        # and the deviation iterator below takes it on from here
         dchi_LE: -3.0
-        dchi_TE: 15.0
+        dchi_TE: 20.0
         camber: &camber
           type: quadratic
           aft_loading: 0.0
@@ -78,12 +78,12 @@ blades:
           round_TE: true
       - spf: 0.5
         dchi_LE: -3.0
-        dchi_TE: 15.0
+        dchi_TE: 20.0
         camber: *camber
         thickness: *thickness
       - spf: 0.9
         dchi_LE: -2.0
-        dchi_TE: 15.0
+        dchi_TE: 20.0
         camber: *camber
         thickness: *thickness
 
@@ -100,11 +100,15 @@ operating_point:
 
 iterate:
   correct:
+    # Up to 5 degrees of recamber per iteration, since each recovers only a
+    # quarter of a degree of exit angle
     - type: deviation
       tolerance: 0.5
+      clip: 5.0
+    # Up to 20% of Ys per iteration
     - type: mean_line
       variables: [Ys]
-      clip: 0.01
+      clip: 0.2
       tolerance: 0.02
 
 solver:
