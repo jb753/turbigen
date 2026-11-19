@@ -488,6 +488,15 @@ def test_a_submitted_invocation_carries_force(batch):
     assert "--copied" in options
 
 
+@pytest.mark.parametrize("verb", ["run", "iterate", "chic"])
+def test_a_submitted_invocation_carries_grid(batch, verb):
+    """Keeping the grid is about what reads the run afterwards, wherever it
+    ran."""
+    args = cli._make_parser().parse_args([verb, str(batch[0]), "--grid", "-Q"])
+
+    assert "--grid" in cli.task_options(args)
+
+
 def test_a_submitted_restart_names_the_same_field(batch, tmp_path, monkeypatch):
     """`-s restart=` is relative to where it was typed, and a queued job runs
     somewhere else, so it goes to the queue absolute."""

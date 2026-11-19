@@ -49,6 +49,7 @@ import dataclasses
 import itertools
 import types
 import typing
+from collections.abc import Mapping
 from typing import (
     ClassVar,
     dataclass_transform,
@@ -62,6 +63,56 @@ RESERVED = ("type", "n_row")
 
 _REGISTRY: dict[type, dict[str, type]] = {}
 """{family root: {type name: class}}."""
+
+
+class FrozenDict(Mapping):
+    """A mapping that cannot be changed, and so can be hashed.
+
+    What a mapping field of a Node holds, as a tuple is what a sequence field
+    holds: the frozen dataclass stops a field being reassigned, and this stops
+    the mapping in it being changed under the node, so that a node with one is
+    hashable and compares equal however it was built. Equal to any mapping
+    with the same items once frozen, a plain dict of lists included; written
+    back out as a plain dict.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, *args, **kwargs):
+        self._data = {
+            key: _frozen(value) for key, value in dict(*args, **kwargs).items()
+        }
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+    def __eq__(self, other):
+        # Against the other frozen, so a mapping built by hand with lists in
+        # it equals the one read from a file with tuples
+        if not isinstance(other, Mapping):
+            return NotImplemented
+        return self._data == FrozenDict(other)._data
+
+    def __hash__(self):
+        return hash(frozenset(self._data.items()))
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self._data!r})"
+
+
+def _frozen(value):
+    """Return `value` with every list a tuple and every dict a FrozenDict."""
+    if isinstance(value, Mapping) and not isinstance(value, FrozenDict):
+        return FrozenDict(value)
+    if isinstance(value, list):
+        return tuple(_frozen(item) for item in value)
+    return value
 
 
 def _family_root(cls):
@@ -115,6 +166,10 @@ def _to_config(value):
         # YAML has no tuple; store as a list and restore on the way back in.
         # Recurse, so that a sequence of Nodes dumps its members properly.
         return [_to_config(item) for item in value]
+    if isinstance(value, Mapping):
+        # Likewise a FrozenDict, a plain dict to YAML and to everything that
+        # edits the dumped tree in place
+        return {key: _to_config(item) for key, item in value.items()}
     return value
 
 
@@ -286,6 +341,11 @@ def _from_config(annotation, value, where):
         # Checked before the sequence fallback below, so that a list handed to
         # a scalar field is an error rather than silently becoming a tuple.
         return _to_scalar(annotation, value, where)
+
+    if isinstance(value, dict):
+        # A mapping field, frozen as a sequence is made a tuple, and for the
+        # same reason.
+        return FrozenDict(value)
 
     if isinstance(value, list):
         # An annotation this module does not understand, such as a bare `tuple`.

@@ -9,13 +9,19 @@ decides where a run's directory is; that is :mod:`turbigen.cli`.
 """
 
 import dataclasses
+import datetime
+import importlib.metadata
+import json
 import logging
+import platform
+import time
 from pathlib import Path
 
 import ember.average
 import ember.convergence_history
 import numpy as np
 
+import turbigen
 from turbigen import (
     bconds,
     case,
@@ -64,7 +70,8 @@ beside it, so without the refusal it would write over its own input.
 
 
 GRID_NAME = "grid.emb"
-"""What a run calls the whole grid, written only when something went wrong.
+"""What a run calls the whole grid, written when something went wrong or when
+``--grid`` asked for it.
 
 Written by ember's own `write_emb`, gzipped, rather than by a pickle of our
 own: a `Grid` carries weakrefs --- a patch back to its block, the connectivity
@@ -402,8 +409,9 @@ def _march(config, restart_path, warm, soft, retry, workdir):
     return config, machine, grid, history
 
 
-def _save_field(out_dir, config, grid, history):
-    """Write the flow field and its history, and the whole grid if it diverged.
+def _save_field(out_dir, config, grid, history, keep_grid=False):
+    """Write the flow field and its history, and the whole grid if it diverged
+    or `keep_grid` asked for it.
 
     Written whatever happened, and written first --- before the mix-out, the
     measurements and the tables, every one of which can raise. A march that did
@@ -429,8 +437,8 @@ def _save_field(out_dir, config, grid, history):
     # one being chased across a change to that code. It is also the case that
     # needs the geometry most: a divergence reports where it happened in index
     # space, and turning `i[144:144]` into a trailing edge takes coordinates.
-    # So the whole grid goes down, coordinates, patches and all.
-    if getattr(history, "diverged", False):
+    # So the whole grid goes down, coordinates, patches and all; or on --grid.
+    if keep_grid or getattr(history, "diverged", False):
         save_grid(out_dir / GRID_NAME, grid)
 
 
@@ -547,6 +555,7 @@ def solve(
     warm=None,
     soft=False,
     retry=False,
+    keep_grid=False,
 ):
     """Design, mesh and solve `config`, writing everything into `out_dir`.
 
@@ -575,7 +584,13 @@ def solve(
     start behind `solver.n_step_retry` soft steps, if the config asked for that
     and this solve had no soft start of its own. The caller decides because a
     `chic` point that diverges is an answer rather than a failure.
+
+    `keep_grid` writes the whole grid to ``grid.emb`` whatever happened, rather
+    than only for a march that fell over.
     """
+    started = datetime.datetime.now(datetime.UTC)
+    clock = time.perf_counter()
+
     # A run's own directory for the solver's files, for a solver that writes
     # them; given per run, as the one config's solver serves every run
     config, machine, grid, history = _march(
@@ -587,11 +602,60 @@ def solve(
     start = str(Path(restart_path).resolve()) if restart_path is not None else None
     config = dataclasses.replace(config, restart=start)
 
-    _save_field(out_dir, config, grid, history)
+    _save_field(out_dir, config, grid, history, keep_grid)
     config, result = _measure(config, machine, grid, history, out_dir)
+    result = dataclasses.replace(result, run=run_record(started, clock))
     _log_answer(config, result)
     _write_output(config, result, out_dir, svg=svg, trajectory=trajectory)
     return result
+
+
+def run_record(started, clock):
+    """Return what ran a solve begun at `started`, `clock` its perf counter then.
+
+    Versions as installed, read without running anything: see `Result.run`.
+    """
+    try:
+        ember_version = importlib.metadata.version("ember-cfd")
+    except importlib.metadata.PackageNotFoundError:
+        ember_version = None
+
+    finished = datetime.datetime.now(datetime.UTC)
+    return {
+        "turbigen": turbigen.__version__,
+        "commit": _installed_commit(),
+        "ember": ember_version,
+        "host": platform.node(),
+        "started": started.isoformat(timespec="seconds"),
+        "finished": finished.isoformat(timespec="seconds"),
+        "elapsed": round(time.perf_counter() - clock, 1),
+    }
+
+
+def _installed_commit():
+    """Return the commit turbigen was built from, or None if unknown.
+
+    None for an editable install, whose recorded commit is the checkout as it
+    was at install and goes stale with the next commit, so would name code
+    that did not run; such a record belongs in the config's `notes`.
+    """
+    try:
+        direct = importlib.metadata.distribution("turbigen").read_text(
+            "direct_url.json"
+        )
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    if direct and json.loads(direct).get("dir_info", {}).get("editable"):
+        return None
+
+    # Generated beside __version__ at install, absent from an unbuilt tree
+    try:
+        from turbigen._version import __commit_id__ as commit
+    except ImportError:
+        return None
+    if commit is not None and commit.startswith("g"):
+        commit = commit[1:]
+    return commit
 
 
 def _write_output(config, result, out_dir, svg=False, trajectory=()):

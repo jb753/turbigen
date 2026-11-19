@@ -848,6 +848,9 @@ def task_options(args):
     if getattr(args, "svg", False):
         options.append("--svg")
 
+    if getattr(args, "grid", False):
+        options.append("--grid")
+
     # In place of `-o`, so a queued iterate or chic still promotes its settled
     # design's config over the copy, as it would have run here.
     if is_copy(args):
@@ -1053,6 +1056,7 @@ def _write_report_output(config, answer, out_dir):
     path = out_dir / OUTPUT_NAME
 
     if answer is not None:
+        answer = _with_run_record(path, answer)
         case.write(path, config, answer)
         run_log.info(f"Wrote resolved configuration and its answer to {path}")
         return path
@@ -1067,6 +1071,28 @@ def _write_report_output(config, answer, out_dir):
     case.write(path, config)
     run_log.info(f"Wrote resolved configuration to {path}")
     return path
+
+
+def _with_run_record(path, answer):
+    """Return `answer` with the record of what ran the solve kept from the
+    result already at `path`.
+
+    A report measures the field again but runs nothing, so it has no run of
+    its own to record, and writing over the one that made the field would
+    lose who ran it and how long it took.
+    """
+    if answer.run or not path.is_file():
+        return answer
+
+    try:
+        _, stored = case.read(path, design=False)
+    except Exception as err:
+        logger.warning(f"Could not read the run record in {path}: {err}")
+        return answer
+
+    if stored is None or not stored.run:
+        return answer
+    return dataclasses.replace(answer, run=stored.run)
 
 
 def _records_an_answer(path):
@@ -1099,6 +1125,7 @@ def _run_one(args, config_path):
             svg=args.svg,
             soft=True,
             retry=True,
+            keep_grid=args.grid,
         )
 
     # Non-zero on a failed solve, so a script driving a sweep can tell without
@@ -1117,7 +1144,11 @@ def _iterate_one(args, config_path):
         # Only a config -o copied, here or before it was queued, is turbigen's
         # to replace with the settled design's.
         _, result, converged, _ = loop.converge_design(
-            config, out_dir, resolve_restart(config), promote_input=is_copy(args)
+            config,
+            out_dir,
+            resolve_restart(config),
+            promote_input=is_copy(args),
+            keep_grid=args.grid,
         )
 
         # The answer, on a console that has been shown only the iteration
@@ -1142,7 +1173,7 @@ def _chic_one(args, config_path):
         if design is None and not config.chic.solve_datum:
             config, design = loop.restarted_design(config, previous)
         points, _ = loop.characteristic(
-            config, out_dir, previous, design, is_copy(args)
+            config, out_dir, previous, design, is_copy(args), keep_grid=args.grid
         )
 
     # The sweep did its job whenever it bracketed something, which is what the
@@ -1557,6 +1588,23 @@ def _add_svg_argument(parser):
     )
 
 
+def _add_grid_argument(parser):
+    """Add --grid, for the verbs that solve.
+
+    A flag rather than a config key for the same reason as --svg: keeping the
+    mesh is about what reads the run afterwards, not the machine being
+    designed. Without it the grid is written only for a march that fell over.
+    """
+    parser.add_argument(
+        "--grid",
+        action="store_true",
+        help=(
+            f"also write the whole grid to {pipeline.GRID_NAME}, gzipped, "
+            "whether or not the solve converged"
+        ),
+    )
+
+
 def _add_out_dir_argument(parser):
     """Add -o, which runs a config in a directory of its own.
 
@@ -1671,6 +1719,7 @@ VERBS = (
             _add_out_dir_argument,
             _add_queue_argument,
             _add_svg_argument,
+            _add_grid_argument,
         ),
         needs=("solver",),
     ),
@@ -1690,6 +1739,7 @@ VERBS = (
             _add_force_argument,
             _add_out_dir_argument,
             _add_queue_argument,
+            _add_grid_argument,
         ),
         needs=("solver", "iterate"),
         quiet=True,
@@ -1715,6 +1765,7 @@ VERBS = (
             _add_force_argument,
             _add_out_dir_argument,
             _add_queue_argument,
+            _add_grid_argument,
         ),
         needs=("solver", "chic"),
         quiet=True,

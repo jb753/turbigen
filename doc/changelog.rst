@@ -33,6 +33,10 @@ v4.0.0
   or that the run beside ``restart:`` reached
 * Chain queued jobs with ``--after``, and print each submitted job's id and
   run directory with ``--parsable``
+* Free-text ``notes:`` on a case, carried into every config written from it
+* Each result records the versions, host and timings of the solve
+* Optionally keep the whole grid of every solve with ``--grid``, not only one
+  that diverged
 * Plotters for yplus, shape factor, mesh, blade thickness, pitch-averaged
   profiles, traverse contours
 * Add rounded trailing edge option, only compatible with OH meshes

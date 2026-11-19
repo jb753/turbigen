@@ -6,6 +6,8 @@ holds no results: designing returns a mean line rather than storing one, so a
 config never accumulates state from a run.
 """
 
+import dataclasses
+from collections.abc import Mapping
 from pathlib import Path
 
 import ember.yaml_util
@@ -24,14 +26,55 @@ from turbigen.job import Job
 from turbigen.machine import Machine
 from turbigen.mesh import Mesher
 from turbigen.metric import Metric
-from turbigen.node import Node
+from turbigen.node import FrozenDict, Node
 from turbigen.post import Post
 from turbigen.solver import Solver
 from turbigen.spanwise import SpanwiseDesign, VortexExpon
 
 
+def _as_notes(notes):
+    """Return `notes`, a dict of strings, or raise naming what is not.
+
+    Strings only, names and text alike, and nothing converted: by the time a
+    value gets here YAML has already read ``yes`` as True, ``0123`` as 83 and
+    ``1.10`` as 1.1, and writing those back as text would record something
+    other than what was typed.
+    """
+    if not isinstance(notes, Mapping):
+        raise ValueError(
+            f"notes must be a mapping of names to text, got {notes!r} "
+            f"({type(notes).__name__})."
+        )
+
+    for key, value in notes.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError(
+                f"notes.{key} must be named and given as text, got {key!r}: "
+                f"{value!r}. Quote it, as in -s \"notes.build='0123'\", for YAML "
+                "otherwise reads a number or a yes as something else."
+            )
+    return FrozenDict(notes)
+
+
 class Config(Node):
     """A complete turbigen case."""
+
+    notes: dict = dataclasses.field(default_factory=FrozenDict)
+    """Free text about this case, keyed by whatever wrote it: ``{key: text}``.
+
+    Read by nothing, and carried into every config turbigen writes, so a note
+    survives where a YAML comment does not --- the copy into a workdir and the
+    ``output.yaml`` beside it are written from the parsed config, and comments
+    never reach it. Where a design came from is the intended use: a build
+    script records the commits it ran at under its own name.
+
+    A mapping rather than one string because includes merge mappings a level
+    deep, so each file down a chain adds its own key and a later one replaces
+    an earlier only by reusing its key. Names and text must both be strings,
+    so a value YAML would read as a number or a boolean is quoted: anything
+    else is refused rather than converted, which could not give back what was
+    typed. Not stamped, so a note never disowns a stored field.
+    """
 
     fluid: Fluid
     """Working fluid and its equation of state."""
@@ -122,6 +165,8 @@ class Config(Node):
     a partition is a property of where you are, not of the machine."""
 
     def __post_init__(self):
+        object.__setattr__(self, "notes", _as_notes(self.notes))
+
         # Checked against the blades, and its defaults written out, as soon as
         # it is read: the knots are the blade sections, so only here are both
         # in hand

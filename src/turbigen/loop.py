@@ -31,7 +31,7 @@ from turbigen import (
     restart,
     warm_field,
 )
-from turbigen.pipeline import HISTORY_NAME, OUTPUT_NAME, RESTART_NAME
+from turbigen.pipeline import GRID_NAME, HISTORY_NAME, OUTPUT_NAME, RESTART_NAME
 
 logger = logging.getLogger("turbigen")
 
@@ -229,6 +229,10 @@ class _Chain:
     """Where a throttled exit starts the next call, advanced as each one
     settles; None for where the config it is handed says."""
 
+    keep_grid: bool = False
+    """Write every iteration's whole grid, as ``--grid`` asks; only the settled
+    one's survives the prune."""
+
     def __call__(self, config_now, i_iter):
         iter_dir = self.out_dir / f"iter_{i_iter:04d}"
         iter_dir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +274,7 @@ class _Chain:
             warm=warm,
             soft=first,
             retry=True,
+            keep_grid=self.keep_grid,
         )
         self.previous = iter_dir / RESTART_NAME
 
@@ -285,7 +290,9 @@ class _Chain:
         return result
 
 
-def converge_design(config, out_dir, previous=None, promote_input=False):
+def converge_design(
+    config, out_dir, previous=None, promote_input=False, keep_grid=False
+):
     """Iterate `config` to convergence, keeping every iteration under `out_dir`.
 
     The whole of an iteration, so that `chic` composes it rather than writing a
@@ -304,6 +311,9 @@ def converge_design(config, out_dir, previous=None, promote_input=False):
     `promote_input` says the config at the root of `out_dir` is turbigen's own
     copy, made by ``-o``, and so may be replaced by the settled design's: see
     :func:`promote_final`.
+
+    `keep_grid` writes each iteration's grid, as :func:`turbigen.pipeline.solve`
+    does; the settled one is promoted with the field and the rest pruned.
 
     Returns
     -------
@@ -347,6 +357,7 @@ def converge_design(config, out_dir, previous=None, promote_input=False):
         previous=previous,
         warm=seed(config),
         DP_adjust=_field_DP_adjust(config, previous),
+        keep_grid=keep_grid,
     )
 
     if config.iterate.correct:
@@ -413,7 +424,7 @@ def _with_achieved(config, result):
     return dataclasses.replace(config, operating_point=result.operating_point)
 
 
-PROMOTED = (OUTPUT_NAME, RESTART_NAME, HISTORY_NAME, "post.pdf")
+PROMOTED = (OUTPUT_NAME, RESTART_NAME, HISTORY_NAME, "post.pdf", GRID_NAME)
 """What a settled design leaves at the root of its directory.
 
 Everything a `run` leaves beside its config, so that a finished `iterate`
@@ -473,14 +484,18 @@ def promote_final(out_dir, iter_dir, converged, promote_input=False):
         )
         return iter_dir / RESTART_NAME
 
+    # Every name cleared first, not only those the settled iteration has: a
+    # grid or a report left by an earlier run would otherwise sit beside a
+    # field it did not come from
+    for name in PROMOTED:
+        (out_dir / name).unlink(missing_ok=True)
+
     for name in PROMOTED:
         source = iter_dir / name
         if not source.is_file():
             continue
 
         destination = out_dir / name
-        if destination.exists():
-            destination.unlink()
         source.rename(destination)
 
         # The record of what it started from was written relative to where it
@@ -573,7 +588,9 @@ def _prune_iterations(out_dir):
         )
 
 
-def characteristic(config, out_dir, previous=None, design=None, promote_input=False):
+def characteristic(
+    config, out_dir, previous=None, design=None, promote_input=False, keep_grid=False
+):
     """Converge the design unless it has settled, then sweep it into
     ``chic_NNNN``.
 
@@ -614,7 +631,7 @@ def characteristic(config, out_dir, previous=None, design=None, promote_input=Fa
     # redesigned is a characteristic of no machine in particular.
     if design is None:
         config, design, converged, previous = converge_design(
-            config, out_dir, previous, promote_input
+            config, out_dir, previous, promote_input, keep_grid
         )
         if not converged:
             raise ValueError(
@@ -641,7 +658,9 @@ def characteristic(config, out_dir, previous=None, design=None, promote_input=Fa
         # Chained, and near the limit this is what keeps a point
         # converging at all: the smallest perturbation from a field that
         # worked.
-        result = pipeline.solve(config_now, point_dir, previous, soft=soft)
+        result = pipeline.solve(
+            config_now, point_dir, previous, soft=soft, keep_grid=keep_grid
+        )
         if result.converged:
             # A diverged point is not somewhere to start the next one
             # from, and the next one is a fine step on from what did work.
