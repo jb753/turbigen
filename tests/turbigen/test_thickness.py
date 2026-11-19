@@ -241,7 +241,7 @@ def test_an_interpolated_nose_is_held_inside_its_bounds():
     assert raw(np.linspace(0.0, 1.0, 101)).min() < lo
 
     R_LE = [
-        turbigen.blade._interpolate(sections, spf, x).R_LE
+        turbigen.blade._interpolate(sections, spf, x, "const").R_LE
         for x in np.linspace(-0.5, 1.5, 81)
     ]
     assert min(R_LE) == pytest.approx(lo)

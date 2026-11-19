@@ -32,6 +32,9 @@ v4.0.0
   exponent but also allowing iteration of spanwise work and swirl
 * Add per-section ``dm_LE``, ``dm_TE`` and ``dtheta`` to sweep and lean blades,
   dropping ``theta_offset``
+* Blades extrapolate beyond their outermost sections held, linear or cubic,
+  by ``extrapolate_section``, and their sweep and lean separately by
+  ``extrapolate_sweep``
 * Cut planes belong to the machine and clear swept LE or TE
 * Initial guess turns the flow between a blade's swept edges at each span
 * Evaluate every blade section at one fixed set of chordwise points, so caller

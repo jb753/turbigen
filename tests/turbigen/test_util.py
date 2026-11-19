@@ -12,6 +12,7 @@ import ember.fluid
 import ember.patch
 import ember.util
 import numpy as np
+import scipy.interpolate
 import pytest
 from test_blade import build
 from test_mesh import MESH, TIP
@@ -616,6 +617,33 @@ def test_interp1d_hold_holds_the_end_values_beyond_the_data():
     np.testing.assert_allclose(held(inside), free(inside))
     np.testing.assert_allclose(held(np.array([0.0, -1.0])), [y[0], y[0]])
     np.testing.assert_allclose(held(np.array([1.0, 2.0])), [y[-1], y[-1]])
+
+
+def test_interp1d_extrap_differs_only_beyond_the_data():
+    """One natural cubic inside; held, sloped or cubic outside."""
+    x = np.array([0.2, 0.5, 0.8])
+    y = np.array([[1.0, 0.0], [3.0, 1.0], [2.0, 4.0]])
+    inside = np.linspace(0.2, 0.8, 7)
+    outside = np.array([0.0, 1.0])
+
+    curves = {mode: util.interp1d_extrap(x, y, mode) for mode in util.EXTRAPOLATE}
+    for curve in curves.values():
+        np.testing.assert_allclose(curve(inside), curves["const"](inside))
+
+    np.testing.assert_allclose(
+        curves["const"](outside), util.interp1d_hold(x, y)(outside)
+    )
+    np.testing.assert_allclose(
+        curves["linear"](outside), util.interp1d_linear_extrap(x, y)(outside)
+    )
+    cubic = scipy.interpolate.CubicSpline(x, y, bc_type="natural")
+    np.testing.assert_allclose(curves["cubic"](outside), cubic(outside))
+    assert not np.allclose(curves["linear"](outside), curves["cubic"](outside))
+
+    # Refused however few points, not quietly read as a line through two
+    for n in (1, 2, 3):
+        with pytest.raises(ValueError, match="one of"):
+            util.interp1d_extrap(x[:n], y[:n], "quadratic")
 
 
 def test_shape_factor_line_starts_where_the_flow_falls_subsonic():

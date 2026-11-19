@@ -232,6 +232,29 @@ def interp1d_linear_extrap(x, y, axis=0):
     return spline
 
 
+EXTRAPOLATE = ("const", "linear", "cubic")
+"""How :func:`interp1d_extrap` carries a curve beyond its data."""
+
+
+def interp1d_extrap(x, y, mode, axis=0):
+    """Return a spline through `x, y`, carried beyond them as `mode` says.
+
+    The same natural cubic inside the data whatever the mode; beyond it,
+    ``"const"`` holds the end values (:func:`interp1d_hold`), ``"linear"``
+    continues the end slopes (:func:`interp1d_linear_extrap`), and ``"cubic"``
+    continues the end cubics themselves. One or two points are a constant or a
+    line inside and out, as :func:`interp1d_linear_extrap` makes them, but for
+    ``"const"``, which still holds beyond them.
+    """
+    if mode not in EXTRAPOLATE:
+        raise ValueError(f"Extrapolation must be one of {EXTRAPOLATE}, got {mode!r}.")
+    if mode == "const":
+        return interp1d_hold(x, y, axis=axis)
+    if mode == "linear" or len(x) < 3:
+        return interp1d_linear_extrap(x, y, axis=axis)
+    return scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
+
+
 def interp1d_hold(x, y, axis=0):
     """Return a spline through `x, y` that holds its end values beyond them.
 

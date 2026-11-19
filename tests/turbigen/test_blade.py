@@ -34,7 +34,6 @@ from turbigen import (
 from turbigen.blade import _interpolate, to_xrrt
 
 
-
 def _free_vortex(mean_line_row, spf, n=-1.0):
     """Relative flow angle at inlet and outlet for a power-law swirl and
     uniform meridional velocity, written out independently of the code."""
@@ -42,6 +41,7 @@ def _free_vortex(mean_line_row, spf, n=-1.0):
     r = ml.r_hub * (1.0 - spf) + ml.r_cas * spf
     Vt = ml.Vt * (r / ml.r) ** n
     return np.degrees(np.arctan((Vt - ml.Omega * r) / ml.Vm))
+
 
 FLUID = {"type": "perfect", "cp": 1005.0, "gamma": 1.4, "mu": 1.8e-5}
 MEAN_LINE = {
@@ -393,13 +393,13 @@ def test_a_parameter_of_rows_interpolates_element_by_element():
         TwoRowThickness(coeff=((2.0, 4.0), (3.0, 5.0))),
     ]
 
-    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5, "const")
     assert middle.coeff == ((1.0, 2.0), (2.0, 4.0))
 
     # Held at the nearest end section beyond them, as every other parameter is.
-    beyond = _interpolate(ends, np.array([0.0, 1.0]), 2.0)
+    beyond = _interpolate(ends, np.array([0.0, 1.0]), 2.0, "const")
     assert beyond.coeff == ((2.0, 4.0), (3.0, 5.0))
-    below = _interpolate(ends, np.array([0.0, 1.0]), -1.0)
+    below = _interpolate(ends, np.array([0.0, 1.0]), -1.0, "const")
     assert below.coeff == ((0.0, 0.0), (1.0, 3.0))
 
 
@@ -410,7 +410,7 @@ def test_an_interpolated_parameter_comes_back_as_tuples():
         TwoRowThickness(coeff=((2.0, 4.0), (3.0, 5.0))),
     ]
 
-    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+    middle = _interpolate(ends, np.array([0.0, 1.0]), 0.5, "const")
     assert isinstance(middle.coeff, tuple)
     assert all(isinstance(row, tuple) for row in middle.coeff)
     assert all(isinstance(value, float) for row in middle.coeff for value in row)
@@ -425,7 +425,7 @@ def test_parameters_of_different_shape_cannot_be_interpolated():
     ]
 
     with pytest.raises(ValueError, match="same shape"):
-        _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+        _interpolate(ends, np.array([0.0, 1.0]), 0.5, "const")
 
 
 #
@@ -608,6 +608,7 @@ def test_sections_match_their_snapshot(machine_perpendicular, i_row, snapshot):
             atol=1e-7,
             err_msg=f"differs from the snapshot at {key}",
         )
+
 
 #
 # The curve the surfaces are hung off. What wants it today takes the mean of
@@ -1090,7 +1091,7 @@ def test_no_blend_is_the_perpendicular_offset(machine_perpendicular):
 
     camber = blade.evaluate_camber(0.5, m=m)
     chord = turbigen.util.arc_length(camber[:2])
-    thickness = _interpolate(blade.thicknesses, blade.spf, 0.5)
+    thickness = _interpolate(blade.thicknesses, blade.spf, 0.5, "const")
 
     for surface, t in zip(blade.evaluate_section(0.5), thickness.thick_both(m)):
         offset = turbigen.util.vecnorm(_xrrt(surface) - _xrrt(camber))
@@ -1367,7 +1368,7 @@ def test_an_invalid_interpolated_section_names_the_span_fraction():
     ]
 
     with pytest.raises(ValueError, match=r"spf=0\.5"):
-        _interpolate(ends, np.array([0.0, 1.0]), 0.5)
+        _interpolate(ends, np.array([0.0, 1.0]), 0.5, "const")
 
 
 #
@@ -1544,3 +1545,93 @@ def test_pitch_fraction_snaps_a_point_inside_the_blade_to_the_nearer_surface(mac
 
     assert just_inside_suction == 0.0
     assert just_inside_pressure == 1.0
+
+
+@pytest.mark.parametrize("mode", ["const", "linear", "cubic"])
+def test_extrapolate_carries_every_section_parameter_to_the_endwalls(mode):
+    """Camber, thickness, recamber and edge positions alike, beyond the
+    outermost sections, as the blade's `extrapolate_section` says."""
+    t_max = (0.10, 0.12, 0.16)
+    dchi = (-8.0, -4.0, -3.0)
+    dm_LE = (0.0, 0.01, 0.04)
+    sections = [
+        {
+            "spf": spf,
+            "dchi_LE": d,
+            "dchi_TE": 0.0,
+            "dm_LE": m,
+            "camber": CAMBER,
+            "thickness": {**THICKNESS, "t_max": t},
+        }
+        for spf, d, m, t in zip(SPF, dchi, dm_LE, t_max)
+    ]
+    design = {
+        "sections": sections,
+        "count": {"type": "Co", "Co": 0.6},
+        "extrapolate_section": mode,
+    }
+    machine = build([design, blade(dchi_LE=2.0)]).design()
+    bld = machine.rows[0].blade
+
+    walls = np.array([0.0, 1.0])
+    expect = {
+        name: turbigen.util.interp1d_extrap(np.array(SPF), np.array(values), mode)(
+            walls
+        )
+        for name, values in (("t_max", t_max), ("dchi", dchi), ("dm_LE", dm_LE))
+    }
+    got_t = [bld._interpolators[1](spf).t_max for spf in walls]
+    got_dchi = [bld._dchi_at(spf).reshape(-1)[0] for spf in walls]
+    got_dm = [bld._placement(spf)[0] for spf in walls]
+    np.testing.assert_allclose(got_t, expect["t_max"])
+    np.testing.assert_allclose(got_dchi, expect["dchi"])
+    np.testing.assert_allclose(got_dm, expect["dm_LE"])
+    if mode == "const":
+        np.testing.assert_allclose(got_t, [t_max[0], t_max[-1]])
+
+
+def test_extrapolate_must_be_a_known_mode():
+    with pytest.raises(ValueError, match="extrapolate"):
+        build([blade(extrapolate_section="quadratic"), blade()])
+    with pytest.raises(ValueError, match="extrapolate_sweep"):
+        build([blade(extrapolate_sweep="quadratic"), blade()])
+
+
+def test_extrapolate_sweep_carries_the_placement_alone():
+    """The edges and rotation along their slopes, and the thickness and
+    recamber held at the outermost sections."""
+    t_max = (0.10, 0.12, 0.16)
+    dchi = (-8.0, -4.0, -3.0)
+    dm_LE = (0.0, 0.01, 0.04)
+    dm_TE = (0.03, 0.01, 0.0)
+    dtheta = (0.0, 0.01, 0.03)
+    sections = [
+        {
+            "spf": spf,
+            "dchi_LE": d,
+            "dchi_TE": 0.0,
+            "dm_LE": le,
+            "dm_TE": te,
+            "dtheta": th,
+            "camber": CAMBER,
+            "thickness": {**THICKNESS, "t_max": t},
+        }
+        for spf, d, le, te, th, t in zip(SPF, dchi, dm_LE, dm_TE, dtheta, t_max)
+    ]
+    design = {
+        "sections": sections,
+        "count": {"type": "Co", "Co": 0.6},
+        "extrapolate_sweep": "linear",
+    }
+    bld = build([design, blade(dchi_LE=2.0)]).design().rows[0].blade
+
+    walls = np.array([0.0, 1.0])
+    placement = np.column_stack((dm_LE, dm_TE, dtheta))
+    expect = turbigen.util.interp1d_extrap(np.array(SPF), placement, "linear")(walls)
+    np.testing.assert_allclose([bld._placement(spf) for spf in walls], expect)
+    np.testing.assert_allclose(
+        [bld._interpolators[1](s).t_max for s in walls], [t_max[0], t_max[-1]]
+    )
+    np.testing.assert_allclose(
+        [bld._dchi_at(s).reshape(-1)[0] for s in walls], [dchi[0], dchi[-1]]
+    )

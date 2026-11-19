@@ -106,9 +106,12 @@ Evaluating a blade
 
 A :class:`Blade` is addressed by span fraction, and every geometric quantity is
 read off it with an ``evaluate_`` method that interpolates the section designs
-field by field, holding the end sections' values beyond them. The metal angles are the
-exception: only the recamber is interpolated, and the flow angle it is added to
-is evaluated at the span fraction asked for.
+field by field, and beyond the outermost sections holds their values, continues
+their slopes or continues their end cubics, as
+:attr:`BladeDesign.extrapolate_section` says, or for the placement
+:attr:`BladeDesign.extrapolate_sweep`. The metal angles are the exception: only
+the recamber is interpolated, and the flow angle it is added to is evaluated at
+the span fraction asked for.
 :meth:`~Blade.evaluate_section` gives the axial, radial and angular coordinates
 of the two surfaces and :meth:`~Blade.evaluate_camber` those of the camber line
 they are hung off; :meth:`~Blade.evaluate_chi` the leading and trailing metal
@@ -387,22 +390,22 @@ def _nested(values):
     return tuple(_nested(value) for value in values)
 
 
-def _interpolate(nodes, spf_sections, spf):
+def _interpolate(nodes, spf_sections, spf, extrapolate):
     """Interpolate like-typed Nodes field-wise onto a span fraction.
 
     See :func:`_interpolator`, which this builds and evaluates once.
     """
-    return _interpolator(nodes, spf_sections)(spf)
+    return _interpolator(nodes, spf_sections, extrapolate)(spf)
 
 
-def _interpolator(nodes, spf_sections):
+def _interpolator(nodes, spf_sections, extrapolate):
     """Return a function interpolating like-typed Nodes field-wise onto a
     span fraction, checked and fitted once for every span it is asked for.
 
     Every section must use the same design, because there is no meaning to
     blending a quadratic camber line into a quartic one. The parameters of one
-    design are interpolated between the sections, and held at the nearest end
-    section's values beyond them, so the endwalls see nothing no section said.
+    design are interpolated between the sections, and carried beyond them as
+    `extrapolate` says (:func:`turbigen.util.interp1d_extrap`).
 
     A design with a ``bounded_fields`` classmethod is handed the interpolated
     fields before it is built, to pull back inside its bounds whatever the
@@ -458,7 +461,7 @@ def _interpolator(nodes, spf_sections):
     # type the field was declared with -- a Bernstein order is an integer, and
     # a float in its place is not a valid one.
     values = np.array([np.concatenate([part.ravel() for part in row]) for row in rows])
-    spline = turbigen.util.interp1d_hold(spf_sections, values)
+    spline = turbigen.util.interp1d_extrap(spf_sections, values, extrapolate)
     starts = np.cumsum([0, *widths])
     # `array_equal` rather than `==`, which on an array field would give an
     # array of answers and no way to reduce it.
@@ -627,9 +630,38 @@ class BladeDesign(Node):
     m_stack: float = 0.5
     """Normalised meridional position the sections are stacked at [--]."""
 
+    extrapolate_section: str = "const"
+    """How the sections' parameters carry beyond the outermost sections,
+    towards the endwalls: camber, thickness, recambers and edge positions
+    alike. ``"const"`` holds the end sections' values, ``"linear"`` continues
+    their slopes across the span, and ``"cubic"`` continues the end cubics of
+    the spline through them. Between the sections it is the same natural
+    cubic whichever is chosen.
+
+    Only ``"const"`` keeps every parameter inside what some section said.
+    Carried on, a thickness can fall to zero or below at an endwall; the nose
+    radius alone is clamped to its bounds, and nothing else is pulled back."""
+
+    extrapolate_sweep: str | None = None
+    """How what places a section alone, its edge offsets
+    :attr:`~SectionDesign.dm_LE` and :attr:`~SectionDesign.dm_TE` and its
+    rotation :attr:`~SectionDesign.dtheta`, carries beyond the outermost
+    sections, in the same terms; null for as :attr:`extrapolate_section` says. A swept
+    edge held constant towards an endwall stays swept all the way to it."""
+
     def __post_init__(self):
         if not self.sections:
             raise ValueError("A blade needs at least one section.")
+
+        for name in ("extrapolate_section", "extrapolate_sweep"):
+            mode = getattr(self, name)
+            if name == "extrapolate_sweep" and mode is None:
+                continue
+            if mode not in turbigen.util.EXTRAPOLATE:
+                raise ValueError(
+                    f"blade {name} must be one of {turbigen.util.EXTRAPOLATE}, "
+                    f"got {mode!r}."
+                )
 
         spf = np.array([section.spf for section in self.sections])
         if np.any(np.diff(spf) <= 0.0):
@@ -693,6 +725,8 @@ class BladeDesign(Node):
             cambers=tuple(section.camber for section in self.sections),
             thicknesses=tuple(section.thickness for section in self.sections),
             m_stack=self.m_stack,
+            extrapolate_section=self.extrapolate_section,
+            extrapolate_sweep=self.extrapolate_sweep,
             placement=np.array(
                 [
                     (section.dm_LE, section.dm_TE, section.dtheta)
@@ -886,6 +920,14 @@ class Blade:
     section; see :class:`ReferenceLength`.
     """
 
+    extrapolate_section: str
+    """How the sections' parameters carry beyond the outermost sections; see
+    :attr:`BladeDesign.extrapolate_section`."""
+
+    extrapolate_sweep: str | None
+    """How the edge offsets and rotation carry beyond them, null for as
+    :attr:`extrapolate_section` says; see :attr:`BladeDesign.extrapolate_sweep`."""
+
     @property
     def n_section(self):
         """Number of sections this blade was defined by."""
@@ -921,8 +963,9 @@ class Blade:
     def _get_cam_thick(self, spf):
         """Return the camber line and thickness at span fraction `spf`.
 
-        Interpolated between the sections, holding the end ones' values beyond
-        them. The thickness as written, against :attr:`thickness_ref`.
+        Interpolated between the sections, and beyond them as
+        :attr:`extrapolate_section` says. The thickness as written, against
+        :attr:`thickness_ref`.
         """
         return self._at_spf(spf)[0], self._interpolators[1](spf)
 
@@ -945,22 +988,27 @@ class Blade:
         """The sections' camber lines and thicknesses as functions of span
         fraction, fitted once; safe to keep because a blade is frozen."""
         return (
-            _interpolator(self.cambers, self.spf),
-            _interpolator(self.thicknesses, self.spf),
+            _interpolator(self.cambers, self.spf, self.extrapolate_section),
+            _interpolator(self.thicknesses, self.spf, self.extrapolate_section),
         )
 
     @functools.cached_property
     def _dchi_at(self):
         """The sections' recambers as a function of span fraction, fitted once."""
-        return turbigen.util.interp1d_hold(self.spf, self.dchi)
+        return turbigen.util.interp1d_extrap(
+            self.spf, self.dchi, self.extrapolate_section
+        )
 
     @functools.cached_property
     def _placement_at(self):
         """The sections' edge offsets and rotation as a function of span
-        fraction, fitted once, held at the end sections' values beyond them."""
+        fraction, fitted once, carried beyond the end sections as
+        :attr:`extrapolate_sweep` says, or failing that :attr:`extrapolate_section`."""
         if self.n_section == 1:
             return lambda spf: self.placement[0]
-        return turbigen.util.interp1d_hold(self.spf, self.placement)
+        return turbigen.util.interp1d_extrap(
+            self.spf, self.placement, self.extrapolate_sweep or self.extrapolate_section
+        )
 
     def _placement(self, spf):
         """Return the edge offsets and rotation at `spf`, ``(dm_LE, dm_TE,
