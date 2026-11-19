@@ -42,7 +42,8 @@ dependencies = [
     # mesher squares further lines to a wall with; 0.4.8 adds `merged=` to
     # the Cartesian unstructured setters and `Block.Omega_wall`; 0.4.9 adds
     # `relax=` to `ember.elliptic.winslow_sweeps`, which the passage mesher
-    # under-relaxes its sweeps with.
+    # under-relaxes its sweeps with; 0.4.10 adds `floors=` to it, the least
+    # spacing the passage mesher holds the lines out from a wall to.
     # It ships wheels for every platform CI runs on -- which is what lets CI
     # install with --only-binary ember-cfd on runners that have no Fortran
     # toolchain. ember requires numpy 2.5, which is why the numpy and scipy
@@ -50,7 +51,7 @@ dependencies = [
     #
     # Keep in sync with the "ember" intersphinx URL in doc/conf.py, which must
     # point at the docs for the release pinned here.
-    'ember-cfd==0.4.9',
+    'ember-cfd==0.4.10',
 ]
 description = "Framework for turbomachinery design and computational fluid dynamics simulation"
 readme = "README.md"
