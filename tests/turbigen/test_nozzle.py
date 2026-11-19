@@ -17,19 +17,23 @@ Test cases:
 - test_a_nozzle_cannot_also_be_throttled: one or the other
 - test_a_nozzle_must_expand_supersonically: or it is not choked
 - test_the_exit_pressure_is_below_choke: isentropic at nozzle_Ma
-- test_sizing_solves_the_1d_throat_once: whatever it passes, it is the datum
-- test_a_throat_that_does_not_converge_stops_the_sizing: no datum, no sweep
+- test_the_throat_is_sized_one_dimensionally: and not solved
+- test_a_datum_that_does_not_converge_stops_the_speedline: no datum, no sweep
 - test_a_nozzle_sweep_closes_the_throat: by step, from the sized area
 - test_a_nozzle_sweep_needs_a_sized_throat: and says so
 - test_at_takes_a_nozzle_off: a pressure sweep is a pressure at exit
 - test_the_nozzle_table_names_the_closure: in the heading and the bracket
 - test_a_nozzle_choke_leg_is_a_back_pressure: the throat comes off
-- test_speeds_need_a_nozzle: and must be positive and distinct
+- test_a_speed_needs_a_nozzle: and must be positive
 - test_the_speed_scales_every_row: blocks turn at the fraction asked for
 - test_a_nozzle_keeps_its_speed: placing a throat leaves the speed alone
-- test_speedlines_depart_from_the_design_throat: soft started, nearest first
+- test_a_speedline_departs_from_the_design_throat: soft started from it
 - test_a_leg_must_be_swept: stall and choke not both off
-- test_the_choke_leg_runs_the_open_duct: throttled to the datum, then pressure
+- test_the_choke_leg_runs_the_open_duct: from where the datum left it
+- test_the_choke_leg_departs_on_the_scale_of_every_other_DP_adjust: at the exit
+- test_DP_adjust_at_inverts_the_exit_pressure: one scale, both ways
+- test_a_restart_beside_a_converged_design_point_is_the_datum: no solve
+- test_a_restart_that_is_not_this_design_point_is_refused: loudly
 """
 
 import dataclasses
@@ -221,33 +225,50 @@ def choking_runner(config, log=None, limit=0.0, cap=np.inf):
             log.append(area)
         mdot = min(CD * flux * area * area_out, cap)
         state = SimpleNamespace(
-            mdot=mdot, Po=outlet.Po, To=outlet.To, cp=outlet.cp, gamma=outlet.gamma
+            mdot=mdot,
+            Po=outlet.Po,
+            To=outlet.To,
+            cp=outlet.cp,
+            gamma=outlet.gamma,
+            P=outlet.P,
         )
-        actual = SimpleNamespace(outlet=state, PR_ts=1.0)
+        # A duct that changes nothing, carried down to the exit
+        actual = SimpleNamespace(
+            outlet=state, PR_ts=1.0, interpolate_to=lambda annulus, m: [state]
+        )
         return SimpleNamespace(converged=area > limit, actual=actual)
 
     return run
 
 
-def test_sizing_solves_the_1d_throat_once():
+def test_the_throat_is_sized_one_dimensionally():
     config = chic_config()
     design = design_result(config)
-    seen = []
 
-    sized = loop.size_nozzle(config, design, choking_runner(config, seen))
+    area = loop.sized_throat(config, design)
 
     one_d = nozzle.throat_fraction(design.actual.outlet, config.design().annulus)
-    assert seen == pytest.approx([one_d])
-    assert sized.operating_point.nozzle_area == pytest.approx(one_d)
-    assert sized.operating_point.mdot_adjust is None
+    assert area == pytest.approx(one_d)
 
 
-def test_a_throat_that_does_not_converge_stops_the_sizing():
-    config = chic_config()
-    with pytest.raises(ValueError, match="no datum"):
-        loop.size_nozzle(
-            config, design_result(config), choking_runner(config, limit=np.inf)
-        )
+def test_a_datum_that_does_not_converge_stops_the_speedline(tmp_path, monkeypatch):
+    config = chic_config(speed=0.9)
+    stand_in = choking_runner(config, limit=np.inf)
+    calls = []
+
+    def solve(config_now, point_dir, restart_path=None, soft=False, **_):
+        calls.append(config_now.operating_point)
+        return stand_in(config_now, None)
+
+    monkeypatch.setattr(loop.pipeline, "solve", solve)
+
+    points, bracket = loop.characteristic(
+        config, tmp_path, design=design_result(config)
+    )
+
+    assert len(calls) == 1
+    assert bracket is None
+    assert [p.stood for p in points] == [False]
 
 
 def test_a_nozzle_sweep_closes_the_throat():
@@ -322,12 +343,11 @@ def test_a_nozzle_choke_leg_is_a_back_pressure():
 
 
 @pytest.mark.parametrize(
-    "speeds, match",
-    [((0.9,), "needs chic.nozzle"), ((1.0, -0.5), "positive"), ((0.9, 0.9), "repeats")],
+    "speed, match", [(0.9, "needs chic.nozzle"), (-0.5, "positive")]
 )
-def test_speeds_need_a_nozzle(speeds, match):
+def test_a_speed_needs_a_nozzle(speed, match):
     with pytest.raises(ValueError, match=match):
-        Chic(speeds=speeds)
+        Chic(speed=speed)
 
 
 def test_the_speed_scales_every_row():
@@ -347,14 +367,13 @@ def test_a_nozzle_keeps_its_speed():
     assert chic.at_nozzle(config, 0.7).operating_point.speed == 0.8
 
 
-def test_speedlines_depart_from_the_design_throat(tmp_path, monkeypatch):
-    """Sized at the design speed, then each other speed's datum is that
-    throat, soft started from the nearest speed already run."""
+def test_a_speedline_departs_from_the_design_throat(tmp_path, monkeypatch):
+    """At another speed, the datum is the throat sized for the design point,
+    run at that speed and soft started from the design point's field, and
+    nothing is solved at the design speed."""
     config = dataclasses.replace(
         build(),
-        chic=Chic(
-            nozzle=True, step_coarse=0.05, step_fine=0.05, speeds=(1.0, 0.8, 0.9)
-        ),
+        chic=Chic(nozzle=True, step_coarse=0.05, step_fine=0.05, speed=0.9),
     )
     stand_in = choking_runner(config, limit=0.0)
     calls = []
@@ -363,7 +382,7 @@ def test_speedlines_depart_from_the_design_throat(tmp_path, monkeypatch):
         op = config_now.operating_point
         calls.append((op.speed, op.nozzle_area, soft, restart_path, point_dir))
         result = stand_in(config_now, None)
-        # Every speedline refuses its second step towards stall, closed by
+        # The speedline refuses its second step towards stall, closed by
         # 0.10 from the sized throat
         if len(calls) > 1:
             result.converged = op.nozzle_area > 0.93 * calls[0][1]
@@ -371,24 +390,22 @@ def test_speedlines_depart_from_the_design_throat(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loop.pipeline, "solve", solve)
 
-    loop.characteristic(config, tmp_path, design=design_result(config))
+    design = design_result(config)
+    points, _ = loop.characteristic(config, tmp_path, "design.npz", design=design)
 
-    speeds = [c[0] for c in calls]
-    # Sizing at the design speed, then its speedline, then 0.9 and 0.8
-    assert speeds[:2] == [1.0, 1.0]
-    assert speeds.index(0.9) < speeds.index(0.8)
-    assert all(c[4].parent.name == f"speed_{c[0]:.3f}" for c in calls)
+    assert {c[0] for c in calls} == {0.9}
+    assert all(c[4].parent == tmp_path for c in calls)
 
-    datum = calls[0][1]
-    first = {speed: calls[speeds.index(speed)] for speed in (0.9, 0.8)}
-    for speed, call in first.items():
-        # The design throat, soft started; 0.8 from the 0.9 datum, nearer
-        assert call[1] == pytest.approx(datum)
-        assert call[2] is True
-    assert first[0.9][3] == calls[0][4] / "restart.npz"
-    assert first[0.8][3] == first[0.9][4] / "restart.npz"
-    # Nothing else soft starts
-    assert sum(c[2] for c in calls) == 2
+    # Its datum the sized throat, soft started from the design point's field,
+    # and a point of the characteristic
+    one_d = loop.sized_throat(config, design)
+    assert calls[0][1] == pytest.approx(one_d)
+    assert calls[0][2] is True
+    assert calls[0][3] == "design.npz"
+    assert points[0].setting == 0.0 and points[0].stood
+    # The stall leg from the datum's field, hard started
+    assert calls[1][3] == calls[0][4] / "restart.npz"
+    assert sum(c[2] for c in calls) == 1
 
 
 def test_a_leg_must_be_swept():
@@ -396,11 +413,14 @@ def test_a_leg_must_be_swept():
         Chic(stall=False, choke=False)
 
 
+@pytest.mark.parametrize("speed", [1.0, 0.9])
 @pytest.mark.parametrize("stall", [True, False])
-def test_the_choke_leg_runs_the_open_duct(tmp_path, monkeypatch, stall):
-    """At the design speed from the design point itself; at another, from
-    the open duct throttled to the flow its datum throat passed. Each then
-    lowers the back pressure, with no nozzle."""
+def test_the_choke_leg_runs_the_open_duct(tmp_path, monkeypatch, stall, speed):
+    """At the design speed from the design point's own pressure and field; at
+    another, from the pressure its datum throat left at the machine outlet,
+    from that throat's field, the first point soft started as the throat
+    comes off. Either lowers the back pressure, with no nozzle, and nothing
+    is throttled."""
     config = dataclasses.replace(
         build(),
         operating_point=OperatingPoint(DP_adjust=0.2),
@@ -410,60 +430,142 @@ def test_the_choke_leg_runs_the_open_duct(tmp_path, monkeypatch, stall):
             stall=stall,
             step_coarse=0.05,
             step_fine=0.05,
-            speeds=(1.0, 0.9),
+            speed=speed,
         ),
     )
     stand_in = choking_runner(config)
-    settled_at = -0.3
     calls = []
 
     def solve(config_now, point_dir, restart_path=None, soft=False, **_):
         op = config_now.operating_point
-        calls.append((op, restart_path, point_dir))
+        calls.append((op, restart_path, point_dir, soft))
         if op.nozzle_area is not None:
             result = stand_in(config_now, None)
             # Every throat closed from the sized one refuses
-            if len(calls) > 1:
-                result.converged = op.nozzle_area >= calls[0][0].nozzle_area
-            result.operating_point = None
+            area = loop.sized_throat(config, design_result(config))
+            result.converged = op.nozzle_area >= area * (1 - 1e-9)
             return result
-        if op.mdot_adjust is not None:
-            return SimpleNamespace(
-                converged=True,
-                operating_point=dataclasses.replace(op, DP_adjust=settled_at),
-            )
         # The open duct refuses its second step towards choke
-        datum = 0.2 if op.speed == 1.0 else settled_at
-        return SimpleNamespace(converged=op.DP_adjust > datum - 0.08)
+        n_open = len([c for c in calls if c[0].nozzle_area is None])
+        return SimpleNamespace(converged=n_open < 2)
 
     monkeypatch.setattr(loop.pipeline, "solve", solve)
 
-    loop.characteristic(config, tmp_path, design=design_result(config))
+    loop.characteristic(config, tmp_path, "design.npz", design=design_result(config))
 
-    # Every open-duct point a pressure sweep, below its datum
-    open_ = [c for c in calls if c[0].nozzle_area is None]
-    throttled = [c for c in open_ if c[0].mdot_adjust is not None]
-    swept = [c for c in open_ if c[0].mdot_adjust is None]
-    by_speed = {
-        speed: [c[0].DP_adjust for c in swept if c[0].speed == speed]
-        for speed in (1.0, 0.9)
-    }
-    assert by_speed[1.0] == pytest.approx([0.15, 0.10])
-    assert by_speed[0.9] == pytest.approx([settled_at - 0.05, settled_at - 0.10])
+    assert not [c for c in calls if c[0].mdot_adjust is not None]
+    swept = [c for c in calls if c[0].nozzle_area is None]
+    throats = [c for c in calls if c[0].nozzle_area is not None]
+    if speed == 1.0:
+        assert [c[0].DP_adjust for c in swept] == pytest.approx([0.15, 0.10])
+        assert swept[0][1] == "design.npz" and swept[0][3] is False
+        # Nothing run at the sized throat itself, only closed from it
+        closed = throats
+    else:
+        datum = throats[0]
+        datum_config = dataclasses.replace(config, operating_point=datum[0])
+        start = loop._outlet_DP_adjust(config, stand_in(datum_config, None))
+        assert [c[0].DP_adjust for c in swept] == pytest.approx(
+            [start - 0.05, start - 0.10]
+        )
+        assert swept[0][1] == datum[2] / loop.RESTART_NAME
+        assert swept[0][3] is True and swept[1][3] is False
+        assert all(c[0].speed == 0.9 for c in calls)
+        closed = throats[1:]
 
-    # Only 0.9 is throttled, to the flow its datum throat passed, from its field
-    (throttle,) = throttled
-    assert throttle[0].speed == 0.9
-    datum = next(c for c in calls if c[0].speed == 0.9 and c[0].nozzle_area is not None)
-    mdot_design = float(config.design().mean_line.outlet.mdot)
-    mdot = float(
-        stand_in(
-            dataclasses.replace(config, operating_point=datum[0]), None
-        ).actual.outlet.mdot
-    )
-    assert throttle[0].mdot_adjust == pytest.approx(mdot / mdot_design - 1.0)
-    assert throttle[1] == datum[2] / loop.RESTART_NAME
-
-    # Towards stall only when asked
-    closed = [c for c in calls if c[0].nozzle_area is not None][2:]
+    # Towards stall only when asked, the first closure soft started at the
+    # design speed as the nozzle goes on
     assert bool(closed) == stall
+    if stall:
+        assert closed[0][3] is (speed == 1.0)
+
+
+def test_the_choke_leg_departs_on_the_scale_of_every_other_DP_adjust():
+    """The pressure the datum reached, carried down the duct to the exit, and
+    measured as bconds measures a held one: the design's own flow is the
+    design point, and a flow reaching the exit at a held pressure is that
+    pressure's DP_adjust whatever it was at the machine outlet."""
+    config = build()
+    machine = config.design()
+
+    design = SimpleNamespace(actual=machine.mean_line)
+    assert loop._outlet_DP_adjust(config, design) == pytest.approx(0.0, abs=1e-9)
+
+    held = bconds.exit_pressure(machine, OperatingPoint(DP_adjust=-0.2))
+    at_exit = SimpleNamespace(P=held)
+    result = SimpleNamespace(
+        actual=SimpleNamespace(
+            outlet=SimpleNamespace(P=0.5 * held),
+            interpolate_to=lambda annulus, m: [at_exit],
+        )
+    )
+    assert loop._outlet_DP_adjust(config, result) == pytest.approx(-0.2)
+
+
+@pytest.mark.parametrize("DP_adjust", [-0.3, 0.0, 0.15])
+def test_DP_adjust_at_inverts_the_exit_pressure(DP_adjust):
+    machine = build().design()
+    P = bconds.exit_pressure(machine, OperatingPoint(DP_adjust=DP_adjust))
+
+    assert bconds.DP_adjust_at(machine, P) == pytest.approx(DP_adjust)
+
+
+#
+# A DATUM TAKEN FROM A RESTART
+#
+
+
+@pytest.fixture
+def beside(monkeypatch):
+    """Stand in for the output.yaml and stamp beside a restart field: a
+    converged design point at DP_adjust=0.1, stamped as `config`'s, unless
+    told otherwise."""
+    from turbigen import Result, restart
+
+    config = chic_config(solve_datum=False)
+    stored = dataclasses.replace(config, operating_point=OperatingPoint(DP_adjust=0.1))
+    state = {"found": True, "converged": True, "stamp": None}
+
+    def stored_at(path):
+        if not state["found"]:
+            return None
+        return stored, Result(converged=state["converged"])
+
+    def read_stamp(path):
+        if state["stamp"] is not None:
+            return state["stamp"]
+        return restart.design_stamp(loop.iterate.resolve(stored))
+
+    monkeypatch.setattr(loop, "_stored", stored_at)
+    monkeypatch.setattr(loop.restart, "read_stamp", read_stamp)
+    return config, state
+
+
+def test_a_restart_beside_a_converged_design_point_is_the_datum(beside):
+    config, _ = beside
+
+    datum, result = loop.restarted_design(config, "run/restart.npz")
+
+    assert result.converged
+    assert datum.operating_point.DP_adjust == 0.1
+    assert datum.chic == config.chic
+
+
+@pytest.mark.parametrize(
+    "field, change, match",
+    [
+        (None, {}, "names none"),
+        ("run/restart.npz", {"found": False}, "no result"),
+        ("run/restart.npz", {"stamp": "0" * 64}, "another design"),
+        ("run/restart.npz", {"converged": False}, "did not converge"),
+    ],
+)
+def test_a_restart_that_is_not_this_design_point_is_refused(
+    beside, field, change, match
+):
+    """Loudly, rather than quietly solving the datum after all."""
+    config, state = beside
+    state.update(change)
+
+    with pytest.raises(ValueError, match=match):
+        loop.restarted_design(config, field)

@@ -41,6 +41,8 @@ Test cases:
 - test_a_target_that_is_not_a_flow_is_refused: an adjustment of -1 or below
 - test_the_throttle_round_trips: an ordinary config node
 - test_a_characteristic_sweep_takes_the_throttle_off: a swept point is a pressure
+- test_each_iteration_starts_from_where_the_last_settled: a field holds no pressure
+- test_a_restart_starts_the_throttle_from_the_run_beside_it: and only when it can
 - test_an_unthrottled_run_has_nothing_to_read_back: the pressure was an input
 - test_the_pressure_a_throttle_settled_at_comes_back_as_DP_adjust: the inverse
 - test_the_datum_is_the_nominal_pressure_change: one scale, the design's
@@ -507,6 +509,72 @@ def test_a_characteristic_sweep_takes_the_throttle_off():
 
     assert swept.operating_point.mdot_adjust is None
     assert swept.operating_point.DP_adjust == 0.1
+
+
+def test_each_iteration_starts_from_where_the_last_settled(tmp_path, monkeypatch):
+    """A pass whose throttle recorded nothing leaves the last pressure standing,
+    and what an iteration's input states is what it started from."""
+    from turbigen import Result, loop
+
+    point = bconds.OperatingPoint(DP_adjust=0.05, mdot_adjust=0.0)
+    config = dataclasses.replace(build(mesh=MESH), operating_point=point)
+    settled = iter([0.2, None, 0.3])
+    written, solved = [], []
+
+    def solve(config_now, *_, **__):
+        solved.append(config_now.operating_point.DP_adjust)
+        DP_adjust = next(settled)
+        reached = None
+        if DP_adjust is not None:
+            reached = dataclasses.replace(point, DP_adjust=DP_adjust)
+        return Result(converged=True, operating_point=reached)
+
+    monkeypatch.setattr(loop.pipeline, "solve", solve)
+    monkeypatch.setattr(
+        loop,
+        "write_input",
+        lambda cfg, *_: written.append(cfg.operating_point.DP_adjust),
+    )
+
+    runner = loop._Chain(out_dir=tmp_path)
+    for i_iter in range(3):
+        runner(config, i_iter)
+
+    assert solved == [0.05, 0.2, 0.2]
+    assert written == solved
+    assert runner.DP_adjust == 0.3
+
+
+@pytest.mark.parametrize(
+    "point, stored, converged, expected",
+    [
+        ((0.05, 0.0), dict(DP_adjust=-0.5), True, -0.5),
+        ((0.05, None), dict(DP_adjust=-0.5), True, None),
+        ((0.05, 0.0), dict(DP_adjust=-0.5), False, None),
+        ((0.05, 0.0), dict(DP_adjust=-0.5, nozzle_area=0.5), True, None),
+    ],
+)
+def test_a_restart_starts_the_throttle_from_the_run_beside_it(
+    monkeypatch, point, stored, converged, expected
+):
+    from turbigen import Result, loop
+
+    DP_adjust, mdot_adjust = point
+    config = dataclasses.replace(
+        build(mesh=MESH),
+        operating_point=bconds.OperatingPoint(
+            DP_adjust=DP_adjust, mdot_adjust=mdot_adjust
+        ),
+    )
+    beside = dataclasses.replace(
+        config, operating_point=bconds.OperatingPoint(**stored)
+    )
+    monkeypatch.setattr(
+        loop, "_stored", lambda _: (beside, Result(converged=converged))
+    )
+
+    assert loop._field_DP_adjust(config, "run/restart.npz") == expected
+    assert loop._field_DP_adjust(config, None) is None
 
 
 #

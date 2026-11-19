@@ -546,12 +546,12 @@ class OperatingPoint(Node):
 
     # The other way along a characteristic: target a mass flow,
     # mdot = mdot_design * (1 + mdot_adjust), and let a controller on the
-    # outlet patch move the exit pressure until it is reached. DP_adjust sets
-    # where the controller starts, and achieved() records where it settled.
-    # None (not 0.0) means no throttle, because asking for a mass flow and
-    # accepting one are different requests. Use it when the design's variables
-    # include mdot. ember allows only one throttled outlet patch, and the
-    # target must be positive.
+    # outlet patch move the exit pressure until it is reached. It starts from
+    # DP_adjust, or in `iterate` from where the last pass or the run beside
+    # restart: settled, and achieved() records where it settled. None (not
+    # 0.0) means no throttle: asking for a mass flow and accepting one are
+    # different requests. Use it when the design's variables include mdot;
+    # ember allows one throttled outlet patch, and the target must be positive.
     mdot_adjust: float | None = None
     """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
@@ -735,10 +735,32 @@ def design_exit(machine):
     :meth:`~turbigen.meanline.MeanLine.interpolate_to`. A constant-area,
     constant-radius duct gives back the trailing edge's state.
     """
-    ml, annulus = machine.mean_line, machine.annulus
+    return exit_flow(machine.mean_line, machine.annulus)
+
+
+def exit_flow(mean_line, annulus):
+    """Return `mean_line` carried along the exit duct of `annulus` to the
+    domain exit, a scalar mean line; see :func:`design_exit`, which is this
+    applied to the design's own. Its last station where there is no annulus.
+    """
     if annulus is None:
-        return ml.outlet
-    return ml.interpolate_to(annulus, [annulus.m_max])[0]
+        return mean_line.outlet
+    return mean_line.interpolate_to(annulus, [annulus.m_max])[0]
+
+
+def design_DP(machine):
+    """Return the inlet stagnation pressure and the design's pressure change to
+    the domain exit, ``(Po_in, DP_design)`` [Pa], the scale every
+    :attr:`OperatingPoint.DP_adjust` is measured on."""
+    Po_in = float(machine.mean_line.inlet.Po)
+    return Po_in, Po_in - float(design_exit(machine).P)
+
+
+def DP_adjust_at(machine, P_exit):
+    """Return the :attr:`OperatingPoint.DP_adjust` that holds `P_exit` at the
+    domain exit of `machine` [--]; the inverse of :func:`exit_pressure`."""
+    Po_in, DP_design = design_DP(machine)
+    return (Po_in - P_exit) / DP_design - 1.0
 
 
 def exit_pressure(machine, operating_point=None):
@@ -760,7 +782,7 @@ def exit_pressure(machine, operating_point=None):
     float
 
     """
-    Po_in = float(machine.mean_line.inlet.Po)
+    Po_in, DP_design = design_DP(machine)
     exit = design_exit(machine)
     P_out = float(exit.P)
 
@@ -783,7 +805,6 @@ def exit_pressure(machine, operating_point=None):
     # that drops it: DP_design is negative for a compressor, and a positive
     # adjustment makes it more negative -- more rise -- exactly as it makes a
     # turbine's more positive.
-    DP_design = Po_in - P_out
     DP = DP_design * (1.0 + operating_point.DP_adjust)
 
     P_out_now = Po_in - DP
@@ -956,9 +977,7 @@ def achieved(grid, machine, operating_point=None):
         )
         return None
 
-    Po_in = float(machine.mean_line.inlet.Po)
-    DP_design = Po_in - float(design_exit(machine).P)
-    DP_adjust = (Po_in - float(patch.P_throttle)) / DP_design - 1.0
+    DP_adjust = DP_adjust_at(machine, float(patch.P_throttle))
 
     logger.info(
         f"Throttle settled at exit P={float(patch.P_throttle):.5g} Pa, which "

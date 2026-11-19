@@ -20,6 +20,7 @@ import ember.yaml_util
 
 from turbigen import (
     batch,
+    bconds,
     case,
     chic,
     database,
@@ -119,6 +120,46 @@ def settled_design(config_path, config, quiet=False):
     return config, result
 
 
+def restarted_design(config, field):
+    """Return `config` at the operating point the run that left `field`
+    reached, and its result, for a sweep that takes that run as its datum.
+
+    Raises
+    ------
+    ValueError
+        If there is no field, no `output.yaml` beside it, the run did not
+        converge or its design errors are outside their tolerances, or the
+        field is stamped for another design.
+    """
+    if field is None:
+        raise ValueError(
+            "chic.solve_datum is off, so restart: must name a converged design "
+            "point's field to sweep from, and it names none."
+        )
+    field = Path(field)
+    output = field.parent / OUTPUT_NAME
+    found = _stored(output)
+    if found is None:
+        raise ValueError(
+            f"chic.solve_datum is off, but there is no result in {output} to take as "
+            "the datum."
+        )
+    stored, result = found
+    datum = dataclasses.replace(config, operating_point=stored.operating_point)
+    if restart.read_stamp(field) != restart.design_stamp(iterate.resolve(datum)):
+        raise ValueError(
+            f"chic.solve_datum is off, but the field {field} is stamped for another "
+            "design, so it is not this design's datum."
+        )
+    if not result.converged or not iterate.converged(config, result):
+        raise ValueError(
+            f"chic.solve_datum is off, but the run in {output} did not converge, or "
+            "its design errors are outside their tolerances."
+        )
+    logger.info(f"Sweeping straight away from the datum in {output}.")
+    return datum, result
+
+
 def _stored(path):
     """Return the config and result of the case file at `path`, or None if it
     holds no result or cannot be read."""
@@ -184,10 +225,25 @@ class _Chain:
     trajectory: list = dataclasses.field(default_factory=list)
     """Every ``(config, result)`` pair so far, oldest first."""
 
+    DP_adjust: float | None = None
+    """Where a throttled exit starts the next call, advanced as each one
+    settles; None for where the config it is handed says."""
+
     def __call__(self, config_now, i_iter):
         iter_dir = self.out_dir / f"iter_{i_iter:04d}"
         iter_dir.mkdir(parents=True, exist_ok=True)
         iterate.logger.info(f"Iteration {i_iter} in {iter_dir}")
+
+        # The field is chained below, and a field keeps nothing of the pressure
+        # that passed its flow, so that is chained here. Before `write_input`,
+        # so that re-solving this iteration alone starts where it did.
+        if self.DP_adjust is not None:
+            config_now = dataclasses.replace(
+                config_now,
+                operating_point=dataclasses.replace(
+                    config_now.operating_point, DP_adjust=self.DP_adjust
+                ),
+            )
 
         # Where this iteration's knobs stood, which the next one moves: the
         # sequence is reproducible from the datum, but no single member of it
@@ -216,6 +272,11 @@ class _Chain:
             retry=True,
         )
         self.previous = iter_dir / RESTART_NAME
+
+        # A throttle that missed its target recorded no pressure, and a march
+        # that diverged is not somewhere to start from.
+        if result.converged and result.operating_point is not None:
+            self.DP_adjust = result.operating_point.DP_adjust
 
         self.trajectory.append(
             (config_now, dataclasses.replace(result, grid=None, history=None))
@@ -281,7 +342,12 @@ def converge_design(config, out_dir, previous=None, promote_input=False):
 
     # Built after the warm start, never before: the seed is the nearest
     # neighbour to this design, and the warm start is what moves the design.
-    runner = _Chain(out_dir=out_dir, previous=previous, warm=seed(config))
+    runner = _Chain(
+        out_dir=out_dir,
+        previous=previous,
+        warm=seed(config),
+        DP_adjust=_field_DP_adjust(config, previous),
+    )
 
     if config.iterate.correct:
         config, result, converged = iterate.converge(
@@ -295,6 +361,38 @@ def converge_design(config, out_dir, previous=None, promote_input=False):
     field = promote_final(out_dir, runner.previous.parent, converged, promote_input)
 
     return _with_achieved(config, result), result, converged, field
+
+
+def _field_DP_adjust(config, field):
+    """Return the `DP_adjust` for a throttled `config` to start from `field` at,
+    or None for the config's own.
+
+    What the `output.yaml` beside the field records, because the field itself
+    holds none: the pressure a throttle settled at, or the one a run held. None
+    if `config` has no throttle, if there is no converged run beside the field,
+    or if that run's exit was a nozzle, whose pressure is not a back pressure.
+
+    Taken as it stands even from another design, whose scale differs a little:
+    it is only where the controller starts.
+    """
+    point = config.operating_point
+    if field is None or point is None or point.mdot_adjust is None:
+        return None
+
+    found = _stored(Path(field).parent / OUTPUT_NAME)
+    if found is None:
+        return None
+
+    stored, result = found
+    reached = stored.operating_point
+    if not result.converged or reached is None or reached.nozzle_area is not None:
+        return None
+
+    logger.info(
+        f"Starting the throttle from DP_adjust={reached.DP_adjust:.5g}, where "
+        f"the run that left {field} reached."
+    )
+    return reached.DP_adjust
 
 
 def _with_achieved(config, result):
@@ -480,12 +578,18 @@ def characteristic(config, out_dir, previous=None, design=None, promote_input=Fa
     ``chic_NNNN``.
 
     Each point is an ordinary run in a directory of its own, started from the
-    field of the last point that stood. With more than one of `chic.speeds`,
-    each speedline's points go under ``speed_S.SSS/``, the nozzle being sized
-    at the design speed under ``speed_1.000/``, and each speedline departs
-    from that throat run at its own speed: the first point there, soft
-    started from the nearest speed already run. A choke leg with a nozzle runs
-    on the open duct, from the pressure that passes the datum's flow.
+    field of the last point that stood, and nothing is run that is not a
+    point of the characteristic. A nozzle's throat is sized one-dimensionally
+    to pass the design point's flow, and not solved.
+
+    At the design speed the design point is the datum: the stall leg closes
+    the throat from its field, its first point behind a soft start as the
+    nozzle goes on, and the choke leg lowers the back pressure from its own.
+    At any other `chic.speed`, the datum is the sized throat at that speed,
+    soft started from the design point; the stall leg closes the throat from
+    it, and the choke leg departs on the open duct from the static pressure
+    it reached at the machine outlet, its first point soft started as the
+    throat comes off.
 
     `design` is the result the design point reached when it has already
     settled --- see :func:`settled_design`, which reads it from the case file
@@ -518,183 +622,140 @@ def characteristic(config, out_dir, previous=None, design=None, promote_input=Fa
                 "sweep a characteristic of. Fix that with 'iterate' first."
             )
 
-    speeds = config.chic.speeds
-    layout = tuple(speeds) != (1.0,)
+    counter = itertools.count()
 
-    # Each speedline numbers its own points, in a directory of its own when
-    # there is more than one; the field chained from point to point is shared,
-    # so that whichever speedline runs next starts from the last success
-    state = {"previous": previous}
+    def run(config_now, soft=False):
+        """Solve one point of the characteristic, in a directory of its own,
+        from the field `previous` names."""
+        nonlocal previous
+        i_point = next(counter)
+        point_dir = out_dir / f"chic_{i_point:04d}"
+        point_dir.mkdir(parents=True, exist_ok=True)
+        chic.logger.info(f"Point {i_point} in {point_dir}")
 
-    def runner(speed):
-        base = out_dir / f"speed_{speed:.3f}" if layout else out_dir
-        counter = itertools.count()
+        # This point's own operating point exists nowhere else: the sweep
+        # moved it, and the datum describes the whole characteristic
+        # rather than any one station on it.
+        write_input(config_now, point_dir, previous)
 
-        def run(config_now, _, soft=False):
-            """Solve one point of the characteristic, in a directory of its own."""
-            i_point = next(counter)
-            point_dir = base / f"chic_{i_point:04d}"
-            point_dir.mkdir(parents=True, exist_ok=True)
-            chic.logger.info(f"Point {i_point} in {point_dir}")
+        # Chained, and near the limit this is what keeps a point
+        # converging at all: the smallest perturbation from a field that
+        # worked.
+        result = pipeline.solve(config_now, point_dir, previous, soft=soft)
+        if result.converged:
+            # A diverged point is not somewhere to start the next one
+            # from, and the next one is a fine step on from what did work.
+            previous = point_dir / RESTART_NAME
 
-            # This point's own operating point exists nowhere else: the sweep
-            # moved it, and the datum describes the whole characteristic
-            # rather than any one station on it.
-            write_input(config_now, point_dir, state["previous"])
+        return result
 
-            # Chained, and near the limit this is what keeps a point
-            # converging at all: the smallest perturbation from a field that
-            # worked.
-            result = pipeline.solve(config_now, point_dir, state["previous"], soft=soft)
-            if result.converged:
-                # A diverged point is not somewhere to start the next one
-                # from, and the next one is a fine step on from what did work.
-                state["previous"] = point_dir / RESTART_NAME
-
-            return result
-
-        return run
-
-    def leg(run, field):
+    def leg(field, soft=False):
         """Return `run` for one leg of a sweep, departing from `field`, each
-        point restarted from the one `chic.sweep` names by its index."""
+        point restarted from the one `chic.sweep` names by its index; the
+        first behind a soft start if `soft`, its exit changing as it moves."""
         fields = []
 
         def run_leg(config_now, start):
-            state["previous"] = field if start is None else fields[start]
-            result = run(config_now, None)
-            fields.append(state["previous"] if result.converged else None)
+            nonlocal previous
+            previous = field if start is None else fields[start]
+            result = run(config_now, soft=soft and not fields)
+            fields.append(previous if result.converged else None)
             return result
 
         return run_leg
 
-    # Sized at the design speed, whatever speeds are swept: its throttle line
-    # is what puts a datum on every other speedline. The design point itself,
-    # on the open duct, is where the design speed's choke leg departs from.
-    design_run = runner(1.0)
-    opens = {1.0: (config, state["previous"])}
-    if config.chic.nozzle:
-        config = size_nozzle(config, design, design_run)
-
-    # Where each speedline departs from, by speed: its datum's field, and the
-    # mass flow that passed there
-    datums = {1.0: (state["previous"], None)}
+    speed = config.chic.speed
+    nozzle_on = config.chic.nozzle
     name = chic.setting_name(config)
     points, bracket = [], None
 
-    # Nearest the design speed first, each new speed restarted from the
-    # nearest one already run
-    for speed in sorted(speeds, key=lambda speed: (abs(speed - 1.0), speed)):
-        config_now = chic.at_speed(config, speed)
-        run = design_run if speed == 1.0 else runner(speed)
+    # The open duct at the design point, where the design speed's choke leg
+    # departs from; and the throat that passes its flow, sized and not solved,
+    # the design point already being a point on its speedline
+    open_config = config
+    if nozzle_on:
+        config = chic.at_nozzle(config, sized_throat(config, design))
+    config_now = chic.at_speed(config, speed)
 
-        if speed not in datums:
-            datum = _speed_datum(config_now, speed, datums, run, state)
-            if datum is None:
-                continue
-            datums[speed] = datum
-
-        field, mdot = datums[speed]
-        if config.chic.stall:
-            stall_points, stall_bracket = chic.sweep(config_now, leg(run, field))
-            chic.logger.info(f"Speed {speed:.4g} towards stall:")
-            chic.logger.info(chic.format_table(stall_points, stall_bracket, name))
-            points += stall_points
-            if speed == 1.0 or bracket is None:
-                bracket = stall_bracket
-
-        if config.chic.choke:
-            # Back to the datum, the stall leg's fields being further from
-            # choke; with a nozzle, onto the open duct at the datum's flow
-            if not config.chic.nozzle:
-                config_choke, start = config_now, field
-            elif speed in opens:
-                config_choke, start = opens[speed]
-            else:
-                state["previous"] = field
-                config_choke = _open_datum(config_now, speed, mdot, run)
-                if config_choke is None:
-                    continue
-                start = state["previous"]
-            choke_points, choke_bracket = chic.sweep(
-                config_choke, leg(run, start), direction=-1
+    if speed == 1.0:
+        # The design point is the datum, run already: the stall leg departs
+        # from its field, the first point behind a soft start when it is the
+        # first with a nozzle, and the choke leg from its pressure
+        field = previous
+        stall_soft = nozzle_on
+        config_choke, choke_soft = open_config, False
+    else:
+        # The sized throat at this speed, soft started from the design
+        # point: the speedline's datum, and a point on it
+        chic.logger.info(f"Speed {speed:.4g}: the sized throat, from the design point.")
+        result = run(config_now, soft=True)
+        if not result.converged:
+            chic.logger.warning(
+                f"The sized throat did not converge at speed {speed:.4g}, so "
+                "there is no datum to sweep from."
             )
-            choke_name = chic.setting_name(config_choke, direction=-1)
-            chic.logger.info(f"Speed {speed:.4g} towards choke:")
-            chic.logger.info(chic.format_table(choke_points, choke_bracket, choke_name))
-            points += choke_points
-            if not config.chic.stall and (speed == 1.0 or bracket is None):
-                bracket = choke_bracket
+            return [chic.Point(0.0, result, False)], None
+        points.append(chic.Point(0.0, result, True))
+        field = previous
+        chic.logger.info(
+            f"Speed {speed:.4g}: datum passed mdot="
+            f"{float(result.actual.outlet.mdot):.5g} kg/s."
+        )
+        stall_soft = False
+        # The choke leg on the open duct, from the pressure the datum left
+        # at the machine outlet, its first point soft started as the throat
+        # comes off
+        config_choke = chic.at(
+            chic.at_speed(open_config, speed), _outlet_DP_adjust(config, result)
+        )
+        choke_soft = True
+
+    if config.chic.stall:
+        stall_points, bracket = chic.sweep(config_now, leg(field, stall_soft))
+        chic.logger.info(f"Speed {speed:.4g} towards stall:")
+        chic.logger.info(chic.format_table(stall_points, bracket, name))
+        points += stall_points
+
+    if config.chic.choke:
+        choke_points, choke_bracket = chic.sweep(
+            config_choke, leg(field, choke_soft), direction=-1
+        )
+        choke_name = chic.setting_name(config_choke, direction=-1)
+        chic.logger.info(f"Speed {speed:.4g} towards choke:")
+        chic.logger.info(chic.format_table(choke_points, choke_bracket, choke_name))
+        points += choke_points
+        if not config.chic.stall:
+            bracket = choke_bracket
 
     return points, bracket
 
 
-def _speed_datum(config, speed, datums, run, state):
-    """Run the sized throat at a new `speed`, from the nearest speed run so
-    far, and return its field and the mass flow it passed, or None if it
-    would not converge."""
-    nearest = min(datums, key=lambda done: abs(done - speed))
-    state["previous"] = datums[nearest][0]
+def _outlet_DP_adjust(config, result):
+    """Return the `DP_adjust` that holds, at the open duct's exit, the static
+    pressure `result` reached at the machine outlet.
 
-    if not getattr(config.solver, "n_step_soft", 0):
-        chic.logger.warning(
-            f"Moving to speed {speed:.4g} from {nearest:.4g} without a soft "
-            f"start, solver.n_step_soft being zero."
-        )
-    chic.logger.info(f"Speed {speed:.4g}: datum from speed {nearest:.4g}.")
-
-    result = run(config, None, soft=True)
-    if not result.converged:
-        chic.logger.warning(
-            f"The sized throat did not converge at speed {speed:.4g}, so that "
-            f"speedline is skipped."
-        )
-        return None
-
-    mdot = float(result.actual.outlet.mdot)
-    chic.logger.info(f"Speed {speed:.4g}: datum passed mdot={mdot:.5g} kg/s.")
-    return state["previous"], mdot
-
-
-def _open_datum(config, speed, mdot, run):
-    """Throttle the open duct to the `mdot` the sized throat passed at
-    `speed`, and return `config` at the pressure it settled at, for a choke
-    leg to depart from, or None if it did not settle.
-
-    A throat cannot be opened far enough to choke the machine, the duct
-    narrowing before it gets there, so the choke leg is a back pressure. A
-    choked throat holds a speedline's datum where a pressure alone may not,
-    so the pressure is found by throttling to the flow rather than guessed.
+    The mixed-out mean line carried down the open duct to the exit plane, as
+    the design's own exit pressure is (:func:`turbigen.bconds.design_exit`),
+    and measured on the same scale as every other `DP_adjust`
+    (:func:`turbigen.bconds.DP_adjust_at`). Loss-free along the duct, so near
+    the pressure that passes the same flow on the open duct rather than at it:
+    where a choke leg departs from, one step from which is its first point.
     """
-    mdot_design = float(config.design().mean_line.outlet.mdot)
-    point = dataclasses.replace(
-        config.operating_point, nozzle_area=None, mdot_adjust=mdot / mdot_design - 1.0
-    )
-    chic.logger.info(
-        f"Speed {speed:.4g}: the open duct throttled to the datum's "
-        f"mdot={mdot:.5g} kg/s, for the choke leg to depart from."
-    )
-
-    result = run(dataclasses.replace(config, operating_point=point), None)
-    if not result.converged or result.operating_point is None:
-        chic.logger.warning(
-            f"The open duct did not settle at the datum's flow at speed "
-            f"{speed:.4g}, so that speedline has no choke leg."
-        )
-        return None
-    return dataclasses.replace(config, operating_point=result.operating_point)
+    machine = config.design()
+    at_exit = bconds.exit_flow(result.actual, machine.annulus)
+    return bconds.DP_adjust_at(machine, float(at_exit.P))
 
 
-def size_nozzle(config, design, run):
-    """Return `config` with a choked exit nozzle passing the design's flow.
+def sized_throat(config, design):
+    """Return the throat, as a fraction of the outlet area, of a choked exit
+    nozzle passing the design's flow.
 
     Sized one-dimensionally from the stagnation state and mass flow the design
-    point reached at the machine outlet, and solved once. A throat with
+    point reached at the machine outlet, and not solved. A throat with
     boundary layers and a spanwise profile passes a little other than the
     one-dimensional flow, but it is not rescaled to make that up: whatever it
-    passes, a choked throat is a point on the design speedline, which is all a
-    datum has to be. That throat is the datum the sweep closes from, and its
-    field the one it starts from.
+    passes, a choked throat is a point on the speedline, which is all the
+    throat a sweep closes from has to be.
 
     Parameters
     ----------
@@ -702,18 +763,15 @@ def size_nozzle(config, design, run):
         The settled design, with a pressure at exit.
     design : Result
         What the design point achieved.
-    run : callable
-        As :func:`turbigen.chic.sweep` takes it.
 
     Returns
     -------
-    config : Config
+    float
 
     Raises
     ------
     ValueError
-        If the design point has no mixed-out mean line to size from, or the
-        throat does not converge, there being no datum to sweep from.
+        If the design point has no mixed-out mean line to size from.
     """
     if design.actual is None:
         raise ValueError(
@@ -721,23 +779,9 @@ def size_nozzle(config, design, run):
             "reached, and its result holds none."
         )
     target = float(design.actual.outlet.mdot)
-    annulus = config.design().annulus
-    area = nozzle.throat_fraction(design.actual.outlet, annulus)
+    area = nozzle.throat_fraction(design.actual.outlet, config.design().annulus)
     chic.logger.info(
         f"Sizing a choked nozzle to pass mdot={target:.5g} kg/s: a throat of "
         f"{area:.5g} of the outlet area, one-dimensionally."
     )
-
-    result = run(chic.at_nozzle(config, area), None)
-    if not result.converged:
-        raise ValueError(
-            f"The nozzle with a throat of {area:.5g} of the outlet area "
-            f"did not converge, so there is no datum to sweep from."
-        )
-    mdot = float(result.actual.outlet.mdot)
-    chic.logger.info(
-        f"Throat {area:.5g} passed mdot={mdot:.5g} kg/s, "
-        f"{mdot / target - 1.0:+.2%} from the design point."
-    )
-
-    return chic.at_nozzle(config, area)
+    return area

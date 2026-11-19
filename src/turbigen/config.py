@@ -84,7 +84,9 @@ class Config(Node):
     ``input.yaml`` turbigen wrote, the field the run it records *started* from,
     or null for the guess --- a record, which may name a field since pruned.
     Seeds only the first march of ``iterate`` and ``chic``: each later one
-    starts from the one before. Not stamped, so changing it neither re-meshes
+    starts from the one before. A field holds no exit pressure, so a throttled
+    ``iterate`` or ``chic`` also starts from the ``DP_adjust`` in the
+    ``output.yaml`` beside it. Not stamped, so changing it neither re-meshes
     nor disowns a stored field. ``report`` ignores it, taking its field from
     beside the config."""
 

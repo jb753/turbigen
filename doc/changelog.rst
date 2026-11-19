@@ -25,6 +25,14 @@ v4.0.0
   keep reproducible
 * Add TS3 solver back again
 * Run characteristics into stall using a choked exit nozzle
+* Sweep one speedline per ``chic`` run at ``chic.speed``, solving only points
+  on the characteristic
+* ``chic.solve_datum: false`` takes the design point from a converged
+  ``restart:`` field instead of solving it again
+* Throttled runs start from the exit pressure the last iteration settled at,
+  or that the run beside ``restart:`` reached
+* Chain queued jobs with ``--after``, and print each submitted job's id and
+  run directory with ``--parsable``
 * Plotters for yplus, shape factor, mesh, blade thickness, pitch-averaged
   profiles, traverse contours
 * Add rounded trailing edge option, only compatible with OH meshes

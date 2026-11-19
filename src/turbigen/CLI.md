@@ -263,6 +263,11 @@ answers:
                             config files are given
 -Q, --queue                 submit to the queue the job: section names,
                             instead of running here
+--parsable                  with -Q, print each submitted config's job id
+                            and run directory on stdout, 'JOBID DIR'
+--after JOBID               with -Q, start only once each job named has
+                            finished successfully; repeatable, or comma-
+                            separated
 ```
 
 Everything else that could be a flag is a *value*, and values live in the
@@ -473,6 +478,12 @@ alone starts where it did. An `output.yaml`'s is a record: once a settled
 design is pruned it names a field that is gone, and only a config's is ever
 read. A settled iteration's `input.yaml` that names a pruned field has the key
 cleared, so re-solving it alone starts from the guess rather than refusing.
+
+A field holds no exit pressure, so a throttled `iterate` or `chic` also starts
+from the `DP_adjust` in the `output.yaml` beside its `restart:`, when that run
+converged, and each iteration from where the last one settled. Each
+`input.yaml` states the pressure that iteration started from. `run` starts from
+its config's own.
 
 Several config files run one after another, which is the bash loop this saves
 you writing, or become one submission with `--queue`.
@@ -777,6 +788,25 @@ it has just written, as the verb the datum implies, carrying none — see
 `type:`, needing no change here. See [Where a run
 executes](ARCHITECTURE.md#where-a-run-executes).
 
+**Chaining jobs.** `--parsable` puts one `JOBID DIR` line on stdout for each
+config submitted, the job being the array's own id for one config and its
+member, `JOBID_N`, for more; everything else stays on stderr. With `-o`, the
+directory is the numbered one made at submission, so what the job will leave
+there can be named before it runs. `--after` names job ids to wait for,
+each to finish successfully, in either queue (sbatch's `--dependency=afterok`,
+task-spooler's `-D`), so a second submission can wait on the first and restart
+from its field, which need not exist yet when it is queued with one. A flag
+and not a `job:` key, because it is true of one submission only: a key would
+ride along in every `input.yaml` the run writes and hold back any later
+submission of one on jobs long gone. With `batch`, `--parsable` prints the
+member lines in place of the batch directory, which is their parent.
+
+```bash
+read -r JOB DIR < <(turbigen run case.yaml -o 'runs/%' -Q --parsable)
+turbigen chic chic.yaml -o 'runs/%' -Q --after "$JOB" \
+    -s restart="$DIR/restart.npz"
+```
+
 Nothing wraps `tsp -l`, `squeue` or `scancel`: they are better than anything we
 would put in front of them.
 
@@ -803,7 +833,7 @@ Three more things it can do, each off by default:
 - **`nozzle: true`** throttles with a choked exit nozzle instead of a back
   pressure. The exit duct of the mesh is morphed into a converging-diverging
   nozzle (`turbigen/nozzle.py`), its throat sized one-dimensionally to pass
-  the design point's flow and solved once, and the sweep closes the throat by
+  the design point's flow and not solved, and the sweep closes the throat by
   fractions of that area. A choked throat fixes `mdot sqrt(To) / Po`, which
   crosses the characteristic once even near its peak, where one back pressure
   admits a range of flows.
@@ -811,13 +841,14 @@ Three more things it can do, each off by default:
   pressure by `step_choke` (else `step_coarse`) and then `step_choke_fine`,
   until a point does not converge or raises the mass flow by less than
   `choke_mdot` over a coarse step. With a nozzle, which cannot be opened far
-  enough to choke the machine, the open duct is first throttled to the flow the
-  datum throat passed. `stall: false` runs the choke leg alone.
-- **`speeds: [0.8, 1.0, 1.05]`** sweeps a speedline at each fraction of the
-  design shaft speed, the blades keeping their design shape. Each departs from
-  the throat sized at the design speed, so this needs a nozzle; a new speed's
-  datum is soft started from the nearest speed already run, and its points go
-  under `speed_S.SSS/`.
+  enough to choke the machine, the leg runs the open duct, from the design
+  point's pressure at the design speed and at another from the static pressure
+  its datum throat left at the machine outlet. `stall: false` runs the choke
+  leg alone.
+- **`speed: 0.8`** sweeps the speedline at that fraction of the design shaft
+  speed, the blades keeping their design shape. It departs from the throat
+  sized for the design point, so this needs a nozzle; its datum is that throat
+  at this speed, soft started from the design point.
 
 **Whether it iterates first is inferred, never asked for.** A case whose stored
 `result:` says the design has converged *and* its iterators are inside their

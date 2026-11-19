@@ -688,15 +688,19 @@ def each(args, one):
         # behind and consume a number to say nothing. `_copy_into_workdir`
         # validates again on the document it actually writes; this is the same
         # check moved early, not a second opinion.
-        # A `restart:` naming a field that is not there is caught here too,
-        # for the same reason.
         for path in paths:
-            resolve_restart(Config.from_dict(load_document(path, args)))
+            config = Config.from_dict(load_document(path, args))
+            # A `restart:` naming a field that is not there too, unless the
+            # job is queued to wait on another, which may be what leaves it:
+            # the run checks again when it starts.
+            if not _waits(args):
+                resolve_restart(config)
 
         args.workdir = str(resolve_workdir(args.workdir))
 
     # Checked against where the work will land, and before `redirect` creates
     # anything there.
+    _check_queue_options(args)
     check_clobber(args, clobbered_dirs(args, paths))
 
     paths = redirect(args, paths)
@@ -718,7 +722,31 @@ def each(args, one):
 #
 
 
-def submit(config, paths, verb, options=()):
+def _after(args):
+    """Return the job ids --after names, however many times and however
+    comma-separated it was given."""
+    given = getattr(args, "after", None) or ()
+    return tuple(job_id for value in given for job_id in value.split(",") if job_id)
+
+
+def _waits(args):
+    """Return whether this invocation is being queued to start after another
+    job."""
+    return bool(getattr(args, "queue", False) and _after(args))
+
+
+def _check_queue_options(args):
+    """Refuse --parsable and --after without --queue, there being no job to
+    report or to hold back."""
+    if getattr(args, "queue", False):
+        return
+    if getattr(args, "parsable", False):
+        raise ValueError("--parsable reports what --queue submitted, so it needs -Q.")
+    if _after(args):
+        raise ValueError("--after holds back what --queue submits, so it needs -Q.")
+
+
+def submit(config, paths, verb, options=(), parsable=False, after=()):
     """Send every path to the queue `config` names, and run none of them.
 
     The `job:` section says *how* to submit and `--queue` says *whether*, so
@@ -736,7 +764,15 @@ def submit(config, paths, verb, options=()):
         job.Task(config=path, name=Path(path).resolve().parent.name) for path in paths
     ]
 
-    config.job.submit(tasks, verb, options)
+    submitted = config.job.submit(tasks, verb, options, after)
+
+    # With --parsable, each config's job and run directory on stdout, one to
+    # a line, everything else being on stderr, so a script can wait on it and
+    # find what it will leave: read -r JOB DIR < <(turbigen run -Q ...)
+    if parsable:
+        for done in submitted:
+            for job_id, path in done.jobs:
+                print(f"{job_id} {Path(path).resolve().parent}", flush=True)
 
     return 0
 
@@ -746,7 +782,14 @@ def submit_targets(args, paths):
     # The queue is read from the first target only. Which one to use is a
     # property of where you are, so a batch whose members disagreed about it
     # would be describing something that cannot happen.
-    return submit(load_config(paths[0], args), paths, args.command, task_options(args))
+    return submit(
+        load_config(paths[0], args),
+        paths,
+        args.command,
+        task_options(args),
+        getattr(args, "parsable", False),
+        _after(args),
+    )
 
 
 def batch_verb(config):
@@ -1096,6 +1139,8 @@ def _chic_one(args, config_path):
         previous = resolve_restart(config)
 
         config, design = loop.settled_design(config_path, config) or (config, None)
+        if design is None and not config.chic.solve_datum:
+            config, design = loop.restarted_design(config, previous)
         points, _ = loop.characteristic(
             config, out_dir, previous, design, is_copy(args)
         )
@@ -1115,6 +1160,7 @@ def cmd_batch(args):
             "config file as its datum."
         )
 
+    _check_queue_options(args)
     config = load_config(paths[0], args)
 
     if config.batch is None:
@@ -1155,12 +1201,21 @@ def cmd_batch(args):
     batch.logger.info(f"Wrote {len(members)} design(s) to {out_dir}")
 
     if args.queue:
-        submit(config, members, batch_verb(config))
+        submit(
+            config,
+            members,
+            batch_verb(config),
+            parsable=args.parsable,
+            after=_after(args),
+        )
 
     # The one thing this verb puts on stdout, everything else being on stderr.
     # A numbered batch cannot be named in advance, so without it a script has
     # no way to find what it just made: BATCH=$(turbigen batch case.yaml).
-    print(out_dir, flush=True)
+    # With --parsable the member lines name it already, and a bare directory
+    # among them would be a line of another shape.
+    if not args.parsable:
+        print(out_dir, flush=True)
 
     return 0
 
@@ -1551,6 +1606,23 @@ def _add_queue_argument(parser):
             "here; every config becomes one submission"
         ),
     )
+    parser.add_argument(
+        "--parsable",
+        action="store_true",
+        help=(
+            "with --queue, print each submitted config's job id and run "
+            "directory on stdout, one 'JOBID DIR' to a line"
+        ),
+    )
+    parser.add_argument(
+        "--after",
+        action="append",
+        metavar="JOBID",
+        help=(
+            "with --queue, start only once each of these jobs has finished "
+            "successfully; repeat it or separate ids with commas"
+        ),
+    )
 
 
 VERBS = (
@@ -1631,8 +1703,8 @@ VERBS = (
             "back pressure by chic.step_coarse until a point will not "
             "converge, then march on from the last good field by "
             "chic.step_fine until one fails again; chic.nozzle, chic.choke "
-            "and chic.speeds throttle with a choked exit nozzle, add a leg "
-            "towards choke and sweep other speedlines. Each point is an "
+            "and chic.speed throttle with a choked exit nozzle, add a leg "
+            "towards choke and sweep another speedline. Each point is an "
             "ordinary run in a "
             "directory of its own. A case whose stored result says the design "
             "has already settled skips straight to the sweep. Needs a chic: "
