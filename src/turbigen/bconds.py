@@ -30,13 +30,15 @@ from turbigen.node import Node
 
 logger = logging.getLogger("turbigen")
 
-OMEGA_CASING = 0.0
+OMEGA_STATIONARY = 0.0
 """Angular velocity of a wall a `RotatingPatch` marks off [rad/s].
 
-Zero, because the only such wall is a casing over a tip gap and a casing does
-not turn. It is named rather than written in place because it is the value a
-contra-rotating casing would change, and because zero here means "stationary in
-the absolute frame" rather than "no rotation configured".
+Zero, because every such wall a mesher places stands still: a casing over a
+tip gap, and a `stationary` stretch of a duct's endwall
+(:class:`turbigen.mesh.StationaryStretch`). It is named rather than written in
+place because it is the value a contra-rotating wall would change, and because
+zero here means "stationary in the absolute frame" rather than "no rotation
+configured".
 """
 
 RF_RADIAL_EQUILIBRIUM = 0.1
@@ -544,12 +546,12 @@ class OperatingPoint(Node):
 
     # The other way along a characteristic: target a mass flow,
     # mdot = mdot_design * (1 + mdot_adjust), and let a controller on the
-    # outlet patch move the exit pressure until it is reached. DP_adjust sets
-    # where the controller starts, and achieved() records where it settled.
-    # None (not 0.0) means no throttle, because asking for a mass flow and
-    # accepting one are different requests. Use it when the design's variables
-    # include mdot. ember allows only one throttled outlet patch, and the
-    # target must be positive.
+    # outlet patch move the exit pressure until it is reached. It starts from
+    # DP_adjust, or in `iterate` from where the last pass or the run beside
+    # restart: settled, and achieved() records where it settled. None (not
+    # 0.0) means no throttle: asking for a mass flow and accepting one are
+    # different requests. Use it when the design's variables include mdot;
+    # ember allows one throttled outlet patch, and the target must be positive.
     mdot_adjust: float | None = None
     """Change in the design mass flow, as a fraction [--]; null for no throttle."""
 
@@ -561,7 +563,7 @@ class OperatingPoint(Node):
     throttle_Ki: float = 0.002
     """Integral gain of the throttle [--]."""
 
-    throttle_tol: float = 1.0e-3
+    throttle_tol: float = 1.0e-2
     """Mass-flow error the throttle must finish inside, as a fraction of its
     target, for the pressure it reached to be recorded as the operating point
     [--]. ember's controller reaches parts in ten thousand on a converged
@@ -669,7 +671,7 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
 
     """
     inlet = machine.mean_line.inlet
-    outlet = machine.mean_line.outlet
+    outlet = design_exit(machine)
 
     patches_in = grid.patches.inlet
     patches_out = grid.patches.outlet
@@ -720,11 +722,53 @@ def apply(grid, machine, operating_point=None, inlet_profile=None):
     )
 
 
+def design_exit(machine):
+    """Return the design's flow at the domain exit, a scalar mean line.
+
+    Not the last station of the mean line, which is the last row's trailing
+    edge: the annulus carries on past it to the outlet, through a duct whose
+    area and radius can both change. A radial compressor's vaneless diffuser
+    raises the static pressure by a tenth on its way there, so holding the
+    trailing edge's pressure at the outlet would ask for a different machine.
+    So the flow is carried along the duct conserving mass, stagnation
+    enthalpy, angular momentum and entropy, by
+    :meth:`~turbigen.meanline.MeanLine.interpolate_to`. A constant-area,
+    constant-radius duct gives back the trailing edge's state.
+    """
+    return exit_flow(machine.mean_line, machine.annulus)
+
+
+def exit_flow(mean_line, annulus):
+    """Return `mean_line` carried along the exit duct of `annulus` to the
+    domain exit, a scalar mean line; see :func:`design_exit`, which is this
+    applied to the design's own. Its last station where there is no annulus.
+    """
+    if annulus is None:
+        return mean_line.outlet
+    return mean_line.interpolate_to(annulus, [annulus.m_max])[0]
+
+
+def design_DP(machine):
+    """Return the inlet stagnation pressure and the design's pressure change to
+    the domain exit, ``(Po_in, DP_design)`` [Pa], the scale every
+    :attr:`OperatingPoint.DP_adjust` is measured on."""
+    Po_in = float(machine.mean_line.inlet.Po)
+    return Po_in, Po_in - float(design_exit(machine).P)
+
+
+def DP_adjust_at(machine, P_exit):
+    """Return the :attr:`OperatingPoint.DP_adjust` that holds `P_exit` at the
+    domain exit of `machine` [--]; the inverse of :func:`exit_pressure`."""
+    Po_in, DP_design = design_DP(machine)
+    return (Po_in - P_exit) / DP_design - 1.0
+
+
 def exit_pressure(machine, operating_point=None):
     """Return the static pressure to hold at exit [Pa].
 
-    The design's own, moved by :attr:`OperatingPoint.DP_adjust`. Split out so
-    that where a machine is being run can be read, and tested, without a grid.
+    The design's own at the domain exit, :func:`design_exit`, moved by
+    :attr:`OperatingPoint.DP_adjust`. Split out so that where a machine is
+    being run can be read, and tested, without a grid.
 
     Parameters
     ----------
@@ -738,17 +782,16 @@ def exit_pressure(machine, operating_point=None):
     float
 
     """
-    Po_in = float(machine.mean_line.inlet.Po)
-    P_out = float(machine.mean_line.outlet.P)
+    Po_in, DP_design = design_DP(machine)
+    exit = design_exit(machine)
+    P_out = float(exit.P)
 
     # Behind a choked throat the exit pressure only has to be low enough to
     # leave it choked: the isentropic one at the nozzle's exit Mach number,
     # from the inlet stagnation pressure, below the exit's at any speed a
     # compressor still raises pressure at
     if operating_point is not None and operating_point.nozzle_area is not None:
-        P_nozzle = Po_in * nozzle.p_ratio(
-            operating_point.nozzle_Ma, float(machine.mean_line.outlet.gamma)
-        )
+        P_nozzle = Po_in * nozzle.p_ratio(operating_point.nozzle_Ma, float(exit.gamma))
         logger.info(
             f"Operating point: choked nozzle, exit P={P_nozzle:.5g} Pa for "
             f"Ma={operating_point.nozzle_Ma:.3g} at exit."
@@ -762,7 +805,6 @@ def exit_pressure(machine, operating_point=None):
     # that drops it: DP_design is negative for a compressor, and a positive
     # adjustment makes it more negative -- more rise -- exactly as it makes a
     # turbine's more positive.
-    DP_design = Po_in - P_out
     DP = DP_design * (1.0 + operating_point.DP_adjust)
 
     P_out_now = Po_in - DP
@@ -935,9 +977,7 @@ def achieved(grid, machine, operating_point=None):
         )
         return None
 
-    Po_in = float(machine.mean_line.inlet.Po)
-    DP_design = Po_in - float(machine.mean_line.outlet.P)
-    DP_adjust = (Po_in - float(patch.P_throttle)) / DP_design - 1.0
+    DP_adjust = DP_adjust_at(machine, float(patch.P_throttle))
 
     logger.info(
         f"Throttle settled at exit P={float(patch.P_throttle):.5g} Pa, which "
@@ -953,8 +993,9 @@ def apply_rotation(grid, Omega):
     A block's angular velocity is the frame its row is solved in, and every
     wall of that block turns with it unless a `RotatingPatch` says otherwise.
     So a shrouded row needs only the block speed, and the patches the mesher
-    placed over tip gaps are set to :data:`OMEGA_CASING` --- the two halves of
-    the same statement, made together so they cannot disagree.
+    placed over tip gaps and on stationary stretches of a duct's endwalls are
+    set to :data:`OMEGA_STATIONARY` --- the two halves of the same statement,
+    made together so they cannot disagree.
 
     Parameters
     ----------
@@ -977,7 +1018,7 @@ def apply_rotation(grid, Omega):
         for block in blocks:
             block.set_Omega(float(Omega_now))
             for patch in block.patches.rotating:
-                patch.set_Omega(OMEGA_CASING)
+                patch.set_Omega(OMEGA_STATIONARY)
 
         logger.debug(f"Row {i_row}: Omega={float(Omega_now):.5g} rad/s")
 

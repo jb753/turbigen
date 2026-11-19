@@ -8,6 +8,7 @@ run you watched.
 """
 
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -150,6 +151,39 @@ def test_slurm_states_what_it_was_given():
     assert "#SBATCH --qos=high" in script
 
 
+def test_slurm_waits_on_the_jobs_after_names(batch, calls):
+    """On sbatch's command line and not in the script, so submitting the
+    script again by hand waits on nothing."""
+    job.Slurm().submit(tasks_for(batch), "run", after=("4812290", "4812291_2"))
+
+    ((argv, cwd),) = calls
+    assert "--dependency=afterok:4812290:4812291_2" in argv
+    assert "--dependency" not in (Path(cwd) / job.SCRIPT_NAME).read_text()
+
+
+def test_slurm_without_after_has_no_dependency(batch, calls):
+    job.Slurm().submit(tasks_for(batch), "run")
+
+    ((argv, _),) = calls
+    assert not [arg for arg in argv if arg.startswith("--dependency")]
+
+
+def test_after_is_not_a_config_key():
+    """A config would carry it into every input.yaml a run writes."""
+    with pytest.raises(ValueError, match="Unknown key"):
+        job.Job.from_dict({"type": "slurm", "after": ["4812290"]})
+
+
+def test_slurm_says_which_job_each_task_became(batch, calls, tmp_path):
+    """One task is the whole array; more are its members."""
+    (many,) = job.Slurm().submit(tasks_for(batch), "run")
+    assert [job_id for job_id, _ in many.jobs] == [f"4812291_{i}" for i in (1, 2, 3)]
+    assert [config for _, config in many.jobs] == batch
+
+    (one,) = job.Slurm().submit(tasks_for(batch[:1]), "run")
+    assert one.jobs == (("4812291", batch[0]),)
+
+
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Slurm scripts run under a POSIX shell"
 )
@@ -204,7 +238,7 @@ def test_slurm_submits_one_array_over_a_file_of_tasks(batch, calls):
     assert written == [str(path.resolve()) for path in batch]
 
     assert (base / job.SCRIPT_NAME).is_file()
-    assert "4812291" in ids[0]
+    assert "4812291" in str(ids[0])
 
 
 def test_gaps_in_a_batch_do_not_disturb_the_array(tmp_path, calls):
@@ -262,7 +296,7 @@ def test_tsp_queues_one_job_per_task(batch, calls, monkeypatch):
     assert argv[:3] == ["/usr/bin/tsp", "-L", "0000"]
     assert argv[-3:] == ["run", str(batch[0].resolve()), "-v"]
     assert cwd == str(batch[0].parent)
-    assert "17" in ids[0]
+    assert "17" in str(ids[0])
 
 
 def test_tsp_asks_for_more_slots_when_a_job_needs_them(batch, calls, monkeypatch):
@@ -273,6 +307,28 @@ def test_tsp_asks_for_more_slots_when_a_job_needs_them(batch, calls, monkeypatch
     ((argv, _),) = calls
     assert "-N" in argv
     assert argv[argv.index("-N") + 1] == "4"
+
+
+def test_tsp_waits_on_the_jobs_after_names(batch, calls, monkeypatch):
+    monkeypatch.setattr(job.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    (done,) = job.Tsp().submit(tasks_for(batch[:1]), "run", after=("16", "17"))
+
+    ((argv, _),) = calls
+    assert argv[argv.index("-D") + 1] == "16,17"
+    assert done.jobs == (("17", batch[0]),)
+
+
+def test_a_backend_must_report_a_job_for_every_task(batch, monkeypatch):
+    """Or --parsable and --after would have nothing to name for it."""
+    monkeypatch.setattr(
+        job.Tsp,
+        "forward",
+        lambda self, tasks, verb, options, after: [job.Submitted("x", ())],
+    )
+
+    with pytest.raises(RuntimeError, match="no job"):
+        job.Tsp().submit(tasks_for(batch), "run")
 
 
 def test_a_missing_tsp_names_the_package(batch, monkeypatch):
@@ -298,6 +354,49 @@ def test_queue_submits_and_runs_nothing(batch, calls):
     # Nothing was solved, so nothing was written beside any of them.
     for path in batch:
         assert not (path.parent / cli.OUTPUT_NAME).exists()
+
+
+def test_parsable_prints_each_job_and_its_directory(batch, calls, capsys):
+    argv = ["run", *[str(path) for path in batch], "--queue", "--parsable"]
+
+    assert cli.main(argv) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [
+        f"4812291_{i + 1} {path.parent.resolve()}" for i, path in enumerate(batch)
+    ]
+
+
+@pytest.mark.parametrize("flag", [["--parsable"], ["--after", "4812290"]])
+def test_parsable_and_after_need_the_queue(batch, calls, capsys, flag):
+    assert cli.main(["run", str(batch[0]), *flag]) == 1
+
+    assert "needs -Q" in capsys.readouterr().err
+    assert not calls
+
+
+def test_after_may_be_repeated_or_comma_separated(batch, calls):
+    argv = ["run", str(batch[0]), "-Q", "--after", "4812290,4812291_2"]
+
+    assert cli.main([*argv, "--after", "4812292"]) == 0
+
+    ((called, _),) = calls
+    assert "--dependency=afterok:4812290:4812291_2:4812292" in called
+
+
+def test_a_job_that_waits_may_restart_from_a_field_to_come(batch, calls, tmp_path):
+    """Queued to wait on another job, a config may name the field that job
+    will leave; queued without, it may not."""
+    later = str(tmp_path / "later" / "restart.npz")
+    argv = ["run", str(batch[0]), "-o", str(tmp_path / "runs" / "%"), "-Q"]
+    argv += ["-s", f"restart={later}"]
+
+    assert cli.main(argv) == 1
+    assert not calls
+
+    assert cli.main([*argv, "--after", "4812290"]) == 0
+    ((called, _),) = calls
+    assert "--dependency=afterok:4812290" in called
 
 
 def test_queue_without_a_job_section_says_so(tmp_path, capsys):
@@ -389,6 +488,15 @@ def test_a_submitted_invocation_carries_force(batch):
     assert "--copied" in options
 
 
+@pytest.mark.parametrize("verb", ["run", "iterate", "chic"])
+def test_a_submitted_invocation_carries_grid(batch, verb):
+    """Keeping the grid is about what reads the run afterwards, wherever it
+    ran."""
+    args = cli._make_parser().parse_args([verb, str(batch[0]), "--grid", "-Q"])
+
+    assert "--grid" in cli.task_options(args)
+
+
 def test_a_submitted_restart_names_the_same_field(batch, tmp_path, monkeypatch):
     """`-s restart=` is relative to where it was typed, and a queued job runs
     somewhere else, so it goes to the queue absolute."""
@@ -476,6 +584,20 @@ def test_batch_writes_members_and_submits_them(datum, calls):
 
     written = (path.parent / "batch_0000" / job.TASKS_NAME).read_text().splitlines()
     assert written == [str(member.resolve()) for member in members]
+
+
+def test_a_parsable_batch_prints_only_its_members(datum, calls, capsys):
+    """One 'JOBID DIR' line each, and not the batch directory as well, which
+    would be a line of another shape."""
+    path = datum(iterating=False)
+
+    assert cli.main(["batch", str(path), "-n", "2", "--queue", "--parsable"]) == 0
+
+    members = sorted((path.parent / "batch_0000").glob("*/input.yaml"))
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [
+        f"4812291_{i + 1} {member.parent.resolve()}" for i, member in enumerate(members)
+    ]
 
 
 def test_a_batch_is_submitted_as_run_without_an_iterate_section(datum, calls):

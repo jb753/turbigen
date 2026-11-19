@@ -34,6 +34,7 @@ import ember.average
 import ember.block_util
 import ember.util
 import numpy as np
+import scipy.spatial
 
 import turbigen.blade
 import turbigen.util
@@ -397,6 +398,82 @@ def _gnomon(ax, x0, y0, length, xlabel, ylabel):
     ax.text(x0 - pad, y0 + length, ylabel, ha="right", va="center")
 
 
+def _spacing_steps(slices, pitches):
+    """Return each cell's spacing step on planes `slices` of blocks, (x, y)
+    each (ni, nk), with periods `pitches` in `y`: the largest ratio, either
+    way, of its length to a neighbour's along `i` or along `k`, its length the
+    mean of its two edges that way; at a face where it meets another block,
+    of its first cell normal to the face to the other block's there. None for
+    a slice that is not a plane of cells."""
+    faces = []  # (slice, node index on the face, face node xy, normal length)
+    out = []
+    for n, (x, y) in enumerate(slices):
+        if np.ndim(x) != 2 or min(np.shape(x)) < 2:
+            out.append(None)
+            continue
+        P = np.stack((x, y)).astype(float)
+        di = np.linalg.norm(np.diff(P, axis=1), axis=0)
+        dk = np.linalg.norm(np.diff(P, axis=2), axis=0)
+        lengths = (0.5 * (di[:, 1:] + di[:, :-1]), 0.5 * (dk[1:] + dk[:-1]))
+        log_step = np.zeros_like(lengths[0])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            for ax, L in enumerate(lengths):
+                r = np.abs(np.diff(np.log(L), axis=ax))
+                before = [(0, 0), (0, 0)]
+                before[ax] = (1, 0)
+                after = [(0, 0), (0, 0)]
+                after[ax] = (0, 1)
+                log_step = np.fmax(
+                    log_step, np.fmax(np.pad(r, before), np.pad(r, after))
+                )
+        out.append(np.nan_to_num(log_step, nan=0.0, posinf=0.0))
+        # Each face's nodes but its ends, and the first edge in from each
+        for side, nodes, normal in (
+            ("i0", P[:, 0, 1:-1], di[0, 1:-1]),
+            ("i1", P[:, -1, 1:-1], di[-1, 1:-1]),
+            ("k0", P[:, 1:-1, 0], dk[1:-1, 0]),
+            ("k1", P[:, 1:-1, -1], dk[1:-1, -1]),
+        ):
+            faces.append((n, side, nodes.T, normal))
+    if faces:
+        pts = np.concatenate([f[2] for f in faces])
+        owner = np.concatenate([np.full(len(f[2]), q) for q, f in enumerate(faces)])
+        normal = np.concatenate([f[3] for f in faces])
+        face_slice = np.array([f[0] for f in faces])
+        tol = 1e-6 * float(np.ptp(pts, axis=0).max())
+        tree = scipy.spatial.cKDTree(pts)
+        for q, (n, side, nodes, own) in enumerate(faces):
+            if not len(nodes):
+                continue
+            other = np.full(len(nodes), np.nan)
+            pitch = float(pitches[n] or 0.0)
+            for shift in {0.0, pitch, -pitch}:
+                # The nearest few, as the block's own face nodes and those of
+                # its neighbours coincide
+                d, hit = tree.query(nodes + [0.0, shift], k=4, distance_upper_bound=tol)
+                for c in range(d.shape[1]):
+                    ok = np.isfinite(d[:, c]) & np.isnan(other)
+                    ok[ok] &= face_slice[owner[hit[ok, c]]] != n
+                    other[ok] = normal[hit[ok, c]]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                across = np.abs(np.log(own / other))
+            across = np.nan_to_num(across, nan=0.0, posinf=0.0)
+            # Each face cell takes the larger of its two face nodes', the
+            # ends of the face not matched
+            node = np.concatenate(([0.0], across, [0.0]))
+            cell = np.fmax(node[1:], node[:-1])
+            step = out[n]
+            if side == "i0":
+                step[0] = np.fmax(step[0], cell)
+            elif side == "i1":
+                step[-1] = np.fmax(step[-1], cell)
+            elif side == "k0":
+                step[:, 0] = np.fmax(step[:, 0], cell)
+            else:
+                step[:, -1] = np.fmax(step[:, -1], cell)
+    return [None if step is None else np.exp(step) for step in out]
+
+
 class MeshPlot(Post):
     """Grid lines of an H or OHP mesh, meridional and blade-to-blade.
 
@@ -404,16 +481,50 @@ class MeshPlot(Post):
     pitchwise in every block, the meridional view is the constant-`k` slice at
     mid-pitch. An OHP mesh has no such common index, so its meridional view is
     the periodic surface instead, :func:`turbigen.util.cut_periodic`, which
-    runs unbroken from inlet to outlet. The blade-to-blade view
-    is the constant-`j` slice at mid-span of every block, unrolled to
-    ``(x, r theta)``. Both are drawn to scale, every grid line, for one passage
-    of each row. A mesh of any other type draws nothing.
+    runs unbroken from inlet to outlet. Each blade-to-blade view is the
+    constant-`j` plane of every block nearest one of `spf`, mid-span unless
+    set, its span fraction in the title, in the conformal coordinates
+    ``(m', theta)`` that :class:`ContourPlot` draws, along the annulus line
+    at that span fraction through the whole machine: a cell keeps its shape on the
+    stream surface at any radius, so a radial row is not stretched out where
+    its radius is large, and the grid reads directly against a contour map.
+    The meridional view is drawn to scale. Every grid line, for one passage of
+    each row. Then, for each row, the same blade-to-blade view closed in on
+    its leading and trailing edges on each plane, and for each row with a
+    gridded tip gap, the same close-ups on the plane half way across the gap,
+    where the gap's own blocks are drawn too. A mesh of any other type draws
+    nothing.
     """
 
     type: ClassVar[str] = "mesh"
 
+    spf: tuple[float, ...] = (0.5,)
+    """Span fractions of the blade-to-blade views, each drawn on the
+    constant-`j` planes nearest it, with its close-ups [--]."""
+
     linewidth: float = 0.05
     """Width of the grid lines [pt]."""
+
+    closeup: float = 0.03
+    """Half-width of the square round each leading and trailing edge, as a
+    fraction of the row's mid-span chord in conformal coordinates; zero for
+    no close-ups [--]."""
+
+    debug: bool = False
+    """On the blade-to-blade views, fill each cell by its spacing step, the
+    largest ratio of its length to its neighbour's along `i` or `k`, across
+    the faces between blocks too, from white for none to full at
+    `step_max`; and label each block."""
+
+    step_max: float = 1.4
+    """Spacing step `debug` shades a cell fully at and above; white is one,
+    no step [--]."""
+
+    wall_line: float = 0.9
+    """With `debug`, the fraction of the way from leading to trailing edge
+    at which the O block's line off the blade, on either side, is marked on
+    the blade-to-blade views, and its arc length from the wall drawn against
+    `k` on a page of its own after each; zero for none [--]."""
 
     def report(self, config, result):
         if result.grid is None:
@@ -423,22 +534,62 @@ class MeshPlot(Post):
             logger.info("Not an H or OHP mesh, skipping the mesh plot.")
             return []
 
+        import matplotlib.colors
         import matplotlib.pyplot as plt
 
         # The passage blocks only: a gridded tip block spans only a sliver of
         # span, so has no mid-span slice and adds nothing seen meridionally.
         blocks = [block for block in result.grid if "_tip" not in block.label]
 
-        def draw(title, slices):
+        def draw(title, slices, cut=None, marks=()):
             fig, ax = plt.subplots(layout="constrained")
             ax.set_aspect("equal")
             ax.axis("off")
             ax.set_title(title)
             style = {"color": "k", "linewidth": self.linewidth}
+            if self.debug and cut is not None:
+                # White at one, shaded to full at `step_max` and held there
+                norm = matplotlib.colors.Normalize(1.0, self.step_max)
+                cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                    "step", ["white", "tab:red"]
+                )
+                steps = _spacing_steps(slices, [block.pitch for block in cut])
+                for (x, y), block, step in zip(slices, cut, steps):
+                    if step is None:
+                        continue
+                    label = block.label
+                    mesh = ax.pcolormesh(
+                        x,
+                        y,
+                        step,
+                        norm=norm,
+                        cmap=cmap,
+                        shading="flat",
+                        rasterized=True,
+                    )
+                    i, k = x.shape[0] // 2, x.shape[1] // 2
+                    ax.text(
+                        x[i, k],
+                        y[i, k],
+                        label.split("_", 1)[-1],
+                        color="tab:blue",
+                        fontsize=6,
+                        ha="center",
+                        va="center",
+                        clip_on=True,
+                    )
+                cbar = fig.colorbar(
+                    mesh, ax=ax, shrink=0.6, label="Spacing step", extend="max"
+                )
+                ticks = np.linspace(1.0, self.step_max, 6)
+                cbar.set_ticks(ticks, labels=[f"{t:g}" for t in ticks])
+                cbar.minorticks_off()
             for x, y in slices:
                 # Columns are lines, so this draws both families
                 ax.plot(x, y, **style)
                 ax.plot(x.T, y.T, **style)
+            for mark in marks:
+                ax.plot(*mark["xy"], color="tab:blue", linewidth=1.0)
             return fig
 
         if config.mesh.type == "h":
@@ -461,17 +612,207 @@ class MeshPlot(Post):
                     for surf in row
                 ],
             )
-        blade_to_blade = draw(
-            "Blade-to-Blade Grid, Mid-Span",
-            [
-                (
-                    block.x[:, block.shape[1] // 2, :],
-                    block.rt[:, block.shape[1] // 2, :],
+        annulus = result.machine.annulus
+        figures = [meridional]
+        planes = []
+        for spf_ask in self.spf:
+            spf, xr_curve, slices = self._blade_to_blade(annulus, blocks, spf_ask)
+            where = f"spf={spf:.2f}"
+            marks = []
+            if self.debug and self.wall_line > 0.0 and config.mesh.type == "ohp":
+                marks = self._wall_lines(
+                    result.machine, blocks, spf_ask, spf, xr_curve, slices
                 )
-                for block in blocks
-            ],
-        )
-        return [meridional, blade_to_blade]
+            figures.append(draw(f"Blade-to-Blade Grid, {where}", slices, blocks, marks))
+            figures += self._wall_line_figures(plt, marks, spf)
+            planes.append((spf, xr_curve, slices, marks))
+        if self.closeup <= 0.0:
+            return figures
+
+        def closeups(i_row, row, spf, xr_curve, slices, prefix, cut, marks=()):
+            where = f"spf={spf:.3f}"
+            for name, centre, half in self._edges(
+                result.machine, i_row, row, spf, xr_curve, slices
+            ):
+                title = f"Row {i_row} {prefix}{name}, {where}"
+                fig = draw(title, slices, cut, marks)
+                ax = fig.axes[0]
+                ax.set_xlim(centre[0] - half, centre[0] + half)
+                ax.set_ylim(centre[1] - half, centre[1] + half)
+                figures.append(fig)
+
+        for spf, xr_curve, slices, marks in planes:
+            for i_row, row in enumerate(result.machine.rows):
+                closeups(i_row, row, spf, xr_curve, slices, "", blocks, marks)
+        # Each row with a gridded tip gap again, on the plane through the
+        # middle of the gap: there every block is cut, the gap's own as well
+        # as those round it, so the close-ups show how the gap's blocks meet
+        # the O block over the blade's outline at either end.
+        for i_row, row in enumerate(result.machine.rows):
+            tip = [b for b in result.grid if b.label.startswith(f"row{i_row}_tip")]
+            if not tip:
+                continue
+            spf_gap = self._mid_gap(annulus, tip[0])
+            spf_g, xr_g, slices_g = self._blade_to_blade(
+                annulus, list(result.grid), spf_gap
+            )
+            closeups(
+                i_row,
+                row,
+                spf_g,
+                xr_g,
+                slices_g,
+                "Tip Gap ",
+                list(result.grid),
+            )
+        return figures
+
+    def _wall_lines(self, machine, blocks, spf_ask, spf, xr_curve, slices):
+        """Return the O block's lines off the blade at `wall_line` of the way
+        from each row's leading to trailing edge, either side, on the
+        blade-to-blade plane nearest `spf_ask`, at span fraction `spf`.
+
+        Each a dict of its row, its side, the one further to +theta of the
+        line from edge to edge than the other or not, its `i`, its nodes as drawn, `xy` (2, nk), and its
+        arc length from the wall in metres at each node, `s`. Where the
+        blade's wall nodes cross that fraction of the line from edge to edge,
+        the nearer node of each crossing.
+        """
+        out = []
+        for i_row, row in enumerate(machine.rows):
+            label = f"row{i_row}_O"
+            n = [b for b, block in enumerate(blocks) if block.label == label]
+            if not n:
+                continue
+            block, (x, y) = blocks[n[0]], slices[n[0]]
+            (_, LE, _), (_, TE, _) = self._edges(
+                machine, i_row, row, spf, xr_curve, slices
+            )
+            LE, TE = np.asarray(LE), np.asarray(TE)
+            chord = TE - LE
+            wall = np.stack((x[:, 0], y[:, 0]), axis=1).astype(float) - LE
+            f = wall @ chord / (chord @ chord) - self.wall_line
+            j, _ = self._plane_nearest(machine.annulus, block, spf_ask)
+            xrt = np.asarray(block.xrt[:, j, :], dtype=float)
+            xyz = np.stack(
+                (
+                    xrt[..., 0],
+                    xrt[..., 1] * np.cos(xrt[..., 2]),
+                    xrt[..., 1] * np.sin(xrt[..., 2]),
+                ),
+                axis=-1,
+            )
+            found = []
+            for i in np.nonzero(np.sign(f[:-1]) != np.sign(f[1:]))[0]:
+                i = int(i if abs(f[i]) <= abs(f[i + 1]) else i + 1)
+                d = np.linalg.norm(np.diff(xyz[i], axis=0), axis=-1)
+                found.append(
+                    {
+                        "row": i_row,
+                        "i": i,
+                        "xy": (x[i], y[i]),
+                        "s": np.concatenate(([0.0], np.cumsum(d))),
+                        # How far to +theta of the line from edge to edge
+                        "above": chord[0] * wall[i, 1] - chord[1] * wall[i, 0],
+                    }
+                )
+            # A cambered blade can lie wholly to one side of the line from
+            # edge to edge, so each side named against the other
+            top = max((line["above"] for line in found), default=0.0)
+            for line in found:
+                line["side"] = "+theta" if line["above"] == top else "-theta"
+            out += found
+        return out
+
+    def _wall_line_figures(self, plt, marks, spf):
+        """Return a page for each row of the lines `marks` off the blade:
+        arc length from the wall against `k`, and each cell's length."""
+        figures = []
+        for i_row in sorted({mark["row"] for mark in marks}):
+            fig, (ax0, ax1) = plt.subplots(1, 2, layout="constrained")
+            fig.suptitle(
+                f"Row {i_row} O Block Lines at {self.wall_line:.0%} Chord, "
+                f"spf={spf:.2f}"
+            )
+            for mark in marks:
+                if mark["row"] != i_row:
+                    continue
+                s = mark["s"]
+                k = np.arange(len(s))
+                name = f"{mark['side']} side, i={mark['i']}"
+                ax0.plot(k, 1e3 * s, ".-", label=name)
+                ax1.semilogy(k[1:] - 0.5, 1e3 * np.diff(s), ".-", label=name)
+            ax0.set_xlabel("k")
+            ax0.set_ylabel("Arc length from wall [mm]")
+            ax1.set_xlabel("k")
+            ax1.set_ylabel("Cell length [mm]")
+            ax0.legend()
+            figures.append(fig)
+        return figures
+
+    def _blade_to_blade(self, annulus, blocks, spf):
+        """Return the span fraction, annulus line and `(m', theta)` slices of
+        the constant-`j` plane of each of `blocks` nearest span fraction `spf`.
+
+        The conformal coordinate is measured along the annulus line at the
+        planes' own span fraction, through the whole machine as the contour
+        maps do. Along mid-span's line instead, the nodes of a plane off it
+        would be projected onto the line's vertices and the grid drawn kinked.
+        """
+        planes = [self._plane_nearest(annulus, block, spf) for block in blocks]
+        # Held to 0 to 1: a plane on an endwall can measure a hair beyond
+        spf = float(np.clip(np.median([spf_j for _, spf_j in planes]), 0.0, 1.0))
+        m = np.linspace(0.0, annulus.m_max, annulus.n_segment * N_SEGMENT_CUT + 1)
+        xr_curve = annulus.evaluate_xr(m, spf).T
+        slices = [
+            (
+                ember.util.unwrap_meridional(xr_curve, block.xrt[:, j, :, :2]),
+                np.asarray(block.t[:, j, :]),
+            )
+            for block, (j, _) in zip(blocks, planes)
+        ]
+        return spf, xr_curve, slices
+
+    @staticmethod
+    def _mid_gap(annulus, block):
+        """Return the span fraction half way through the tip gap `block`
+        spans, from its blade tip at ``j = 0`` to the casing, at its middle."""
+        i, k = block.shape[0] // 2, block.shape[2] // 2
+        x, r = (np.asarray(v[i, [0, -1], k], dtype=float) for v in (block.x, block.r))
+        return float(np.mean(annulus.evaluate_mspf(x, r)[1]))
+
+    @staticmethod
+    def _plane_nearest(annulus, block, spf):
+        """Return the index of the constant-`j` plane of `block` nearest span
+        fraction `spf`, and that plane's span fraction, at its middle node."""
+        i, k = block.shape[0] // 2, block.shape[2] // 2
+        x, r = (np.asarray(v[i, :, k], dtype=float) for v in (block.x, block.r))
+        spf_j = annulus.evaluate_mspf(x, r)[1]
+        j = int(np.nanargmin(np.abs(spf_j - spf)))
+        return j, float(spf_j[j])
+
+    def _edges(self, machine, i_row, row, spf, xr_curve, slices):
+        """Return the name, centre `(m', theta)` and half-width of the square
+        round each edge of `row` at span fraction `spf`, on the slices drawn.
+        On the blade's span, `spf` held to 0 to 1: a plane on an endwall can
+        measure a hair beyond it."""
+        spf = float(np.clip(spf, 0.0, 1.0))
+        blade = row.blade
+        m_edges = 2.0 * i_row + 1.0 + blade.evaluate_swept_m([0.0, 1.0], spf)
+        xr = machine.annulus.evaluate_xr(m_edges, spf).T
+        mp = ember.util.unwrap_meridional(xr_curve, xr)
+        theta = blade._surface_theta(np.array([[spf, 0.0], [spf, 1.0]])).mean(axis=-1)
+        half = self.closeup * abs(float(mp[1] - mp[0]))
+        out = []
+        for name, mp_e, theta_e in zip(("Leading Edge", "Trailing Edge"), mp, theta):
+            # The blade's own angle is one pitch or another from the passage
+            # drawn; shifted by whole pitches onto the nodes near it
+            near = [t[np.abs(x - mp_e) < half] for x, t in slices if np.ndim(x) == 2]
+            near = np.concatenate([t.ravel() for t in near]) if near else []
+            if len(near):
+                theta_e += row.pitch * np.round((np.median(near) - theta_e) / row.pitch)
+            out.append((name, (float(mp_e), float(theta_e)), half))
+        return out
 
 
 def _plot_reference(ax, path):
@@ -1562,11 +1903,20 @@ class SpanwisePlot(Post):
         return fig
 
 
+def _station_plane(r, x, dt, radial):
+    """Return where nodes at `r`, `x`, `dt` from the middle of the passages
+    drawn lie on a station contour: looking along the axis, or for a `radial`
+    cut, from outside it unrolled, arc length across and `x` up."""
+    if radial:
+        return r * dt, x
+    return r * np.sin(dt), r * np.cos(dt)
+
+
 class StationContourPlot(Post):
     """Contours of a flow variable over a cut plane at a design station.
 
     Looking along the machine axis at the plane the mean line is reduced
-    across, so where a row's loss sits --- a tip leakage vortex, a hub corner,
+    across, or radially in at one facing out across a radial exit, so where a row's loss sits --- a tip leakage vortex, a hub corner,
     a wake --- is seen over the whole passage at once, rather than as the
     pitch average :class:`SpanwisePlot` draws or one span at a time as in
     :class:`ContourPlot`. The cut is the one the spanwise iterators take,
@@ -1648,6 +1998,7 @@ class StationContourPlot(Post):
             values = self._values(cut, result.actual, i_row)
             r = np.asarray(cut.r)
             t = np.asarray(cut.t)
+            x = np.asarray(cut.x)
             # The row's pitch in theta, 2 pi / Nb: each pitchwise line of the
             # cut spans one pitch less any solid it meets, so no line's own
             # extent is the period to repeat by.
@@ -1676,27 +2027,37 @@ class StationContourPlot(Post):
                 )
                 vj = np.concatenate([values[:, :-1]] * n + [values[:, -1:]], axis=1)
                 # Constant along a pitchwise line, so one column serves all
-                tiles = [(np.broadcast_to(r[:, :1], tj.shape), tj, vj)]
+                tiles = [
+                    (
+                        np.broadcast_to(r[:, :1], tj.shape),
+                        np.broadcast_to(x[:, :1], tj.shape),
+                        tj,
+                        vj,
+                    )
+                ]
             else:
-                tiles = [(r, t + i * pitch, values) for i in range(n)]
+                tiles = [(r, x, t + i * pitch, values) for i in range(n)]
 
             cmap = matplotlib.colors.ListedColormap(
                 plt.get_cmap(self.cmap)(np.linspace(self.cmap_start, 1.0, 256))
             )
 
-            # Looking along the machine axis in Cartesian y and z, so the
-            # passages are the sectors of the annulus they are, turned so the
-            # middle of those drawn is upright.
+            # A cut facing along the axis is seen along it, in Cartesian y and
+            # z, so the passages are the sectors of the annulus they are,
+            # turned so the middle of those drawn is upright. One facing out
+            # across a radial exit is a cylinder, which seen that way is a
+            # sliver of arc: it is seen from outside instead, unrolled, arc
+            # length across and axial position up, to scale.
             t_mid = 0.5 * (
-                min(ti.min() for _, ti, _ in tiles)
-                + max(ti.max() for _, ti, _ in tiles)
+                min(ti.min() for _, _, ti, _ in tiles)
+                + max(ti.max() for _, _, ti, _ in tiles)
             )
+            radial = np.ptp(r) < np.ptp(x)
 
             fig, ax = plt.subplots(layout="constrained")
-            for ri, ti, vi in tiles:
+            for ri, xi, ti, vi in tiles:
                 filled = ax.contourf(
-                    ri * np.sin(ti - t_mid),
-                    ri * np.cos(ti - t_mid),
+                    *_station_plane(ri, xi, ti - t_mid, radial),
                     vi,
                     levels=levels,
                     cmap=cmap,

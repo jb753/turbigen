@@ -52,6 +52,94 @@ class WallSpacing:
     """Spacing at the casing."""
 
 
+class EndwallStretch(Node):
+    """A stretch of hub or casing in the duct ahead of the first row or behind
+    the last, treated other than as a wall turning with its row.
+
+    The member names what it is treated as; :attr:`m` where it ends, in the
+    annulus's normalised meridional coordinate: from the inlet to `m` in the
+    inlet duct, from `m` to the outlet in the outlet duct. Each mesher puts it
+    at the grid line nearest `m`, which must lie in the duct.
+    """
+
+    m: float
+    """Where the stretch ends, in normalised meridional coordinate [--]."""
+
+    def __post_init__(self):
+        if not self.m > 0.0:
+            raise ValueError(f"An endwall stretch needs m > 0, got {self.m}.")
+
+    def patch(self, i, j, label):
+        """Return the ember patch for the stretch over `i` on endwall `j`."""
+        raise NotImplementedError(f"{type(self).__name__} must implement patch()")
+
+
+class InviscidStretch(EndwallStretch):
+    """A slip wall, so the duct grows no boundary layer there."""
+
+    type: ClassVar[str] = "inviscid"
+
+    def patch(self, i, j, label):
+        return ember.patch.InviscidPatch(i=i, j=j, label=label)
+
+
+class StationaryStretch(EndwallStretch):
+    """A wall standing still in the absolute frame, as a vaneless diffuser's
+    walls do behind an impeller whose hub turns."""
+
+    type: ClassVar[str] = "stationary"
+
+    def patch(self, i, j, label):
+        # Its speed is the operating point's, set by `bconds`, as for the
+        # casing over a tip gap
+        return ember.patch.RotatingPatch(i=i, j=j, label=label)
+
+
+class DuctEndwalls(Node):
+    """The stretches of the hub and the casing of one duct; either may be
+    omitted for a wall turning with its row."""
+
+    hub: EndwallStretch | None = None
+    """The hub's stretch, or none."""
+
+    casing: EndwallStretch | None = None
+    """The casing's stretch, or none."""
+
+
+class Endwalls(Node):
+    """Stretches of the endwalls of the ducts ahead of the first row and
+    behind the last, by duct and then by wall::
+
+        endwalls:
+          outlet:
+            hub: {type: stationary, m: 2.0}
+
+    A wall with no stretch turns with its row, except a casing over a tip gap,
+    which stands still anyway. One type per stretch, so a stretch never
+    overlaps another.
+    """
+
+    inlet: DuctEndwalls | None = None
+    """The duct ahead of the first row, or none."""
+
+    outlet: DuctEndwalls | None = None
+    """The duct behind the last row, or none."""
+
+    def stretches(self):
+        """Return `(inlet, j, wall, stretch)` for every stretch set: whether
+        it is in the inlet duct, its endwall `j`, 0 the hub or -1 the casing,
+        and that wall's name."""
+        out = []
+        for inlet, duct in ((True, self.inlet), (False, self.outlet)):
+            if duct is None:
+                continue
+            for j, wall in ((0, "hub"), (-1, "casing")):
+                stretch = getattr(duct, wall)
+                if stretch is not None:
+                    out.append((inlet, j, wall, stretch))
+        return out
+
+
 class Mesher(Node):
     """Base for meshers."""
 
@@ -73,6 +161,10 @@ class Mesher(Node):
     at the hub and casing; the blade surfaces still get theirs. Incompatible
     with a tip gap, whose casing is a real wall.
     """
+
+    endwalls: Endwalls = dataclasses.field(default_factory=Endwalls)
+    """Stretches of the inlet and outlet ducts' hub and casing that are slip
+    walls or stand still; see :class:`Endwalls`."""
 
     m_relax_out: float = 0.0
     """Where the spanwise grid starts to relax towards even spacing on its way
@@ -186,59 +278,71 @@ class Mesher(Node):
             ember.patch.InviscidPatch(j=-1, label="inviscid_casing"),
         ]
 
-    def _check_inviscid_ducts(self, annulus):
-        """Refuse `annulus.m_inviscid` together with :attr:`inviscid_endwalls`."""
-        if self.inviscid_endwalls and any(annulus.m_inviscid):
+    def _check_endwalls(self):
+        """Refuse :attr:`endwalls` stretches together with
+        :attr:`inviscid_endwalls`, which already makes every endwall a slip
+        wall."""
+        if self.inviscid_endwalls and self.endwalls.stretches():
             raise ValueError(
                 "inviscid_endwalls already makes every endwall a slip wall, "
-                "so annulus.m_inviscid would overlap it; leave that unset."
+                "so mesh.endwalls would overlap it; leave that unset."
             )
 
-    def _inviscid_ducts(self, machine, i_row, up, dn, i_le=None, i_te=None):
-        """Add inviscid patches to the endwalls of block `up`, ahead of the
-        first row, and `dn`, behind the last, from the inlet to the grid line
-        nearest `annulus.m_inviscid`'s first two positions, on the hub and the
-        casing, and from those nearest its last two to the outlet. The lines
-        must lie inside the blocks, and no further in than `i_le` and `i_te`.
+    def _duct_endwalls(self, machine, i_row, up, dn, i_le=None, i_te=None):
+        """Add the :attr:`endwalls` stretches' patches to the hub and casing
+        of block `up`, ahead of the first row, and `dn`, behind the last: from
+        the inlet to the grid line nearest each inlet stretch's `m`, and from
+        that nearest each outlet stretch's to the outlet. The lines must lie
+        inside the blocks, and no further in than `i_le` and `i_te`.
 
-        Returns the range of `i` the casing of each block, by `id`, is not
-        inviscid over, for its rotating patch.
+        An annulus whose outlet hub stands still by default
+        (:attr:`~turbigen.annulus.Annulus.stationary_hub_out`) gets a
+        stationary stretch there, from the grid line nearest the row that the
+        block allows, unless :attr:`endwalls` sets that wall itself or
+        :attr:`inviscid_endwalls` makes it a slip wall.
+
+        Returns the range of `i` the casing of each block, by `id`, has no
+        stretch over, for the patch a tip gap's casing takes.
         """
         annulus = machine.annulus
         last = len(machine.rows) - 1
-        hub_in, cas_in, hub_out, cas_out = annulus.m_inviscid
-        rotating = {}
-        for blk, m, j, inlet, here in (
-            (up, hub_in, 0, True, i_row == 0),
-            (up, cas_in, -1, True, i_row == 0),
-            (dn, hub_out, 0, False, i_row == last),
-            (dn, cas_out, -1, False, i_row == last),
+        rest = {}
+        stretches = [(*st, False) for st in self.endwalls.stretches()]
+        if (
+            getattr(annulus, "stationary_hub_out", False)
+            and not self.inviscid_endwalls
+            and not any(not inlet and j == 0 for inlet, j, *_ in stretches)
         ):
-            if not m or not here:
+            stretches.append((False, 0, "hub", StationaryStretch(m=1.0), True))
+        for inlet, j, wall, stretch, nearest in stretches:
+            if not (i_row == 0 if inlet else i_row == last):
                 continue
-            i = _i_at_m(blk, annulus, j, m)
+            blk = up if inlet else dn
             ni = blk.shape[0]
             lo = 1 if inlet or i_te is None else i_te
             hi = ni - 2 if not inlet or i_le is None else i_le
+            i = lo if nearest else _i_at_m(blk, annulus, j, stretch.m)
+            duct = "inlet" if inlet else "outlet"
             if not lo <= i <= hi:
                 raise ValueError(
-                    f"annulus.m_inviscid {m} is not inside the duct "
-                    f"{'ahead of the first row' if inlet else 'behind the last row'}."
+                    f"mesh.endwalls.{duct}.{wall}.m={stretch.m:g} is not inside "
+                    f"the duct {'ahead of the first row' if inlet else 'behind the last row'}."
                 )
-            wall = "hub" if j == 0 else "casing"
             end = "in" if inlet else "out"
-            i_range = (0, i) if inlet else (i, -1)
             blk.patches.append(
-                ember.patch.InviscidPatch(
-                    i=i_range, j=j, label=f"inviscid_{wall}_{end}"
+                stretch.patch(
+                    (0, i) if inlet else (i, -1), j, f"{stretch.type}_{wall}_{end}"
                 )
             )
             if j == -1:
                 # One block can hold both ends, in a machine of one H row
-                ist, ien = rotating.get(id(blk), (0, ni - 1))
-                rotating[id(blk)] = (i, ien) if inlet else (ist, i)
-            logger.debug(f"Inviscid {wall} at the {end}let to grid line {i} of {ni}")
-        return rotating
+                ist, ien = rest.get(id(blk), (0, ni - 1))
+                rest[id(blk)] = (i, ien) if inlet else (ist, i)
+            logger.debug(
+                f"{stretch.type.capitalize()} {wall} in the {duct} duct, "
+                f"{'to' if inlet else 'from'} grid line {i} of {ni}"
+            )
+        return rest
 
     #
     # OUTLET

@@ -36,7 +36,7 @@ from scipy.stats import qmc
 
 from turbigen import node
 from turbigen.design import DesignError
-from turbigen.node import Node
+from turbigen.node import FrozenDict, Node
 
 logger = logging.getLogger("turbigen.batch")
 """What was asked for, what was drawn, and what would not design."""
@@ -66,7 +66,7 @@ and nothing more; only the uncovered ones are designed, and those are capped by
 class Batch(Node):
     """A set of related runs, and how to choose them."""
 
-    bounds: dict = dataclasses.field(default_factory=dict)
+    bounds: dict = dataclasses.field(default_factory=FrozenDict)
     """Range of each design variable, keyed by path: ``{path: [lo, hi]}``.
 
     Points are drawn from the box quasi-randomly, in an order whose every
@@ -83,12 +83,11 @@ class Batch(Node):
 
     A mapping rather than a list of triples because this is the one section a
     user writes by hand and ``mean_line.psi: [1.2, 2.0]`` is the shortest
-    honest spelling of it. The cost is that a `Config` holding one is no longer
-    hashable, `dict` not being; nothing hashes a config, and equality and
-    round-tripping --- which plenty relies on --- are unaffected.
+    honest spelling of it. Held as a :class:`~turbigen.node.FrozenDict`, so a
+    `Config` holding one stays hashable.
     """
 
-    values: dict = dataclasses.field(default_factory=dict)
+    values: dict = dataclasses.field(default_factory=FrozenDict)
     """Values of each design variable to run at: ``{path: [v0, v1, ...]}``.
 
     The members are the full factorial over these lists: every combination,

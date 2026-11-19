@@ -7,6 +7,7 @@ where it is, and that a bad config reads as a message rather than a traceback.
 """
 
 import logging
+import sys
 import textwrap
 
 import pytest
@@ -435,9 +436,7 @@ blades:
 mesh:
   type: h
   resolution_factor: 0.25
-  dm_TE: 0.0
-  AR_cusp: 2.0
-  ni_cusp: 5
+  dm_LE: 0.001
 solver: {type: ember, n_step: 10, n_step_log: 10}
 """
 """A single stationary row, adapted from examples/turbine_cascade.yaml.
@@ -893,6 +892,112 @@ def test_run_writes_its_answer_beside_the_config(run_case):
     # recomputed from the stored state rather than stored themselves.
     achieved = config.mean_line.backward(result.actual)
     assert 0.0 < float(achieved["Ma2"]) < 1.0
+
+
+def test_run_records_what_ran_it_its_notes_and_on_request_its_grid(run_case):
+    """`result: run:` says what ran the solve, a note set on the command line
+    is carried into the config written beside it, and --grid keeps the grid
+    of a march that did not fall over."""
+    from turbigen import case
+
+    argv = ["run", str(run_case), "--grid", "-s", "notes.source=abc1234"]
+    assert cli.main(argv) == 0
+
+    config, result = case.read(run_case.parent / cli.OUTPUT_NAME)
+    assert result.converged is True
+    assert (run_case.parent / pipeline.GRID_NAME).is_file()
+
+    assert config.notes == {"source": "abc1234"}
+    assert set(result.run) == {
+        "turbigen",
+        "commit",
+        "ember",
+        "host",
+        "started",
+        "finished",
+        "elapsed",
+    }
+    assert result.run["started"] <= result.run["finished"]
+    assert result.run["elapsed"] >= 0.0
+
+
+def test_a_converged_run_leaves_no_grid_unless_asked(run_case):
+    assert cli.main(["run", str(run_case)]) == 0
+
+    assert not (run_case.parent / pipeline.GRID_NAME).exists()
+
+
+@pytest.mark.parametrize(
+    "notes, match",
+    [
+        ("just text", "mapping"),
+        ({"nested": {"a": 1}}, "notes.nested"),
+        # What YAML makes of an unquoted 1234, yes, 0123 and 1.10, none of
+        # which could be written back as what was typed
+        ({"build": 1234}, "notes.build"),
+        ({"ok": True}, "notes.ok"),
+        ({"hash": 83}, "Quote it"),
+        ({"version": 1.1}, "notes.version"),
+        ({1: "text"}, "named"),
+    ],
+)
+def test_notes_must_be_a_mapping_of_text(notes, match):
+    from turbigen import Config
+
+    data = yaml.safe_load(RUN_CASE)
+    with pytest.raises(ValueError, match=match):
+        Config.from_dict({**data, "notes": notes})
+
+
+def test_notes_are_kept_as_written_and_not_stamped():
+    """Quoted, a note is the text typed, and it never disowns a stored field."""
+    from turbigen import Config
+
+    data = yaml.safe_load(RUN_CASE + "notes: {build: '0123', ok: 'yes'}\n")
+    noted = Config.from_dict(data)
+
+    assert noted.notes == {"build": "0123", "ok": "yes"}
+    del data["notes"]
+    assert restart.design_stamp(noted) == restart.design_stamp(Config.from_dict(data))
+
+
+@pytest.mark.parametrize("editable, expected", [(True, None), (False, "abc1234")])
+def test_the_commit_is_recorded_only_for_an_installed_build(
+    monkeypatch, editable, expected
+):
+    """An editable install's commit is the checkout's at install, gone stale
+    by the next commit, so it would name code that did not run."""
+    import json
+    import types
+
+    direct = {"url": "file:///src", "dir_info": {"editable": editable}}
+    distribution = types.SimpleNamespace(read_text=lambda name: json.dumps(direct))
+    monkeypatch.setattr(
+        pipeline.importlib.metadata, "distribution", lambda name: distribution
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "turbigen._version",
+        types.SimpleNamespace(__commit_id__="gabc1234"),
+    )
+
+    assert pipeline._installed_commit() == expected
+
+
+def test_a_report_keeps_the_run_record_of_the_solve(run_case):
+    """A report measures the field again but runs nothing, so what ran the
+    field stays as the run wrote it."""
+    from turbigen import case
+
+    output = run_case.parent / cli.OUTPUT_NAME
+    assert cli.main(["run", str(run_case)]) == 0
+    _, ran = case.read(output)
+
+    assert cli.main(["report", str(run_case)]) == 0
+    _, reported = case.read(output)
+
+    assert ran.run
+    assert reported.run == ran.run
 
 
 def test_report_picks_up_the_field_a_run_left(run_case):
@@ -1689,7 +1794,13 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     """
     from turbigen import batch
 
-    names = (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.HISTORY_NAME, "post.pdf")
+    names = (
+        batch.INPUT_NAME,
+        cli.OUTPUT_NAME,
+        cli.HISTORY_NAME,
+        "post.pdf",
+        pipeline.GRID_NAME,
+    )
     for i_iter in range(3):
         iter_dir = tmp_path / f"iter_{i_iter:04d}"
         iter_dir.mkdir()
@@ -1712,6 +1823,25 @@ def test_a_settled_design_prunes_its_iterations(tmp_path):
     for i_iter in range(2):
         kept = sorted(p.name for p in (tmp_path / f"iter_{i_iter:04d}").iterdir())
         assert kept == sorted(loop.KEPT_PER_ITERATION)
+
+
+def test_promoting_clears_what_an_earlier_run_left(tmp_path):
+    """A grid or report from before is not left beside a field it did not
+    come from, when the settled iteration has none of its own."""
+    from turbigen import batch
+
+    iter_dir = tmp_path / "iter_0000"
+    iter_dir.mkdir()
+    for name in (batch.INPUT_NAME, cli.OUTPUT_NAME, cli.RESTART_NAME):
+        (iter_dir / name).write_text(f"new {name}")
+    for name in (pipeline.GRID_NAME, "post.pdf"):
+        (tmp_path / name).write_text(f"old {name}")
+
+    loop.promote_final(tmp_path, iter_dir, converged=True)
+
+    assert (tmp_path / cli.RESTART_NAME).read_text() == f"new {cli.RESTART_NAME}"
+    assert not (tmp_path / pipeline.GRID_NAME).exists()
+    assert not (tmp_path / "post.pdf").exists()
 
 
 def test_a_copied_config_is_replaced_by_the_settled_design(tmp_path):

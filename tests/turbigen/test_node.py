@@ -447,3 +447,41 @@ def test_a_scalar_or_sequence_field_round_trips_both_ways():
     for written in (1.5, [1.0, 2.0]):
         node = Scalars.from_dict({"either": written})
         assert Scalars.from_dict(node.to_dict()) == node
+
+
+def test_a_mapping_field_is_frozen_and_hashable():
+    """As a sequence becomes a tuple: a config with notes or a batch still
+    hashes, the mapping cannot be changed under it, and it dumps as a dict."""
+    from turbigen.node import FrozenDict
+
+    config = Config.from_dict({**CASE, "notes": {"source": "abc1234"}})
+
+    assert isinstance(config.notes, FrozenDict)
+    assert config.notes == {"source": "abc1234"}
+    assert hash(config) is not None
+    with pytest.raises(TypeError):
+        config.notes["source"] = "other"
+    assert type(config.to_dict()["notes"]) is dict
+    assert Config.from_dict(config.to_dict()) == config
+
+
+def test_a_mapping_default_is_frozen_too():
+    """A default bypasses the conversion from a file, so it must start frozen."""
+    from turbigen.batch import Batch
+    from turbigen.node import FrozenDict
+
+    assert isinstance(Config.from_dict(CASE).notes, FrozenDict)
+    assert hash(Batch(values={"mean_line.psi": [1.2, 1.6]}).bounds) is not None
+
+
+def test_a_frozen_dict_freezes_what_it_holds():
+    from turbigen.node import FrozenDict
+
+    frozen = FrozenDict({"mean_line.psi": [1.2, 2.0], "deep": {"a": [1]}})
+
+    assert frozen["mean_line.psi"] == (1.2, 2.0)
+    assert isinstance(frozen["deep"], FrozenDict)
+    assert hash(frozen) == hash(FrozenDict(dict(frozen)))
+    assert frozen == {"mean_line.psi": [1.2, 2.0], "deep": {"a": [1]}}
+    assert {"mean_line.psi": [1.2, 2.0], "deep": {"a": [1]}} == frozen
+    assert frozen != {"mean_line.psi": [1.2, 2.1], "deep": {"a": [1]}}

@@ -35,12 +35,13 @@ from sphinx.util.nodes import nested_parse_with_titles
 from turbigen import config as turbigen_config
 from turbigen.node import Node
 
-SECTION_CHARACTERS = "-~\"'+"
+SECTION_CHARACTERS = "-~\"'+`."
 """Underline character for each depth, starting one below the page's sections.
 
-The prose on the page uses ``^``, so every generated key nests inside the
-section the directive is written in and the whole reference is one entry in the
-sidebar rather than fifteen.
+The prose on the page uses ``=`` and ``^``, so every generated key nests inside
+the section the directive is written in and the whole reference is one entry in
+the sidebar rather than fifteen. One per depth the config tree reaches, the
+deepest today being ``mesh.h.endwalls.inlet.hub.inviscid``, and one spare.
 """
 
 SCALAR_NAMES = {

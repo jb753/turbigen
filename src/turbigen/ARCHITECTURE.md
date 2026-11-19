@@ -155,9 +155,8 @@ its own chords through a divide and a multiply, which is a one-ulp change, four
 orders below the tolerance the equivalence test against the old package holds
 to.
 
-**Not a field on one class.** `tip_span`/`tip_chord`/`tip_metre` set the
-precedent for naming a unit by which field carries the number, but that works
-because the three are scalars that sum, with zeros elsewhere. These are arrays
+**Not a field on one class.** Naming a unit by which field carries the
+number only works for scalars that sum, with zeros elsewhere. These are arrays
 of unequal length that cannot be summed, so one class would mean four optional
 fields and an exactly-one-of-each-pair check, and it would leave a class named
 `fixed_axial_chord` accepting aspect ratios. A second `type:` breaks no
@@ -259,9 +258,8 @@ and a row of the annulus produces a `Row`, holding the `Blade` it is a row of.
 class BladeDesign(Node):
     sections: tuple[Section, ...]
     count: BladeCount
-    tip_span: float = 0.0
-    tip_chord: float = 0.0
-    tip_metre: float = 0.0
+    tip: float = 0.0
+    reference_length: ReferenceLength
     m_stack: float = 0.5
 
     def forward(self, mean_line_row, row_annulus, spanwise, i_row) -> Row
@@ -355,14 +353,20 @@ the counting rule; that intermediate was the same "cannot be used until
 something else has happened" defect as `set_streamsurface`, and it disappears
 once the two concerns are separate objects.
 
-### Tip clearance is one number and its reference
+### Blade sizes are fractions of named reference lengths
 
-`tip: 0.01` with `tip_ref: span` becomes `tip_span: 0.01`. Three fields, all
-defaulting to zero, at most one set --- so the reference is named by which
-field carries the number, and there is no second field to contradict the first.
-Resolution is one line of `forward` instead of `get_gaps`'s three-way branch
-and its `sys.exit`. A family of `TipGap` nodes was considered and rejected: it
-is four classes to choose a divisor.
+`tip: 0.01` is a fraction of `reference_length.tip`, and every section's
+thickness distribution a fraction of `reference_length.thickness`. Each names
+the row's mid-span meridional chord, its mean, inlet or outlet span, or a
+metre. One small node holds both choices and resolves them, so the lookup is
+written once, and a radial impeller can measure its thickness against inlet
+span and its clearance against exit span while an axial row keeps chord.
+
+The thickness reference is one length for the whole blade, so a number means
+the same thickness at every section. The shape it is put into is laid out on
+each section's own meridional length, by re-expressing the distribution's
+lengths as fractions of it (`ThicknessDesign.scaled`), so a nose radius, wedge
+angle or nose ratio is what it says at hub and tip as well as mid-span.
 
 ### What a Blade exposes
 
@@ -523,11 +527,13 @@ clearance runs against a casing that does not turn with it, so `hmesh` places a
 `RotatingPatch` on `j=-1` exactly when there is a gap under it. The rule
 consults no speed at all: a stator with clearance gets the patch too, where it
 is a no-op because the block is stationary anyway, and that is the point ---
-whether a row turns is not the mesher's business.
+whether a row turns is not the mesher's business. A `stationary` stretch of a
+duct's endwall (`mesh.endwalls`, such as a vaneless diffuser's hub behind an
+impeller) is placed the same way.
 
 **How fast everything turns** is the operating point, so `bconds` sets it: the
 block angular velocity per row, and every rotating patch to
-`OMEGA_CASING = 0`. This is what makes a speedline cost no re-mesh, which is
+`OMEGA_STATIONARY = 0`. This is what makes a speedline cost no re-mesh, which is
 what `bconds` exists for.
 
 Two pieces of ember's semantics decide the shape, and neither is what its

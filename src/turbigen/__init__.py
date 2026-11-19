@@ -18,6 +18,7 @@ from turbigen.annulus import (
     AnnulusDesign,
     AspectRatio,
     FixedAxialChord,
+    ImpellerAnnulus,
     PchipAnnulus,
     RowAnnulus,
 )
@@ -37,6 +38,7 @@ from turbigen.blade import (
     Circulation,
     DiffusionFactor,
     FixedCount,
+    ReferenceLength,
     Row,
     SectionDesign,
 )
@@ -86,7 +88,7 @@ from turbigen.spanwise import (
     VelocitySpline,
     VortexExpon,
 )
-from turbigen.thickness import ClarkThickness, Taylor, ThicknessDesign
+from turbigen.thickness import ClarkThickness, Impeller, Taylor, ThicknessDesign
 
 # _version.py is generated at build time by setuptools-scm (see pyproject.toml);
 # it is gitignored, so fall back to a runtime metadata lookup when running from
@@ -127,9 +129,11 @@ __all__ = [
     "DiffusionFactor",
     "Ember",
     "FixedAxialChord",
+    "ImpellerAnnulus",
     "FixedCount",
     "Fluid",
     "H",
+    "Impeller",
     "InletProfile",
     "Iterator",
     "Job",
@@ -151,6 +155,7 @@ __all__ = [
     "Post",
     "Quadratic",
     "RealFluid",
+    "ReferenceLength",
     "Result",
     "Row",
     "RowAnnulus",

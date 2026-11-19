@@ -10,11 +10,11 @@ blade built from one has to count, shape and mesh like any other.
 
 import numpy as np
 import pytest
-import turbigen.blade
-import turbigen.util
 from test_blade import SPF, _all_perpendicular, blade, build
 
-from turbigen import ClarkThickness, ThicknessDesign, shapespace
+import turbigen.blade
+import turbigen.util
+from turbigen import ClarkThickness, Impeller, ThicknessDesign, shapespace
 
 CLARK = {
     "type": "clark",
@@ -25,7 +25,7 @@ CLARK = {
 }
 """A deliberately lopsided section: a fatter suction surface than pressure."""
 
-MESH = {"type": "h", "dm_TE": 0.05, "resolution_factor": 0.5, "dspf_mid": 0.1}
+MESH = {"type": "h", "resolution_factor": 0.5, "dspf_mid": 0.1}
 """A coarse mesh, so that meshing a blade costs about a second."""
 
 M = np.linspace(0.0, 1.0, 201)
@@ -241,7 +241,7 @@ def test_an_interpolated_nose_is_held_inside_its_bounds():
     assert raw(np.linspace(0.0, 1.0, 101)).min() < lo
 
     R_LE = [
-        turbigen.blade._interpolate(sections, spf, x).R_LE
+        turbigen.blade._interpolate(sections, spf, x, "const").R_LE
         for x in np.linspace(-0.5, 1.5, 81)
     ]
     assert min(R_LE) == pytest.approx(lo)
@@ -500,3 +500,96 @@ def test_the_two_surfaces_have_to_agree_at_the_nose():
 def test_coefficients_have_to_be_shaped_like_the_curve():
     with pytest.raises(ValueError, match="takes coefficients of shape"):
         design().with_tau_coeff(np.zeros((2, 7)))
+
+
+#
+# IMPELLER
+#
+
+IMPELLER = {"type": "impeller", "t_max": 0.04}
+"""The paper's shape: a 4:1 nose, flat to 60 per cent, 35 per cent at the TE."""
+
+
+def impeller(**kwargs):
+    return Impeller.from_dict({**IMPELLER, **kwargs})
+
+
+def test_impeller_is_flat_between_the_nose_and_the_taper():
+    thickness = impeller()
+    m = np.linspace(thickness.m_nose, thickness.m_taper, 50)
+    np.testing.assert_allclose(thickness.thick(m), 0.02, rtol=1e-14)
+
+
+def test_impeller_trailing_edge_is_its_ratio_of_the_maximum():
+    thickness = impeller()
+    assert thickness.thick(1.0) == pytest.approx(0.5 * 0.35 * 0.04, rel=1e-14)
+    assert thickness.t_TE == pytest.approx(0.35 * 0.04)
+
+
+def test_impeller_nose_is_as_long_and_as_round_as_its_ellipse():
+    """The nose ends at ellipse_ratio half-thicknesses, and its leading edge
+    radius is the ellipse's, half-thickness squared over length."""
+    thickness = impeller()
+    assert thickness.m_nose == pytest.approx(4.0 * 0.02)
+    m = np.array([1e-8, 1e-7])
+    R = thickness.thick(m) ** 2 / (2.0 * m)
+    np.testing.assert_allclose(R, 0.02**2 / 0.08, rtol=1e-5)
+    assert thickness.R_LE == pytest.approx(0.02**2 / 0.08)
+
+
+def test_impeller_nose_meets_the_flat_with_no_step_in_curvature():
+    """Just inside the join the nose is all but flat, where an ellipse would
+    still curve at half-thickness over length squared."""
+    thickness = impeller()
+    dm = 1e-4
+    t = thickness.thick(thickness.m_nose + dm * np.array([-3.0, -2.0, -1.0]))
+    curvature = abs(t[0] - 2.0 * t[1] + t[2]) / dm**2
+    assert curvature < 0.02 * 0.02 / thickness.m_nose**2
+
+
+def test_impeller_thickens_then_thins_monotonically():
+    thickness = impeller()
+    t = thickness.thick(M)
+    front = M <= thickness.m_taper
+    assert np.all(np.diff(t[front]) >= 0.0)
+    assert np.all(np.diff(t[~front]) <= 0.0)
+
+
+def test_impeller_scalar_in_scalar_out():
+    assert isinstance(impeller().thick(0.5), float)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"t_max": 0.0},
+        {"TE_ratio": 0.0},
+        {"TE_ratio": 1.5},
+        {"m_taper": 1.0},
+        {"t_max": 0.4},  # a nose of 0.8 runs past the taper
+    ],
+)
+def test_impeller_refuses_impossible_shapes(kwargs):
+    with pytest.raises(ValueError):
+        impeller(**kwargs)
+
+
+def test_impeller_round_trips_through_a_config_dict():
+    thickness = ThicknessDesign.from_dict(dict(IMPELLER))
+    assert isinstance(thickness, Impeller)
+    assert ThicknessDesign.from_dict(thickness.to_dict()) == thickness
+
+
+@pytest.mark.parametrize("round_TE", [False, True])
+def test_an_impeller_blade_is_shaped_and_meshes(round_TE):
+    row = blade()
+    for section in row["sections"]:
+        section["thickness"] = {**IMPELLER, "round_TE": round_TE}
+    config = build(blades=[row, blade()], **({} if round_TE else {"mesh": MESH}))
+    machine = config.design()
+    for spf in SPF:
+        for surface in machine.rows[0].blade.evaluate_section(spf):
+            assert np.all(np.isfinite(surface))
+    if not round_TE:
+        grid = config.mesh.mesh(machine)
+        assert all(np.all(np.isfinite(block.xrt)) for block in grid)

@@ -20,6 +20,7 @@ Usage::
 
 import argparse
 import copy
+import dataclasses
 import json
 import sys
 import time
@@ -31,10 +32,9 @@ import yaml
 from scipy.spatial import cKDTree
 
 from turbigen.config import Config
-from turbigen.ohpmesh import _cell_angles
+from turbigen.ohpmesh import OHPassage, _cell_angles, _Tune
 
 HERE = Path(__file__).resolve().parent
-EXAMPLES = HERE.parent / "examples"
 BASELINE = HERE / "ohp_mesh_baseline.json"
 
 SECTIONS = ("mean_line", "annulus", "blades", "fluid", "inlet_profile", "mesh")
@@ -50,6 +50,25 @@ WORSE_TIME = 1.25
 """Factor of rise in meshing time counted as a regression."""
 
 
+def set_option(mesh, key, value):
+    """Set mesher setting `key` to `value` in config dict `mesh`, under
+    `tune` if it is one of the numbers the mesher is tuned by; `key` may
+    also name it as `tune.key`."""
+    key = key.removeprefix("tune.")
+    if key in {f.name for f in dataclasses.fields(OHPassage)}:
+        mesh[key] = value
+    elif key in {f.name for f in dataclasses.fields(_Tune)}:
+        mesh["tune"] = {**mesh.get("tune", {}), key: value}
+    else:
+        raise SystemExit(f"OHPassage has no setting {key!r}")
+
+
+def get_option(mesher, key):
+    """The value of setting `key` of `mesher`, wherever it is held."""
+    key = key.removeprefix("tune.")
+    return getattr(mesher, key) if hasattr(mesher, key) else getattr(mesher.tune, key)
+
+
 def _load(path):
     doc = yaml.safe_load(Path(path).read_text())
     return {k: doc[k] for k in SECTIONS if doc.get(k) is not None}
@@ -58,12 +77,12 @@ def _load(path):
 def _axial(gap):
     """The axial turbine example, by the passage mesher, which needs round
     trailing edges; with its rotor's clearance or without."""
-    doc = _load(EXAMPLES / "axial_turbine.yaml")
+    doc = _load(HERE / "cases" / "axial_turbine.yaml")
     for blade in doc["blades"]:
         for section in blade["sections"]:
             section["thickness"] = dict(section["thickness"], round_TE=True)
         if not gap:
-            blade["tip_span"] = 0.0
+            blade["tip"] = 0.0
     doc["mesh"] = {"type": "ohp", "yplus": doc["mesh"]["yplus"]}
     return doc
 
@@ -71,7 +90,7 @@ def _axial(gap):
 CASES = {
     "axial": lambda: _axial(gap=False),
     "axial_gap": lambda: _axial(gap=True),
-    "cascade": lambda: _load(EXAMPLES / "turbine_cascade_ohp.yaml"),
+    "cascade": lambda: _load(HERE / "cases" / "turbine_cascade_ohp.yaml"),
     "sweep3_0001": lambda: _load(HERE / "cases" / "sweep3_0001.yaml"),
     "sweep3_0004": lambda: _load(HERE / "cases" / "sweep3_0004.yaml"),
 }
@@ -91,9 +110,16 @@ def _steps(d, axis):
 
 
 def _worst_corner(block):
-    rt = block.r * block.t
+    """Worst cell corner on each blade-to-blade surface, measured in 3D.
+
+    Not in the plane of `x` and `r theta`, which is the blade-to-blade plane
+    only while the annulus runs axially: where it turns radial, as through an
+    impeller, that projection collapses the meridional side of every cell
+    and reads a sound mesh as degenerate.
+    """
+    xyz = _cartesian(block.xrt)
     return min(
-        float(_cell_angles(np.stack((block.x[:, j, :], rt[:, j, :]))).min())
+        float(_cell_angles(np.moveaxis(xyz[:, j, :], -1, 0)).min())
         for j in range(block.shape[1])
     )
 
@@ -114,21 +140,45 @@ def _wall_step(O):
 
 def _outer_face_steps(O, row):
     """Ratio of the O block's last cell off the blade to the cell beyond it in
-    the next block, at each node of its outer face that another block shares."""
+    the next block, at each node of its outer face that another block shares:
+    along the edge out of the node most nearly along the O block's line,
+    if within 45 degrees of it.
+
+    A node two blocks share lies on a face of each, so each block is searched
+    by a tree of only its faces' nodes, built once and searched from the
+    outer face turned back by each pitch shift in turn rather than the block
+    turned on by it; and only as far as a match, as a search for the nearest
+    node to a point far from the block is slow.
+    """
     P = _cartesian(O.xrt)
     p = P[:, :, -1].reshape(-1, 3)
     a = (P[:, :, -1] - P[:, :, -2]).reshape(-1, 3)
+    face_xrt = O.xrt[:, :, -1].reshape(-1, 3).astype(float)
+    tol = 1e-7 * np.abs(p).max()
     out = np.full(len(p), np.nan)
+    best = np.full(len(p), 0.7)
     for block in row:
         if block is O:
             continue
+        xrt = block.xrt.astype(float)
+        shape = xrt.shape[:3]
+        on_face = np.zeros(shape, dtype=bool)
+        for axis in range(3):
+            for end in (0, -1):
+                np.moveaxis(on_face, axis, 0)[end] = True
+        flat = np.flatnonzero(on_face)
+        tree = cKDTree(_cartesian(xrt).reshape(-1, 3)[flat])
         for shift in (-1, 0, 1):
-            xrt = block.xrt.astype(float).copy()
-            xrt[..., 2] += shift * O.pitch
-            C = _cartesian(xrt)
-            dist, idx = cKDTree(C.reshape(-1, 3)).query(p)
-            hit = np.nonzero(dist < 1e-7 * np.abs(p).max())[0]
-            ijk = np.stack(np.unravel_index(idx[hit], C.shape[:3]), axis=1)
+            q_xrt = face_xrt.copy()
+            q_xrt[:, 2] -= shift * O.pitch
+            dist, idx = tree.query(_cartesian(q_xrt), distance_upper_bound=tol)
+            hit = np.nonzero(dist < tol)[0]
+            if not len(hit):
+                continue
+            ijk = np.stack(np.unravel_index(flat[idx[hit]], shape), axis=1)
+            xrt_s = xrt.copy()
+            xrt_s[..., 2] += shift * O.pitch
+            C = _cartesian(xrt_s)
             for axis in range(3):
                 for step in (-1, 1):
                     q = ijk.copy()
@@ -139,8 +189,13 @@ def _outer_face_steps(O, row):
                     cos = np.sum(v * av, 1) / (
                         np.linalg.norm(v, axis=1) * np.linalg.norm(av, axis=1)
                     )
-                    along = cos > 0.7
-                    out[hit[ok][along]] = np.linalg.norm(
+                    # The edge most nearly along the O block's line, not
+                    # the last near enough: where its cells are skewed at the
+                    # face, an edge along the face can pass too
+                    nodes = hit[ok]
+                    along = cos > best[nodes]
+                    best[nodes[along]] = cos[along]
+                    out[nodes[along]] = np.linalg.norm(
                         v[along], axis=1
                     ) / np.linalg.norm(av[along], axis=1)
     r = np.maximum(out, 1.0 / out)
@@ -149,12 +204,21 @@ def _outer_face_steps(O, row):
 
 def measure(name):
     """Mesh case `name` and return what was measured of it."""
-    config = Config.from_dict(copy.deepcopy(CASES[name]()))
+    return measure_doc(CASES[name]())
+
+
+def measure_doc(doc):
+    """Mesh the config held in dict `doc` and return what was measured of it."""
+    config = Config.from_dict(copy.deepcopy(doc))
     machine = config.design()
     t0 = time.perf_counter()
     grid = config.mesh.mesh(machine)
     t_mesh = time.perf_counter() - t0
+    return measure_grid(grid, t_mesh)
 
+
+def measure_grid(grid, t_mesh):
+    """Return what was measured of a passage mesh made in `t_mesh` seconds."""
     blocks = {}
     for block in grid:
         steps = _block_steps(block)

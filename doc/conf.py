@@ -49,11 +49,14 @@ def _render_tutorial_figures():
         capture_output=True,
     )
 
-    # report --svg writes post_<NN>_<type>_<fig>.svg; match on <type>.
+    # report --svg writes post_<NN>_<type>_<fig>.svg; match on <type>. The
+    # figures the tutorial does not show are deleted, not left in step5.
     for svg in step5.glob("post_*.svg"):
         figure_type = svg.stem.split("_")[2]
         if figure_type in TUTORIAL_FIGURES:
             shutil.move(str(svg), str(static / TUTORIAL_FIGURES[figure_type]))
+        else:
+            svg.unlink()
 
     missing = [
         name for name in TUTORIAL_FIGURES.values() if not (static / name).is_file()
@@ -99,7 +102,7 @@ extensions = [
 # resolves against this inventory, so a mismatched version silently drops or
 # misdirects the link. Keep the two in sync: bump both together.
 intersphinx_mapping = {
-    "ember": ("https://ember-cfd.org/0.4.6/", None),
+    "ember": ("https://ember-cfd.org/0.4.10/", None),
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }

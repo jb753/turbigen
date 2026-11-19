@@ -81,7 +81,8 @@ the answer afterwards (`post_process`, `job`).
 UNSTAMPED_OPERATING_POINT = ("throttle_Kp", "throttle_Ki", "throttle_tol")
 """Operating point settings that decide how the field was reached, or whether
 its pressure is recorded, not what it is, and so are left out of the stamp as
-`solver` is: the throttle's gains and its tolerance."""
+`solver` is: the throttle's gains and its tolerance. A throttled exit's
+``DP_adjust`` is out too, as it says only where the controller starts."""
 
 
 def design_stamp(config):
@@ -102,12 +103,15 @@ def design_stamp(config):
     subset = {key: data[key] for key in STAMPED if key in data}
 
     # How a throttle reaches its mass flow, not where it ends up, so out for
-    # the reason `solver` is
-    if isinstance(subset.get("operating_point"), dict):
+    # the reason `solver` is; with a throttle on, that includes the pressure it
+    # starts from, which `iterate` moves from pass to pass
+    point = subset.get("operating_point")
+    if isinstance(point, dict):
+        unstamped = UNSTAMPED_OPERATING_POINT
+        if point.get("mdot_adjust") is not None:
+            unstamped += ("DP_adjust",)
         subset["operating_point"] = {
-            key: value
-            for key, value in subset["operating_point"].items()
-            if key not in UNSTAMPED_OPERATING_POINT
+            key: value for key, value in point.items() if key not in unstamped
         }
 
     # Sorted and canonically separated so the digest depends on the values and

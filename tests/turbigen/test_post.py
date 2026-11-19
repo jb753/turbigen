@@ -1056,7 +1056,7 @@ def test_shape_factor_plot_draws_the_line_it_is_asked_for(bladed, solved):
 
 
 def test_mesh_plot_draws_every_grid_line_of_both_slices(bladed, meshed):
-    meridional, blade_to_blade = MeshPlot().report(bladed, meshed)
+    meridional, blade_to_blade, *_ = MeshPlot().report(bladed, meshed)
 
     (block,) = meshed.grid
     ni, nj, nk = block.shape
@@ -1069,15 +1069,22 @@ def test_mesh_plot_draws_every_grid_line_of_both_slices(bladed, meshed):
 
 
 def test_mesh_plot_slices_at_mid_pitch_and_mid_span(bladed, meshed):
-    meridional, blade_to_blade = MeshPlot().report(bladed, meshed)
+    meridional, blade_to_blade, *_ = MeshPlot().report(bladed, meshed)
 
     (block,) = meshed.grid
     ni, nj, nk = block.shape
     # The first line of each is the first column: i varying, at j = 0 or k = 0
     x, r = meridional.axes[0].lines[0].get_data()
     np.testing.assert_allclose(r, block.r[:, 0, nk // 2])
-    x, rt = blade_to_blade.axes[0].lines[0].get_data()
-    np.testing.assert_allclose(rt, block.rt[:, nj // 2, 0])
+    # The blade-to-blade view in conformal coordinates, as the contour maps:
+    # theta as it is, and m' increasing downstream along the first column
+    mp, t = blade_to_blade.axes[0].lines[0].get_data()
+    np.testing.assert_allclose(t, block.t[:, nj // 2, 0])
+    assert np.all(np.diff(mp) > 0.0)
+    # dm' = dm / r: a step along the column is its meridional length over r
+    x, r = block.x[:, nj // 2, 0], block.r[:, nj // 2, 0]
+    dm = np.hypot(np.diff(x), np.diff(r))
+    np.testing.assert_allclose(np.diff(mp), dm / (0.5 * (r[1:] + r[:-1])), rtol=0.02)
 
 
 def test_mesh_plot_draws_the_periodic_surface_of_an_ohp_mesh():
@@ -1092,12 +1099,31 @@ def test_mesh_plot_draws_the_periodic_surface_of_an_ohp_mesh():
     )
     _, machine, grid = pipeline.prepare(config)
 
-    meridional, _ = MeshPlot().report(config, Result(machine=machine, grid=grid))
+    meridional, *_ = MeshPlot().report(config, Result(machine=machine, grid=grid))
 
     surfaces = [surface for row in util.cut_periodic(grid) for surface in row]
     assert len(surfaces) == 2
     assert meridional.axes[0].get_title() == "Meridional Grid, Periodic Surface"
     assert len(meridional.axes[0].lines) == sum(sum(s.shape) for s in surfaces)
+
+
+def test_mesh_plot_closes_in_on_each_edge_of_each_row(bladed, meshed):
+    """After the two whole views, a leading and a trailing edge square per
+    row, on the same grid lines, none without a close-up of zero."""
+    figures = MeshPlot().report(bladed, meshed)
+    n_row = len(meshed.machine.rows)
+    assert len(figures) == 2 + 2 * n_row
+
+    whole = figures[1].axes[0]
+    for fig in figures[2:]:
+        ax = fig.axes[0]
+        assert len(ax.lines) == len(whole.lines)
+        (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+        np.testing.assert_allclose(x1 - x0, y1 - y0)
+        # Much smaller than the whole view
+        assert x1 - x0 < 0.2 * np.ptp(whole.dataLim.intervalx)
+
+    assert len(MeshPlot(closeup=0.0).report(bladed, meshed)) == 2
 
 
 def test_mesh_plot_without_a_grid_is_empty(config, result):

@@ -54,3 +54,4 @@ doc/_static/tut_step5_*.svg
 tutorial/*/output.yaml
 tutorial/*/log_turbigen.txt
 tutorial/*/conv.cnv
+bench/.ohp_gap_cache/

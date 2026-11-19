@@ -66,6 +66,21 @@ class Task:
     directory is one run."""
 
 
+@dataclasses.dataclass(frozen=True)
+class Submitted:
+    """What the queue made of one submission."""
+
+    text: str
+    """A line for the log."""
+
+    jobs: tuple
+    """The job each of its configs became, as ``(job_id, config)`` pairs, for
+    a script to wait on with ``--after``."""
+
+    def __str__(self):
+        return self.text
+
+
 def run_process(argv, cwd):
     """Run `argv` in `cwd` and return its stdout, raising if it failed.
 
@@ -96,7 +111,7 @@ class Job(Node):
     # TO BE IMPLEMENTED BY A BACKEND
     #
 
-    def forward(self, tasks, verb, options):
+    def forward(self, tasks, verb, options, after):
         """Send `tasks` to the queue and return what it called them.
 
         Parameters
@@ -107,37 +122,56 @@ class Job(Node):
             The command to run them with, as in ``run`` or ``iterate``.
         options : tuple of str
             Flags shared by every task, already in command-line form.
+        after : tuple of str
+            Jobs in the same queue that must each finish successfully before
+            any task starts; empty for none.
 
         Returns
         -------
-        list of str
-            Whatever identifies the submitted work in this queue.
+        list of Submitted
+            Each submission made, and the job every task became in it.
 
         """
         raise NotImplementedError(
-            f"{type(self).__name__} must implement forward(self, tasks, verb, options)"
+            f"{type(self).__name__} must implement "
+            "forward(self, tasks, verb, options, after)"
         )
 
     #
     # FRAMEWORK
     #
 
-    def submit(self, tasks, verb, options=()):
-        """Submit `tasks`, reporting what the queue made of them."""
+    def submit(self, tasks, verb, options=(), after=()):
+        """Submit `tasks`, reporting what the queue made of them.
+
+        `after` names jobs to wait on, as ``--after`` gives them: a fact about
+        this one submission, so an argument here and never a config field,
+        which every ``input.yaml`` a run writes would carry on to a later
+        submission long after those jobs had gone.
+        """
         tasks = tuple(tasks)
         options = tuple(options)
+        after = tuple(str(job_id) for job_id in after)
 
         if not tasks:
             raise ValueError("There is nothing to submit.")
 
         logger.info(f"Submitting {len(tasks)} job(s) to {self.type}.")
 
-        ids = self.forward(tasks, verb, options)
+        submitted = self.forward(tasks, verb, options, after)
 
-        for job_id in ids:
-            logger.info(f"Submitted {job_id}")
+        for done in submitted:
+            logger.info(f"Submitted {done}")
 
-        return ids
+        # Every task a job, so that what --parsable prints and --after waits on
+        # is whole whichever queue made them
+        reported = {str(config) for done in submitted for _, config in done.jobs}
+        if missing := [
+            task.config for task in tasks if str(task.config) not in reported
+        ]:
+            raise RuntimeError(f"{type(self).__name__} reported no job for {missing}.")
+
+        return submitted
 
     def executable(self):
         """Return the turbigen command a submitted job should run."""
@@ -206,7 +240,7 @@ class Slurm(Job):
     max_concurrent: int = 0
     """Most array members to run at once."""
 
-    def forward(self, tasks, verb, options):
+    def forward(self, tasks, verb, options, after):
         # Everything goes in the tasks' common parent, and sbatch runs there,
         # so the array's own `slurm-%A_%a.out` files land beside the script
         # that made them rather than wherever you happened to be standing.
@@ -226,10 +260,22 @@ class Slurm(Job):
         if self.max_concurrent:
             array += f"%{self.max_concurrent}"
 
-        out = run_process(["sbatch", f"--array={array}", SCRIPT_NAME], base)
+        # The dependency on the command line, not in the script, so that the
+        # script submitted again by hand does not wait on jobs long gone
+        argv = ["sbatch", f"--array={array}"]
+        if after:
+            argv.append(f"--dependency=afterok:{':'.join(after)}")
+        out = run_process([*argv, SCRIPT_NAME], base)
 
-        # sbatch says "Submitted batch job 12345".
-        return [f"SLURM job {out.split()[-1]} ({len(tasks)} array task(s)) in {base}"]
+        # sbatch says "Submitted batch job 12345". One task is the whole
+        # array; more are its members, each a job of its own to depend on.
+        job_id = out.split()[-1]
+        jobs = [
+            (job_id if len(tasks) == 1 else f"{job_id}_{i + 1}", task.config)
+            for i, task in enumerate(tasks)
+        ]
+        text = f"SLURM job {job_id} ({len(tasks)} array task(s)) in {base}"
+        return [Submitted(text, tuple(jobs))]
 
     def script(self, name, verb, options, tasks=TASKS_NAME):
         """Return the sbatch script for an array over the lines of `tasks`."""
@@ -301,7 +347,7 @@ class Tsp(Job):
     """Slots one job occupies, for work that wants more than one core. Zero
     leaves it at task-spooler's own default of one."""
 
-    def forward(self, tasks, verb, options):
+    def forward(self, tasks, verb, options, after):
         binary = _find_tsp()
 
         ids = []
@@ -309,12 +355,16 @@ class Tsp(Job):
             argv = [binary, "-L", task.name]
             if self.cpus:
                 argv += ["-N", str(self.cpus)]
+            if after:
+                argv += ["-D", ",".join(after)]
             argv += self.argv(task.config, verb, options)
 
             # Queued from the config's own directory, so a job inherits the cwd
             # a hand-typed run would have had.
             job_id = run_process(argv, Path(task.config).resolve().parent)
-            ids.append(f"tsp job {job_id} ({task.name})")
+            ids.append(
+                Submitted(f"tsp job {job_id} ({task.name})", ((job_id, task.config),))
+            )
 
         return ids
 

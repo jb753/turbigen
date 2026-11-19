@@ -116,10 +116,20 @@ class Chic(Node):
     """Throttle with a choked exit nozzle, sweeping its throat area, instead
     of with the exit pressure.
 
-    The throat is first sized one-dimensionally to pass the design point's
-    mass flow, solved once, and the sweep closes it from there:
+    The throat is sized one-dimensionally to pass the design point's mass
+    flow, and not solved, and the sweep closes it from there:
     `step_coarse` and `step_fine` are then fractions of that throat area,
     which near choke are fractions of the mass flow too. See :mod:`turbigen.nozzle`.
+    """
+
+    solve_datum: bool = True
+    """Converge the design point before sweeping, unless it has settled.
+
+    Off, the config's `restart:` must be a converged design point's field, and
+    the `output.yaml` beside it is taken as the datum: the operating point it
+    reached is where the sweep departs from, and its result sizes the nozzle,
+    with no solve of the datum at all. The field must be stamped as this
+    design's solution, so a sweep cannot depart from another machine's.
     """
 
     stall: bool = True
@@ -131,18 +141,19 @@ class Chic(Node):
     `step_choke_fine`, towards choke: lowering the back pressure until a point does
     not converge, or the mass flow rises by less than `choke_mdot` over it.
     With a `nozzle`, which
-    cannot be opened far enough to choke the machine, the nozzle comes off
-    and the open duct is first throttled to the flow the datum throat passed,
-    the pressure it settles at being where the leg departs from."""
+    cannot be opened far enough to choke the machine, the nozzle comes off:
+    at the design speed the leg departs from the design point's own
+    pressure, and at another from the static pressure the datum throat left
+    at the machine outlet."""
 
-    speeds: tuple[float, ...] = (1.0,)
-    """Shaft speeds to sweep a speedline at, as fractions of the design's
+    speed: float = 1.0
+    """Shaft speed to sweep the speedline at, as a fraction of the design's
     [--].
 
-    Each speedline departs from the throat sized at the design speed, which
-    at another speed is where the design's throttle line crosses that
-    speedline, so more than one needs a `nozzle`. The datum at a new speed is
-    restarted from the nearest speed already run, behind a soft start.
+    A speedline other than the design's departs from the throat sized for
+    the design point, which at another speed is where the design's throttle
+    line crosses it, so it needs a `nozzle`. Its datum is that throat run at
+    this speed, soft started from the design point's field.
     """
 
     def __post_init__(self):
@@ -181,15 +192,11 @@ class Chic(Node):
                 "chic.stall and chic.choke are both off, so there is no leg to sweep."
             )
 
-        if not self.speeds or not all(speed > 0.0 for speed in self.speeds):
+        if not self.speed > 0.0:
+            raise ValueError(f"chic.speed must be positive, got {self.speed}.")
+        if self.speed != 1.0 and not self.nozzle:
             raise ValueError(
-                f"chic.speeds must be positive and not empty, got {self.speeds}."
-            )
-        if len(set(self.speeds)) != len(self.speeds):
-            raise ValueError(f"chic.speeds repeats a speed: {self.speeds}.")
-        if tuple(self.speeds) != (1.0,) and not self.nozzle:
-            raise ValueError(
-                f"chic.speeds={self.speeds} needs chic.nozzle: a speedline "
+                f"chic.speed={self.speed} needs chic.nozzle: a speedline "
                 f"other than the design's departs from the design's throat."
             )
 

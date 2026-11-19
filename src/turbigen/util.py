@@ -173,25 +173,6 @@ def resample_to(x, npts):
     return xnew
 
 
-#
-# COORDINATES
-#
-# A tangential coordinate is an angle, so it is not a length and cannot be
-# compared with one. Scaling by a reference radius makes the three components
-# commensurate, which is what an interpolation or a distance needs.
-#
-
-
-def to_xrrt_ref(xrt, rref):
-    """Return `xrt` with its angle scaled to a length by `rref`."""
-    return np.stack((xrt[0], xrt[1], xrt[2] * rref)).copy()
-
-
-def from_xrrt_ref(xrrt_ref, rref):
-    """Return coordinates scaled by `to_xrrt_ref` back to an angle."""
-    return np.stack((xrrt_ref[0], xrrt_ref[1], xrrt_ref[2] / rref)).copy()
-
-
 def cluster_cosine(npts):
     """Return `npts` points on the unit interval, clustered at both ends.
 
@@ -249,6 +230,29 @@ def interp1d_linear_extrap(x, y, axis=0):
         spline.extend(coefficients, xnext)
 
     return spline
+
+
+EXTRAPOLATE = ("const", "linear", "cubic")
+"""How :func:`interp1d_extrap` carries a curve beyond its data."""
+
+
+def interp1d_extrap(x, y, mode, axis=0):
+    """Return a spline through `x, y`, carried beyond them as `mode` says.
+
+    The same natural cubic inside the data whatever the mode; beyond it,
+    ``"const"`` holds the end values (:func:`interp1d_hold`), ``"linear"``
+    continues the end slopes (:func:`interp1d_linear_extrap`), and ``"cubic"``
+    continues the end cubics themselves. One or two points are a constant or a
+    line inside and out, as :func:`interp1d_linear_extrap` makes them, but for
+    ``"const"``, which still holds beyond them.
+    """
+    if mode not in EXTRAPOLATE:
+        raise ValueError(f"Extrapolation must be one of {EXTRAPOLATE}, got {mode!r}.")
+    if mode == "const":
+        return interp1d_hold(x, y, axis=axis)
+    if mode == "linear" or len(x) < 3:
+        return interp1d_linear_extrap(x, y, axis=axis)
+    return scipy.interpolate.CubicSpline(x, y, axis=axis, bc_type="natural")
 
 
 def interp1d_hold(x, y, axis=0):

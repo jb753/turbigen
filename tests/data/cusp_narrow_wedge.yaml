@@ -67,9 +67,7 @@ blades:
       t_TE: 0.025
       tanwedge: 0.12832569408570282
       type: clark
-  tip_chord: 0.0
-  tip_metre: 0.0
-  tip_span: 0.0
+  tip: 0.0
 - count:
     Co: 0.5813046524222882
     spf: 0.5
@@ -98,14 +96,13 @@ blades:
       t_TE: 0.025
       tanwedge: 0.1564854328626705
       type: clark
-  tip_chord: 0.03132468000985682
-  tip_metre: 0.0
-  tip_span: 0.0
+  tip: 0.03132468000985682
+  reference_length:
+    tip: chord_mid
 spanwise:
   type: vortex_expon
   n: -0.6
 mesh:
-  AR_cusp: 2.0
   AR_merid: 1.0
   AR_mix: 1.0
   AR_passage: 1.0
@@ -115,13 +112,10 @@ mesh:
   ER_stream: 1.2
   deswirl: false
   dm_LE: 0.001
-  dm_TE: 0.0
   dspf_mid: 0.03
   gap_contraction: 0.6
   half_span: false
   nchord_relax: 1.0
-  ni_TE: 9
-  ni_cusp: 9
   ni_down_extra: 0
   njtip_min: 9
   nk_min: 37

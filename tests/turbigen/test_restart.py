@@ -298,6 +298,21 @@ def test_the_stamp_leaves_out_how_a_throttle_gets_there(solved):
     assert "throttle_Kp" in throttled.to_dict()["operating_point"]
 
 
+def test_the_stamp_leaves_out_where_a_throttle_starts():
+    """A throttled exit's DP_adjust is only the controller's first guess,
+    which iterate moves from pass to pass; a held pressure is the operating
+    point itself."""
+
+    def stamp(**point):
+        return restart.design_stamp(
+            Config.from_dict({**CASCADE, "operating_point": point})
+        )
+
+    throttled = {"mdot_adjust": 0.0}
+    assert stamp(**throttled, DP_adjust=0.01) == stamp(**throttled, DP_adjust=-0.02)
+    assert stamp(DP_adjust=0.01) != stamp(DP_adjust=-0.02)
+
+
 def test_an_unstamped_field_reads_back_no_stamp(solved):
     """The fixture saves without a config, as every field written before this."""
     *_, path = solved

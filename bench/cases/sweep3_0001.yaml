@@ -58,9 +58,7 @@ blades:
       tanwedge: 0.2613635146752281
       type: clark
       round_TE: true
-  tip_chord: 0.0
-  tip_metre: 0.0
-  tip_span: 0.0
+  tip: 0.0
 - count:
     Co: 0.8017010213685465
     spf: 0.5
@@ -90,9 +88,9 @@ blades:
       tanwedge: 0.21948571365291855
       type: clark
       round_TE: true
-  tip_chord: 0.02
-  tip_metre: 0.0
-  tip_span: 0.0
+  tip: 0.02
+  reference_length:
+    tip: chord_mid
 spanwise:
   type: vortex_expon
   n: -0.6

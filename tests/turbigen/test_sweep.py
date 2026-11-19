@@ -180,8 +180,15 @@ def test_a_swept_section_stretches_its_aerofoil():
     swept = build(blades=[blade(section=SWEEP), blade()]).design().rows[0].blade
     stretch = 1.0 + SWEEP["dm_TE"] - SWEEP["dm_LE"]
     for spf in (0.0, 0.5, 1.0):
+        # The section's length along its line stretches exactly; the camber
+        # line falls short of that length at the edges by as much either way,
+        # so the chord grows by the stretch of the line, not in proportion
+        _, _, _, s_sec = plain.row_annulus.section_line(spf, 0.0, 0.0)
+        line_length = s_sec[-1] - s_sec[0]
         np.testing.assert_allclose(
-            swept.evaluate_chord(spf), stretch * plain.evaluate_chord(spf), rtol=1e-3
+            swept.evaluate_chord(spf),
+            plain.evaluate_chord(spf) + (stretch - 1.0) * line_length,
+            rtol=1e-3,
         )
         # The aerofoil stretches meridionally only: the same turning
         np.testing.assert_allclose(

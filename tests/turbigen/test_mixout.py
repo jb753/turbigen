@@ -70,9 +70,7 @@ CASCADE = {
     "mesh": {
         "type": "h",
         "resolution_factor": 0.25,
-        "dm_TE": 0.0,
-        "AR_cusp": 2.0,
-        "ni_cusp": 5,
+        "dm_LE": 0.001,
     },
     "solver": {"type": "ember", "n_step": 10, "n_step_log": 10},
 }
@@ -185,9 +183,7 @@ def test_actual_is_not_reinterpreted_by_the_datum(solved):
 
     grid = grid.copy()
     fluid = grid[0].fluid
-    grid.set_fluid(
-        fluid.change_datum(P_dtm=0.5 * fluid.P_dtm, T_dtm=0.5 * fluid.T_dtm)
-    )
+    grid.set_fluid(fluid.change_datum(P_dtm=0.5 * fluid.P_dtm, T_dtm=0.5 * fluid.T_dtm))
     assert grid[0].fluid.T_dtm != machine.mean_line.fluid.T_dtm
 
     actual, _ = mixout.mean_line(grid, machine)

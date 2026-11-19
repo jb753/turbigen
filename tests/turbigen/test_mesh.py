@@ -7,7 +7,6 @@ wall distance on the way out. The package this replaces leaves all of that to
 the caller, so these check the framework as well as the mesh.
 """
 
-import dataclasses
 import itertools
 import sys
 from pathlib import Path
@@ -15,18 +14,21 @@ from pathlib import Path
 import ember.patch
 import numpy as np
 import pytest
-import turbigen.clusterfunc
 import turbigen_ref.annulus
 import turbigen_ref.geometry
 import turbigen_ref.hmesh
 from test_blade import ANNULUS, blade, build
 
+import turbigen.clusterfunc
 from turbigen import H, Mesher, WallSpacing
 from turbigen.config import Config
+from turbigen.mesh import InviscidStretch, StationaryStretch
 
 MESH = {
     "type": "h",
-    "dm_TE": 0.05,
+    # Square, so the tests that are not about the cusp mesh the blade they
+    # were given; see CUSP for the default.
+    "cusp": False,
     "resolution_factor": 0.5,
     "dspf_mid": 0.1,
     # Stated rather than defaulted, because the reference mesher hard-codes
@@ -35,11 +37,17 @@ MESH = {
     # test pins is the algorithm rather than the choice of default -- which is
     # the right division, the default being ours to move and the algorithm not.
     "njtip_min": 9,
+    # Likewise the leading edge spacing, which our default now sets from the
+    # wall spacing and the reference holds at a fixed fraction of chord.
+    "dm_LE": 0.001,
 }
 """A deliberately coarse mesh, so that the tests run in about a second each."""
 
-CUSP = {**MESH, "dm_TE": 0.0, "AR_cusp": 1.0, "ni_cusp": 8}
-TIP = [blade(), blade(dchi_LE=2.0, tip_span=0.02)]
+ATOL_REF = 1e-6
+"""Agreement with the old package's mesh [m, rad]. The annulus differs from
+the old one by its outlet duct's own fit, see test_annulus.ATOL_REF."""
+CUSP = {**MESH, "cusp": True}
+TIP = [blade(), blade(dchi_LE=2.0, tip=0.02)]
 
 
 @pytest.fixture(scope="module")
@@ -115,19 +123,35 @@ def old_grid(machine, mesh, spacing):
     # setting the reference does not have -- it hard-codes nine, which is what
     # the fixture states so that both sides are asked for the same thing. A
     # key this mesher never took cannot be part of what the comparison pins.
-    unknown = {"type", "njtip_min"}
-    mesher = turbigen_ref.hmesh.H(**{k: v for k, v in mesh.items() if k not in unknown})
-    reference = mesher.make_grid(
-        None, mac, spacing.hub, spacing.casing, spacing.surface
+    unknown = {"type", "njtip_min", "cusp", "frac_TE"}
+    kwargs = {k: v for k, v in mesh.items() if k not in unknown}
+    # The reference switches its cusp on with a length and a count, which this
+    # mesher takes from where the two surfaces meet and from its downstream
+    # grid instead. Any length will do: the comparison stops short of the cusp.
+    if mesh.get("cusp", True):
+        kwargs.update(dm_TE=0.0, AR_cusp=1.0, ni_cusp=8)
+    # The reference sizes the blade wall cell circumferentially at the widest
+    # pitch, this mesher normal to the surface where pitch times the cosine of
+    # the surface angle is largest. Hand the reference the circumferential
+    # spacing that lands on the same fraction of pitch, so the grids agree.
+    ours = H(**{k: v for k, v in mesh.items() if k != "type"})
+    surface = np.array(
+        [
+            g.drt_norm * g.pitch_rtheta_max
+            for g in (
+                ours._row_geometry(machine, i_row, spacing)
+                for i_row in range(len(machine.rows))
+            )
+        ]
     )
+    mesher = turbigen_ref.hmesh.H(**kwargs)
+    reference = mesher.make_grid(None, mac, spacing.hub, spacing.casing, surface)
 
     # Old turbigen sets a reference length on the grid too, at config.py:709.
     # Without it the reference would skip a float32 rescale of the coordinates
     # that turbigen's mesher performs, and the two would differ by an epsilon
     # that has nothing to do with the mesh mathematics being compared.
-    reference.set_L_ref(
-        H(**{k: v for k, v in mesh.items() if k != "type"}).L_ref(machine)
-    )
+    reference.set_L_ref(ours.L_ref(machine))
 
     return reference
 
@@ -363,6 +387,38 @@ def vinokur(monkeypatch):
     monkeypatch.setattr(cf.symmetric, "plateau_fixed", symmetric_fixed)
 
 
+def _assert_upstream_matches(block, block_ref):
+    """Compare two passage blocks from the inlet to the leading edge.
+
+    The old mesher spaces the trailing edge on a region length and a point
+    count, where this one sizes its cell on the mid-chord one, so the blade
+    and downstream grids differ in count and spacing and are not compared.
+    The upstream gap is laid by the same clustering from the same leading
+    edge cell, and is compared exactly, with the patches that lie in it.
+    """
+    assert block.shape[1:] == block_ref.shape[1:]
+    assert block.Nb == block_ref.Nb
+    ile = next(
+        p.ien
+        for p in block.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.ist == 0
+    )
+    ile_ref = next(
+        p.ien
+        for p in block_ref.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.ist == 0
+    )
+    assert ile == ile_ref
+    np.testing.assert_allclose(
+        block.xrt[: ile + 1], block_ref.xrt[: ile + 1], rtol=1e-12, atol=ATOL_REF
+    )
+
+    def upstream(patches):
+        return [repr(p) for p in patches if 0 <= p.ien <= ile]
+
+    assert upstream(block.patches) == upstream(block_ref.patches)
+
+
 @bit_exact
 def test_matches_the_turbigen_implementation(machine, vinokur):
     grid = build(mesh=MESH).mesh.mesh(machine)
@@ -374,10 +430,7 @@ def test_matches_the_turbigen_implementation(machine, vinokur):
 
     assert len(grid) == len(reference)
     for block, block_ref in zip(grid, reference):
-        assert block.shape == block_ref.shape
-        assert block.Nb == block_ref.Nb
-        np.testing.assert_allclose(block.xrt, block_ref.xrt, rtol=1e-12, atol=1e-12)
-        assert [repr(p) for p in block.patches] == [repr(p) for p in block_ref.patches]
+        _assert_upstream_matches(block, block_ref)
 
 
 @bit_exact
@@ -397,18 +450,13 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades, vinok
     `test_the_tip_gap_spanwise_spacing_stays_within_the_expansion_ratio` pins
     what replaced it.
 
-    Nor is the cusp compared all the way down. This mesher takes the slope
-    into the trailing-edge corner from the section rather than from the grid,
-    and scales the corner windows with the resolution factor, so the trailing
-    edge it builds is deliberately not the old one. Upstream of the old
-    corner blend, which starts `2 * ni_TE` points before the cusp, nothing has
-    changed, and that part is still compared exactly.
+    Nor is the cusp compared at all, only the upstream gap it leaves alone:
+    this mesher builds its cusp from the section's slopes and curvatures and
+    lays it on its own downstream grid, so the blade and everything past it
+    are deliberately not the old ones. See :func:`_assert_upstream_matches`.
 
-    Rotating patches are compared separately, below. The old mesher places
-    none: there, rotation arrives later from `Grid.apply_rotation` at
-    boundary-condition time, which is the arrangement this deliberately
-    departs from. Filtering rather than loosening keeps every patch the old
-    mesher does make pinned exactly.
+    Rotating patches lie along the blade, past the leading edge, so are not
+    in what is compared; they are tested separately, below.
     """
     config = build(blades=blades, mesh=mesh)
     machine = config.design()
@@ -416,20 +464,9 @@ def test_optional_features_match_the_turbigen_implementation(mesh, blades, vinok
     grid = config.mesh.mesh(machine)
     reference = old_grid(machine, mesh, config.mesh.wall_spacing(machine))
 
+    assert len(grid) == len(reference)
     for block, block_ref in zip(grid, reference):
-        assert block.shape == block_ref.shape
-        ite = next(p.ist for p in block.patches if isinstance(p, ember.patch.CuspPatch))
-        i_blend = ite - 2 * config.mesh.ni_TE
-        np.testing.assert_allclose(
-            block.xrt[: i_blend + 1],
-            block_ref.xrt[: i_blend + 1],
-            rtol=1e-12,
-            atol=1e-12,
-        )
-        shared = [
-            p for p in block.patches if not isinstance(p, ember.patch.RotatingPatch)
-        ]
-        assert [repr(p) for p in shared] == [repr(p) for p in block_ref.patches]
+        _assert_upstream_matches(block, block_ref)
 
 
 @pytest.mark.parametrize("njtip_min", [5, 9])
@@ -543,6 +580,54 @@ def test_a_tip_gap_is_the_one_patch_the_old_mesher_does_not_place(machine):
     assert not plain.patches.rotating
 
 
+@pytest.mark.parametrize("nk_tip", [0, 9])
+def test_the_tip_gap_is_the_same_in_metres_along_the_chord(nk_tip):
+    """The spanwise grid is one vector of span fractions, so left alone it
+    would put the top of the blade at a fixed fraction of the local span and
+    the gap would grow and shrink with the annulus. Gridded, the tip block's
+    height is the gap; pinched, the lowest fully pinched node is
+    `gap_contraction` of it below the casing."""
+    machine = build(blades=TIP, mesh=MESH).design()
+    row = machine.rows[1]
+    grid = H.from_dict({**MESH, "nk_tip": nk_tip}).mesh(machine)
+
+    main = grid["row1"]
+    (tip,) = [
+        p
+        for p in main.patches
+        if isinstance(p, ember.patch.PeriodicPatch) and p.jst != 0 and p.kst == 0
+    ]
+    i = slice(tip.ist, tip.ien + 1)
+    if nk_tip:
+        block, j, frac = grid["row1_tip"], 0, 1.0
+        x, r = block.x[:, :, 0], block.r[:, :, 0]
+    else:
+        block, j, frac = main, tip.jst, H().gap_contraction
+        x, r = block.x[i, :, 0], block.r[i, :, 0]
+    gap = np.hypot(x[:, j] - x[:, -1], r[:, j] - r[:, -1])
+    np.testing.assert_allclose(gap, frac * row.tip_gap, rtol=5e-3)
+
+    # The annulus flares enough over the row for a fixed span fraction to miss
+    x, r = main.x[i, :, 0], main.r[i, :, 0]
+    span = np.hypot(x[:, 0] - x[:, -1], r[:, 0] - r[:, -1])
+    assert np.ptp(span) / np.mean(span) > 0.02
+
+
+def test_the_casing_warp_stretches_the_gap_and_keeps_the_hub():
+    from turbigen.hmesh import _casing_warp
+
+    d = np.linspace(0.0, 1.0, 2001)
+    band = 0.02
+    for r in (0.5, 1.0, 3.0):
+        dw = _casing_warp(d, r, band)
+        assert dw[0] == 0.0
+        assert np.isclose(dw[-1], 1.0)
+        assert (np.diff(dw) > 0.0).all()
+        near = d <= band
+        np.testing.assert_allclose(dw[near], r * d[near])
+    np.testing.assert_allclose(_casing_warp(d, 1.0, band), d, atol=1e-15)
+
+
 #
 # SERIALISATION
 #
@@ -562,9 +647,30 @@ def test_mesh_defaults_are_written_out():
     assert data["ER_span"] == 1.2
 
 
-def test_a_cusp_needs_the_trailing_edge_at_the_true_trailing_edge():
-    with pytest.raises(ValueError, match="ni_cusp requires"):
-        H.from_dict({"type": "h", "ni_cusp": 8, "dm_TE": 0.05})
+@pytest.mark.parametrize("frac_TE", [0.0, -0.1, 1.5])
+def test_the_trailing_edge_cell_is_a_fraction_of_the_mid_chord_one(frac_TE):
+    with pytest.raises(ValueError, match="frac_TE"):
+        H.from_dict({"type": "h", "frac_TE": frac_TE})
+
+
+def test_the_cusp_grows_no_faster_than_the_streamwise_grid():
+    """Its cells are the downstream grid's own, squeezed to end on the tip.
+
+    So they grow as the grid does, and the step on to them from the blade's
+    last cell is no bigger than one the grid takes anywhere else. At full
+    resolution, because coarsening merges cells, and merged cells grow by
+    more than `ER_stream` from one to the next everywhere in the grid.
+    """
+    config = build(mesh={**CUSP, "resolution_factor": 1.0})
+    grid = config.mesh.mesh(config.design())
+
+    ER = config.mesh.ER_stream * (1.0 + 1e-3)
+    for block in grid:
+        cusp = next(p for p in block.patches if isinstance(p, ember.patch.CuspPatch))
+        for j in range(block.shape[1]):
+            dm = np.hypot(np.diff(block.x[:, j, 0]), np.diff(block.r[:, j, 0]))
+            ratio = dm[cusp.ist - 1 : cusp.ien + 1] / dm[cusp.ist - 2 : cusp.ien]
+            assert np.all(ratio < ER) and np.all(1.0 / ratio < ER)
 
 
 def _stream_ends(grid):
@@ -615,7 +721,7 @@ def _knife_edged(blade):
 
 
 def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
-    """A knife edge has no width for `AR_cusp` to be a multiple of.
+    """A knife edge has no gap between its surfaces for a cusp to fill.
 
     Left to run, the sides cross and an assertion on the pitchwise ordering of
     the block coordinates fails several steps later, naming nothing a designer
@@ -632,7 +738,7 @@ def test_a_cusp_needs_a_trailing_edge_to_be_built_on():
 
 
 def test_a_square_trailing_edge_does_not_need_one():
-    """The check is the cusp's, so `AR_cusp = 0` meshes a knife edge as before."""
+    """The check is the cusp's, so `cusp: false` meshes a knife edge as before."""
     config = build(
         blades=[_knife_edged(blade()), _knife_edged(blade(dchi_LE=2.0))], mesh=MESH
     )
@@ -666,8 +772,11 @@ def test_a_narrow_trailing_edge_wedge_cusps_without_crossing():
         ite = next(p.ist for p in block.patches if isinstance(p, ember.patch.CuspPatch))
         j = block.shape[1] // 2
         dm = np.hypot(np.diff(block.x[:, j, 0]), np.diff(block.r[:, j, 0]))
-        # No spacing jump where the blade's last cell meets the cusp's first.
-        assert dm[ite] == pytest.approx(dm[ite - 1], rel=0.02)
+        # No bigger step where the blade's last cell meets the cusp's first
+        # than the streamwise grid takes anywhere else.
+        step = dm[ite] / dm[ite - 1]
+        ER = config.mesh.ER_stream
+        assert 1.0 / ER <= step <= ER
 
 
 def test_a_round_trailing_edge_is_refused():
@@ -713,48 +822,124 @@ def test_outlet_relaxation_outside_the_last_gap_is_refused(machine, dm):
         H.from_dict(mesh).mesh(machine)
 
 
-def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
-    """`annulus.m_inviscid` makes the endwalls slip walls from the inlet to
-    their nearest grid lines, and from theirs to the outlet, and the casing
-    over the rotor with a clearance turns only where the casing is not slip."""
-    config = build(blades=TIP, mesh=MESH)
-    m_inviscid = (0.5, 0.6, 4.4, 4.5)
-    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
-    machine = dataclasses.replace(config, annulus=annulus).design()
-    grid = H.from_dict(MESH).mesh(machine)
+ENDWALLS = {
+    "inlet": {
+        "hub": {"type": "inviscid", "m": 0.5},
+        "casing": {"type": "inviscid", "m": 0.6},
+    },
+    "outlet": {
+        "hub": {"type": "inviscid", "m": 4.4},
+        "casing": {"type": "inviscid", "m": 4.5},
+    },
+}
 
-    def patches(block, kind):
-        return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+def _patches(block, kind):
+    return {p.label: p for p in block.patches if type(p).__name__ == kind}
+
+
+def _at_m(machine, block, patch, j, m):
+    """Whether the end of `patch` away from the inlet or outlet lies at the
+    grid line along endwall `j` nearest `m`."""
+    i = patch.ien if patch.ist == 0 else patch.ist
+    m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
+    m_all, _ = machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])
+    return abs(np.median(m_line) - m) < np.ptp(m_all) / (block.shape[0] - 1)
+
+
+def test_inviscid_ducts_end_at_their_grid_lines_and_the_casing_turns_short_of_them():
+    """Inviscid stretches of `mesh.endwalls` make the endwalls slip walls from
+    the inlet to their nearest grid lines, and from theirs to the outlet, and
+    the casing over the rotor with a clearance stands still only where the
+    casing is not slip."""
+    machine = build(blades=TIP, mesh=MESH).design()
+    grid = H.from_dict({**MESH, "endwalls": ENDWALLS}).mesh(machine)
 
     up, dn = grid["row0"], grid["row1"]
-    inlet, outlet = patches(up, "InviscidPatch"), patches(dn, "InviscidPatch")
+    inlet, outlet = _patches(up, "InviscidPatch"), _patches(dn, "InviscidPatch")
     assert set(inlet) == {"inviscid_hub_in", "inviscid_casing_in"}
     assert set(outlet) == {"inviscid_hub_out", "inviscid_casing_out"}
     for block, patch, m, j in (
-        (up, inlet["inviscid_hub_in"], m_inviscid[0], 0),
-        (up, inlet["inviscid_casing_in"], m_inviscid[1], -1),
-        (dn, outlet["inviscid_hub_out"], m_inviscid[2], 0),
-        (dn, outlet["inviscid_casing_out"], m_inviscid[3], -1),
+        (up, inlet["inviscid_hub_in"], 0.5, 0),
+        (up, inlet["inviscid_casing_in"], 0.6, -1),
+        (dn, outlet["inviscid_hub_out"], 4.4, 0),
+        (dn, outlet["inviscid_casing_out"], 4.5, -1),
     ):
-        i = patch.ien if patch.ist == 0 else patch.ist
-        m_line, _ = machine.annulus.evaluate_mspf(block.x[i, j], block.r[i, j])
-        m_all, _ = machine.annulus.evaluate_mspf(block.x[:, j], block.r[:, j])
-        assert abs(np.median(m_line) - m) < np.ptp(m_all) / (block.shape[0] - 1)
-    (casing,) = patches(dn, "RotatingPatch").values()
+        assert _at_m(machine, block, patch, j, m)
+    (casing,) = _patches(dn, "RotatingPatch").values()
     assert casing.ist == 0
     assert casing.ien == outlet["inviscid_casing_out"].ist
-    assert not patches(up, "RotatingPatch")
+    assert not _patches(up, "RotatingPatch")
+
+
+def test_a_stationary_stretch_stands_still_where_its_row_turns():
+    """A stationary stretch of the outlet duct's hub is a wall that `bconds`
+    sets still, from the grid line nearest its `m` to the outlet, beside an
+    inviscid stretch of the casing on the same duct."""
+    from turbigen import bconds
+
+    machine = build(blades=TIP, mesh=MESH).design()
+    endwalls = {
+        "outlet": {
+            "hub": {"type": "stationary", "m": 4.4},
+            "casing": {"type": "inviscid", "m": 4.5},
+        }
+    }
+    mesher = H.from_dict({**MESH, "endwalls": endwalls})
+    assert isinstance(mesher.endwalls.outlet.hub, StationaryStretch)
+    assert isinstance(mesher.endwalls.outlet.casing, InviscidStretch)
+    grid = mesher.mesh(machine)
+
+    dn = grid["row1"]
+    rotating = _patches(dn, "RotatingPatch")
+    hub = rotating["stationary_hub_out"]
+    assert (hub.jst, hub.jen) == (0, 0)
+    assert hub.ien == dn.shape[0] - 1 or hub.ien == -1
+    assert _at_m(machine, dn, hub, 0, 4.4)
+    # The tip gap's casing patch stops at the inviscid casing, not the hub's
+    assert (
+        rotating["casing"].ien
+        == _patches(dn, "InviscidPatch")["inviscid_casing_out"].ist
+    )
+
+    bconds.apply_rotation(grid, [1000.0, 1000.0])
+    assert dn.Omega == 1000.0
+    assert hub.Omega == 0.0
 
 
 @pytest.mark.parametrize(
-    "m_inviscid, mesh",
-    [((1.5, 0.0, 0.0, 0.0), {}), ((0.5, 0.0, 0.0, 0.0), {"inviscid_endwalls": True})],
+    "endwalls, mesh",
+    [
+        ({"inlet": {"hub": {"type": "inviscid", "m": 1.5}}}, {}),
+        ({"outlet": {"hub": {"type": "stationary", "m": 3.5}}}, {}),
+        (
+            {"inlet": {"hub": {"type": "inviscid", "m": 0.5}}},
+            {"inviscid_endwalls": True},
+        ),
+    ],
 )
-def test_inviscid_ducts_past_a_blade_or_under_inviscid_endwalls_are_refused(
-    m_inviscid, mesh
+def test_duct_stretches_past_a_blade_or_under_inviscid_endwalls_are_refused(
+    endwalls, mesh
 ):
-    config = build(mesh=MESH)
-    annulus = dataclasses.replace(config.annulus, m_inviscid=m_inviscid)
-    machine = dataclasses.replace(config, annulus=annulus).design()
-    with pytest.raises(ValueError, match="m_inviscid"):
-        H.from_dict({**MESH, **mesh}).mesh(machine)
+    machine = build(mesh=MESH).design()
+    with pytest.raises(ValueError, match="endwalls"):
+        H.from_dict({**MESH, **mesh, "endwalls": endwalls}).mesh(machine)
+
+
+def test_endwalls_go_through_a_config_and_back():
+    mesher = H.from_dict({**MESH, "endwalls": ENDWALLS})
+    assert H.from_dict(mesher.to_dict()) == mesher
+    assert mesher.endwalls.outlet.casing.m == 4.5
+    assert H.from_dict(MESH).endwalls.stretches() == []
+
+
+@pytest.mark.parametrize(
+    "stretch, match",
+    [
+        ({"type": "inviscid", "m": 0.0}, "m > 0"),
+        ({"type": "porous", "m": 0.5}, "porous"),
+    ],
+)
+def test_a_bad_endwall_stretch_is_refused(stretch, match):
+    with pytest.raises(ValueError, match=match):
+        H.from_dict({**MESH, "endwalls": {"inlet": {"hub": stretch}}})

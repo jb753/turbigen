@@ -27,6 +27,7 @@ import numpy as np
 import scipy.optimize
 import scipy.sparse
 import scipy.sparse.csgraph
+import scipy.sparse.linalg
 from scipy.spatial import cKDTree
 
 logger = logging.getLogger("turbigen")
@@ -240,7 +241,13 @@ class PlaneTopology:
                 continue
 
             if is_slide[node]:
-                inward = _crossing(nxt, prv, is_slide)
+                # A node on a face between blocks, held in `x` like one on the
+                # edge of the mesh, has cells all round it: it sits level with
+                # its neighbours off the face, one either side of it
+                if sorted(nxt) == sorted(prv):
+                    inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
+                else:
+                    inward = _crossing(nxt, prv, is_slide)
                 if not inward:
                     inward = [nb for nb in edge_nb if not is_slide[nb[0]]]
                 if not inward:
@@ -396,10 +403,12 @@ def polish(
     rings=4,
     w_size=1.0,
     max_iter=500,
+    gtol=1e-10,
     X_target=None,
     power=1.0,
     hold=None,
     smooth=0,
+    taper=0.0,
 ):
     """Return `X` with the nodes near `centres` moved to square up their cells.
 
@@ -433,6 +442,9 @@ def polish(
         Weight of the size term against the shape term.
     max_iter : int
         Most iterations of the optimiser.
+    gtol : float
+        The optimiser stops once no component of the projected gradient of
+        the cost exceeds this.
     X_target : ndarray, optional
         Mesh to read the target edge lengths off, shape (n_node, 2); `X` if
         not given.
@@ -451,6 +463,12 @@ def polish(
         a straight line in the logarithm, passes unchanged; so the size term
         draws a step out into a gradual change, and leaves the clustering the
         mesh was built with.
+    taper : float
+        Weight of a penalty on how far each node moves, in the shortest edge
+        of its cells,
+        growing as the square of its rings from the centres: none at them,
+        `taper` at the last ring, so the moves die away towards the edge of
+        the region rather than stop at it. None if zero.
 
     Returns
     -------
@@ -478,8 +496,12 @@ def polish(
     # Nodes within `rings` cells of a centre, by growing through the cells.
     near = np.zeros(topo.n_node, dtype=bool)
     near[np.asarray(centres, dtype=int)] = True
-    for _ in range(rings):
-        near[ids[near[ids].any(axis=1)].ravel()] = True
+    ring = np.zeros(topo.n_node)
+    for r in range(1, rings + 1):
+        grown = np.zeros(topo.n_node, dtype=bool)
+        grown[ids[near[ids].any(axis=1)].ravel()] = True
+        ring[grown & ~near] = r
+        near |= grown
     free = np.zeros((topo.n_node, 2), dtype=bool)
     free[near] = True
     free[topo.fixed] = False
@@ -518,20 +540,36 @@ def polish(
     # precision whatever the mesh is held in.
     X64 = X.astype(float)
 
+    z0 = X0[free] / scale
+    # Each node's move measured against the shortest target edge of the
+    # cells round it, so a move small in a large cell is not free in a small
+    h = np.full(topo.n_node, np.inf)
+    np.minimum.at(h, ids, np.minimum(la, lb)[:, None])
+    h = np.where(np.isfinite(h), h, scale)
+    W = np.broadcast_to(
+        (taper * (ring / max(rings, 1)) ** 2 * (scale / h) ** 2)[:, None],
+        (topo.n_node, 2),
+    )[free]
+
     def fun(z):
         Xc = X64.copy()
         Xc[free] = z * scale
         f, g = ember.elliptic.polish_cost(
             Xc, ids, shifts, la, lb, POLISH_EPS, power, w_size
         )
-        return f / n_corner, g[free] * scale / n_corner
+        f, g = f / n_corner, g[free] * scale / n_corner
+        if taper:
+            dz = z - z0
+            f += np.sum(W * dz * dz) / n_corner
+            g = g + 2.0 * W * dz / n_corner
+        return f, g
 
     res = scipy.optimize.minimize(
         fun,
         X0[free] / scale,
         jac=True,
         method="L-BFGS-B",
-        options={"maxiter": max_iter, "gtol": 1e-10, "ftol": 0.0},
+        options={"maxiter": max_iter, "gtol": gtol, "ftol": 0.0},
     )
     out = X0.copy()
     out[free] = res.x * scale
@@ -587,3 +625,100 @@ def _smoothed_targets(topo, X, n_pass):
         la.append((0.5 * (Li[:, :-1] + Li[:, 1:])).ravel())
         lb.append((0.5 * (Lk[:-1, :] + Lk[1:, :])).ravel())
     return np.concatenate(la), np.concatenate(lb)
+
+
+def winslow_correction(topo, X, held):
+    """Return a function that corrects plane `X` for the error in it that the
+    Winslow sweeps take longest to remove, and says how far it moved it.
+
+    Point-Jacobi sweeps remove the error that varies from node to node in a
+    few sweeps, and the smooth error over thousands: an H block ahead of or
+    behind a blade, periodic across the pitch and held in `y` only through
+    the blade, drifts in `y` long after the cells round the blade have
+    settled. The returned function takes the residual of one plain sweep,
+    where it would move each node, and returns the correction that removes
+    it all at once were the sweep a linear map: the solution of
+    ``(I - M) d = r``, `M` the sweep with the Winslow coefficients frozen at
+    `X`, its singular points and the `y` of its sliding nodes as the sweeps
+    move them, and the nodes `held`, the fixed nodes and those the sweeps
+    have not moved by the map, not corrected. A plane the sweeps leave where
+    it is has no residual, and so no correction: the sweeps converge to the
+    same plane with corrections as without, in far fewer of them.
+
+    The map is factorised once, here, and the function returns with each
+    correction the most it strains the plane: the change it makes to any
+    regular node's differences across its stencil, in `i` or `k`, over their
+    lengths at `X`. Strained much, the coefficients are no longer those the
+    map was frozen at, and a correction by it can overshoot further than the
+    sweeps after it take back: the caller should then make a new one. A
+    correction that moves a block bodily, as the drift it is for does,
+    strains it little; so it returns too the most it moves any regular
+    node, over the shorter of its lengths, which is how far the plane is
+    from converged.
+    """
+    X = np.asarray(X, dtype=float)
+    n = topo.n_node
+    sg, ss = topo.stencil_g, topo.stencil_s
+    P = topo._values(X, sg, ss)  # (n_reg, 9, 2)
+    xi = 0.5 * (P[:, 1] - P[:, 5])
+    eta = 0.5 * (P[:, 3] - P[:, 7])
+    a = np.sum(eta * eta, axis=1)
+    b = np.sum(xi * eta, axis=1)
+    c = np.sum(xi * xi, axis=1)
+    r = 1.0 / (2.0 * (a + c))
+    # Lengths of the differences across each stencil, in i and k
+    L_xi = np.maximum(np.sqrt(c), 1e-300)
+    L_eta = np.maximum(np.sqrt(a), 1e-300)
+    # Weights of E, NE, N, NW, W, SW, S, SE, as the sweeps take them
+    W = np.stack([a * r, -0.5 * b * r, c * r, 0.5 * b * r] * 2, axis=1)
+
+    hold = np.zeros(n, dtype=bool)
+    hold[topo.fixed] = True
+    hold[np.asarray(held, dtype=int)] = True
+
+    rows = [np.repeat(sg[:, 0], 8)]
+    cols = [sg[:, 1:].ravel()]
+    vals = [W.ravel()]
+    W_irr = topo.sweep_irr[0].tocoo()
+    rows.append(topo.irregular[W_irr.row])
+    cols.append(W_irr.col)
+    vals.append(W_irr.data)
+    W_sl = topo.sweep_slide[0].tocoo()
+
+    def factor(rows, cols, vals):
+        rows, cols, vals = map(np.concatenate, (rows, cols, vals))
+        moved = np.zeros(n, dtype=bool)
+        moved[rows] = True
+        free = moved & ~hold
+        keep = free[rows]
+        M = scipy.sparse.csr_matrix(
+            (vals[keep], (rows[keep], cols[keep])), shape=(n, n)
+        )
+        # Rows not corrected are the identity, their right-hand side zero
+        A = scipy.sparse.identity(n, format="csr") - M
+        # Ordered as for a symmetric matrix, which it nearly is: less fill
+        return scipy.sparse.linalg.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A"), free
+
+    lu_x, free_x = factor(rows, cols, vals)
+    lu_y, free_y = factor(
+        rows + [topo.slide[W_sl.row]], cols + [W_sl.col], vals + [W_sl.data]
+    )
+
+    def correct(R):
+        R = np.asarray(R, dtype=float)
+        d = np.stack(
+            (
+                lu_x.solve(np.where(free_x, R[:, 0], 0.0)),
+                lu_y.solve(np.where(free_y, R[:, 1], 0.0)),
+            ),
+            axis=1,
+        )
+        D = d[sg]  # pitch shifts drop out of a correction
+        strain = np.maximum(
+            np.linalg.norm(0.5 * (D[:, 1] - D[:, 5]), axis=1) / L_xi,
+            np.linalg.norm(0.5 * (D[:, 3] - D[:, 7]), axis=1) / L_eta,
+        )
+        move = np.linalg.norm(D[:, 0], axis=1) / np.minimum(L_xi, L_eta)
+        return d, float(strain.max(initial=0.0)), float(move.max(initial=0.0))
+
+    return correct

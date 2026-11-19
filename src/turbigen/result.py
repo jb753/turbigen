@@ -98,6 +98,20 @@ class Result:
     nested lists of them.
     """
 
+    run: dict = dataclasses.field(default_factory=dict)
+    """What produced this result, and how long it took.
+
+    The turbigen version and the commit it was built from, ember's version,
+    the host, and when the run started and finished with the wall time between
+    [s]. Covers designing, meshing, solving and measuring, not drawing the
+    report, which comes after the result is written.
+
+    Versions are those recorded when each package was installed. The commit
+    is null for an editable install, whose recorded one is the checkout as it
+    was then and not as it ran, so a record that must name an exact commit
+    belongs in the config's `notes`, written by whatever knows the checkout.
+    """
+
     @property
     def nominal(self) -> MeanLine:
         """The mean line as designed."""
@@ -129,11 +143,14 @@ class Result:
             converged=bool(data.get("converged", False)),
             error=dict(data.get("error", {})),
             metrics=dict(data.get("metrics", {})),
+            run=dict(data.get("run", {})),
         )
 
     def to_dict(self):
         """Return everything worth keeping from a run."""
         data = {"converged": bool(self.converged)}
+        if self.run:
+            data["run"] = dict(self.run)
         if self.actual is not None:
             data["actual"] = self.actual.to_dict()
         if self.Ds_mix is not None:
