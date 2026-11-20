@@ -474,6 +474,20 @@ def _spacing_steps(slices, pitches):
     return [None if step is None else np.exp(step) for step in out]
 
 
+def _step_colours(step_ok, step_max):
+    """Return the norm and colour map spacing steps are shaded by: white at
+    one to blue at `step_ok`, then pale to full red at `step_max` and held
+    there, so a step over `step_ok` stands out at any size."""
+    import matplotlib.colors
+
+    t = (step_ok - 1.0) / (step_max - 1.0)
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+        "step",
+        [(0.0, "white"), (t, "tab:blue"), (t, "#f4a6a6"), (1.0, "tab:red")],
+    )
+    return matplotlib.colors.Normalize(1.0, step_max), cmap
+
+
 class MeshPlot(Post):
     """Grid lines of an H or OHP mesh, meridional and blade-to-blade.
 
@@ -520,6 +534,10 @@ class MeshPlot(Post):
     """Spacing step `debug` shades a cell fully at and above; white is one,
     no step [--]."""
 
+    step_ok: float = 1.25
+    """Spacing step up to which `debug` shades from white to blue, and above
+    which in red [--]."""
+
     wall_line: float = 0.9
     """With `debug`, the fraction of the way from leading to trailing edge
     at which the O block's line off the blade, on either side, is marked on
@@ -534,7 +552,6 @@ class MeshPlot(Post):
             logger.info("Not an H or OHP mesh, skipping the mesh plot.")
             return []
 
-        import matplotlib.colors
         import matplotlib.pyplot as plt
 
         # The passage blocks only: a gridded tip block spans only a sliver of
@@ -548,11 +565,7 @@ class MeshPlot(Post):
             ax.set_title(title)
             style = {"color": "k", "linewidth": self.linewidth}
             if self.debug and cut is not None:
-                # White at one, shaded to full at `step_max` and held there
-                norm = matplotlib.colors.Normalize(1.0, self.step_max)
-                cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
-                    "step", ["white", "tab:red"]
-                )
+                norm, cmap = _step_colours(self.step_ok, self.step_max)
                 steps = _spacing_steps(slices, [block.pitch for block in cut])
                 for (x, y), block, step in zip(slices, cut, steps):
                     if step is None:
@@ -572,7 +585,7 @@ class MeshPlot(Post):
                         x[i, k],
                         y[i, k],
                         label.split("_", 1)[-1],
-                        color="tab:blue",
+                        color="k",
                         fontsize=6,
                         ha="center",
                         va="center",
@@ -581,7 +594,7 @@ class MeshPlot(Post):
                 cbar = fig.colorbar(
                     mesh, ax=ax, shrink=0.6, label="Spacing step", extend="max"
                 )
-                ticks = np.linspace(1.0, self.step_max, 6)
+                ticks = np.union1d(np.linspace(1.0, self.step_max, 5), [self.step_ok])
                 cbar.set_ticks(ticks, labels=[f"{t:g}" for t in ticks])
                 cbar.minorticks_off()
             for x, y in slices:
@@ -589,7 +602,7 @@ class MeshPlot(Post):
                 ax.plot(x, y, **style)
                 ax.plot(x.T, y.T, **style)
             for mark in marks:
-                ax.plot(*mark["xy"], color="tab:blue", linewidth=1.0)
+                ax.plot(*mark["xy"], color="tab:purple", linewidth=1.0)
             return fig
 
         if config.mesh.type == "h":

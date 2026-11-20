@@ -305,21 +305,26 @@ class _Tune(Node):
     """Expansion ratio along the blade away from its edges."""
 
     ER_stream: float = 1.2
-    """Expansion ratio away from the O block, across the passage and along
-    the blocks ahead of and behind the blade, except the block from a blade
-    to the mixing plane behind it, which grows at `ER_mix`."""
+    """Expansion ratio away from the O block along the blocks ahead of and
+    behind the blade, except the blocks between a blade and a mixing plane
+    ahead of or behind it, which grow at `ER_mix`."""
+
+    ER_pitch: float = 1.15
+    """Expansion ratio away from the O block across the passage, which sets
+    how many cells the blocks ahead of, across and behind the passage have
+    across the pitch."""
 
     ER_mix: float = 1.1
-    """Expansion ratio along the block from a blade to the mixing plane
-    behind it."""
+    """Expansion ratio along the blocks between a blade and a mixing plane
+    ahead of or behind it."""
 
     AR_mix: float = 2.0
     """Largest aspect ratio, length along over width across the pitch, of
-    the cells of the block from a blade to the mixing plane behind it, at
-    mid-span, which sets how many it has. Along each line its first cell
-    within `ER_mix` of the last of the blocks behind the blade where it
-    meets them, growing at `ER_mix` to a cap that fills the line in that
-    count, on every plane, so the aspect ratio varies with span."""
+    the cells of each block between a blade and a mixing plane ahead of or
+    behind it, at mid-span, which sets how many it has. Along each line its
+    first cell within `ER_mix` of the end cell of the blocks round the blade
+    where it meets them, growing at `ER_mix` to a cap that fills the line in
+    that count, on every plane, so the aspect ratio varies with span."""
 
     ER_O: float = 1.2
     """Expansion ratio off the blade in the O block."""
@@ -689,7 +694,7 @@ class _Tune(Node):
 
     dn_smooth_spf: float = 0.02
     """Width, in span fraction, of the Gaussian the spacing along each plane's
-    block to the mixing plane is smoothed over across span, so neighbouring
+    blocks between the blade and a mixing plane is smoothed over across span, so neighbouring
     planes' stations agree. See :meth:`OHPassage.mesh_row`."""
 
     tip_o_turn: float = 0.5
@@ -808,6 +813,19 @@ class _Tune(Node):
     freeze_le_ramp: float = 0.15
     """Fraction of the perimeter beyond :data:`freeze_le` over which that eases
     off."""
+
+    wall_cap_coarse: bool = True
+    """Refine along the blade no coarser than the swept coarse blade nodes
+    lie, the refined cells there growing at `ER_surf` at most: where the
+    coarse nodes crowd, as the leading edge freeze can leave them, a refined
+    cell spanning several coarse cells at the wall would span as many at the
+    O block's outer face, where they do not crowd, and be that many times as
+    long as its neighbours. The cap shapes the density only: each piece of
+    the blade is still scaled to its count of cells, so where the cap
+    crowds the cells the rest of that piece coarsens to pay for them, and a
+    capped cell may still be a little longer than its coarse cell. Not on a
+    row matched node for node round its tip gap (:attr:`tip_match`), whose
+    coarse cells are each split in two."""
 
     edge_gap: float = 0.02
     """Least fraction of the blade's perimeter between C4 and C1 of the O block
@@ -1396,7 +1414,8 @@ class OHPassage(Mesher):
         )
 
         # Refined across the passage and along the blocks ahead of and behind
-        # the blade: h at the O block, growing at ER_stream to the free stream.
+        # the blade: h at the O block, growing to the free stream, at ER_pitch
+        # across the passage and ER_stream along the blocks.
         C1, C2, C3, C4 = (geo[k] for k in ("C1", "C2", "C3", "C4"))
         mp_in, mp_Zin, mp_Zout, mp_out = cmap.mp_from_m([m_in, m_Zin, m_Zout, m_out])
         periodic = _periodic_line(blade, cmap, pitch, tune=self.tune)
@@ -1423,7 +1442,7 @@ class OHPassage(Mesher):
             max(self.tune.n_ends_min, round(self.tune.coarse_ends_factor * n))
             for n in (n_in, n_out)
         )
-        f_P = _mult(_double(h / L_P, h / L_P, H / L_P, self.tune.ER_stream), 8)
+        f_P = _mult(_double(h / L_P, h / L_P, H / L_P, self.tune.ER_pitch), 8)
         # Ahead of and behind the blade, ends_factor times the cells each
         # way, the clustering kept.
         k = self.tune.ends_factor
@@ -1493,7 +1512,8 @@ class OHPassage(Mesher):
             f"O {layout.n_O}, passage {n_P}, in {n_in}, out {n_out}, up "
             f"{layout.n_up}, dn {layout.n_dn}; refined: blade {layout.nf_wall}, "
             f"P {len(layout.u['P']) - 1}, in {len(layout.u['in']) - 1}, out "
-            f"{len(layout.u['out']) - 1}, dn "
+            f"{len(layout.u['out']) - 1}, up "
+            f"{len(layout.u['up']) - 1 if 'up' in layout.u else layout.n_up}, dn "
             f"{len(layout.u['dn']) - 1 if 'dn' in layout.u else layout.n_dn}, "
             f"O {layout.nk_O} nodes"
         )
@@ -2344,28 +2364,35 @@ class OHPassage(Mesher):
         if not lay.extrude_out:
             lay = self._dn_u(lay, mid)
             refine = self._refine_matrices(lay, planes[j_mid]["xy"])
+        if not lay.extrude_in:
+            lay = self._up_u(lay, mid)
+            refine = self._refine_matrices(lay, planes[j_mid]["xy"])
         per_plane = [
             self._refined(topo.scatter(X), plane, lay, refine, respace_dn=False)
             for X, plane in zip(X_smooth, planes)
         ]
-        # The block behind the blade to the mixing plane respaced along `i`
-        # as `_dn_lines` would each plane, but by its fractions smoothed
-        # across span over `dn_smooth_spf`: each plane's alone step from one
-        # to the next by more than the cells by the endwalls are high, and
-        # lean the spanwise lines there over
-        if "dn" in lay.u:
+        # The blocks between the blade and a mixing plane, behind it and
+        # ahead of it, respaced along `i` as `_refined` would each plane, but
+        # by their fractions smoothed across span over `dn_smooth_spf`: each
+        # plane's alone step from one to the next by more than the cells by
+        # the endwalls are high, and lean the spanwise lines there over
+        w = np.exp(-0.5 * ((spf[:, None] - spf[None]) / self.tune.dn_smooth_spf) ** 2)
+        w /= w.sum(axis=1, keepdims=True)
+        for key, b, fractions, inside in (
+            ("dn", 7, _dn_fractions, (4, 5)),
+            ("up", 6, _up_fractions, (2, 3)),
+        ):
+            if key not in lay.u:
+                continue
             F = np.stack(
                 [
-                    _dn_fractions(xy[7], xy[4], xy[5], self.tune.ER_mix)
+                    fractions(xy[b], *(xy[c] for c in inside), self.tune.ER_mix)
                     for xy in per_plane
                 ]
             )
-            w = np.exp(
-                -0.5 * ((spf[:, None] - spf[None]) / self.tune.dn_smooth_spf) ** 2
-            )
-            F = np.tensordot(w / w.sum(axis=1, keepdims=True), F, axes=1)
+            F = np.tensordot(w, F, axes=1)
             for xy, f in zip(per_plane, F):
-                xy[7] = _dn_apply(xy[7], f).astype(xy[7].dtype)
+                xy[b] = _dn_apply(xy[b], f).astype(xy[b].dtype)
 
         # The control planes are polished once refined, and how far that
         # moves each node carried to the planes between, as the smoothing is.
@@ -2399,6 +2426,23 @@ class OHPassage(Mesher):
                 f = self._extrude_fractions(per_plane[j_mid], planes[j_mid], lay, inlet)
                 for xy, plane in zip(per_plane, planes):
                     self._extrude(xy, plane, lay, inlet, f)
+
+        # The worst cell corner of each block over every plane, and where,
+        # whatever it is
+        worst = {}
+        for j, xy in enumerate(per_plane):
+            for name, B in zip(LABELS, xy):
+                if min(B.shape[1:]) < 2:
+                    continue
+                a = float(_cell_angles(np.asarray(B, dtype=float)).min())
+                if name not in worst or a < worst[name][0]:
+                    worst[name] = (a, float(spf[j]))
+        name, (a, s_at) = min(worst.items(), key=lambda kv: kv[1][0])
+        logger.info(
+            f"Row {i_row} worst cell corner {a:.1f} deg, in {name} at "
+            f"spf={s_at:.3f}; by block: "
+            + ", ".join(f"{n} {v[0]:.1f}" for n, v in worst.items())
+        )
         return self.assemble(machine, i_row, lay, planes, per_plane, jtip)
 
     @staticmethod
@@ -2665,6 +2709,17 @@ class OHPassage(Mesher):
         c = s_c[e] / S
         t = np.linspace(c[0], c[-1], self.tune.n_wall)
         d = np.interp(t, sigma, dens)
+        if self.tune.wall_cap_coarse:
+            # No refined cell longer than the coarse cell it lies in, so none
+            # spans more than one coarse cell, nor so more than one at the O
+            # block's outer face, which is refined alike; growing from there
+            # at `ER_surf` at most. Before each piece is scaled to its count,
+            # so only near enough. Periodic round the blade, whose last coarse
+            # node closes on its first, one turn of `t` on.
+            h_c = np.diff(s_c) / S
+            t_c = 0.5 * (s_c[1:] + s_c[:-1]) / S
+            h = np.minimum(1.0 / d, np.interp(t, t_c, h_c, period=1.0))
+            d = 1.0 / _grow_limited(h, t, self.tune.ER_surf - 1.0)
 
         # Each piece scales the density to its count; at each corner, the
         # geometric mean of the scales of the pieces either side, so the
@@ -2855,7 +2910,30 @@ class OHPassage(Mesher):
         across the pitch. Each plane's own lines are respaced to it in
         :meth:`_refined`, so here they are even.
         """
-        TE, Pout, dn = (np.asarray(mid[b], dtype=float) for b in (4, 5, 7))
+        n = self._mix_count(*(np.asarray(mid[b], dtype=float) for b in (4, 5, 7)))
+        logger.debug(f"Downstream block: {n} cells")
+        return dataclasses.replace(
+            lay, u={**lay.u, "dn": np.linspace(0.0, lay.n_dn, n + 1)}
+        )
+
+    def _up_u(self, lay, mid):
+        """Return `lay` with the refinement along the block from a mixing
+        plane to ahead of the blade, from mid-span's refined plane `mid`: as
+        :meth:`_dn_u` has the block behind the blade, its first cell where it
+        meets the blocks round the leading edge and ahead of the passage."""
+        n = self._mix_count(
+            *(np.asarray(mid[b], dtype=float)[:, ::-1] for b in (2, 3, 6))
+        )
+        logger.debug(f"Upstream block: {n} cells")
+        return dataclasses.replace(
+            lay, u={**lay.u, "up": np.linspace(0.0, lay.n_up, n + 1)}
+        )
+
+    def _mix_count(self, TE, Pout, dn):
+        """Return the fewest cells, a multiple of eight, along a block `dn`
+        (2, ni, nk) from where it meets blocks `TE` and `Pout` at their
+        `i = -1` faces, at its own `i = 0`, to a mixing plane: see
+        :meth:`_dn_u`."""
         d0 = float(
             np.mean(
                 [np.linalg.norm(B[:, -1] - B[:, -2], axis=0).mean() for B in (TE, Pout)]
@@ -2872,13 +2950,12 @@ class OHPassage(Mesher):
             n += 8
         if n * d0 / ER > L:
             logger.debug(
-                f"Downstream block: {n} cells no shorter than {d0 / ER:.4g} "
-                f"overfill it, {L:.4g} long; its first cell is shorter"
+                f"Block to a mixing plane: {n} cells no shorter than "
+                f"{d0 / ER:.4g} overfill it, {L:.4g} long; its first cell is "
+                "shorter"
             )
-        logger.debug(f"Downstream block: {n} cells, first near {d0:.4g}")
-        return dataclasses.replace(
-            lay, u={**lay.u, "dn": np.linspace(0.0, lay.n_dn, n + 1)}
-        )
+        logger.debug(f"Block to a mixing plane: {n} cells, first near {d0:.4g}")
+        return n
 
     def _O_count(self, lay, plane, xy, beyond):
         """Return `lay` with the nodes across the O block counted for its
@@ -2978,7 +3055,10 @@ class OHPassage(Mesher):
             "Pin": ([(0, lay.n_in, u["in"])], across_in),
             "TE": ([(0, lay.n_out, u["out"])], rear),
             "Pout": ([(0, lay.n_out, u["out"])], across_out),
-            "up": (None, across_in_far + shifted(front, n_P)),
+            "up": (
+                [(0, lay.n_up, u["up"])] if "up" in u else None,
+                across_in_far + shifted(front, n_P),
+            ),
             "dn": (
                 [(0, lay.n_dn, u["dn"])] if "dn" in u else None,
                 across_out_far + shifted(rear, n_P),
@@ -3168,6 +3248,10 @@ class OHPassage(Mesher):
             out = self._match_beyond_O(out, lay)
         if "dn" in lay.u and respace_dn:
             out[7] = _dn_lines(out[7], out[4], out[5], self.tune.ER_mix).astype(dtype)
+        if "up" in lay.u and respace_dn:
+            out[6] = _dn_apply(
+                out[6], _up_fractions(out[6], out[2], out[3], self.tune.ER_mix)
+            ).astype(dtype)
         return out
 
     def _match_beyond_O(self, out, lay):
@@ -3661,6 +3745,17 @@ def _dn_fractions(dn, TE, Pout, ER):
     f = np.zeros((nk, ni))
     np.cumsum(cells, axis=1, out=f[:, 1:])
     return f / f[:, -1:]
+
+
+def _up_fractions(up, LE, Pin, ER):
+    """Return :func:`_dn_fractions` for the block from a mixing plane to
+    ahead of the blade, `up` (2, ni, nk), whose `i = -1` face meets the
+    `i = 0` faces of `LE` and `Pin`: each line's last cell grown from theirs,
+    as fractions of its length from the mixing plane (nk, ni)."""
+    f = _dn_fractions(
+        np.asarray(up)[:, ::-1], np.asarray(LE)[:, ::-1], np.asarray(Pin)[:, ::-1], ER
+    )
+    return 1.0 - f[:, ::-1]
 
 
 def _dn_apply(dn, f):
